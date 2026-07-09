@@ -1,0 +1,18 @@
+{
+  "name": "Angeli's Control Tower 2.0",
+  "short_name": "Control Tower 2.0",
+  "description": "Private ops hub for Vinny & Dad \u2014 live job planning",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "start_url": "./",
+  "background_color": "#0b0e14",
+  "theme_color": "#0b0e14",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

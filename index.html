@@ -1,0 +1,1295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Control Tower 2.0">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0b0e14">
+  <title>Angeli's Control Tower 2.0</title>
+  <style>
+    :root{--bg:#0b0e14;--surface:#141820;--surface2:#1c2130;--border:#252d3d;--accent:#6c63ff;--accent2:#34d399;--text:#e2e8f0;--text-dim:#e6ebf3;--text-muted:#c4cdda;--ph-bg:#111520;--header-h:48px;--ph-h:40px}
+    body.light{--bg:#f5f6fa;--surface:#ffffff;--surface2:#eef0f5;--border:#d8dce8;--accent:#6c63ff;--accent2:#10b981;--text:#1a1d2e;--text-dim:#5a6178;--text-muted:#9ba3b8;--ph-bg:#f0f1f6}
+    body.light #app-header{box-shadow:0 1px 8px rgba(0,0,0,.08)}
+    body.light #grid{background:var(--border)}
+    body.light .launcher{background:var(--bg)}
+    body.light .launcher:active{background:var(--surface2)}
+    *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+    html,body{width:100%;height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-serif;background:var(--bg);color:var(--text)}
+    #app-header{height:calc(var(--header-h) + env(safe-area-inset-top));padding-top:env(safe-area-inset-top);background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;padding-left:max(14px,env(safe-area-inset-left));padding-right:max(14px,env(safe-area-inset-right));gap:12px;position:fixed;top:0;left:0;right:0;z-index:100;box-shadow:0 1px 12px rgba(0,0,0,.4)}
+    .brand{display:flex;align-items:center;gap:8px;font-size:15px;font-weight:700;letter-spacing:-.3px;white-space:nowrap}
+    .live-dot{width:7px;height:7px;border-radius:50%;background:var(--accent2);box-shadow:0 0 6px var(--accent2);animation:blink 2.5s ease-in-out infinite}
+    @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+    #clock{margin-left:auto;font-size:13px;color:var(--text-dim);font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}
+    .header-right{display:flex;align-items:center;gap:6px;flex-shrink:0}
+    .layout-group{display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden}
+    .layout-btn{padding:4px 10px;font-size:12px;font-weight:700;color:var(--text-dim);background:transparent;border:none;border-right:1px solid var(--border);cursor:pointer;transition:all .12s}
+    .layout-btn:last-child{border-right:none}
+    .layout-btn:hover{background:var(--surface2);color:var(--text)}
+    .layout-btn.active{background:var(--accent);color:#fff}
+    .icon-btn{width:30px;height:30px;display:flex;align-items:center;justify-content:center;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--text-dim);cursor:pointer;font-size:14px;transition:all .12s}
+    .icon-btn:hover{background:var(--surface2);color:var(--text);border-color:var(--accent)}
+    #tab-bar{position:fixed;top:calc(var(--header-h) + env(safe-area-inset-top));left:0;right:0;height:56px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:stretch;z-index:90;box-shadow:0 1px 6px rgba(0,0,0,.2)}
+    .tab-list{flex:1;display:flex;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+    .tab-list::-webkit-scrollbar{display:none}
+    .tab{padding:0 20px;display:flex;align-items:center;font-size:14px;font-weight:600;color:var(--text-dim);cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;transition:all .15s;user-select:none;-webkit-tap-highlight-color:transparent}
+    .tab:hover{color:var(--text);background:var(--surface2)}
+    .tab.active{color:var(--accent);border-bottom-color:var(--accent);background:var(--bg)}
+    body.light .tab.active{background:var(--surface2)}
+    .tab-add{padding:0 18px;color:var(--text-muted);font-size:18px;font-weight:400}
+    .tab-actions{display:flex;align-items:center;padding:0 10px;gap:4px;border-left:1px solid var(--border)}
+    .tab-actions .pbtn{width:44px;height:44px;font-size:20px;border-radius:8px}
+    #viewport{position:fixed;top:calc(var(--header-h) + env(safe-area-inset-top) + 56px);left:0;right:0;bottom:env(safe-area-inset-bottom,0);background:var(--bg);overflow:hidden}
+    #viewport iframe{width:100%;height:100%;border:none;display:block}
+    #viewport .launcher,#viewport .empty-state{width:100%;height:100%}
+    /* DASHBOARD */
+    .dashboard{width:100%;height:100%;overflow-y:auto;padding:20px;padding-bottom:48px}
+    .dash-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;max-width:1500px;margin:0 auto}
+    .dash-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:12px;min-height:180px;transition:transform .15s,box-shadow .15s}
+    .dash-card:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.25)}
+    .dash-card.wide{grid-column:span 2}
+    @media (max-width:760px){.dash-card.wide{grid-column:span 1}}
+    .dc-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+    .dc-title{font-size:11px;font-weight:800;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;display:flex;align-items:center;gap:6px}
+    .dc-title-ico{font-size:14px}
+    .dc-badge{background:var(--accent);color:#fff;font-size:10px;font-weight:800;padding:3px 9px;border-radius:10px;letter-spacing:.02em}
+    .dc-badge.green{background:var(--accent2)}
+    .dc-badge.amber{background:#f59e0b}
+    .dc-value{font-size:34px;font-weight:800;color:var(--text);line-height:1;letter-spacing:-.02em}
+    .dc-sub{font-size:13px;color:var(--text-dim);line-height:1.4}
+    .dc-row{display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--border)}
+    .dc-row:last-child{border-bottom:none}
+    .dc-row-label{font-size:13px;color:var(--text);font-weight:600}
+    .dc-row-val{font-size:13px;color:var(--text-dim);font-weight:500}
+    /* Catering orders list — compact single-line rows */
+    .co-list{max-height:560px;overflow-y:auto;-webkit-overflow-scrolling:touch}
+    .co-row{display:flex;align-items:center;gap:14px;padding:9px 16px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .12s;-webkit-tap-highlight-color:transparent}
+    .co-row:hover{background:var(--bg)}
+    .co-when{flex-shrink:0;font-size:13px;color:var(--text-dim);font-weight:600;white-space:nowrap}
+    .co-when b{color:var(--text);font-size:15px;font-weight:800}
+    .co-name{flex:1;min-width:0;font-size:14px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .co-meta{display:flex;align-items:center;gap:8px;flex-shrink:0}
+    .co-badge{display:inline-block;background:var(--accent);color:#fff;font-size:9px;font-weight:800;padding:2px 7px;border-radius:8px;text-transform:uppercase;letter-spacing:.04em}
+    .co-badge.delivery{background:var(--accent2)}
+    .co-sub{font-size:13px;color:var(--text-dim);white-space:nowrap}
+    .co-sub strong{color:var(--text)}
+    .co-items{padding:10px 16px 14px;font-size:12px;color:var(--text-dim);white-space:pre-wrap;background:var(--bg);border-bottom:1px solid var(--border);line-height:1.5;font-family:'SF Mono','Fira Mono',monospace}
+    .co-empty{padding:44px 16px;text-align:center;color:var(--text-muted);font-size:13px}
+    /* Email card */
+    .email-list{display:flex;flex-direction:column;gap:1px;margin:0 -18px -18px;border-top:1px solid var(--border)}
+    .email-item{padding:11px 18px;display:grid;grid-template-columns:100px 1fr auto;gap:12px;align-items:baseline;border-bottom:1px solid var(--border);cursor:pointer;transition:background .12s}
+    .email-item:last-child{border-bottom:none}
+    .email-item:hover{background:var(--bg)}
+    .email-item.unread{background:rgba(108,99,255,.05)}
+    .email-item.unread .email-sender{color:var(--accent)}
+    .email-sender{font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .email-subject{font-size:13px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .email-subject strong{color:var(--text);font-weight:600}
+    .email-time{font-size:11px;color:var(--text-muted);font-weight:500;white-space:nowrap}
+    .email-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-right:4px;vertical-align:middle}
+    .email-empty{padding:34px 18px;text-align:center;color:var(--text-muted);font-size:13px}
+    .email-signin{padding:30px 18px 34px;display:flex;flex-direction:column;align-items:center;gap:14px;color:var(--text-dim)}
+    .email-signin p{font-size:13px;text-align:center;max-width:280px;line-height:1.5}
+    .signin-btn{display:flex;align-items:center;gap:10px;padding:11px 22px;background:#fff;color:#1f1f1f;border:1px solid #dadce0;border-radius:24px;font-size:14px;font-weight:600;cursor:pointer;font-family:'Roboto','Helvetica Neue',sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.18);transition:box-shadow .15s,transform .1s}
+    .signin-btn:hover{box-shadow:0 4px 14px rgba(0,0,0,.24)}
+    .signin-btn:active{transform:translateY(1px)}
+    .signin-btn::before{content:'';width:18px;height:18px;flex-shrink:0;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cpath fill='%23EA4335' d='M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z'/%3E%3Cpath fill='%234285F4' d='M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z'/%3E%3Cpath fill='%23FBBC05' d='M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z'/%3E%3Cpath fill='%2334A853' d='M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z'/%3E%3C/svg%3E");background-size:contain;background-repeat:no-repeat}
+    .signout-link{font-size:11px;color:var(--text-muted);cursor:pointer;text-decoration:underline;padding:8px 18px;text-align:right;display:block}
+    .signout-link:hover{color:var(--text-dim)}
+    /* Gmail tab mailbox */
+    .gmail-mailbox{width:100%;height:100%;display:flex;flex-direction:column;background:var(--bg)}
+    .gmail-toolbar{height:50px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:12px;flex-shrink:0}
+    .gmail-title{font-size:16px;font-weight:700;flex:1;color:var(--text)}
+    .gmail-back{background:transparent;border:none;color:var(--accent);cursor:pointer;font-size:14px;font-weight:600;padding:8px 12px;margin-left:-8px;border-radius:6px}
+    .gmail-back:hover{background:var(--surface2)}
+    .gmail-refresh{background:transparent;border:1px solid var(--border);width:42px;height:42px;border-radius:10px;cursor:pointer;color:var(--text-dim);font-size:20px;display:flex;align-items:center;justify-content:center}
+    .gmail-refresh:hover{background:var(--surface2);color:var(--text)}
+    .gmail-list-tab{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
+    .gmail-row{padding:14px 18px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .12s;-webkit-tap-highlight-color:transparent}
+    .gmail-row:hover{background:var(--surface)}
+    .gmail-row{position:relative}
+    .gmail-row.unread{background:rgba(108,99,255,.08)}
+    .gmail-row.unread::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--accent)}
+    .gmail-row.unread .gmail-row-sender{color:var(--accent);font-weight:800}
+    .gmail-row.unread .gmail-row-subject{color:var(--text);font-weight:700}
+    .gmail-row.unread .gmail-row-snippet{color:var(--text-dim)}
+    .unread-badge{display:inline-block;background:var(--accent);color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-right:6px;letter-spacing:.04em;text-transform:uppercase;vertical-align:middle}
+    .gmail-row-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px}
+    .gmail-row-sender{font-size:14px;font-weight:600;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:8px}
+    .gmail-row-time{font-size:12px;color:var(--text-muted);flex-shrink:0;font-variant-numeric:tabular-nums;display:flex;align-items:center;gap:4px;margin-right:-6px}
+    .gmail-star{cursor:pointer;font-size:26px;line-height:1;color:var(--text-dim);background:none;border:none;padding:8px 10px;min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;-webkit-tap-highlight-color:transparent;transition:transform .1s,color .15s,background .15s}
+    .gmail-star:hover{color:#fbbf24;background:rgba(251,191,36,.12)}
+    .gmail-star:active{transform:scale(.92)}
+    .gmail-star.starred{color:#fbbf24}
+    .gmail-detail-star{font-size:34px;padding:10px 12px;margin-left:10px;min-width:54px;min-height:54px}
+    .gmail-action-btn.star-on{background:#fbbf24;color:#1a1d2e}
+    .gmail-action-btn.star-on:hover{background:#fcd34d}
+    .gmail-row-subject{font-size:13px;color:var(--text);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px}
+    .gmail-row-snippet{font-size:12px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .gmail-detail{flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0}
+    .gmail-detail-head{padding:20px 24px 16px;border-bottom:1px solid var(--border)}
+    .gmail-detail-subject{font-size:20px;font-weight:700;line-height:1.3;color:var(--text);margin-bottom:10px}
+    .gmail-detail-meta{font-size:13px;color:var(--text)}
+    .gmail-detail-meta strong{color:var(--text);font-weight:700}
+    .gmail-detail-date{font-size:12px;color:var(--text-muted);margin-top:3px}
+    .gmail-body{flex:1;width:100%;border:none;background:#fff;min-height:0}
+    /* Thread view */
+    .gmail-thread{padding:16px 18px 24px}
+    .gmail-thread-subject{display:flex;align-items:flex-start;gap:8px;font-size:20px;font-weight:700;color:var(--text);line-height:1.3;margin-bottom:4px}
+    .gmail-thread-subject .subj-text{flex:1;min-width:0;word-wrap:break-word}
+    .gmail-thread-count{font-size:12px;color:var(--text-muted);margin-bottom:14px}
+    .gmail-msg{background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:10px;overflow:hidden}
+    .gmail-msg.sent{background:rgba(108,99,255,.06);border-color:rgba(108,99,255,.3)}
+    .gmail-msg-head{padding:12px 16px;border-bottom:1px solid var(--border)}
+    .gmail-msg-from-line{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+    .gmail-msg-from{font-size:14px;font-weight:700;color:var(--text)}
+    .gmail-msg.sent .gmail-msg-from{color:var(--accent)}
+    .gmail-msg-date{font-size:12px;color:var(--text-muted);white-space:nowrap}
+    .gmail-msg-fromfull{font-size:12px;color:var(--text-dim);margin-top:2px;word-break:break-all}
+    .gmail-msg-body{background:#fff}
+    .gmail-msg-body iframe{width:100%;height:300px;border:none;display:block;transition:height .2s ease-out}
+    .gmail-loading,.gmail-empty{padding:60px 24px;text-align:center;color:var(--text-muted);font-size:14px}
+    .gmail-signin{width:100%;height:100%;display:flex;align-items:center;justify-content:center;padding:24px}
+    .gmail-signin-card{display:flex;flex-direction:column;align-items:center;gap:14px;max-width:360px;text-align:center}
+    .gmail-signin-card .gs-ico{font-size:40px;line-height:1}
+    .gmail-signin-card h2{font-size:18px;font-weight:700;color:var(--text);margin:0}
+    .gmail-signin-card p{font-size:13px;color:var(--text-dim);margin:0;line-height:1.5}
+    /* Two-pane on wide screens */
+    .gmail-2pane{display:flex;flex-direction:row;height:100%;width:100%}
+    .gmail-2pane .gmail-list-pane{width:360px;flex-shrink:0;border-right:1px solid var(--border);display:flex;flex-direction:column;min-height:0}
+    .gmail-2pane .gmail-detail-pane{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--bg)}
+    .gmail-2pane .gmail-list-tab{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
+    .gmail-2pane .gmail-row.selected{background:var(--surface2)}
+    .gmail-empty-detail{flex:1;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:14px;padding:24px;text-align:center}
+    /* Detail/reply area */
+    .gmail-detail-scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;min-height:0;display:flex;flex-direction:column}
+    .gmail-body{flex:1;width:100%;border:none;background:#fff;min-height:400px}
+    .gmail-actions{display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--border);background:var(--surface);flex-shrink:0;flex-wrap:wrap}
+    .gmail-action-btn{padding:9px 18px;background:var(--accent);color:#fff;border:none;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;-webkit-tap-highlight-color:transparent}
+    .gmail-action-btn:hover{opacity:.9}
+    .gmail-action-btn.secondary{background:transparent;border:1px solid var(--border);color:var(--text-dim)}
+    .gmail-action-btn.secondary:hover{border-color:var(--text-dim);color:var(--text)}
+    .gmail-action-btn.danger{background:transparent;border:1px solid var(--border);color:var(--text-dim)}
+    .gmail-action-btn.danger:hover{border-color:#dc2626;color:#fca5a5}
+    .gmail-compose{padding:14px 16px;border-top:1px solid var(--border);background:var(--surface);flex-shrink:0}
+    .gmail-compose-to{font-size:12px;color:var(--text-dim);margin-bottom:8px}
+    .gmail-compose-to strong{color:var(--text);font-weight:600}
+    .gmail-compose textarea{width:100%;min-height:120px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-family:inherit;font-size:14px;color:var(--text);resize:vertical;outline:none;line-height:1.5}
+    .gmail-compose textarea:focus{border-color:var(--accent)}
+    .gmail-compose-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:10px}
+    .gmail-compose-status{font-size:12px;color:var(--text-muted)}
+    .gmail-compose-status.error{color:#f87171}
+    .gmail-compose-status.success{color:var(--accent2)}
+    /* User chip in toolbar */
+    .gmail-user{font-size:12px;color:var(--text-muted);padding:4px 10px;background:var(--bg);border:1px solid var(--border);border-radius:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}
+    .gmail-live{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--text-muted);margin-left:8px;font-weight:500}
+    .gmail-live::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--accent2);box-shadow:0 0 6px var(--accent2);animation:livepulse 1.6s ease-in-out infinite}
+    @keyframes livepulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.85)}}
+    .panel{display:flex;flex-direction:column;background:var(--bg);overflow:hidden;min-width:0;min-height:0}
+    .panel.is-fullscreen{position:fixed;top:var(--header-h);left:0;right:0;bottom:env(safe-area-inset-bottom,0);z-index:50}
+    .panel-header{height:var(--ph-h);background:var(--ph-bg);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 6px 0 10px;gap:4px;flex-shrink:0;user-select:none}
+    .panel-label{display:flex;align-items:center;gap:6px;font-size:15px;font-weight:700;color:var(--text);flex:1;min-width:0}
+    .panel-label span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .panel-btns{display:flex;gap:1px}
+    .pbtn{width:26px;height:26px;display:flex;align-items:center;justify-content:center;background:transparent;border:none;border-radius:4px;color:var(--text-muted);cursor:pointer;font-size:12px;transition:all .1s}
+    .pbtn:hover{background:var(--surface2);color:var(--text)}
+    .panel-body{flex:1;position:relative;min-height:0}
+    .panel-body iframe{width:100%;height:100%;border:none;display:block}
+    .launcher{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;background:var(--bg);cursor:pointer;transition:background .1s}
+    .launcher:active{background:var(--surface)}
+    .launcher .l-ico{font-size:54px;line-height:1;pointer-events:none}
+    .launcher .l-name{font-size:17px;font-weight:700;color:var(--text);pointer-events:none}
+    .launcher .l-btn{display:flex;align-items:center;gap:8px;padding:13px 32px;background:var(--accent);border:none;border-radius:12px;color:#fff;font-size:15px;font-weight:700;cursor:pointer;pointer-events:none;box-shadow:0 4px 16px rgba(108,99,255,.35)}
+    .launcher .l-hint{font-size:11px;color:var(--text-muted);pointer-events:none}
+    .empty-state{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--text-muted)}
+    .empty-state .e-ico{font-size:30px;opacity:.4}
+    .empty-state p{font-size:12px}
+    .empty-state .cfg-btn{padding:6px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text-dim);font-size:12px;font-weight:600;cursor:pointer;transition:all .12s}
+    .empty-state .cfg-btn:hover{border-color:var(--accent);color:var(--accent)}
+    .url-bar{position:absolute;top:0;left:0;right:0;background:var(--surface2);border-bottom:2px solid var(--accent);display:flex;gap:6px;padding:5px 8px;z-index:10}
+    .url-bar input{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:5px 9px;font-size:12px;outline:none}
+    .url-bar input:focus{border-color:var(--accent)}
+    .url-bar button{padding:5px 11px;border-radius:5px;border:none;font-size:12px;font-weight:600;cursor:pointer}
+    .url-bar .u-save{background:var(--accent);color:#fff}
+    .url-bar .u-cancel{background:var(--surface);border:1px solid var(--border);color:var(--text-dim)}
+    .panel-add{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;cursor:pointer;background:var(--bg);color:var(--text-muted);transition:all .15s}
+    .panel-add:hover{background:var(--surface);color:var(--text-dim)}
+    .panel-add .add-ico{font-size:26px;opacity:.5}
+    .panel-add p{font-size:12px;font-weight:600}
+    #overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:200;align-items:center;justify-content:center}
+    #overlay.open{display:flex}
+    #modal{background:var(--surface);border:1px solid var(--border);border-radius:12px;width:min(600px,95vw);max-height:85vh;display:flex;flex-direction:column;box-shadow:0 24px 64px rgba(0,0,0,.5)}
+    .modal-head{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+    .modal-head h2{font-size:15px;font-weight:700}
+    .modal-body{padding:16px 18px;overflow-y:auto;flex:1}
+    .section-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--text-muted);margin-bottom:10px}
+    .edit-row{display:flex;align-items:center;gap:6px;padding:7px;border:1px solid var(--border);border-radius:8px;margin-bottom:7px;background:var(--bg)}
+    .edit-row input[type=text],.edit-row input[type=url]{background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:5px 8px;font-size:12px;outline:none}
+    .edit-row input:focus{border-color:var(--accent)}
+    .edit-row .e-emoji{width:40px;text-align:center;font-size:15px}
+    .edit-row .e-name{width:100px}
+    .edit-row .e-url{flex:1}
+    .e-launcher-wrap{display:flex;flex-direction:column;align-items:center;gap:2px;flex-shrink:0}
+    .e-launcher-wrap label{font-size:9px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+    .del-btn{width:26px;height:26px;display:flex;align-items:center;justify-content:center;background:transparent;border:1px solid transparent;border-radius:5px;color:var(--text-muted);cursor:pointer;font-size:12px;flex-shrink:0}
+    .del-btn:hover{background:rgba(127,29,29,.2);color:#fca5a5;border-color:#7f1d1d}
+    .add-row-btn{width:100%;padding:7px;background:transparent;border:1px dashed var(--border);border-radius:8px;color:var(--text-muted);cursor:pointer;font-size:12px;font-weight:600;margin-top:2px;transition:all .12s}
+    .add-row-btn:hover{border-color:var(--accent);color:var(--accent)}
+    .hint-box{margin-top:16px;font-size:12px;color:var(--text-muted);line-height:1.65;padding:10px 12px;background:var(--bg);border-radius:8px;border:1px solid var(--border)}
+    .hint-box code{background:var(--surface2);padding:1px 5px;border-radius:3px;font-size:11px;color:var(--accent);font-family:'SF Mono','Fira Mono',monospace}
+    .hint-box strong{color:var(--text-dim)}
+    .modal-foot{padding:12px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px}
+    .btn-primary{padding:7px 18px;background:var(--accent);border:none;border-radius:7px;color:#fff;font-size:13px;font-weight:600;cursor:pointer}
+    .btn-secondary{padding:7px 18px;background:transparent;border:1px solid var(--border);border-radius:7px;color:var(--text-dim);font-size:13px;font-weight:600;cursor:pointer}
+    .btn-secondary:hover{border-color:var(--text-dim)}
+  </style>
+</head>
+<body>
+<header id="app-header">
+  <div class="brand"><span>🗼</span><span>Angeli's Control Tower 2.0</span><div class="live-dot"></div></div>
+  <div style="flex:1"></div>
+  <div class="header-right">
+    <button class="icon-btn" id="theme-btn" onclick="toggleTheme()" title="Toggle light/dark mode">☀️</button>
+    <button class="icon-btn" onclick="openSettings()" title="Manage panels">⚙</button>
+  </div>
+</header>
+<nav id="tab-bar">
+  <div class="tab-list" id="tab-list"></div>
+  <div class="tab-actions">
+    <button class="pbtn" onclick="reloadActive()" title="Reload">⟳</button>
+    <button class="pbtn" onclick="popoutActive()" title="Open in new tab">↗</button>
+  </div>
+</nav>
+<div id="viewport"></div>
+<div id="overlay" onclick="backdropClose(event)">
+  <div id="modal">
+    <div class="modal-head">
+      <h2>⚙&nbsp; Manage Panels</h2>
+      <button class="icon-btn" onclick="closeSettings()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="section-label">Gmail</div>
+      <div id="gmail-status" style="margin-bottom:16px"></div>
+      <div class="section-label">Panels — check ↗ for apps that block embedding</div>
+      <div id="edit-list"></div>
+      <button class="add-row-btn" onclick="addRow()">＋ Add panel</button>
+      <div class="hint-box">
+        <strong>Launcher mode (↗)</strong> — tap-to-open tile instead of iframe. On iPad, opens native app via deep link.<br><br>
+        <strong>Black screen?</strong><br>
+        • <strong>Scheduler</strong> — run <code>npm run dev</code> in restaurant-scheduler<br>
+        • <strong>Catering / Reservations</strong> — log in once inside the panel<br>
+        • <strong>Gmail / Online Orders</strong> — use launcher mode (on by default)
+      </div>
+      <div class="section-label" style="margin-top:20px">App</div>
+      <button class="btn-secondary" style="width:100%;padding:11px;display:flex;align-items:center;justify-content:center;gap:8px" onclick="reloadAppHard()">
+        🔄 Reload App (clear cache &amp; refresh)
+      </button>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:6px;line-height:1.5;text-align:center">
+        Use this if Control Tower looks outdated or seems stuck on old data.
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-secondary" onclick="closeSettings()">Cancel</button>
+      <button class="btn-primary" onclick="saveSettings()">Save</button>
+    </div>
+  </div>
+</div>
+<script>
+const KEY='angeli_tower_v2';
+function defaultLayout(){return window.innerWidth<1280?2:3}
+const DEFAULT_PANELS=[
+  {id:1,emoji:'📅',name:'Schedule',url:'https://restaurant-scheduler-hh5e.onrender.com/dashboard',launcher:false},
+  {id:2,emoji:'💰',name:'Tipout',url:'https://vinny4567.github.io/tipout/?v=37',launcher:false},
+  {id:3,emoji:'📧',name:'Reservations',url:'https://mail.google.com/mail/u/3/#inbox',launcher:true,iosScheme:'googlegmail://'},
+  {id:4,emoji:'🍱',name:'Catering',url:'https://order.angeliscatering.com/catering-internal.html',launcher:false},
+  {id:5,emoji:'🗺️',name:'Map',url:'https://angelis-backend.onrender.com/reservations-internal.html',launcher:false},
+  {id:7,emoji:'🥂',name:'Private Party',url:'https://order.angeliscatering.com/parties-internal-form.html',launcher:false},
+  {id:8,emoji:'🧮',name:'Calculator',url:'',launcher:false},
+];
+function loadCfg(){try{const r=localStorage.getItem(KEY);if(r){const c=JSON.parse(r);
+  // Migration: remove the old Online Orders tab if it exists in saved config
+  if(c.panels)c.panels=c.panels.filter(p=>p.id!==6);
+  // Migration: add Private Party tab if missing
+  if(c.panels&&!c.panels.find(p=>p.id===7)){
+    c.panels.push({id:7,emoji:'🥂',name:'Private Party',url:'https://order.angeliscatering.com/parties-internal-form.html',launcher:false});
+  }
+  // Migration: add Calculator tab if missing
+  if(c.panels&&!c.panels.find(p=>p.id===8)){
+    c.panels.push({id:8,emoji:'🧮',name:'Calculator',url:'',launcher:false});
+  }
+  // Migration: Schedule panel — point at /dashboard (token injection lands the user straight in)
+  const sch=c.panels?.find(p=>p.id===1);
+  if(sch){
+    if((sch.url||'').includes('restaurant-scheduler')||(sch.url||'').includes('localhost')){
+      sch.url='https://restaurant-scheduler-hh5e.onrender.com/dashboard';
+    }
+    if(sch.launcher===true)sch.launcher=false;
+  }
+  // Migration: bump Tipout to latest version
+  const tip=c.panels?.find(p=>p.id===2);
+  if(tip&&(tip.url||'').match(/vinny4567\.github\.io\/tipout/)){
+    tip.url='https://vinny4567.github.io/tipout/?v=37';
+  }
+  // Migration: rename panels — Gmail→Reservations, Reservations→Map
+  const gmailPanel=c.panels?.find(p=>p.id===3);
+  if(gmailPanel&&gmailPanel.name==='Gmail')gmailPanel.name='Reservations';
+  const mapPanel=c.panels?.find(p=>p.id===5);
+  if(mapPanel&&mapPanel.name==='Reservations'){mapPanel.name='Map';mapPanel.emoji='🗺️';}
+  return c}}catch(e){}return{layout:defaultLayout(),panels:DEFAULT_PANELS.map(p=>({...p}))}}
+function saveCfg(){localStorage.setItem(KEY,JSON.stringify(cfg))}
+const DASH='dashboard';
+const ONLINE='online';
+const CMD_API='https://jarvis-voicejarvis-voice.onrender.com/cmd';
+let cmdConsoleTimer=null;
+let cfg=loadCfg(),focused=null,editing=null,activeTab=cfg.activeTab||DASH;
+
+// ── SCHEDULER TOKEN BRIDGE ─────────────────────────────────────────
+// The Schedule iframe (3rd-party context) loses its login storage every ~7 days on iOS.
+// Fix: when the user logs into the Schedule, it postMessages its token up to us. We store
+// it in OUR localStorage (first-party — never wiped) and re-inject it into the iframe URL
+// on every load. The iframe stays logged in forever.
+window.addEventListener('message',function(e){
+  if(e.origin!=='https://restaurant-scheduler-hh5e.onrender.com')return;
+  if(e.data&&e.data.type==='scheduler-token'&&e.data.token){
+    try{localStorage.setItem('ct_scheduler_token',e.data.token)}catch(err){}
+  }
+});
+
+// ── GMAIL ─────────────────────────────────────────────────────────
+// Server-side Gmail OAuth — the refresh token lives on the scheduler backend, which
+// mints fresh access tokens on demand. This eliminates the iOS-PWA re-sign-in problem
+// (no Google cookies in the browser, so Safari's cookie clearing can't break it).
+const GMAIL_TOKEN_ENDPOINT='https://restaurant-scheduler-hh5e.onrender.com/api/gmail/token';
+const GMAIL_AUTH_ENDPOINT='https://restaurant-scheduler-hh5e.onrender.com/api/gmail/auth';
+const GMAIL_BACKEND_KEY='tipout-roster-key-vinny-7k9m2x4p';
+let gmailToken=null;try{gmailToken=JSON.parse(localStorage.getItem('gmail_token_v4')||'null')}catch(e){}
+let gmailUserEmail=null;
+let gmailEmails=null,gmailLoading=false;
+let gmailConnected=null; // null=unknown, true=connected, false=needs connect
+function gmailValid(){return gmailToken&&gmailToken.expires>Date.now()+30000}
+function gmailSaveToken(t){gmailToken=t;try{localStorage.setItem('gmail_token_v4',JSON.stringify(t))}catch(e){}}
+function gmailClearToken(){gmailToken=null;gmailEmails=null;gmailUserEmail=null;try{localStorage.removeItem('gmail_token_v4');localStorage.removeItem('gmail_token_v3');localStorage.removeItem('gmail_token')}catch(e){}}
+async function fetchGmailProfile(){if(!gmailValid())return;try{const r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/profile',{headers:{Authorization:'Bearer '+gmailToken.token}});if(r.ok){const p=await r.json();gmailUserEmail=p.emailAddress}}catch(e){}}
+// Fetch a fresh access token from our backend (which holds the long-lived refresh token)
+let gmailRefreshing=false;
+async function gmailRefreshFromBackend(){
+  if(gmailRefreshing)return gmailValid();
+  gmailRefreshing=true;
+  try{
+    const r=await fetch(GMAIL_TOKEN_ENDPOINT+'?key='+encodeURIComponent(GMAIL_BACKEND_KEY));
+    if(r.status===404){gmailConnected=false;gmailClearToken();return false}
+    if(!r.ok)return gmailValid();
+    const data=await r.json();
+    if(data.access_token){
+      gmailSaveToken({token:data.access_token,expires:Date.now()+(data.expires_in||3600)*1000});
+      gmailConnected=true;
+      return true;
+    }
+  }catch(e){console.error('gmail token fetch',e)}
+  finally{gmailRefreshing=false}
+  return gmailValid();
+}
+// Alias for existing call sites (poll, visibility handler) — refreshes then updates UI
+function gmailSilentRefresh(){gmailRefreshFromBackend().then(ok=>{if(ok){fetchGmailProfile();if(activeTab===DASH)fetchGmail();if(activeTab===3&&!gmailTab.selectedEmail&&!gmailTab.loading)loadGmailTab()}})}
+async function initGmail(){
+  const ok=await gmailRefreshFromBackend();
+  if(ok){fetchGmailProfile();fetchGmail();if(activeTab===3)loadGmailTab();startGmailPolling()}
+  renderViewport();
+}
+function gmailSignIn(){
+  // Open the server-side OAuth flow; poll the backend until the refresh token lands
+  window.open(GMAIL_AUTH_ENDPOINT,'_blank');
+  let tries=0;
+  const iv=setInterval(async()=>{
+    tries++;
+    const ok=await gmailRefreshFromBackend();
+    if(ok){clearInterval(iv);fetchGmailProfile();fetchGmail();if(activeTab===3)loadGmailTab();startGmailPolling();renderViewport()}
+    if(tries>40)clearInterval(iv);
+  },3000);
+}
+function gmailSignOut(){gmailClearToken();gmailConnected=false;if(activeTab===DASH||activeTab===3)renderViewport()}
+function parseSender(from){const m=from.match(/^"?([^"<]*)"?\s*<.+>$/);return m?m[1].trim():from.split('@')[0]||from}
+function relTime(ts){const d=Date.now()-ts,min=Math.floor(d/60000);if(min<1)return 'now';if(min<60)return min+'m';const h=Math.floor(min/60);if(h<24)return h+'h';const dy=Math.floor(h/24);return dy+'d'}
+async function fetchGmail(){
+  if(!gmailValid()||gmailLoading)return;
+  gmailLoading=true;
+  if(activeTab===DASH)renderViewport();
+  try{
+    const auth={Authorization:'Bearer '+gmailToken.token};
+    const listRes=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&labelIds=INBOX',{headers:auth});
+    if(listRes.status===401){gmailClearToken();gmailLoading=false;if(activeTab===DASH)renderViewport();return}
+    if(!listRes.ok)throw new Error('list '+listRes.status);
+    const list=await listRes.json();
+    if(!list.messages){gmailEmails=[];gmailLoading=false;if(activeTab===DASH)renderViewport();return}
+    const results=await Promise.all(list.messages.map(async m=>{
+      const r=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`,{headers:auth});
+      if(!r.ok)return null;
+      const msg=await r.json();
+      const hdr={};(msg.payload?.headers||[]).forEach(h=>hdr[h.name]=h.value);
+      return {id:m.id,sender:parseSender(hdr.From||'(unknown)'),subject:hdr.Subject||'(no subject)',time:relTime(parseInt(msg.internalDate)),unread:msg.labelIds?.includes('UNREAD')||false}
+    }));
+    gmailEmails=results.filter(Boolean);
+  }catch(e){console.error('gmail fetch',e)}
+  gmailLoading=false;
+  if(activeTab===DASH)renderViewport();
+}
+// Background polling — checks for new emails every 5s by comparing the top message ID
+let gmailPollTimer=null;
+let gmailLastSyncAt=0;
+async function gmailPoll(){
+  // If we have a token but it's expiring soon (<5 min) OR already expired, silently refresh in the background
+  if(gmailToken&&gmailToken.expires-Date.now()<300000){
+    gmailSilentRefresh();
+  }
+  if(!gmailValid())return;
+  try{
+    // Fetch top 30 message IDs — checks the same window we display, so any new arrival is caught
+    const r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=30&labelIds=INBOX',{headers:{Authorization:'Bearer '+gmailToken.token}});
+    if(!r.ok)return;
+    const data=await r.json();
+    const apiIds=(data.messages||[]).map(m=>m.id);
+    if(!apiIds.length)return;
+    gmailLastSyncAt=Date.now();
+    // Build a set of IDs we currently know about (from dashboard fetchGmail OR gmail tab)
+    const knownIds=new Set([
+      ...((gmailEmails||[]).map(e=>e.id)),
+      ...((gmailTab.emails||[]).map(e=>e.id)),
+    ]);
+    // If ANY of the top 5 from API isn't in our known set, refresh
+    const hasNew=apiIds.some(id=>!knownIds.has(id));
+    if(hasNew){
+      fetchGmail();
+      if(activeTab===3&&!gmailTab.selectedEmail&&!gmailTab.loading)loadGmailTab();
+    }
+    // Update sync indicator if visible
+    const indicator=document.querySelector('.gmail-live');
+    if(indicator)indicator.setAttribute('title',`Last sync: ${new Date(gmailLastSyncAt).toLocaleTimeString()}`);
+  }catch(e){console.error('gmail poll',e)}
+}
+function startGmailPolling(){
+  if(gmailPollTimer)return;
+  gmailPoll();
+  gmailPollTimer=setInterval(gmailPoll,3000);
+  // Also trigger a poll when the user touches the screen — gives a "live" feel during active use
+  let lastTouchPoll=0;
+  document.addEventListener('touchstart',function(){
+    const now=Date.now();
+    if(now-lastTouchPoll>1500){lastTouchPoll=now;gmailPoll()}
+  },{passive:true});
+  document.addEventListener('click',function(){
+    const now=Date.now();
+    if(now-lastTouchPoll>1500){lastTouchPoll=now;gmailPoll()}
+  },{passive:true});
+}
+// When app returns to foreground (iOS suspends timers when backgrounded), force a fresh check
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden)return;
+  // If token expired while we were away, silently refresh first
+  if(gmailToken&&!gmailValid()){
+    gmailSilentRefresh();
+    return;
+  }
+  if(gmailValid()){
+    gmailPoll();
+    if(activeTab===3&&!gmailTab.selectedEmail&&!gmailTab.loading)loadGmailTab();
+    if(activeTab===DASH)fetchGmail();
+  }
+});
+window.addEventListener('load',()=>initGmail());
+
+// ── GMAIL MAILBOX TAB ─────────────────────────────────────────────
+let gmailTab={emails:null,loading:false,selectedId:null,selectedEmail:null,loadingDetail:false,composing:null,sendStatus:null};
+// Listen for height reports from email body iframes — auto-grow each iframe to fit its content
+window.addEventListener('message',function(e){
+  if(!e.data||e.data._ct!=='h'||!e.data.id||!e.data.h)return;
+  try{
+    const el=document.querySelector('[data-msg-id="'+CSS.escape(e.data.id)+'"] iframe');
+    if(el){const h=Math.min(Math.max(parseInt(e.data.h)||300,200),12000);el.style.height=h+'px'}
+  }catch(err){}
+});
+// Remember the inbox scroll position so opening/closing an email doesn't kick the list back to the top
+let gmailListScrollPos=0;
+document.addEventListener('scroll',function(e){
+  const t=e.target;
+  if(t&&t.classList&&t.classList.contains&&t.classList.contains('gmail-list-tab')){
+    gmailListScrollPos=t.scrollTop;
+  }
+},true);
+function restoreGmailListScroll(){
+  requestAnimationFrame(function(){
+    const list=document.querySelector('.gmail-list-tab');
+    if(list&&gmailListScrollPos>0){list.scrollTop=gmailListScrollPos;}
+  });
+}
+function findPart(part,mime){if(part.mimeType===mime&&part.body?.data)return part;if(part.parts)for(const p of part.parts){const r=findPart(p,mime);if(r)return r}return null}
+function decodeB64(s){try{return atob((s||'').replace(/-/g,'+').replace(/_/g,'/'))}catch(e){return ''}}
+function extractBody(msg){const h=findPart(msg.payload,'text/html');if(h)return decodeB64(h.body.data);const t=findPart(msg.payload,'text/plain');if(t){const text=decodeB64(t.body.data);return '<pre style="white-space:pre-wrap;font-family:-apple-system,sans-serif;font-size:14px;color:#222;padding:18px;margin:0">'+text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</pre>'}return '<div style="padding:24px;color:#c4cdda;font-family:-apple-system,sans-serif">(no content)</div>'}
+// Reservation Confirmation emails come in with a label/value table. Strip the labels and
+// render just the values in a big clean card so you can read it at a glance.
+function transformReservationEmail(htmlBody, subject){
+  if(!htmlBody)return htmlBody;
+  if(!subject||!subject.toLowerCase().includes('reservation confirmation'))return htmlBody;
+  let doc;
+  try{doc=new DOMParser().parseFromString(htmlBody,'text/html')}catch(e){return htmlBody}
+  const fields={};
+  // Pull label/value pairs from adjacent table cells
+  const tds=Array.from(doc.querySelectorAll('td'));
+  for(let i=0;i<tds.length-1;i++){
+    const rawLabel=tds[i].textContent.trim();
+    if(!rawLabel||!/:/.test(rawLabel))continue;
+    const label=rawLabel.replace(/[:.]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
+    const value=tds[i+1].textContent.trim();
+    if(label&&value)fields[label]=value;
+  }
+  // Fallback: parse plain-text "Label: Value" lines
+  if(Object.keys(fields).length<2){
+    const lines=(doc.body?doc.body.textContent:'').split(/\n+/);
+    lines.forEach(line=>{
+      const m=line.match(/^([a-zA-Z][^:]{1,80}):\s*(.+)$/);
+      if(m){
+        const label=m[1].trim().toLowerCase().replace(/\s+/g,' ');
+        fields[label]=m[2].trim();
+      }
+    });
+  }
+  const get=(...keys)=>{for(const k of keys){for(const fk of Object.keys(fields)){if(fk.includes(k))return fields[fk]}}return ''};
+  const firstName=get('first name');
+  const lastName=get('last name');
+  const fullName=[firstName,lastName].filter(Boolean).join(' ')||get('name');
+  const email=get('email');
+  const phone=get('phone');
+  const date=get('reservation date','date');
+  const time=get('time');
+  const guests=get('guest count','guests','party');
+  const seating=get('preferred seating','seating');
+  const notes=get('notes','comments','special requests','requests','message','additional info','additional notes','anything else');
+  // If we couldn't find at least a name and a date, fall back to original
+  if(!fullName||(!date&&!time))return htmlBody;
+  const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  // Color-code the seating area chip — instant recognition of which section
+  let seatingChip='';
+  if(seating){
+    const s=seating.toLowerCase();
+    let bg='#f3f4f6',fg='#374151';
+    if(s.includes('patio')){bg='#dbeafe';fg='#1e40af'}
+    else if(s.includes('bar')){bg='#fef3c7';fg='#92400e'}
+    else if(s.includes('dining')){bg='#d1fae5';fg='#065f46'}
+    seatingChip=`<div style="margin-bottom:14px"><span style="display:inline-block;padding:8px 16px;background:${bg};color:${fg};font-size:20px;font-weight:800;border-radius:10px">${esc(seating)}</span></div>`;
+  }
+  return `<div style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:24px;background:#fff;color:#1a1d2e;line-height:1.25">
+    <div style="font-size:36px;font-weight:800;letter-spacing:-0.02em;margin-bottom:6px">${esc(fullName)}</div>
+    <div style="font-size:26px;font-weight:700;color:#6c63ff;margin-bottom:14px">${esc(date)}${time?` · ${esc(time)}`:''}${guests?` · ${esc(guests)} guests`:''}</div>
+    ${seatingChip}
+    ${phone?`<div style="font-size:24px;font-weight:700;margin-bottom:${notes?'18px':'0'}"><a href="tel:${esc(phone.replace(/[^0-9+]/g,''))}" style="color:#6c63ff;text-decoration:none">📞 ${esc(phone)}</a></div>`:''}
+    ${notes?`<div style="margin-top:18px;padding:14px 16px;background:#fef3c7;border-left:4px solid #f59e0b;border-radius:6px"><div style="font-size:11px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px">Note from customer</div><div style="font-size:17px;color:#1a1d2e;white-space:pre-wrap">${esc(notes)}</div></div>`:''}
+  </div>`;
+}
+// Render a SENT reply showing ONLY what we wrote — strip the quoted reply-chain so the inbox shows
+// just the response. Renders HTML replies as HTML (Gmail) or plain-text replies with line breaks
+// (sent from this app), never raw <div>/<blockquote> markup.
+function renderSentBody(body){
+  body=(body||'').trim();
+  // Show ONLY the message we wrote — strip ALL HTML markup (incl. <pre> wrappers) and the quoted reply-chain,
+  // leaving clean text and nothing else.
+  const TAG_RE=/<(div|p|br|pre|span|table|tr|td|blockquote|a|b|i|u|strong|em|font|ul|ol|li|h[1-6])[\s>\/]/i;
+  if(TAG_RE.test(body)){
+    try{
+      const doc=new DOMParser().parseFromString(body,'text/html');
+      doc.querySelectorAll('.gmail_quote_container,.gmail_quote,.gmail_attr,blockquote,style,script').forEach(el=>el.remove());
+      doc.querySelectorAll('br').forEach(b=>b.replaceWith('\n'));
+      doc.querySelectorAll('p,div,pre,li,tr,h1,h2,h3').forEach(el=>el.append('\n'));
+      body=(doc.body?doc.body.textContent:'')||'';
+    }catch(e){ body=body.replace(/<[^>]+>/g,''); }
+  }
+  body=body
+    .replace(/\n*\s*-{2,}\s*(Original|Forwarded) message[\s\S]*/i,'')   // our app's quote separator + everything after
+    .replace(/\n*On\b[^\n]{0,200}\bwrote:[\s\S]*/i,'')                  // "On <date> … wrote:" chain
+    .replace(/(^|\n)\s*>.*(?=\n|$)/g,'')                                // ">" quoted lines
+    .replace(/&nbsp;/g,' ').replace(/[ \t]+\n/g,'\n').replace(/\n{3,}/g,'\n\n').trim();
+  const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:18px 20px;background:#fff;color:#1a1d2e;font-size:15px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word">${esc(body)||'—'}</div>`;
+}
+function extractCustomerEmail(body,senderEmail){
+  if(!body)return null;
+  // Strip HTML to plain text for parsing
+  const text=body.replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>');
+  const senderAddr=(senderEmail.match(/<([^>]+)>/)?.[1]||senderEmail).toLowerCase().trim();
+  // Look for labeled email fields (Email:, Customer Email:, Reply-To:, From:)
+  const labeled=[
+    /\bcustomer\s*e?mail\s*[:\-]?\s*([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/i,
+    /\bemail\s*[:\-]\s*([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/i,
+    /\breply[\s\-]?to\s*[:\-]?\s*([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/i,
+  ];
+  for(const re of labeled){const m=text.match(re);if(m&&m[1]&&m[1].toLowerCase()!==senderAddr)return m[1]}
+  // Fallback: first email in body that isn't the sender or angelisreservations system addresses
+  const all=text.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g)||[];
+  for(const addr of all){const a=addr.toLowerCase();if(a!==senderAddr&&!a.includes('noreply')&&!a.includes('no-reply')&&!a.includes('angelisreservations')&&!a.includes('angeliscatering'))return addr}
+  return null;
+}
+async function loadGmailTab(){
+  if(!gmailValid()||gmailTab.loading)return;
+  gmailTab.loading=true;
+  if(activeTab===3)renderViewport();
+  try{
+    const auth={Authorization:'Bearer '+gmailToken.token};
+    const listRes=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=30&labelIds=INBOX',{headers:auth});
+    if(listRes.status===401){gmailClearToken();gmailTab.loading=false;if(activeTab===3)renderViewport();return}
+    if(!listRes.ok)throw new Error('list '+listRes.status);
+    const list=await listRes.json();
+    if(!list.messages){gmailTab.emails=[];gmailTab.loading=false;if(activeTab===3)renderViewport();return}
+    const results=await Promise.all(list.messages.map(async m=>{
+      const r=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`,{headers:auth});
+      if(!r.ok)return null;
+      const msg=await r.json();
+      const hdr={};(msg.payload?.headers||[]).forEach(h=>hdr[h.name]=h.value);
+      return {id:m.id,threadId:m.threadId,sender:parseSender(hdr.From||'(unknown)'),from:hdr.From||'',subject:hdr.Subject||'(no subject)',date:hdr.Date||'',snippet:msg.snippet||'',time:relTime(parseInt(msg.internalDate)),unread:msg.labelIds?.includes('UNREAD')||false,starred:msg.labelIds?.includes('STARRED')||false}
+    }));
+    gmailTab.emails=results.filter(Boolean);
+  }catch(e){console.error('gmail tab fetch',e)}
+  gmailTab.loading=false;
+  if(activeTab===3)renderViewport();
+}
+async function selectEmail(id){
+  gmailTab.selectedId=id;gmailTab.selectedEmail=null;gmailTab.loadingDetail=true;gmailTab.composing=null;gmailTab.sendStatus=null;
+  if(activeTab===3)renderViewport();
+  try{
+    const listEntry=gmailTab.emails?.find(e=>e.id===id);
+    let threadId=listEntry?.threadId;
+    if(!threadId){
+      const r=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=minimal`,{headers:{Authorization:'Bearer '+gmailToken.token}});
+      if(r.ok){threadId=(await r.json()).threadId}
+    }
+    if(threadId)await loadThread(threadId,id);
+    const e=gmailTab.emails?.find(x=>x.id===id);if(e&&e.unread){e.unread=false;markRead(id)}
+  }catch(err){console.error('gmail detail',err)}
+  gmailTab.loadingDetail=false;
+  if(activeTab===3)renderViewport();
+}
+async function loadThread(threadId,focusedId){
+  const r=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/threads/${threadId}?format=full`,{headers:{Authorization:'Bearer '+gmailToken.token}});
+  if(!r.ok)return;
+  const thread=await r.json();
+  const messages=(thread.messages||[]).map(m=>{
+    const hdr={};(m.payload?.headers||[]).forEach(h=>hdr[h.name]=h.value);
+    return {id:m.id,from:hdr.From||'',to:hdr.To||'',date:hdr.Date||'',subject:hdr.Subject||'',body:extractBody(m),messageIdHeader:hdr['Message-ID']||hdr['Message-Id']||'',replyTo:hdr['Reply-To']||hdr['reply-to']||'',timestamp:parseInt(m.internalDate||'0'),labelIds:m.labelIds||[]}
+  });
+  const lastMsg=messages[messages.length-1]||{};
+  const firstMsg=messages[0]||{};
+  gmailTab.selectedEmail={
+    id:focusedId,threadId,messages,
+    subject:firstMsg.subject||'(no subject)',
+    from:lastMsg.from||'',replyTo:lastMsg.replyTo||'',to:lastMsg.to||'',date:lastMsg.date||'',body:lastMsg.body||'',
+    messageIdHeader:lastMsg.messageIdHeader||'',
+    starred:lastMsg.labelIds?.includes('STARRED')||false,
+  };
+}
+async function markRead(id){try{await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}/modify`,{method:'POST',headers:{Authorization:'Bearer '+gmailToken.token,'Content-Type':'application/json'},body:JSON.stringify({removeLabelIds:['UNREAD']})})}catch(e){}}
+async function markUnread(id){
+  const e=gmailTab.emails?.find(x=>x.id===id);if(e)e.unread=true;
+  if(activeTab===3)renderViewport();
+  try{await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}/modify`,{method:'POST',headers:{Authorization:'Bearer '+gmailToken.token,'Content-Type':'application/json'},body:JSON.stringify({addLabelIds:['UNREAD']})})}catch(err){console.error('mark unread',err)}
+}
+async function toggleStar(id,event){if(event){event.stopPropagation()}
+  const e=gmailTab.emails?.find(x=>x.id===id);const sel=gmailTab.selectedEmail?.id===id?gmailTab.selectedEmail:null;
+  const wasStarred=e?e.starred:(sel?sel.starred:false);
+  const newStarred=!wasStarred;
+  if(e)e.starred=newStarred;if(sel)sel.starred=newStarred;
+  if(activeTab===3)renderViewport();
+  try{
+    await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}/modify`,{method:'POST',headers:{Authorization:'Bearer '+gmailToken.token,'Content-Type':'application/json'},body:JSON.stringify(newStarred?{addLabelIds:['STARRED']}:{removeLabelIds:['STARRED']})});
+  }catch(err){console.error('star',err);if(e)e.starred=wasStarred;if(sel)sel.starred=wasStarred;if(activeTab===3)renderViewport()}
+}
+async function archiveEmail(id){if(!confirm('Archive this email?'))return;try{const r=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}/modify`,{method:'POST',headers:{Authorization:'Bearer '+gmailToken.token,'Content-Type':'application/json'},body:JSON.stringify({removeLabelIds:['INBOX']})});if(r.ok){gmailTab.emails=gmailTab.emails?.filter(e=>e.id!==id);closeEmail()}}catch(e){alert('Archive failed: '+e.message)}}
+async function trashEmail(id){if(!confirm('Move to Trash?'))return;try{const r=await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}/trash`,{method:'POST',headers:{Authorization:'Bearer '+gmailToken.token}});if(r.ok){gmailTab.emails=gmailTab.emails?.filter(e=>e.id!==id);closeEmail()}}catch(e){alert('Trash failed: '+e.message)}}
+function startReply(){gmailTab.composing='reply';gmailTab.sendStatus=null;if(activeTab===3)renderViewport();setTimeout(()=>{const t=document.getElementById('compose-textarea');if(t)t.focus()},50)}
+function startForward(){gmailTab.composing='forward';gmailTab.sendStatus=null;if(activeTab===3)renderViewport();setTimeout(()=>{const t=document.getElementById('compose-textarea');if(t)t.focus()},50)}
+function cancelCompose(){gmailTab.composing=null;gmailTab.sendStatus=null;if(activeTab===3)renderViewport()}
+function b64url(s){return btoa(unescape(encodeURIComponent(s))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
+async function sendCompose(){
+  const t=document.getElementById('compose-textarea');if(!t)return;
+  const body=t.value.trim();if(!body){t.focus();return}
+  const e=gmailTab.selectedEmail;if(!e)return;
+  const isReply=gmailTab.composing==='reply';
+  const replyToInput=isReply?document.getElementById('compose-reply-to')?.value?.trim():null;
+  const fwdTo=!isReply?document.getElementById('compose-fwd-to')?.value?.trim():null;
+  const to=isReply?replyToInput:fwdTo;
+  if(!to){alert(isReply?'Recipient address is empty — please add one':'Enter a recipient email address');return}
+  const baseSubject=e.subject.replace(/^(Re:|Fwd:)\s*/i,'').trim();
+  const subject=isReply?'Re: '+baseSubject:'Fwd: '+baseSubject;
+  const from=gmailUserEmail;
+  if(!from){gmailTab.sendStatus={text:'Loading your email address — try again in a sec',kind:'error'};if(activeTab===3)renderViewport();fetchGmailProfile();return}
+  const quotedBody=isReply?`\n\n--- Original message from ${e.from} on ${e.date} ---\n${e.body.replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').substring(0,2000)}`:`\n\n--- Forwarded message from ${e.from} on ${e.date} ---\nSubject: ${e.subject}\nTo: ${e.to}\n\n${e.body.replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').substring(0,2000)}`;
+  const headers=[`From: ${from}`,`To: ${to}`,`Subject: ${subject}`,'Content-Type: text/plain; charset=UTF-8','MIME-Version: 1.0'];
+  if(isReply&&e.messageIdHeader){headers.push(`In-Reply-To: ${e.messageIdHeader}`);headers.push(`References: ${e.messageIdHeader}`)}
+  const mime=headers.join('\r\n')+'\r\n\r\n'+body+quotedBody;
+  const raw=b64url(mime);
+  const sendBody={raw};if(isReply&&e.threadId)sendBody.threadId=e.threadId;
+  gmailTab.sendStatus={text:'Sending…',kind:'info'};if(activeTab===3)renderViewport();
+  try{
+    const r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{Authorization:'Bearer '+gmailToken.token,'Content-Type':'application/json'},body:JSON.stringify(sendBody)});
+    if(r.ok){gmailTab.sendStatus={text:'Sent ✓',kind:'success'};
+      // Auto-star the email we just responded to (so it shows as "responded")
+      if(isReply&&e.id&&!e.starred)toggleStar(e.id);
+      // Refresh the thread to show the new message
+      setTimeout(async()=>{cancelCompose();if(e.threadId){await loadThread(e.threadId,e.id);if(activeTab===3)renderViewport()}},1200);
+    }
+    else{
+      const errText=await r.text();
+      let msg='Send failed ('+r.status+')';
+      try{const j=JSON.parse(errText);if(j.error?.message)msg='Send failed: '+j.error.message}catch(e){}
+      gmailTab.sendStatus={text:msg,kind:'error'};
+      console.error('Gmail send error:',r.status,errText);
+    }
+  }catch(err){gmailTab.sendStatus={text:'Send failed: '+err.message,kind:'error'}}
+  if(activeTab===3)renderViewport();
+}
+function closeEmail(){gmailTab.selectedId=null;gmailTab.selectedEmail=null;if(activeTab===3)renderViewport()}
+function gmailMailboxHTML(){
+  if(!gmailValid()){return `<div class="gmail-signin"><div class="gmail-signin-card"><div class="gs-ico">📧</div><h2>Connect Gmail</h2><p>Sign in once to read your inbox and reply to emails inside Control Tower.</p><button class="signin-btn" onclick="gmailSignIn()">Sign in with Google</button></div></div>`}
+  const wide=window.innerWidth>=900;
+  // Single-pane mode (narrow screens / portrait) — old behavior
+  if(!wide){
+    if(gmailTab.loadingDetail){return `<div class="gmail-mailbox"><div class="gmail-toolbar"><button class="gmail-back" onclick="closeEmail()">← Inbox</button></div><div class="gmail-loading">Loading…</div></div>`}
+    if(gmailTab.selectedEmail)return `<div class="gmail-mailbox"><div class="gmail-toolbar"><button class="gmail-back" onclick="closeEmail()">← Inbox</button></div>${gmailDetailHTML(true)}</div>`;
+    return `<div class="gmail-mailbox">${gmailListHTML(false)}</div>`;
+  }
+  // Two-pane mode (iPad landscape / desktop)
+  return `<div class="gmail-mailbox"><div class="gmail-2pane">
+    <div class="gmail-list-pane">${gmailListHTML(true)}</div>
+    <div class="gmail-detail-pane">${gmailTab.selectedEmail?gmailDetailHTML(false):gmailTab.loadingDetail?'<div class="gmail-loading">Loading email…</div>':'<div class="gmail-empty-detail">Select an email to read</div>'}</div>
+  </div></div>`;
+}
+function gmailListHTML(forTwoPane){
+  if(gmailTab.emails===null)return `<div class="gmail-toolbar"><span class="gmail-title">Inbox</span></div><div class="gmail-loading">Loading inbox…</div>`;
+  if(gmailTab.emails.length===0)return `<div class="gmail-toolbar"><span class="gmail-title">Inbox</span><button class="gmail-refresh" onclick="loadGmailTab()">⟳</button></div><div class="gmail-empty">No emails in inbox.</div>`;
+  const unread=gmailTab.emails.filter(e=>e.unread).length;
+  const user=gmailUserEmail?`<span class="gmail-user" title="${esc(gmailUserEmail)}">${esc(gmailUserEmail)}</span>`:'';
+  const rows=gmailTab.emails.map(e=>`<div class="gmail-row ${e.unread?'unread':''} ${forTwoPane&&gmailTab.selectedId===e.id?'selected':''}" onclick="selectEmail('${e.id}')"><div class="gmail-row-top"><div class="gmail-row-sender">${e.unread?'<span class="unread-badge">New</span>':''}${esc(e.sender)}</div><div class="gmail-row-time"><button class="gmail-star ${e.starred?'starred':''}" onclick="toggleStar('${e.id}',event)" title="${e.starred?'Unstar (mark as not responded)':'Star (mark as responded)'}">${e.starred?'★':'☆'}</button>${e.time}</div></div><div class="gmail-row-subject">${esc(e.subject)}</div><div class="gmail-row-snippet">${esc(e.snippet)}</div></div>`).join('');
+  return `<div class="gmail-toolbar"><span class="gmail-title">Inbox${unread?` · <span style="color:var(--accent)">${unread} new</span>`:''}<span class="gmail-live" title="Auto-checks for new mail every 5 seconds">live</span></span>${user}<button class="gmail-refresh" onclick="loadGmailTab()" title="Refresh">⟳</button></div><div class="gmail-list-tab">${rows}</div>`;
+}
+function gmailDetailHTML(forSinglePane){
+  const e=gmailTab.selectedEmail;if(!e)return '';
+  const composeUI=gmailTab.composing?renderCompose():`<div class="gmail-actions"><button class="gmail-action-btn" onclick="startReply()">↩ Reply</button><button class="gmail-action-btn danger" onclick="trashEmail('${e.id}')">🗑 Trash</button></div>`;
+  const messages=e.messages&&e.messages.length?e.messages:[{id:e.id,from:e.from,to:e.to,date:e.date,body:e.body,timestamp:0}];
+  const userLow=(gmailUserEmail||'').toLowerCase();
+  const subjectBar=`<div class="gmail-thread-subject"><span class="subj-text">${esc(e.subject)}</span><button class="gmail-star gmail-detail-star ${e.starred?'starred':''}" onclick="toggleStar('${e.id}',event)">${e.starred?'★':'☆'}</button></div><div class="gmail-thread-count">${messages.length===1?'1 message':messages.length+' messages'}</div>`;
+  const msgs=messages.map(m=>{
+    const fromAddr=(m.from.match(/<([^>]+)>/)?.[1]||m.from).toLowerCase().trim();
+    const isSent=userLow&&fromAddr===userLow;
+    // Inject a tiny script that measures the email's rendered height and reports it
+    // to the parent so we can auto-grow the iframe and show the entire email without scrolling.
+    // NOTE the `<\/script>` — the backslash prevents the outer index.html <script> tag from being
+    // prematurely terminated by the HTML parser (which scans the raw source, not the JS string value).
+    const heightScript=`<script>(function(){var id=${JSON.stringify(m.id)};function r(){try{var h=Math.max(document.documentElement.scrollHeight,document.body?document.body.scrollHeight:0)+24;parent.postMessage({_ct:'h',id:id,h:h},'*')}catch(e){}}r();window.addEventListener('load',r);setTimeout(r,150);setTimeout(r,800);setTimeout(r,2500);var imgs=document.querySelectorAll('img');for(var i=0;i<imgs.length;i++){if(!imgs[i].complete){imgs[i].addEventListener('load',r);imgs[i].addEventListener('error',r)}}})();<\/script>`;
+    // Sent replies: show ONLY what we wrote — strip the quoted reply-chain and render HTML as HTML
+    // (never raw <div>/<blockquote> markup or the duplicated original).
+    // Received mail: reservation-confirmation → clean card; everything else → as-is.
+    const transformedBody=isSent
+      ? renderSentBody(m.body||'')
+      : transformReservationEmail(m.body||'',m.subject||e.subject||'');
+    const fullBody=transformedBody+heightScript;
+    // FULL entity-escape — including < and > — so the outer HTML parser never sees raw <script>
+    // tags inside this attribute (which can confuse Safari). The iframe still decodes everything
+    // back to real HTML when it loads the srcdoc.
+    const bodyAttr=fullBody.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return `<div class="gmail-msg ${isSent?'sent':''}" data-msg-id="${esc(m.id)}"><div class="gmail-msg-head"><div class="gmail-msg-from-line"><span class="gmail-msg-from">${isSent?'You':esc(parseSender(m.from))}</span><span class="gmail-msg-date">${esc(m.date)}</span></div>${isSent?'':`<div class="gmail-msg-fromfull">${esc(m.from)}</div>`}</div><div class="gmail-msg-body"><iframe srcdoc="${bodyAttr}" sandbox="allow-scripts"></iframe></div></div>`;
+  }).join('');
+  return `<div class="gmail-detail"><div class="gmail-detail-scroll"><div class="gmail-thread">${subjectBar}${msgs}</div></div>${composeUI}</div>`;
+}
+function renderCompose(){
+  const e=gmailTab.selectedEmail;const isReply=gmailTab.composing==='reply';
+  let suggestedTo=e.from;let hint='';
+  if(isReply){
+    if(e.replyTo){suggestedTo=e.replyTo;hint=' <span style="color:var(--accent2);font-size:11px">✓ using Reply-To address</span>'}
+    else{
+      const customer=extractCustomerEmail(e.body,e.from);
+      if(customer){suggestedTo=customer;hint=' <span style="color:var(--accent2);font-size:11px">✓ customer email from body</span>'}
+    }
+  }
+  const inputStyle='background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:6px 10px;color:var(--text);font-size:13px;outline:none;margin-left:4px;flex:1;min-width:0';
+  const toLine=isReply
+    ? `<div style="display:flex;align-items:center;gap:4px">To:<input id="compose-reply-to" type="email" value="${esc(suggestedTo)}" style="${inputStyle}">${hint}</div>`
+    : `<div style="display:flex;align-items:center;gap:4px">To:<input id="compose-fwd-to" type="email" placeholder="recipient@example.com" style="${inputStyle}"></div>`;
+  const status=gmailTab.sendStatus?`<span class="gmail-compose-status ${gmailTab.sendStatus.kind}">${esc(gmailTab.sendStatus.text)}</span>`:'<span></span>';
+  // Reservation Confirmation emails get auto-filled with "Confirmed." so you can just tap Send
+  const isReservation=(e.subject||'').toLowerCase().includes('reservation confirmation');
+  const prefill=(isReply&&isReservation)?'Confirmed.':'';
+  return `<div class="gmail-compose"><div class="gmail-compose-to">${toLine}</div><textarea id="compose-textarea" placeholder="${isReply?'Type your reply…':'Add a message before the forwarded content…'}">${esc(prefill)}</textarea><div class="gmail-compose-bar">${status}<div style="display:flex;gap:8px"><button class="gmail-action-btn secondary" onclick="cancelCompose()">Cancel</button><button class="gmail-action-btn" onclick="sendCompose()">${isReply?'Send Reply':'Forward'}</button></div></div></div>`;
+}
+// Unregister any stale service workers
+if('serviceWorker'in navigator){navigator.serviceWorker.getRegistrations().then(rs=>rs.forEach(r=>r.unregister()));}
+function renderTabs(){const list=document.getElementById('tab-list');list.innerHTML=`<div class="tab ${activeTab===DASH?'active':''}" onclick="switchTab('${DASH}')">📊 Dashboard</div>`+cfg.panels.map(p=>`<div class="tab ${activeTab===p.id?'active':''}" onclick="switchTab(${p.id})">${esc(p.name)}</div>`).join('')+`<div class="tab ${activeTab===ONLINE?'active':''}" onclick="switchTab('${ONLINE}')">🤖 Jarvis</div>`+`<div class="tab tab-add" onclick="openSettings()" title="Add panel">＋</div>`}
+function renderViewport(){if(activeTab===ONLINE){document.getElementById('viewport').innerHTML=onlineHTML();renderChat();if(ordersKey())loadCmdConsole();return}if(activeTab===DASH){document.getElementById('viewport').innerHTML=dashboardHTML();return}const p=cfg.panels.find(x=>x.id===activeTab);if(!p){document.getElementById('viewport').innerHTML='';return}document.getElementById('viewport').innerHTML=bodyHTML(p);if(activeTab===3)restoreGmailListScroll()}
+
+// ── ONLINE TAB: Otter command bridge ───────────────────────────────
+// Queue actions to the reader userscript on the always-on Mac's Otter tab; it runs them there
+// and reports back via the backend. The reliable path that does NOT use the Chrome extension.
+function cmdBtn(c){return `padding:11px 16px;border:none;border-radius:10px;cursor:pointer;font-family:inherit;font-weight:700;font-size:15px;color:#fff;background:${c};-webkit-tap-highlight-color:transparent`}
+function cmdAgo(iso){if(!iso)return'never';const s=Math.round((Date.now()-new Date(iso))/1000);if(s<60)return s+'s ago';const m=Math.round(s/60);if(m<60)return m+'m ago';return Math.round(m/60)+'h ago'}
+function onlineHTML(){
+  const mgr=!!ordersKey();
+  return `
+  <div style="max-width:760px;margin:0 auto;padding:4px">
+    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+      <h2 style="margin:0;font-size:24px;font-weight:800">🤖 Jarvis</h2>
+      <span style="font-size:13px;color:var(--text-dim)">Ask about hours, catering, specials, parties…</span>
+    </div>
+    <div id="chat-msgs" style="border:1px solid var(--border);border-radius:14px;background:var(--surface);padding:16px;min-height:300px;max-height:54vh;overflow-y:auto;display:flex;flex-direction:column;gap:12px"></div>
+    <div style="display:flex;gap:10px;margin-top:12px">
+      <input id="chat-input" type="text" autocomplete="off" placeholder="Type a question…" style="flex:1;padding:13px 15px;border:1px solid var(--border);background:var(--surface2);color:var(--text);border-radius:12px;font-size:16px" onkeydown="if(event.key==='Enter')sendChat()">
+      <button onclick="sendChat()" style="${cmdBtn('#6c63ff')}">Send</button>
+    </div>
+    ${mgr?`
+    <details open style="margin-top:24px">
+      <summary style="cursor:pointer;color:var(--text-muted);font-size:12px;font-weight:600;-webkit-tap-highlight-color:transparent">🔧 Manager tools</summary>
+      <div style="border:1px solid var(--border);border-radius:12px;padding:14px;margin-top:12px;background:var(--surface)">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><span style="font-weight:800;font-size:15px">🚫 86 an item</span><span id="exec-status" style="margin-left:auto;font-size:12px;color:var(--text-dim)">checking…</span></div>
+        <div style="color:var(--text-dim);font-size:12px;margin-bottom:10px;line-height:1.4">Marks it <b>Unavailable today</b> in Otter (auto-reverts end of day). Test with a visible item; use <b>Make available</b> to flip back.</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <input id="item86" type="text" placeholder="item name…" style="flex:1;min-width:160px;padding:11px 13px;border:1px solid var(--border);background:var(--surface2);color:var(--text);border-radius:10px;font-size:15px" onkeydown="if(event.key==='Enter')set86('today')">
+          <button onclick="set86('today')" style="${cmdBtn('#ef4444')}">86 (today)</button>
+          <button onclick="set86('available')" style="${cmdBtn('#22c55e')}">Make available</button>
+        </div>
+        <div id="cmd-feed" style="margin-top:12px"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
+          <button onclick="pushCmd('ping')" style="${cmdBtn('#3b82f6')}">📡 Ping</button>
+          <button onclick="pushCmd('inspect',{selector:'body',depth:3})" style="${cmdBtn('#8b5cf6')}">🔍 Inspect</button>
+          <input id="cmd-find" type="text" placeholder="find…" style="flex:1;min-width:110px;padding:9px 11px;border:1px solid var(--border);background:var(--surface2);color:var(--text);border-radius:9px;font-size:14px">
+          <button onclick="pushCmd('find',{text:(document.getElementById('cmd-find')||{}).value||''})" style="${cmdBtn('#10b981')}">Find</button>
+          <button onclick="pushCmd('scan',{text:(document.getElementById('cmd-find')||{}).value||''})" style="${cmdBtn('#f59e0b')}">🔬 Scan</button>
+          <button onclick="pushCmd('peekorders',{},'/orders')" style="${cmdBtn('#ec4899')}">🔎 Peek orders</button>
+        </div>
+      </div>
+    </details>`:''}
+  </div>`;
+}
+function jarvisChat(){return window._jchat||(window._jchat=[])}
+const ASK_API='https://jarvis-voicejarvis-voice.onrender.com/ask';
+function renderChat(){
+  const box=document.getElementById('chat-msgs');if(!box)return;
+  const msgs=jarvisChat();
+  if(!msgs.length){box.innerHTML=`<div style="margin:auto;text-align:center;color:var(--text-dim);font-size:14px;line-height:1.6;max-width:420px">👋 Hi, I'm Jarvis. Ask me anything about Angeli's — hours, catering pricing, the current specials, private parties, reservations. If I'm not sure, I'll tell you to check with a manager.</div>`;return}
+  box.innerHTML=msgs.map(m=>{const me=m.role==='user';return `<div style="align-self:${me?'flex-end':'flex-start'};max-width:85%;padding:10px 14px;border-radius:14px;font-size:15px;line-height:1.45;white-space:pre-wrap;word-break:break-word;${me?'background:var(--accent);color:#fff':'background:var(--surface2);color:var(--text)'}">${esc(m.text)}</div>`}).join('');
+  box.scrollTop=box.scrollHeight;
+}
+async function sendChat(){
+  const inp=document.getElementById('chat-input');if(!inp)return;
+  const q=(inp.value||'').trim();if(!q)return;
+  inp.value='';
+  const msgs=jarvisChat();
+  msgs.push({role:'user',text:q});
+  msgs.push({role:'assistant',text:'…'});
+  renderChat();
+  try{
+    const hist=msgs.slice(0,-2).filter(m=>m.text&&m.text!=='…').map(m=>({role:m.role,content:m.text})).slice(-8);
+    const r=await fetch(ASK_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q,history:hist})});
+    const d=await r.json();
+    msgs[msgs.length-1]={role:'assistant',text:d.answer||d.error||'Sorry, I had trouble with that — try again or ask a manager.'};
+  }catch(e){
+    msgs[msgs.length-1]={role:'assistant',text:'Connection issue — try again, or call the restaurant at 630-420-1370.'};
+  }
+  renderChat();
+}
+function pushCmd(action,args,target){
+  const k=ordersKey();if(!k){alert('Set your Control Tower token on the Dashboard first.');return}
+  let u=CMD_API+'/push?key='+encodeURIComponent(k)+'&action='+encodeURIComponent(action);
+  if(args)u+='&args='+encodeURIComponent(JSON.stringify(args));
+  if(target)u+='&target='+encodeURIComponent(target);
+  fetch(u).then(r=>r.json()).then(()=>setTimeout(refreshCmdConsole,400)).catch(()=>{});
+}
+function set86(state){
+  const el=document.getElementById('item86');const item=(el&&el.value||'').trim();
+  if(!item){alert('Type an item name first.');return}
+  pushCmd('availability',{item,state},'/menus');
+}
+function loadCmdConsole(){
+  if(cmdConsoleTimer)clearInterval(cmdConsoleTimer);
+  refreshCmdConsole();
+  cmdConsoleTimer=setInterval(()=>{if(activeTab===ONLINE){refreshCmdConsole()}else{clearInterval(cmdConsoleTimer);cmdConsoleTimer=null}},3000);
+}
+async function refreshCmdConsole(){
+  const k=ordersKey();if(!k)return;
+  try{const r=await fetch(CMD_API+'/list?key='+encodeURIComponent(k));if(!r.ok)return;const d=await r.json();renderCmdConsole(d)}catch(e){}
+}
+function renderCmdConsole(d){
+  const st=document.getElementById('exec-status');
+  if(st){const seen=d.executorSeenAt;const live=seen&&(Date.now()-new Date(seen))<15000;st.innerHTML=`<span style="color:${live?'#22c55e':'#ef4444'};font-size:11px">●</span> Otter tab ${live?'connected':'not detected'} · ${cmdAgo(seen)}`}
+  const feed=document.getElementById('cmd-feed');if(!feed)return;
+  const rows=[...(d.pending||[]).map(c=>Object.assign({_p:1},c)),...(d.log||[])].slice(0,20);
+  if(!rows.length){feed.innerHTML='<div style="color:var(--text-dim);padding:24px;text-align:center">Results from your 86 / restore actions show here.</div>';return}
+  const colors={done:'#22c55e',error:'#ef4444',timeout:'#f59e0b','no-tab':'#f59e0b',running:'#3b82f6',pending:'#94a3b8'};
+  feed.innerHTML=rows.map((c,i)=>{
+    const status=c.status||(c._p?'pending':'');const color=colors[status]||'#94a3b8';const resId='cmdres'+i;
+    const res=(c.result!=null)?`<div style="position:relative;margin-top:8px"><button onclick="copyCmdRes('${resId}',this)" style="position:absolute;top:7px;right:7px;padding:5px 11px;border:1px solid var(--border);background:var(--surface2);color:var(--text);border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;z-index:2">Copy</button><pre id="${resId}" style="margin:0;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;overflow:auto;max-height:300px;font-size:12px;line-height:1.45;white-space:pre-wrap;word-break:break-word">${esc(JSON.stringify(c.result,null,2))}</pre></div>`:'';
+    return `<div style="border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px;background:var(--surface)">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-weight:800;font-size:15px">${esc(c.action||'?')}</span>
+        ${c.target?`<span style="font-size:11px;color:var(--text-dim)">→ ${esc(c.target)}</span>`:''}
+        <span style="margin-left:auto;font-size:11px;font-weight:800;letter-spacing:.4px;color:${color};text-transform:uppercase">${esc(status)}</span>
+      </div>${res}</div>`;
+  }).join('');
+}
+function copyCmdRes(id,btn){
+  const el=document.getElementById(id);if(!el)return;
+  const txt=el.textContent||'';
+  const done=()=>{const o=btn.textContent;btn.textContent='✓ Copied';btn.style.background='var(--accent2)';btn.style.color='#06351a';setTimeout(()=>{btn.textContent=o;btn.style.background='var(--surface2)';btn.style.color='var(--text)'},1300)};
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(done).catch(()=>fallbackCopyRes(el,done))}
+  else{fallbackCopyRes(el,done)}
+}
+function fallbackCopyRes(el,done){
+  const r=document.createRange();r.selectNodeContents(el);const s=getSelection();s.removeAllRanges();s.addRange(r);
+  try{document.execCommand('copy');done()}catch(e){}
+}
+// ── CATERING ORDERS ───────────────────────────────────────────────
+const CATERING_ORDERS_API='https://order.angeliscatering.com/api/orders';
+let cateringOrders=null;          // fetched order list (null = not loaded yet)
+let cateringExpanded={};          // order id -> true if its items are expanded
+async function loadCateringOrders(){
+  try{
+    const r=await fetch(CATERING_ORDERS_API);
+    if(!r.ok)return;
+    const data=await r.json();
+    cateringOrders=Array.isArray(data)?data:[];
+    if(activeTab===DASH)renderViewport();
+  }catch(e){console.error('catering orders',e)}
+}
+function toggleCateringOrder(id){
+  cateringExpanded[id]=!cateringExpanded[id];
+  const el=document.getElementById('catering-orders-list');
+  if(el)el.innerHTML=cateringOrdersHTML();
+}
+function cateringOrdersHTML(){
+  if(cateringOrders===null)return '<div class="co-empty">Loading orders…</div>';
+  const now=new Date();now.setHours(0,0,0,0);
+  const upcoming=cateringOrders
+    .filter(o=>{const d=new Date(o.eventDateRaw);return !isNaN(d)&&d>=now;})
+    .sort((a,b)=>new Date(a.eventDateRaw)-new Date(b.eventDateRaw));
+  if(upcoming.length===0)return '<div class="co-empty">No upcoming catering orders.</div>';
+  const rows=upcoming.map(o=>{
+    const id=esc(String(o.id||''));
+    const svc=(o.serviceType||'').trim();
+    const svcClass=/deliver/i.test(svc)?'co-badge delivery':'co-badge';
+    const expanded=cateringExpanded[o.id];
+    const items=(o.orderDesc||'').trim();
+    const guests=(o.guests||'').trim();
+    const guestStr=(guests&&guests!=='—'&&guests!=='?')?`${esc(guests)} guests · `:'';
+    return `<div class="co-row" onclick="toggleCateringOrder('${id}')">
+        <span class="co-when">${esc(o.dateFormatted||'')} · <b>${esc(o.eventTime||'')}</b></span>
+        <span class="co-name">${esc(o.name||'(no name)')}</span>
+        <span class="co-meta">${svc?`<span class="${svcClass}">${esc(svc)}</span>`:''}<span class="co-sub">${guestStr}<strong>${esc(o.total||'')}</strong></span></span>
+      </div>${expanded&&items?`<div class="co-items">${esc(items)}</div>`:''}`;
+  }).join('');
+  return `<div class="co-list">${rows}</div>`;
+}
+// ---- Live online orders: Otter Order Manager → backend → here ----
+const ORDERS_API='https://jarvis-voicejarvis-voice.onrender.com/orders';
+const ORDERS_HOLD_MS=180000; // keep showing the last-known orders for up to 3 min across a backend restart/redeploy
+let liveOrders=null; // array | null(loading) | 'nokey' | 'badkey'
+let liveOrdersAt=null;
+// Last known-good order list, persisted. The backend keeps the list in memory, so a restart (redeploy or
+// spin-down) resets it to [] with updatedAt=null until the reader re-pushes ~15s later. We ride through that
+// gap by holding this snapshot, so the card never blanks out on a backend blip.
+let ordersSnapshot=(()=>{try{return JSON.parse(localStorage.getItem('ct_orders_snapshot')||'null')}catch(e){return null}})();
+function ordersKey(){return localStorage.getItem('ct_orders_key')||''}
+function setOrdersKey(){const k=prompt('Paste the Orders access key (same value as ORDERS_TOKEN in Render):');if(k&&k.trim()){localStorage.setItem('ct_orders_key',k.trim());liveOrders=null;loadLiveOrders();}}
+function saveOrdersSnapshot(orders){ordersSnapshot={orders,savedAt:Date.now()};try{localStorage.setItem('ct_orders_snapshot',JSON.stringify(ordersSnapshot))}catch(e){}}
+function snapshotFresh(){return ordersSnapshot&&Array.isArray(ordersSnapshot.orders)&&ordersSnapshot.orders.length&&(Date.now()-ordersSnapshot.savedAt)<ORDERS_HOLD_MS;}
+async function loadLiveOrders(){
+  if(!ordersKey()){liveOrders='nokey';const el=document.getElementById('live-orders-list');if(el)el.innerHTML=liveOrdersHTML();return;}
+  try{
+    const r=await fetch(ORDERS_API+'?key='+encodeURIComponent(ordersKey()));
+    if(r.status===401){liveOrders='badkey';}
+    else if(r.ok){
+      const d=await r.json();
+      const orders=Array.isArray(d.orders)?d.orders:[];
+      if(d.updatedAt){ liveOrders=orders; liveOrdersAt=d.updatedAt; saveOrdersSnapshot(orders); }       // fresh data — trust it + cache it
+      else if(snapshotFresh()){ liveOrders=ordersSnapshot.orders; }                                     // backend just restarted, reader hasn't re-pushed yet — hold last known
+      else { liveOrders=orders; liveOrdersAt=null; }                                                    // genuinely nothing (or snapshot too old)
+    }
+    const el=document.getElementById('live-orders-list');if(el)el.innerHTML=liveOrdersHTML();
+    const b=document.getElementById('live-orders-badge');if(b)b.textContent=Array.isArray(liveOrders)?(liveOrders.length+' active'):'';
+  }catch(e){
+    console.error('live orders',e);
+    // backend/network blip — if nothing is showing, fall back to the last-known orders so the card doesn't go blank
+    if((liveOrders===null||(Array.isArray(liveOrders)&&!liveOrders.length))&&snapshotFresh()){
+      liveOrders=ordersSnapshot.orders;
+      const el=document.getElementById('live-orders-list');if(el)el.innerHTML=liveOrdersHTML();
+    }
+  }
+}
+function liveOrdersHTML(){
+  if(liveOrders==='nokey')return '<div class="co-empty">Not connected — <a href="#" onclick="setOrdersKey();return false" style="color:var(--accent);font-weight:700">connect the orders feed</a></div>';
+  if(liveOrders==='badkey')return '<div class="co-empty">Access key rejected — <a href="#" onclick="setOrdersKey();return false" style="color:var(--accent);font-weight:700">re-enter key</a></div>';
+  if(liveOrders===null)return '<div class="co-empty">Loading orders…</div>';
+  if(liveOrders.length===0)return '<div class="co-empty">No active orders right now.</div>';
+  const rows=liveOrders.map(o=>{
+    const name=esc(o.name||'');const items=esc(o.items||'');
+    const eta=esc(o.eta||'');const ful=esc(o.fulfillment||'');const tag=[ful,eta].filter(Boolean).join(' · ');
+    return `<div class="co-row" style="cursor:default;display:block;padding:13px 16px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">
+          <b style="color:var(--text);font-size:21px">${name||'(guest)'}</b>
+          ${tag?`<span style="color:var(--accent2);font-size:15px;font-weight:600;white-space:nowrap">${tag}</span>`:''}
+        </div>
+        <div style="color:var(--text-dim);font-size:17px;margin-top:4px;line-height:1.4;white-space:pre-wrap">${items||'—'}</div>
+      </div>`;
+  }).join('');
+  return `<div class="co-list">${rows}</div>`;
+}
+// --- Busy buttons: tap on iPad → backend command → reader executor sets Otter prep times ---
+let busyLevel = localStorage.getItem('ct_busy')||'normal';
+const BUSY_API='https://jarvis-voicejarvis-voice.onrender.com/busy/set';
+const BUSY_SHADOW={normal:'0 4px 14px rgba(34,197,94,.3)',busy:'0 4px 14px rgba(245,166,35,.3)',really:'0 4px 14px rgba(209,31,31,.35)'};
+function busyRing(level){ return busyLevel===level ? '0 0 0 3px var(--text),' : ''; }
+function renderBusy(){
+  const ids={normal:'btn-normal',busy:'btn-busy',really:'btn-really'};
+  for(const lv in ids){ const el=document.getElementById(ids[lv]); if(el) el.style.boxShadow=busyRing(lv)+BUSY_SHADOW[lv]; }
+}
+function setBusy(level){
+  busyLevel=level;
+  localStorage.setItem('ct_busy',level);
+  renderBusy();
+  const k=ordersKey();
+  if(k){ fetch(BUSY_API+'?key='+encodeURIComponent(k)+'&level='+encodeURIComponent(level)).catch(()=>{}); }
+}
+function dashboardHTML(){
+  const cateringPanel=cfg.panels.find(p=>p.id===4);
+  const cateringBase=(cateringPanel?.url||'https://order.angeliscatering.com/catering-internal.html').split('?')[0].split('#')[0];
+  // Kick off the clock ticker (idempotent)
+  setTimeout(startDashboardClock,0);
+  // Pre-render the current time + date directly in the HTML so the clock NEVER flashes "--:--"
+  // when the dashboard re-renders during polls
+  const _n=new Date();
+  let _h=_n.getHours();const _m=String(_n.getMinutes()).padStart(2,'0');const _a=_h>=12?'PM':'AM';_h=_h%12||_h===0?12:_h;
+  const _DAYS=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const _MONS=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const _timeStr=_h+':'+_m+' '+_a;
+  const _dateStr=_DAYS[_n.getDay()]+', '+_MONS[_n.getMonth()]+' '+_n.getDate();
+  return `
+    <div class="dashboard">
+      <div class="dash-grid">
+        <div class="dash-card" style="grid-column:1/-1;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;min-height:auto;padding:12px;gap:1px">
+          <div id="dash-clock-time" style="font-size:52px;font-weight:800;color:var(--text);letter-spacing:-0.03em;line-height:1;font-variant-numeric:tabular-nums">${_timeStr}</div>
+          <div id="dash-clock-date" style="font-size:14px;color:var(--text-dim);font-weight:600">${_dateStr}</div>
+        </div>
+        <!-- Reservations + Upcoming Catering cards removed for now (re-add from git history) -->
+        <div style="grid-column:1/-1;display:flex;gap:14px;align-items:stretch">
+          <div class="dash-card" style="flex:1;min-width:0;padding:0;overflow:hidden">
+            <div class="dc-head" style="padding:12px 16px 10px;border-bottom:1px solid var(--border)">
+              <div class="dc-title"><span class="dc-title-ico">🛵</span>Online Orders <span style="color:var(--accent2);font-weight:800;font-size:9px;letter-spacing:.06em;margin-left:2px">● LIVE</span></div>
+              <div class="dc-badge amber" id="live-orders-badge"></div>
+            </div>
+            <div id="live-orders-list">${liveOrdersHTML()}</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px;width:220px;flex-shrink:0">
+            <button onclick="setBusy('normal')" id="btn-normal" style="flex:1;min-height:78px;border:none;border-radius:16px;cursor:pointer;font-family:inherit;font-weight:800;font-size:19px;color:#06351a;background:linear-gradient(160deg,#4ade80,#22c55e);box-shadow:${busyRing('normal')}0 4px 14px rgba(34,197,94,.3);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px">✅<span>Normal</span><span style="font-size:12px;font-weight:700;opacity:.75">20 min</span></button>
+            <button onclick="setBusy('busy')" id="btn-busy" style="flex:1;min-height:78px;border:none;border-radius:16px;cursor:pointer;font-family:inherit;font-weight:800;font-size:19px;color:#3a2a00;background:linear-gradient(160deg,#ffd24a,#f5a623);box-shadow:${busyRing('busy')}0 4px 14px rgba(245,166,35,.3);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px">😅<span>Busy Mode</span><span style="font-size:12px;font-weight:700;opacity:.75">25 min</span></button>
+            <button onclick="setBusy('really')" id="btn-really" style="flex:1;min-height:78px;border:none;border-radius:16px;cursor:pointer;font-family:inherit;font-weight:800;font-size:19px;color:#fff;background:linear-gradient(160deg,#ff5a5a,#d11f1f);box-shadow:${busyRing('really')}0 4px 14px rgba(209,31,31,.35);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px">🔥<span>Really Busy</span><span style="font-size:12px;font-weight:700;opacity:.85">35 min</span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+// Live clock for the dashboard — ticks every second; harmless when the dash isn't visible
+function startDashboardClock(){
+  const DAYS=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const MONS=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  function tick(){
+    const t=document.getElementById('dash-clock-time');
+    const d=document.getElementById('dash-clock-date');
+    if(!t||!d)return; // dashboard not in DOM right now
+    const n=new Date();
+    let h=n.getHours();
+    const m=String(n.getMinutes()).padStart(2,'0');
+    const a=h>=12?'PM':'AM';
+    h=h%12||12;
+    t.textContent=h+':'+m+' '+a;
+    d.textContent=DAYS[n.getDay()]+', '+MONS[n.getMonth()]+' '+n.getDate();
+  }
+  // Always tick immediately so a freshly-rendered clock shows the right time without delay
+  tick();
+  if(!window.__dashClockTimer)window.__dashClockTimer=setInterval(tick,1000);
+}
+function renderAll(){renderTabs();renderViewport()}
+function switchTab(id){
+  activeTab=id;cfg.activeTab=id;saveCfg();renderAll();
+  if(id===DASH){loadCateringOrders();loadLiveOrders();}
+  if(gmailValid()){
+    if(id===3&&!gmailTab.selectedEmail&&!gmailTab.loading)loadGmailTab();
+    if(id===DASH)fetchGmail();
+    gmailPoll();
+  }
+}
+function reloadActive(){const f=document.querySelector('#viewport iframe');if(f)f.src=f.src}
+function popoutActive(){doOpen(activeTab)}
+
+// ── TIME CALCULATOR ────────────────────────────────────────────────
+// Payroll-style duration calculator: start + end → hours, minutes, decimal.
+// Uses explicit hour/minute number fields + AM/PM toggle buttons (NOT native
+// <input type="time"> — that fights us on Safari/iOS with value-commit quirks).
+let calcAmPm={start:'AM',end:'PM'};
+function _calcRow(label,key){
+  return `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+      <label style="font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.6px;width:48px">${label}</label>
+      <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" autocomplete="off" id="calc-${key}-h" oninput="_calcSanitize(this);updateCalc()" onfocus="this.select()" style="width:84px;font-size:26px;padding:12px 6px;border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:10px;font-variant-numeric:tabular-nums;text-align:center;font-weight:600">
+      <span style="font-size:24px;color:var(--text-dim);font-weight:700">:</span>
+      <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" autocomplete="off" id="calc-${key}-m" oninput="_calcSanitize(this);updateCalc()" onfocus="this.select()" style="width:84px;font-size:26px;padding:12px 6px;border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:10px;font-variant-numeric:tabular-nums;text-align:center;font-weight:600">
+      <button type="button" id="calc-${key}-AM" onclick="setCalcAmPm('${key}','AM')" style="padding:12px 16px;border:1px solid var(--border);background:var(--bg);color:var(--text-dim);border-radius:8px;cursor:pointer;font-weight:700;font-size:14px;-webkit-tap-highlight-color:transparent">AM</button>
+      <button type="button" id="calc-${key}-PM" onclick="setCalcAmPm('${key}','PM')" style="padding:12px 16px;border:1px solid var(--border);background:var(--bg);color:var(--text-dim);border-radius:8px;cursor:pointer;font-weight:700;font-size:14px;-webkit-tap-highlight-color:transparent">PM</button>
+    </div>`;
+}
+// Strip non-digits from the input — keeps the value clean even if the user
+// pastes garbage or the keyboard injects extras
+function _calcSanitize(el){const v=(el.value||'').replace(/[^0-9]/g,'');if(v!==el.value)el.value=v}
+function calculatorHTML(){
+  // Mount + apply default AM/PM highlights
+  setTimeout(()=>{
+    setCalcAmPm('start',calcAmPm.start,true);
+    setCalcAmPm('end',calcAmPm.end,true);
+    updateCalc();
+  },0);
+  return `
+    <div style="height:100%;overflow:auto;padding:24px 20px;color:var(--text);background:var(--bg)">
+      <div style="max-width:680px;margin:0 auto">
+        <h2 style="margin:0 0 4px;font-size:24px;font-weight:700">Time Calculator</h2>
+        <div style="color:var(--text-dim);font-size:13px;margin-bottom:20px">Hours + decimal for payroll</div>
+
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px">
+          ${_calcRow('Start','start')}
+          ${_calcRow('End','end')}
+
+          <div style="display:flex;align-items:center;gap:10px;margin:6px 0 4px">
+            <label style="font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.6px;width:48px">Break</label>
+            <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="3" autocomplete="off" id="calc-break" oninput="_calcSanitize(this);updateCalc()" onfocus="this.select()" value="0" style="width:90px;font-size:18px;padding:10px 12px;border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:8px;font-variant-numeric:tabular-nums;text-align:center;font-weight:600">
+            <span style="font-size:12px;color:var(--text-dim)">minutes (deducted)</span>
+          </div>
+
+          <div style="text-align:center;padding:18px 0 4px;border-top:1px solid var(--border);margin-top:16px">
+            <div id="calc-decimal" style="font-size:56px;font-weight:800;color:var(--accent);line-height:1;font-variant-numeric:tabular-nums">0.00</div>
+            <div style="font-size:14px;color:var(--text-dim);font-weight:600;margin-top:4px">decimal hours</div>
+            <div id="calc-breakdown" style="font-size:13px;color:var(--text-dim);margin-top:10px">Enter start and end times</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+function setCalcAmPm(key,period,skipUpdate){
+  calcAmPm[key]=period;
+  ['AM','PM'].forEach(p=>{
+    const b=document.getElementById(`calc-${key}-${p}`);
+    if(!b)return;
+    const on=p===period;
+    b.style.background=on?'var(--accent)':'var(--bg)';
+    b.style.color=on?'#fff':'var(--text-dim)';
+    b.style.borderColor=on?'var(--accent)':'var(--border)';
+  });
+  if(!skipUpdate)updateCalc();
+}
+function updateCalc(){
+  const dec=document.getElementById('calc-decimal');
+  const bd=document.getElementById('calc-breakdown');
+  if(!dec||!bd)return;
+  const sh=parseInt(document.getElementById('calc-start-h')?.value);
+  const sm=parseInt(document.getElementById('calc-start-m')?.value);
+  const eh=parseInt(document.getElementById('calc-end-h')?.value);
+  const em=parseInt(document.getElementById('calc-end-m')?.value);
+  const br=parseInt(document.getElementById('calc-break')?.value)||0;
+  if(isNaN(sh)||isNaN(sm)||isNaN(eh)||isNaN(em)){
+    dec.textContent='0.00';bd.textContent='Enter start and end times';return
+  }
+  // Convert 12h → 24h (treat 12 AM as 0, 12 PM as 12)
+  const to24=(h,ap)=>{let r=h%12;if(ap==='PM')r+=12;return r};
+  const s24=to24(sh,calcAmPm.start), e24=to24(eh,calcAmPm.end);
+  let mins=(e24*60+em)-(s24*60+sm);
+  if(mins<0)mins+=24*60; // crossed midnight
+  mins-=br;
+  if(mins<0)mins=0;
+  const h=Math.floor(mins/60),m=mins%60;
+  dec.textContent=(mins/60).toFixed(2);
+  bd.textContent=h+' hr '+m+' min · '+mins+' minutes total'+(br?` (−${br}m break)`:'');
+}
+
+function bodyHTML(p){
+  // Special: Gmail panel renders a real inbox UI powered by Gmail API
+  if(p.id===3||(p.url||'').includes('mail.google.com')){return gmailMailboxHTML()}
+  // Special: Calculator panel — time-duration calculator for payroll
+  if(p.id===8)return calculatorHTML();
+  if(p.launcher){const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent),hint=isIOS?'Tap to open native app':'Click to open in new tab';return `<div class="launcher" onclick="doOpen(${p.id})"><div class="l-name">${esc(p.name)}</div><div class="l-btn">↗&nbsp; Open ${esc(p.name)}</div><div class="l-hint">${hint}</div></div>`}
+  if(!p.url)return `<div class="empty-state"><div class="e-ico">${p.emoji}</div><p>No URL configured</p><button class="cfg-btn" onclick="openSettings()">Set URL</button></div>`;
+  // Schedule panel — inject the stored auth token into the iframe URL so it stays logged in
+  // (the iframe's own storage gets wiped by iOS every 7 days; this re-supplies the token each load)
+  let src=p.url;
+  if((p.url||'').includes('restaurant-scheduler')){
+    let tok='';try{tok=localStorage.getItem('ct_scheduler_token')||''}catch(e){}
+    if(tok)src=p.url.split('#')[0]+'#ct_token='+encodeURIComponent(tok);
+  }
+  return `<iframe src="${esc(src)}" allow="storage-access fullscreen"></iframe>`
+}
+function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function doReload(id){const f=document.querySelector(`#body-${id} iframe`);if(f)f.src=f.src}
+function doOpen(id){const p=cfg.panels.find(x=>x.id===id);if(!p)return;const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);if(isIOS&&p.iosScheme){const t=setTimeout(()=>window.open(p.url,'_blank'),600);window.addEventListener('blur',()=>clearTimeout(t),{once:true});window.location.href=p.iosScheme}else if(p.url)window.open(p.url,'_blank');else doUrlEdit(id)}
+function doFullscreen(id){focused=focused===id?null:id;renderGrid()}
+function doUrlEdit(id){editing=editing===id?null:id;refreshBody(id);if(editing===id)setTimeout(()=>{const inp=document.getElementById(`ui-${id}`);if(inp){inp.focus();inp.select()}},30)}
+function refreshBody(id){const p=cfg.panels.find(x=>x.id===id),el=document.getElementById(`body-${id}`);if(p&&el)el.innerHTML=bodyHTML(p)}
+function urlKey(e,id){if(e.key==='Enter')urlSave(id);if(e.key==='Escape')urlCancel(id)}
+function urlSave(id){const inp=document.getElementById(`ui-${id}`);if(!inp)return;const p=cfg.panels.find(x=>x.id===id);if(p){p.url=inp.value.trim();saveCfg()}editing=null;refreshBody(id)}
+function urlCancel(id){editing=null;refreshBody(id)}
+let draft=[];
+function openSettings(){draft=cfg.panels.map(p=>({...p}));renderEditList();renderGmailStatus();document.getElementById('overlay').classList.add('open')}
+function renderGmailStatus(){
+  const el=document.getElementById('gmail-status');if(!el)return;
+  if(gmailValid()){
+    el.innerHTML=`<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px"><span style="font-size:13px;color:var(--text-dim)">✓ Connected — your inbox is showing live emails</span><button class="btn-secondary" style="padding:5px 12px;font-size:12px" onclick="gmailSignOutConfirm()">Sign out</button></div>`;
+  }else{
+    el.innerHTML=`<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px"><span style="font-size:13px;color:var(--text-muted)">Not connected</span><button class="btn-primary" style="padding:5px 14px;font-size:12px" onclick="gmailSignIn();closeSettings()">Sign in</button></div>`;
+  }
+}
+function gmailSignOutConfirm(){if(confirm('Sign out of Gmail? The dashboard will stop showing your real emails until you sign in again.')){gmailSignOut();renderGmailStatus()}}
+async function reloadAppHard(){
+  try{
+    // Unregister any service workers so they stop serving cached responses
+    if('serviceWorker' in navigator){
+      const regs=await navigator.serviceWorker.getRegistrations();
+      for(const r of regs) await r.unregister();
+    }
+    // Wipe all CacheStorage entries
+    if('caches' in window){
+      const keys=await caches.keys();
+      for(const k of keys) await caches.delete(k);
+    }
+  }catch(e){console.error('reload cleanup',e)}
+  // Hard reload with cache-bust param so iOS Safari fetches the latest HTML
+  const u=new URL(location.href);
+  u.searchParams.set('_t',Date.now().toString());
+  location.replace(u.toString());
+}
+function closeSettings(){document.getElementById('overlay').classList.remove('open')}
+function backdropClose(e){if(e.target===document.getElementById('overlay'))closeSettings()}
+function renderEditList(){document.getElementById('edit-list').innerHTML=draft.map(p=>`<div class="edit-row"><input class="e-emoji" type="text" value="${esc(p.emoji)}" placeholder="📊" oninput="ud(${p.id},'emoji',this.value)"><input class="e-name" type="text" value="${esc(p.name)}" placeholder="App name" oninput="ud(${p.id},'name',this.value)"><input class="e-url" type="url" value="${esc(p.url)}" placeholder="https://…" oninput="ud(${p.id},'url',this.value)"><div class="e-launcher-wrap"><input type="checkbox" id="lch-${p.id}" ${p.launcher?'checked':''} onchange="ud(${p.id},'launcher',this.checked)"><label for="lch-${p.id}">↗</label></div><button class="del-btn" onclick="deleteRow(${p.id})" title="Remove">✕</button></div>`).join('')}
+function ud(id,field,val){const p=draft.find(x=>x.id===id);if(p)p[field]=val}
+function deleteRow(id){draft=draft.filter(p=>p.id!==id);renderEditList()}
+function addRow(){const newId=Math.max(0,...draft.map(p=>p.id))+1;draft.push({id:newId,emoji:'🔗',name:'',url:'',launcher:false});renderEditList();setTimeout(()=>{const rows=document.querySelectorAll('.edit-row');if(rows.length)rows[rows.length-1].querySelector('.e-name')?.focus()},40)}
+function saveSettings(){cfg.panels=draft.filter(p=>p.name||p.url);if(!cfg.panels.find(p=>p.id===activeTab))activeTab=cfg.panels[0]?.id;saveCfg();closeSettings();renderAll()}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(document.getElementById('overlay').classList.contains('open'))closeSettings();else if(focused!==null){focused=null;renderGrid()}}});
+// ── THEME ─────────────────────────────────────────────────────────
+function applyTheme(light){document.body.classList.toggle('light',light);document.getElementById('theme-btn').textContent=light?'🌙':'☀️';document.querySelector('meta[name="theme-color"]').setAttribute('content',light?'#f5f6fa':'#0b0e14')}
+function toggleTheme(){const light=!document.body.classList.contains('light');localStorage.setItem('angeli_tower_theme',light?'light':'dark');applyTheme(light)}
+applyTheme(localStorage.getItem('angeli_tower_theme')==='light');
+renderAll();
+// Preload data for whichever tab is active on launch
+window.addEventListener('load',()=>{setTimeout(()=>{
+  if(activeTab===3&&gmailValid()&&gmailTab.emails===null)loadGmailTab();
+  if(activeTab===DASH){loadCateringOrders();loadLiveOrders();}
+},800)});
+// Keep catering orders fresh while the dashboard is open
+setInterval(()=>{if(activeTab===DASH)loadCateringOrders()},60000);
+// Keep live online orders fresh (faster cadence) while the dashboard is open
+setInterval(()=>{if(activeTab===DASH)loadLiveOrders()},10000);
+</script>
+</body>
+</html>
