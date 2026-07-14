@@ -1,12 +1,12 @@
 {
-  "name": "Angeli's Control Tower 2.0",
-  "short_name": "Control Tower 2.0",
-  "description": "Private ops hub for Vinny & Dad \u2014 live job planning",
+  "name": "The Watch Tower",
+  "short_name": "Watch Tower",
+  "description": "Angeli's private ops hub for Vinny & Dad — inbox, docs, live job planning",
   "display": "fullscreen",
   "orientation": "landscape",
   "start_url": "./",
-  "background_color": "#0b0e14",
-  "theme_color": "#0b0e14",
+  "background_color": "#0a0b0f",
+  "theme_color": "#0a0b0f",
   "icons": [
     {
       "src": "icon.svg",

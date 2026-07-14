@@ -1,4 +1,4 @@
-const CACHE = 'angeli-tower2-v1';
+const CACHE = 'watchtower-v1';
 
 self.addEventListener('install', e => {
   e.waitUntil(

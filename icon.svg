@@ -1,4 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="100" fill="#0b0e14"/>
-  <text x="256" y="370" text-anchor="middle" font-size="300" font-family="system-ui, -apple-system, sans-serif">🗼</text>
+  <rect width="512" height="512" rx="100" fill="#0a0b0f"/>
+  <circle cx="256" cy="262" r="172" fill="#ffb300"/>
+  <circle cx="256" cy="262" r="172" fill="none" stroke="#ffd76b" stroke-width="6"/>
+  <path fill="#0a0b0f" d="M256 176c-9 21-27 32-50 34 8 6 11 14 11 25-17-8-31-6-42 6 13 2 21 9 23 23-16-4-29 0-39 11 25 4 42 18 54 43 12-25 29-39 54-43-10-11-23-15-39-11 2-14 10-21 23-23-11-12-25-14-42-6 0-11 3-19 11-25-23-2-41-13-50-34z"/>
 </svg>
