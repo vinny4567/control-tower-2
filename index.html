@@ -570,7 +570,9 @@ let gmailTab={emails:null,loading:false,selectedId:null,selectedEmail:null,loadi
 window.addEventListener('message',function(e){
   if(!e.data||e.data._ct!=='h'||!e.data.id||!e.data.h)return;
   try{
-    const el=document.querySelector('[data-msg-id="'+CSS.escape(e.data.id)+'"] iframe');
+    // data-msg-id sits on a wrapper div (threaded view) OR on the iframe itself (mail-bridge detail view)
+    let el=document.querySelector('[data-msg-id="'+CSS.escape(e.data.id)+'"]');
+    if(el&&el.tagName!=='IFRAME')el=el.querySelector('iframe');
     if(el){const h=Math.min(Math.max(parseInt(e.data.h)||300,200),12000);el.style.height=h+'px'}
   }catch(err){}
 });
