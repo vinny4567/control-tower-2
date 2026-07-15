@@ -406,8 +406,8 @@ const DEFAULT_PANELS=[
   {id:1,emoji:'📅',name:'Schedule',url:'https://restaurant-scheduler-hh5e.onrender.com/dashboard',launcher:false},
   {id:2,emoji:'💰',name:'Tipout',url:'https://vinny4567.github.io/tipout/?v=37',launcher:false},
   {id:3,emoji:'📧',name:'Reservations',url:'https://mail.google.com/mail/u/3/#inbox',launcher:true,iosScheme:'googlegmail://'},
-  {id:4,emoji:'🍱',name:'Catering',url:'https://order.angeliscatering.com/catering-internal.html',launcher:false},
   {id:5,emoji:'🗺️',name:'Map',url:'https://angelis-backend.onrender.com/reservations-internal.html',launcher:false},
+  {id:4,emoji:'🍱',name:'Catering',url:'https://order.angeliscatering.com/catering-internal.html',launcher:false},
   {id:7,emoji:'🥂',name:'Private Party',url:'https://order.angeliscatering.com/parties-internal-form.html',launcher:false},
   {id:8,emoji:'🧮',name:'Calculator',url:'',launcher:false},
 ];
@@ -440,6 +440,8 @@ function loadCfg(){try{const r=localStorage.getItem(KEY);if(r){const c=JSON.pars
   if(gmailPanel&&gmailPanel.name==='Gmail')gmailPanel.name='Reservations';
   const mapPanel=c.panels?.find(p=>p.id===5);
   if(mapPanel&&mapPanel.name==='Reservations'){mapPanel.name='Map';mapPanel.emoji='🗺️';}
+  // Migration: move Map (5) to right after Reservations (3); Weddings now renders after Catering (4)
+  if(c.panels){const mi=c.panels.findIndex(p=>p.id===5),ri=c.panels.findIndex(p=>p.id===3);if(mi>-1&&ri>-1&&mi!==ri+1){const mp=c.panels.splice(mi,1)[0];const ri2=c.panels.findIndex(p=>p.id===3);c.panels.splice(ri2+1,0,mp);}}
   return c}}catch(e){}return{layout:defaultLayout(),panels:DEFAULT_PANELS.map(p=>({...p}))}}
 function saveCfg(){localStorage.setItem(KEY,JSON.stringify(cfg))}
 const DASH='dashboard';
@@ -1318,7 +1320,7 @@ function wedPrint(){const ev=wedCur();if(!ev)return;wedFlush();
     <div style="position:relative;width:100%;padding-top:66%;border:2.5px solid #000">${items}</div></body></html>`);
   doc.close();w.focus();setTimeout(()=>{try{w.print()}catch(e){}setTimeout(()=>f.remove(),1500)},300)}
 
-function renderTabs(){const list=document.getElementById('tab-list');list.innerHTML=`<div class="tab ${activeTab===DASH?'active':''}" onclick="switchTab('${DASH}')">📊 Dashboard</div>`+`<div class="tab ${activeTab===MAIL?'active':''}" onclick="switchTab('${MAIL}')">📧 Email</div>`+`<div class="tab ${activeTab===DOCS?'active':''}" onclick="switchTab('${DOCS}')">📝 Docs</div>`+`<div class="tab ${activeTab===WED?'active':''}" onclick="switchTab('${WED}')">💍 Weddings</div>`+cfg.panels.map(p=>`<div class="tab ${activeTab===p.id?'active':''}" onclick="switchTab(${p.id})">${esc(p.name)}</div>`).join('')+`<div class="tab ${activeTab===ONLINE?'active':''}" onclick="switchTab('${ONLINE}')">🤖 Jarvis</div>`+`<div class="tab tab-add" onclick="openSettings()" title="Add panel">＋</div>`}
+function renderTabs(){const list=document.getElementById('tab-list');list.innerHTML=`<div class="tab ${activeTab===DASH?'active':''}" onclick="switchTab('${DASH}')">📊 Dashboard</div>`+`<div class="tab ${activeTab===MAIL?'active':''}" onclick="switchTab('${MAIL}')">📧 Email</div>`+`<div class="tab ${activeTab===DOCS?'active':''}" onclick="switchTab('${DOCS}')">📝 Docs</div>`+cfg.panels.map(p=>{const t=`<div class="tab ${activeTab===p.id?'active':''}" onclick="switchTab(${p.id})">${esc(p.name)}</div>`;return p.id===4?t+`<div class="tab ${activeTab===WED?'active':''}" onclick="switchTab('${WED}')">💍 Weddings</div>`:t;}).join('')+`<div class="tab ${activeTab===ONLINE?'active':''}" onclick="switchTab('${ONLINE}')">🤖 Jarvis</div>`+`<div class="tab tab-add" onclick="openSettings()" title="Add panel">＋</div>`}
 function renderViewport(){if(activeTab===WED){document.getElementById('viewport').innerHTML=wedHTML();wedInit();return}if(activeTab===DOCS){document.getElementById('viewport').innerHTML=docsHTML();return}if(activeTab===MAIL){document.getElementById('viewport').innerHTML=mailHTML();restoreGmailListScroll();return}if(activeTab===ONLINE){document.getElementById('viewport').innerHTML=onlineHTML();renderChat();if(ordersKey())loadCmdConsole();return}if(activeTab===DASH){document.getElementById('viewport').innerHTML=dashboardHTML();return}const p=cfg.panels.find(x=>x.id===activeTab);if(!p){document.getElementById('viewport').innerHTML='';return}document.getElementById('viewport').innerHTML=bodyHTML(p);if(activeTab===3)restoreGmailListScroll()}
 
 // ── ONLINE TAB: Otter command bridge ───────────────────────────────
