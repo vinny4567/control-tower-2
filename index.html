@@ -324,6 +324,29 @@
     .docs-editor:empty::before{content:'Start typing…';color:#9a968c}
     .docs-empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:14px;text-align:center;padding:30px;line-height:1.6}
     @media(max-width:720px){.docs-side{width:140px}.docs-editor{padding:26px 20px}.docs-toolbar{gap:3px}}
+    /* ═══ WEDDINGS TAB — drag-and-drop floor plans ═══ */
+    #wed-root{display:flex;flex-direction:column;height:100%;overflow:hidden}
+    .wed-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 12px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0}
+    .wed-bar select,.wed-bar input[type=text]{background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:14px;min-width:0}
+    #wed-name{flex:1;max-width:260px;font-weight:700}
+    .wed-btn{background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:8px 12px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap}
+    .wed-btn:active{transform:scale(.96)}
+    .wed-btn.amber{border-color:var(--accent);color:var(--accent)}
+    .wed-btn.danger{border-color:#e5484d;color:#e5484d}
+    .wed-count{font-size:12px;color:var(--text-muted);margin-left:auto;white-space:nowrap}
+    #wed-stage-wrap{flex:1;position:relative;overflow:hidden;background:var(--bg)}
+    #wed-stage{position:absolute;left:50%;top:50%;width:1000px;height:700px;background:var(--ph-bg);border:2px solid var(--border);border-radius:6px;touch-action:none;background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);background-size:50px 50px;background-position:center center}
+    .wed-it{position:absolute;display:flex;align-items:center;justify-content:center;transform:translate(-50%,-50%);font-weight:800;cursor:grab;user-select:none;-webkit-user-select:none;text-align:center;line-height:1.1;letter-spacing:.5px}
+    .wed-it:active{cursor:grabbing}
+    .wed-round{border:2.5px solid var(--accent);border-radius:50%;background:rgba(255,179,0,.10);color:var(--accent);font-size:20px}
+    .wed-rect{border:2.5px solid var(--accent2);background:rgba(34,211,238,.08);color:var(--accent2);font-size:11px;border-radius:4px}
+    .wed-dance{border:3px dashed var(--accent);background:rgba(255,179,0,.05);color:var(--accent);font-size:15px;border-radius:4px;letter-spacing:2px}
+    .wed-door{background:var(--surface2);border:1.5px solid var(--text-muted);color:var(--text-muted);font-size:10px;border-radius:3px;letter-spacing:1.5px}
+    .wed-text{color:var(--text-dim);font-size:14px;background:transparent}
+    .wed-sel{box-shadow:0 0 0 3px var(--accent),0 0 18px rgba(255,179,0,.5);z-index:5}
+    .wed-tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:6px 12px;background:var(--surface);border-top:1px solid var(--border);flex-shrink:0}
+    .wed-tools .hint{font-size:11px;color:var(--text-muted);margin-right:4px}
+    @media (max-width:700px){.wed-bar{padding:6px 8px}.wed-btn{padding:7px 9px;font-size:12px}}
   </style>
 </head>
 <body>
@@ -423,6 +446,7 @@ const DASH='dashboard';
 const ONLINE='online';
 const MAIL='mailbox';
 const DOCS='docs';
+const WED='weddings';
 const CMD_API='https://jarvis-voicejarvis-voice.onrender.com/cmd';
 let cmdConsoleTimer=null;
 let cfg=loadCfg(),focused=null,editing=null,activeTab=cfg.activeTab||DASH;
@@ -1155,8 +1179,144 @@ function docsHTML(){
   }
   return `<div class="docs-wrap">${side}${main}</div>`;
 }
-function renderTabs(){const list=document.getElementById('tab-list');list.innerHTML=`<div class="tab ${activeTab===DASH?'active':''}" onclick="switchTab('${DASH}')">📊 Dashboard</div>`+`<div class="tab ${activeTab===MAIL?'active':''}" onclick="switchTab('${MAIL}')">📧 Email</div>`+`<div class="tab ${activeTab===DOCS?'active':''}" onclick="switchTab('${DOCS}')">📝 Docs</div>`+cfg.panels.map(p=>`<div class="tab ${activeTab===p.id?'active':''}" onclick="switchTab(${p.id})">${esc(p.name)}</div>`).join('')+`<div class="tab ${activeTab===ONLINE?'active':''}" onclick="switchTab('${ONLINE}')">🤖 Jarvis</div>`+`<div class="tab tab-add" onclick="openSettings()" title="Add panel">＋</div>`}
-function renderViewport(){if(activeTab===DOCS){document.getElementById('viewport').innerHTML=docsHTML();return}if(activeTab===MAIL){document.getElementById('viewport').innerHTML=mailHTML();restoreGmailListScroll();return}if(activeTab===ONLINE){document.getElementById('viewport').innerHTML=onlineHTML();renderChat();if(ordersKey())loadCmdConsole();return}if(activeTab===DASH){document.getElementById('viewport').innerHTML=dashboardHTML();return}const p=cfg.panels.find(x=>x.id===activeTab);if(!p){document.getElementById('viewport').innerHTML='';return}document.getElementById('viewport').innerHTML=bodyHTML(p);if(activeTab===3)restoreGmailListScroll()}
+// ═══ WEDDINGS TAB — drag-and-drop event floor plans (per-event saves) ═══
+const WED_W=1000,WED_H=700;
+let wed={data:null,cur:null,sel:null,scale:1,saveTimer:null};
+function wedLoad(){if(!wed.data){try{wed.data=JSON.parse(localStorage.getItem('ct_weddings')||'null')}catch(e){wed.data=null}
+  if(!wed.data)wed.data={events:[],template:{items:wedDefaultItems()},cur:null};
+  if(!wed.data.template||!wed.data.template.items)wed.data.template={items:wedDefaultItems()};}
+  return wed.data}
+function wedStore(){try{localStorage.setItem('ct_weddings',JSON.stringify(wed.data))}catch(e){}}
+function wedQueueSave(){clearTimeout(wed.saveTimer);wed.saveTimer=setTimeout(wedStore,400)}
+function wedFlush(){clearTimeout(wed.saveTimer);if(wed.data)wedStore()}
+function wedNewId(){return 'w'+Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
+function wedCur(){const d=wedLoad();return d.events.find(e=>e.id===wed.cur)||null}
+// Starting template modeled on the Angeli's banquet-room sheet: dance floor
+// center, rounds around it, buffet line on the left wall, kitchen doors.
+function wedDefaultItems(){const it=[];let n=1;
+  const R=(x,y)=>it.push({id:wedNewId(),type:'round',x,y,w:76,h:76,label:String(n++)});
+  R(305,95);R(425,75);R(545,75);R(665,85);R(785,95);R(895,140);
+  R(905,245);R(905,345);R(885,445);
+  R(365,205);R(300,325);R(330,450);R(485,480);R(625,480);R(765,480);
+  R(305,585);R(435,605);R(565,605);R(705,595);R(835,565);
+  it.push({id:wedNewId(),type:'dance',x:585,y:330,w:260,h:195,label:'DANCE FLOOR'});
+  it.push({id:wedNewId(),type:'rect',x:150,y:185,w:56,h:130,label:'BUFFET'});
+  it.push({id:wedNewId(),type:'rect',x:150,y:335,w:56,h:130,label:'BUFFET'});
+  it.push({id:wedNewId(),type:'rect',x:150,y:485,w:56,h:130,label:'BUFFET'});
+  it.push({id:wedNewId(),type:'rect',x:930,y:545,w:80,h:46,label:'CAKE'});
+  it.push({id:wedNewId(),type:'door',x:120,y:52,w:130,h:34,label:'KITCHEN'});
+  it.push({id:wedNewId(),type:'door',x:120,y:655,w:130,h:34,label:'KITCHEN'});
+  return it}
+function wedNewEvent(fromTemplate){const d=wedLoad();
+  const ev={id:wedNewId(),name:'New Event',items:JSON.parse(JSON.stringify(fromTemplate!==false?d.template.items:[])),updated:Date.now()};
+  ev.items.forEach(i=>i.id=wedNewId());
+  d.events.unshift(ev);wed.cur=ev.id;d.cur=ev.id;wed.sel=null;wedStore();renderViewport();
+  setTimeout(()=>{const n=document.getElementById('wed-name');if(n){n.focus();n.select()}},60)}
+function wedSwitch(id){wedFlush();wed.cur=id;wedLoad().cur=id;wed.sel=null;wedStore();renderViewport()}
+function wedRename(v){const ev=wedCur();if(!ev)return;ev.name=v;ev.updated=Date.now();wedQueueSave();
+  const s=document.getElementById('wed-picker');if(s)[...s.options].forEach(o=>{if(o.value===ev.id)o.textContent=v||'Untitled'})}
+function wedDeleteEvent(){const ev=wedCur();if(!ev)return;if(!confirm('Delete "'+(ev.name||'this event')+'"? This can\'t be undone.'))return;
+  const d=wedLoad();d.events=d.events.filter(e=>e.id!==ev.id);wed.cur=d.events[0]?d.events[0].id:null;d.cur=wed.cur;wed.sel=null;wedStore();renderViewport()}
+function wedSaveTemplate(){const ev=wedCur();if(!ev)return;if(!confirm('Make this layout the starting template for every new event?'))return;
+  wedLoad().template={items:JSON.parse(JSON.stringify(ev.items))};wedStore()}
+function wedAdd(type){const ev=wedCur();if(!ev)return;
+  const base={round:{w:76,h:76,label:String(ev.items.filter(i=>i.type==='round').length+1)},
+    rect:{w:130,h:56,label:'TABLE'},dance:{w:260,h:195,label:'DANCE FLOOR'},
+    door:{w:130,h:34,label:'DOOR'},text:{w:160,h:30,label:'Tap ✎ to edit'}}[type];
+  const it={id:wedNewId(),type,x:WED_W/2,y:WED_H/2,...base};
+  ev.items.push(it);ev.updated=Date.now();wed.sel=it.id;wedQueueSave();wedPaint()}
+function wedSelItem(){const ev=wedCur();return ev?ev.items.find(i=>i.id===wed.sel):null}
+function wedRenameItem(){const it=wedSelItem();if(!it)return;const v=prompt('Label:',it.label||'');if(v===null)return;it.label=v;wedTouch()}
+function wedRotate(){const it=wedSelItem();if(!it||it.type==='round')return;const w=it.w;it.w=it.h;it.h=w;wedTouch()}
+function wedGrow(f){const it=wedSelItem();if(!it)return;it.w=Math.max(24,Math.min(500,Math.round(it.w*f)));
+  it.h=it.type==='round'?it.w:Math.max(20,Math.min(500,Math.round(it.h*f)));wedTouch()}
+function wedDup(){const ev=wedCur();const it=wedSelItem();if(!ev||!it)return;
+  const c=JSON.parse(JSON.stringify(it));c.id=wedNewId();c.x=Math.min(WED_W-30,c.x+40);c.y=Math.min(WED_H-30,c.y+40);
+  if(c.type==='round')c.label=String(ev.items.filter(i=>i.type==='round').length+1);
+  ev.items.push(c);wed.sel=c.id;wedTouch()}
+function wedRemove(){const ev=wedCur();if(!ev||!wed.sel)return;ev.items=ev.items.filter(i=>i.id!==wed.sel);wed.sel=null;wedTouch()}
+function wedTouch(){const ev=wedCur();if(ev)ev.updated=Date.now();wedQueueSave();wedPaint()}
+function wedItemHTML(it){const cls={round:'wed-round',rect:'wed-rect',dance:'wed-dance',door:'wed-door',text:'wed-text'}[it.type]||'wed-rect';
+  return `<div class="wed-it ${cls} ${wed.sel===it.id?'wed-sel':''}" data-wid="${it.id}" style="left:${it.x}px;top:${it.y}px;width:${it.w}px;height:${it.h}px">${esc(it.label||'')}</div>`}
+function wedPaint(){const st=document.getElementById('wed-stage');const ev=wedCur();if(!st||!ev)return;
+  st.innerHTML=ev.items.map(wedItemHTML).join('');
+  const c=document.getElementById('wed-count');if(c){const r=ev.items.filter(i=>i.type==='round').length;c.textContent=r+' round table'+(r===1?'':'s')}}
+function wedHTML(){const d=wedLoad();if(!wed.cur)wed.cur=d.cur&&d.events.some(e=>e.id===d.cur)?d.cur:(d.events[0]?d.events[0].id:null);
+  if(!wed.cur)return `<div id="wed-root"><div style="margin:auto;text-align:center;padding:40px">
+    <div style="font-size:44px;margin-bottom:10px">💍</div>
+    <div style="font-size:17px;font-weight:800;margin-bottom:6px">Wedding floor plans</div>
+    <div style="font-size:13px;color:var(--text-muted);margin-bottom:18px">Drag tables around the room, save a layout for every event.</div>
+    <button class="wed-btn amber" onclick="wedNewEvent()" style="font-size:15px;padding:12px 22px">＋ First event (Angeli's room template)</button></div></div>`;
+  const ev=wedCur();
+  return `<div id="wed-root">
+    <div class="wed-bar">
+      <select id="wed-picker" onchange="wedSwitch(this.value)">${d.events.map(e=>`<option value="${e.id}" ${e.id===wed.cur?'selected':''}>${esc(e.name||'Untitled')}</option>`).join('')}</select>
+      <input type="text" id="wed-name" value="${esc(ev.name||'')}" placeholder="Event name — e.g. Danielle & Karlus · Aug 2" oninput="wedRename(this.value)">
+      <button class="wed-btn amber" onclick="wedNewEvent()">＋ New</button>
+      <button class="wed-btn" onclick="wedSaveTemplate()" title="Use this layout as the starting point for new events">Save as template</button>
+      <button class="wed-btn" onclick="wedPrint()">🖨 Print</button>
+      <button class="wed-btn danger" onclick="wedDeleteEvent()">Delete</button>
+      <span class="wed-count" id="wed-count"></span>
+    </div>
+    <div id="wed-stage-wrap"><div id="wed-stage"></div></div>
+    <div class="wed-tools">
+      <span class="hint">ADD</span>
+      <button class="wed-btn" onclick="wedAdd('round')">⚪ Table</button>
+      <button class="wed-btn" onclick="wedAdd('rect')">▭ Banquet</button>
+      <button class="wed-btn" onclick="wedAdd('dance')">🕺 Dance floor</button>
+      <button class="wed-btn" onclick="wedAdd('door')">🚪 Door</button>
+      <button class="wed-btn" onclick="wedAdd('text')">🔤 Text</button>
+      <span class="hint" style="margin-left:10px">SELECTED</span>
+      <button class="wed-btn" onclick="wedRenameItem()">✎ Label</button>
+      <button class="wed-btn" onclick="wedGrow(1.12)">＋ Bigger</button>
+      <button class="wed-btn" onclick="wedGrow(0.89)">－ Smaller</button>
+      <button class="wed-btn" onclick="wedRotate()">⟳ Rotate</button>
+      <button class="wed-btn" onclick="wedDup()">⧉ Copy</button>
+      <button class="wed-btn danger" onclick="wedRemove()">✕ Remove</button>
+    </div>
+  </div>`}
+function wedFit(){const wrap=document.getElementById('wed-stage-wrap'),st=document.getElementById('wed-stage');if(!wrap||!st)return;
+  const s=Math.min((wrap.clientWidth-20)/WED_W,(wrap.clientHeight-20)/WED_H);wed.scale=s;
+  st.style.transform=`translate(-50%,-50%) scale(${s})`}
+function wedInit(){const st=document.getElementById('wed-stage');if(!st)return;
+  wedFit();wedPaint();
+  if(!wed._resize){wed._resize=true;window.addEventListener('resize',()=>{if(activeTab===WED)wedFit()})}
+  let drag=null;
+  st.addEventListener('pointerdown',e=>{const el=e.target.closest('.wed-it');const ev=wedCur();if(!ev)return;
+    if(!el){wed.sel=null;wedPaint();return}
+    const it=ev.items.find(i=>i.id===el.dataset.wid);if(!it)return;
+    wed.sel=it.id;wedPaint();
+    const el2=st.querySelector(`[data-wid="${it.id}"]`);
+    drag={it,el:el2,sx:e.clientX,sy:e.clientY,ox:it.x,oy:it.y,moved:false};
+    st.setPointerCapture(e.pointerId);e.preventDefault()});
+  st.addEventListener('pointermove',e=>{if(!drag)return;
+    const dx=(e.clientX-drag.sx)/wed.scale,dy=(e.clientY-drag.sy)/wed.scale;
+    if(Math.abs(dx)>2||Math.abs(dy)>2)drag.moved=true;
+    drag.it.x=Math.max(10,Math.min(WED_W-10,Math.round(drag.ox+dx)));
+    drag.it.y=Math.max(10,Math.min(WED_H-10,Math.round(drag.oy+dy)));
+    drag.el.style.left=drag.it.x+'px';drag.el.style.top=drag.it.y+'px'});
+  const end=()=>{if(!drag)return;if(drag.moved){const ev=wedCur();if(ev)ev.updated=Date.now();wedQueueSave()}drag=null};
+  st.addEventListener('pointerup',end);st.addEventListener('pointercancel',end);
+  st.addEventListener('dblclick',e=>{if(e.target.closest('.wed-it'))wedRenameItem()})}
+function wedPrint(){const ev=wedCur();if(!ev)return;wedFlush();
+  const f=document.createElement('iframe');f.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0';document.body.appendChild(f);
+  const w=f.contentWindow,doc=w.document;
+  const items=ev.items.map(it=>{const style=`left:${it.x/10}%;top:${it.y/7}%;width:${it.w/10}%;height:${it.h/7}%`;
+    const base='position:absolute;transform:translate(-50%,-50%);display:flex;align-items:center;justify-content:center;font-weight:700;text-align:center;line-height:1.1;';
+    const look={round:'border:2px solid #000;border-radius:50%;font-size:13px;',
+      rect:'border:2px solid #000;font-size:9px;',dance:'border:2.5px dashed #000;font-size:11px;letter-spacing:2px;',
+      door:'border:1.5px solid #555;color:#555;font-size:8px;letter-spacing:1px;',text:'font-size:11px;'}[it.type]||'';
+    return `<div style="${base}${look}${style}">${esc(it.label||'')}</div>`}).join('');
+  doc.open();doc.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(ev.name||'Floor plan')}</title>
+    <style>@page{size:landscape;margin:.4in}body{font-family:-apple-system,Helvetica,sans-serif;color:#000}</style></head><body>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
+      <div style="font-size:18px;font-weight:800">${esc(ev.name||'Floor plan')}</div>
+      <div style="font-size:12px">Angeli's · ${new Date().toLocaleDateString()} · ${ev.items.filter(i=>i.type==='round').length} round tables</div></div>
+    <div style="position:relative;width:100%;padding-top:66%;border:2.5px solid #000">${items}</div></body></html>`);
+  doc.close();w.focus();setTimeout(()=>{try{w.print()}catch(e){}setTimeout(()=>f.remove(),1500)},300)}
+
+function renderTabs(){const list=document.getElementById('tab-list');list.innerHTML=`<div class="tab ${activeTab===DASH?'active':''}" onclick="switchTab('${DASH}')">📊 Dashboard</div>`+`<div class="tab ${activeTab===MAIL?'active':''}" onclick="switchTab('${MAIL}')">📧 Email</div>`+`<div class="tab ${activeTab===DOCS?'active':''}" onclick="switchTab('${DOCS}')">📝 Docs</div>`+`<div class="tab ${activeTab===WED?'active':''}" onclick="switchTab('${WED}')">💍 Weddings</div>`+cfg.panels.map(p=>`<div class="tab ${activeTab===p.id?'active':''}" onclick="switchTab(${p.id})">${esc(p.name)}</div>`).join('')+`<div class="tab ${activeTab===ONLINE?'active':''}" onclick="switchTab('${ONLINE}')">🤖 Jarvis</div>`+`<div class="tab tab-add" onclick="openSettings()" title="Add panel">＋</div>`}
+function renderViewport(){if(activeTab===WED){document.getElementById('viewport').innerHTML=wedHTML();wedInit();return}if(activeTab===DOCS){document.getElementById('viewport').innerHTML=docsHTML();return}if(activeTab===MAIL){document.getElementById('viewport').innerHTML=mailHTML();restoreGmailListScroll();return}if(activeTab===ONLINE){document.getElementById('viewport').innerHTML=onlineHTML();renderChat();if(ordersKey())loadCmdConsole();return}if(activeTab===DASH){document.getElementById('viewport').innerHTML=dashboardHTML();return}const p=cfg.panels.find(x=>x.id===activeTab);if(!p){document.getElementById('viewport').innerHTML='';return}document.getElementById('viewport').innerHTML=bodyHTML(p);if(activeTab===3)restoreGmailListScroll()}
 
 // ── ONLINE TAB: Otter command bridge ───────────────────────────────
 // Queue actions to the reader userscript on the always-on Mac's Otter tab; it runs them there
@@ -1436,6 +1596,7 @@ function startDashboardClock(){
 function renderAll(){renderTabs();renderViewport()}
 function switchTab(id){
   if(activeTab===DOCS&&id!==DOCS)docsFlush();
+  if(activeTab===WED&&id!==WED)wedFlush();
   activeTab=id;cfg.activeTab=id;saveCfg();renderAll();
   if(id===DASH){loadCateringOrders();loadLiveOrders();}
   if(id===MAIL){if(mailx.accts===null||mailx.accts==='error')loadMailAccounts();else if(mailx.acct)loadMailList();}
