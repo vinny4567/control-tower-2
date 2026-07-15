@@ -103,6 +103,9 @@
     .gmail-mailbox{width:100%;height:100%;display:flex;flex-direction:column;background:var(--bg)}
     .gmail-toolbar{height:50px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:12px;flex-shrink:0}
     .gmail-title{font-size:16px;font-weight:700;flex:1;color:var(--text)}
+    .gmail-folders{display:flex;gap:6px;flex:1;overflow-x:auto}
+    .gmail-fld{background:transparent;border:1px solid var(--border);color:var(--text-dim);font:inherit;font-size:13px;font-weight:600;padding:6px 12px;border-radius:8px;cursor:pointer;white-space:nowrap}
+    .gmail-fld.active{background:var(--accent);border-color:var(--accent);color:#000}
     .gmail-back{background:transparent;border:none;color:var(--accent);cursor:pointer;font-size:14px;font-weight:600;padding:8px 12px;margin-left:-8px;border-radius:6px}
     .gmail-back:hover{background:var(--surface2)}
     .gmail-refresh{background:transparent;border:1px solid var(--border);width:42px;height:42px;border-radius:10px;cursor:pointer;color:var(--text-dim);font-size:20px;display:flex;align-items:center;justify-content:center}
@@ -889,7 +892,9 @@ function renderCompose(){
 if('serviceWorker'in navigator){navigator.serviceWorker.getRegistrations().then(rs=>rs.forEach(r=>r.unregister()));}
 // ═══ EMAIL TAB — consolidated multi-account catering inbox via the jarvis-voice mail bridge ═══
 const MAIL_BASE='https://jarvis-voicejarvis-voice.onrender.com';
-let mailx={accts:null,acct:null,lists:{},selUid:null,selMsg:null,loadingList:false,loadingMsg:false,composing:false,sendStatus:null,error:null};
+let mailx={accts:null,acct:null,folder:'inbox',lists:{},selUid:null,selMsg:null,loadingList:false,loadingMsg:false,composing:false,sendStatus:null,error:null};
+function mailListKey(){return mailx.acct+'|'+mailx.folder;}
+function switchMailFolder(f){if(f===mailx.folder)return;mailx.folder=f;mailx.selUid=null;mailx.selMsg=null;mailx.composing=false;mailx.error=null;renderViewport();loadMailList();}
 function mailKey(){return localStorage.getItem('ct_mail_key')||''}
 function setMailKey(){const k=prompt('Paste the Email access key (MAIL_TOKEN value from Render):');if(k&&k.trim()){localStorage.setItem('ct_mail_key',k.trim());mailx.accts=null;mailx.error=null;loadMailAccounts();}}
 async function mailFetch(path,opts){const sep=path.includes('?')?'&':'?';const r=await fetch(MAIL_BASE+path+sep+'key='+encodeURIComponent(mailKey()),opts);if(r.status===401)throw new Error('unauth');return r;}
@@ -899,21 +904,21 @@ async function loadMailAccounts(){
   catch(e){mailx.accts=e.message==='unauth'?'badkey':'error';mailx.error=String(e.message||e);if(activeTab===MAIL)renderViewport();}
 }
 async function loadMailList(force){
-  if(!mailx.acct)return;const cached=mailx.lists[mailx.acct];mailx.loadingList=!cached||!!force;if(activeTab===MAIL)renderViewport();
-  try{const r=await mailFetch('/mail/list?acct='+encodeURIComponent(mailx.acct));const d=await r.json();if(!r.ok)throw new Error(d.detail||d.error||'mailbox error');mailx.lists[mailx.acct]=d.messages||[];mailx.loadingList=false;mailx.error=null;}
+  if(!mailx.acct)return;const key=mailListKey();const cached=mailx.lists[key];mailx.loadingList=!cached||!!force;if(activeTab===MAIL)renderViewport();
+  try{const r=await mailFetch('/mail/list?acct='+encodeURIComponent(mailx.acct)+'&folder='+mailx.folder);const d=await r.json();if(!r.ok)throw new Error(d.detail||d.error||'mailbox error');mailx.lists[key]=d.messages||[];mailx.loadingList=false;mailx.error=null;}
   catch(e){mailx.loadingList=false;mailx.error=e.message==='unauth'?'Access key rejected':'Could not reach that inbox — '+String(e.message||e);}
   if(activeTab===MAIL)renderViewport();
 }
 function switchMailAcct(id){if(id===mailx.acct)return;mailx.acct=id;mailx.selUid=null;mailx.selMsg=null;mailx.composing=false;mailx.error=null;renderViewport();loadMailList();}
 async function openMailMsg(uid){
   mailx.selUid=uid;mailx.selMsg=null;mailx.loadingMsg=true;mailx.composing=false;mailx.sendStatus=null;if(activeTab===MAIL)renderViewport();
-  try{const r=await mailFetch('/mail/msg?acct='+encodeURIComponent(mailx.acct)+'&uid='+uid);const d=await r.json();if(!r.ok)throw new Error(d.detail||d.error||'error');mailx.selMsg=d.message;mailx.loadingMsg=false;const li=mailx.lists[mailx.acct];const row=li&&li.find(m=>m.uid===uid);if(row)row.unread=false;}
+  try{const r=await mailFetch('/mail/msg?acct='+encodeURIComponent(mailx.acct)+'&uid='+uid+'&folder='+mailx.folder);const d=await r.json();if(!r.ok)throw new Error(d.detail||d.error||'error');mailx.selMsg=d.message;mailx.loadingMsg=false;const li=mailx.lists[mailListKey()];const row=li&&li.find(m=>m.uid===uid);if(row)row.unread=false;}
   catch(e){mailx.loadingMsg=false;mailx.error='Could not open that message — '+String(e.message||e);}
   if(activeTab===MAIL)renderViewport();
 }
 function closeMailMsg(){mailx.selUid=null;mailx.selMsg=null;mailx.composing=false;if(activeTab===MAIL)renderViewport();}
 async function mailToggleStar(uid,ev){
-  if(ev)ev.stopPropagation();const li=mailx.lists[mailx.acct];const row=li&&li.find(m=>m.uid===uid);const now=row?!row.starred:true;
+  if(ev)ev.stopPropagation();const li=mailx.lists[mailListKey()];const row=li&&li.find(m=>m.uid===uid);const now=row?!row.starred:true;
   if(row)row.starred=now;if(mailx.selMsg&&mailx.selMsg.uid===uid)mailx.selMsg.starred=now;if(activeTab===MAIL)renderViewport();
   try{await mailFetch('/mail/flag',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acct:mailx.acct,uid,flag:'star',on:now})});}
   catch(e){if(row)row.starred=!now;if(mailx.selMsg&&mailx.selMsg.uid===uid)mailx.selMsg.starred=!now;if(activeTab===MAIL)renderViewport();}
@@ -926,7 +931,7 @@ async function mailTrash(uid){
     const r=await mailFetch('/mail/trash',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acct:mailx.acct,uid})});
     const d=await r.json();
     if(r.ok&&d.ok){
-      const li=mailx.lists[mailx.acct];if(li){const i=li.findIndex(x=>x.uid===uid);if(i>=0)li.splice(i,1);}
+      const li=mailx.lists[mailListKey()];if(li){const i=li.findIndex(x=>x.uid===uid);if(i>=0)li.splice(i,1);}
       mailx.selUid=null;mailx.selMsg=null;mailx.composing=false;
       if(activeTab===MAIL)renderViewport();
     }else{alert('Trash failed: '+(d.detail||d.error||'error'));}
@@ -967,17 +972,21 @@ function mailHTML(){
   return `<div class="mail-wrap">${subtabs}<div class="gmail-mailbox"><div class="gmail-2pane"><div class="gmail-list-pane">${mailListHTML(true)}</div><div class="gmail-detail-pane">${detail}</div></div></div></div>`;
 }
 function mailListHTML(forTwoPane){
-  const list=mailx.lists[mailx.acct];
-  if(mailx.loadingList&&!list)return `<div class="gmail-toolbar"><span class="gmail-title">Inbox</span></div><div class="gmail-loading">Loading inbox…</div>`;
-  if(mailx.error&&!list)return `<div class="gmail-toolbar"><span class="gmail-title">Inbox</span><button class="gmail-refresh" onclick="loadMailList(true)" title="Retry">⟳</button></div><div class="gmail-empty">${esc(mailx.error)}</div>`;
-  if(list&&!list.length)return `<div class="gmail-toolbar"><span class="gmail-title">Inbox</span><button class="gmail-refresh" onclick="loadMailList(true)" title="Refresh">⟳</button></div><div class="gmail-empty">No emails in this inbox.</div>`;
+  const list=mailx.lists[mailListKey()];
+  const F=[['inbox','📥 Inbox'],['starred','⭐ Starred'],['trash','🗑 Trash']];
+  const tabs=`<div class="gmail-folders">${F.map(([id,label])=>`<button class="gmail-fld${mailx.folder===id?' active':''}" onclick="switchMailFolder('${id}')">${label}</button>`).join('')}</div>`;
+  const bar=(extra='')=>`<div class="gmail-toolbar">${tabs}<button class="gmail-refresh" onclick="loadMailList(true)" title="Refresh">⟳</button></div>${extra}`;
+  const emptyMsg=mailx.folder==='starred'?'No starred emails.':mailx.folder==='trash'?'Trash is empty.':'No emails in this inbox.';
+  if(mailx.loadingList&&!list)return bar('<div class="gmail-loading">Loading…</div>');
+  if(mailx.error&&!list)return bar(`<div class="gmail-empty">${esc(mailx.error)}</div>`);
+  if(list&&!list.length)return bar(`<div class="gmail-empty">${emptyMsg}</div>`);
   const rows=(list||[]).map(e=>`<div class="gmail-row ${e.unread?'unread':''} ${forTwoPane&&mailx.selUid===e.uid?'selected':''}" onclick="openMailMsg(${e.uid})"><div class="gmail-row-top"><div class="gmail-row-sender">${e.unread?'<span class="unread-badge">New</span>':''}${esc(e.from||e.fromAddr||'(unknown)')}</div><div class="gmail-row-time"><button class="gmail-star ${e.starred?'starred':''}" onclick="mailToggleStar(${e.uid},event)" title="${e.starred?'Unstar':'Star'}">${e.starred?'★':'☆'}</button>${mailTime(e.date)}</div></div><div class="gmail-row-subject">${esc(e.subject)}</div></div>`).join('');
-  const unread=(list||[]).filter(e=>e.unread).length;
-  return `<div class="gmail-toolbar"><span class="gmail-title">Inbox${unread?` · <span style="color:var(--accent)">${unread} new</span>`:''}</span><button class="gmail-refresh" onclick="loadMailList(true)" title="Refresh">⟳</button></div><div class="gmail-list-tab">${rows}</div>`;
+  return bar(`<div class="gmail-list-tab">${rows}</div>`);
 }
 function mailDetailHTML(){
   const m=mailx.selMsg;if(!m)return '';
-  const compose=mailx.composing?mailComposeHTML():`<div class="gmail-actions"><button class="gmail-action-btn" onclick="mailStartReply()">↩ Reply</button><button class="gmail-action-btn" style="background:#7c2a2a;border-color:#7c2a2a;color:#fff" onclick="mailTrashCurrent()">🗑 Trash</button></div>`;
+  const trashBtn=mailx.folder==='trash'?'':`<button class="gmail-action-btn" style="background:#7c2a2a;border-color:#7c2a2a;color:#fff" onclick="mailTrashCurrent()">🗑 Trash</button>`;
+  const compose=mailx.composing?mailComposeHTML():`<div class="gmail-actions"><button class="gmail-action-btn" onclick="mailStartReply()">↩ Reply</button>${trashBtn}</div>`;
   const bodyHtml=m.html||('<pre style="white-space:pre-wrap;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;margin:0;padding:16px;color:#111;line-height:1.5">'+esc(m.text||'(no content)')+'</pre>');
   const heightScript=`<script>(function(){function r(){try{var h=Math.max(document.documentElement.scrollHeight,document.body?document.body.scrollHeight:0)+24;parent.postMessage({_ct:'h',id:'mailmsg',h:h},'*')}catch(e){}}r();window.addEventListener('load',r);setTimeout(r,150);setTimeout(r,800);setTimeout(r,2500);var imgs=document.querySelectorAll('img');for(var i=0;i<imgs.length;i++){if(!imgs[i].complete){imgs[i].addEventListener('load',r);imgs[i].addEventListener('error',r)}}})();<\/script>`;
   const bodyAttr=(bodyHtml+heightScript).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
