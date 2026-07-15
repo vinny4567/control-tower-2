@@ -977,7 +977,7 @@ function mailComposeNewHTML(){
     <label style="${lbl}">Message</label><textarea id="mail-new-body" placeholder="Write your message…" style="${inp};min-height:240px;resize:vertical;line-height:1.55;margin-bottom:0"></textarea>
   </div></div><div class="gmail-compose-bar" style="padding:12px 16px;border-top:1px solid var(--border);background:var(--surface)">${status}<div style="display:flex;gap:8px"><button class="gmail-action-btn secondary" onclick="mailCancelCompose()">Cancel</button><button class="gmail-action-btn" onclick="mailSendNew()">Send</button></div></div></div>`;
 }
-function mailRowHTML(e,forTwoPane,folderOverride){const openFolder=folderOverride||mailx.folder;return `<div class="gmail-row ${e.unread?'unread':''} ${forTwoPane&&mailx.selUid===e.uid?'selected':''}" onclick="openMailMsg(${e.uid},'${openFolder}')"><div class="gmail-row-top"><div class="gmail-row-sender">${e.unread?'<span class="unread-badge">New</span>':''}${esc(e.from||e.fromAddr||'(unknown)')}</div><div class="gmail-row-time"><button class="gmail-star ${e.starred?'starred':''}" onclick="mailToggleStar(${e.uid},event)" title="${e.starred?'Unstar':'Star'}">${e.starred?'★':'☆'}</button>${mailTime(e.date)}</div></div><div class="gmail-row-subject">${esc(e.subject)}</div></div>`;}
+function mailRowHTML(e,forTwoPane,folderOverride){const openFolder=folderOverride||mailx.folder;const who=openFolder==='sent'?('To: '+esc(e.to||e.toAddr||'(no recipient)')):esc(e.from||e.fromAddr||'(unknown)');return `<div class="gmail-row ${e.unread?'unread':''} ${forTwoPane&&mailx.selUid===e.uid?'selected':''}" onclick="openMailMsg(${e.uid},'${openFolder}')"><div class="gmail-row-top"><div class="gmail-row-sender">${e.unread?'<span class="unread-badge">New</span>':''}${who}</div><div class="gmail-row-time"><button class="gmail-star ${e.starred?'starred':''}" onclick="mailToggleStar(${e.uid},event)" title="${e.starred?'Unstar':'Star'}">${e.starred?'★':'☆'}</button>${mailTime(e.date)}</div></div><div class="gmail-row-subject">${esc(e.subject)}</div></div>`;}
 function mailCancelReply(){mailx.composing=false;mailx.sendStatus=null;if(activeTab===MAIL)renderViewport();}
 async function mailTrash(uid){
   if(!confirm('Move this email to Trash?'))return;
@@ -1069,7 +1069,7 @@ function mailListHTML(forTwoPane){
     return hdr+`<div class="gmail-list-tab">${res.map(e=>mailRowHTML(e,forTwoPane,'inbox')).join('')}</div>`;
   }
   const list=mailx.lists[mailListKey()];
-  const F=[['inbox','📥 Inbox'],['starred','⭐ Starred'],['trash','🗑 Trash']];
+  const F=[['inbox','📥 Inbox'],['sent','📤 Sent'],['starred','⭐ Starred'],['trash','🗑 Trash']];
   const tabs=`<div class="gmail-folders">${F.map(([id,label])=>`<button class="gmail-fld${mailx.folder===id?' active':''}" onclick="switchMailFolder('${id}')">${label}</button>`).join('')}</div>`;
   const bar=(extra='')=>`<div class="gmail-toolbar">${tabs}<button class="gmail-refresh" onclick="loadMailList(true)" title="Refresh">⟳</button></div>${extra}`;
   const emptyMsg=mailx.folder==='starred'?'No starred emails.':mailx.folder==='trash'?'Trash is empty.':'No emails in this inbox.';
