@@ -956,11 +956,14 @@ async function mailSendNew(){
   if(!to)return setNewStatus('Add a recipient','error');
   if(!subject)return setNewStatus('Add a subject','error');
   if(!text)return setNewStatus('Write a message','error');
+  const acct=mailAcctObj();
   setNewStatus('Sending…','info');
-  try{const r=await mailFetch('/mail/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acct:mailx.acct,to,subject,text})});const d=await r.json();
-    if(r.ok&&d.ok){setNewStatus('Sent ✓','success');setTimeout(()=>{mailx.composeNew=false;mailx.sendStatus=null;if(activeTab===MAIL)renderViewport();},1400);}
-    else setNewStatus('Send failed: '+(d.detail||d.error||'error'),'error');}
-  catch(e){setNewStatus('Send failed: '+String(e.message||e),'error');}
+  try{
+    await mailSend(acct,{to,subject,text});
+    setNewStatus('Sent ✓','success');setTimeout(()=>{mailx.composeNew=false;mailx.sendStatus=null;if(activeTab===MAIL)renderViewport();},1400);
+  }catch(e){
+    if(e.notConnected){setNewStatus('Not connected for sending yet','error');if(confirm(acct.email+' needs a one-time Google sign-in to send. Open it now?'))gmailConnectAccount(acct.email);return;}
+    setNewStatus((e.noProvider?'':'Send failed: ')+String(e.message||e),'error');}
 }
 function mailComposeNewHTML(){
   const acc=(mailx.accts||[]).find(a=>a.id===mailx.acct)||{};
@@ -989,17 +992,47 @@ async function mailTrash(uid){
   }catch(e){alert('Trash failed: '+String(e.message||e));}
 }
 function mailTrashCurrent(){const m=mailx.selMsg;if(m)mailTrash(m.uid);}
+// ── Sending: Gmail accounts go out via the Gmail API over HTTPS (Render blocks SMTP), the same
+// proven path the Reservations tab uses. Per-account access token vended by the scheduler. ──────
+function mailAcctObj(){return (mailx.accts||[]).find(a=>a.id===mailx.acct)||{};}
+async function gmailAccessToken(email){
+  const r=await fetch(GMAIL_TOKEN_ENDPOINT+'?account='+encodeURIComponent(email)+'&key='+encodeURIComponent(GMAIL_BACKEND_KEY));
+  if(r.status===404){const e=new Error('not_connected');e.notConnected=true;throw e;}
+  if(!r.ok)throw new Error('token '+r.status);
+  const d=await r.json();if(!d.access_token)throw new Error('no access token');return d.access_token;
+}
+function b64url(s){return btoa(unescape(encodeURIComponent(s))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
+async function sendViaGmailApi(acct,{to,subject,text,inReplyTo,references}){
+  const token=await gmailAccessToken(acct.email);
+  const hdr=['From: '+acct.email,'To: '+to,'Subject: '+subject,'MIME-Version: 1.0','Content-Type: text/plain; charset=UTF-8'];
+  if(inReplyTo)hdr.push('In-Reply-To: '+inReplyTo);
+  if(references)hdr.push('References: '+references);
+  const raw=b64url(hdr.join('\r\n')+'\r\n\r\n'+(text||''));
+  const r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({raw})});
+  if(!r.ok){const t=await r.text();throw new Error('Gmail '+r.status+': '+t.slice(0,160));}
+  return r.json();
+}
+function gmailConnectAccount(email){window.open(GMAIL_AUTH_ENDPOINT+'?account='+encodeURIComponent(email),'_blank');}
+// Routes to Gmail API for gmail accounts; other providers can't send from here (no HTTPS API).
+async function mailSend(acct,payload){
+  if(acct.provider!=='gmail'){const e=new Error('Sending from '+(acct.label||acct.email)+' isn’t available here — reply from your phone/email app for now.');e.noProvider=true;throw e;}
+  return sendViaGmailApi(acct,payload);
+}
 async function mailSendReply(){
   const m=mailx.selMsg;if(!m)return;const toEl=document.getElementById('mail-reply-to');const bodyEl=document.getElementById('mail-reply-text');
   const to=(toEl?toEl.value:'').trim();const text=(bodyEl?bodyEl.value:'').trim();
   if(!to){mailx.sendStatus={text:'Add a recipient',kind:'error'};renderViewport();return;}
   if(!text){mailx.sendStatus={text:'Write a message first',kind:'error'};renderViewport();return;}
+  const acct=mailAcctObj();
   const subj=/^re:/i.test(m.subject||'')?m.subject:'Re: '+(m.subject||'');
   mailx.sendStatus={text:'Sending…',kind:'info'};renderViewport();
-  try{const r=await mailFetch('/mail/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acct:mailx.acct,to,subject:subj,text,inReplyTo:m.messageId,references:m.messageId})});const d=await r.json();
-    if(r.ok&&d.ok){mailx.sendStatus={text:'Sent ✓',kind:'success'};setTimeout(()=>{mailx.composing=false;mailx.sendStatus=null;if(activeTab===MAIL)renderViewport();},1400);}
-    else{mailx.sendStatus={text:'Send failed: '+(d.detail||d.error||'error'),kind:'error'};}}
-  catch(e){mailx.sendStatus={text:'Send failed: '+String(e.message||e),kind:'error'};}
+  try{
+    await mailSend(acct,{to,subject:subj,text,inReplyTo:m.messageId,references:m.messageId});
+    mailx.sendStatus={text:'Sent ✓',kind:'success'};setTimeout(()=>{mailx.composing=false;mailx.sendStatus=null;if(activeTab===MAIL)renderViewport();},1400);
+  }catch(e){
+    if(e.notConnected){mailx.sendStatus={text:'Not connected for sending yet',kind:'error'};if(activeTab===MAIL)renderViewport();if(confirm(acct.email+' needs a one-time Google sign-in to send. Open it now?'))gmailConnectAccount(acct.email);return;}
+    mailx.sendStatus={text:(e.noProvider?'':'Send failed: ')+String(e.message||e),kind:'error'};
+  }
   if(activeTab===MAIL)renderViewport();
 }
 function mailTime(iso){try{const d=new Date(iso);const now=new Date();if(d.toDateString()===now.toDateString())return d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});return d.toLocaleDateString([],{month:'short',day:'numeric'});}catch(e){return ''}}
