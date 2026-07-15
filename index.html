@@ -920,6 +920,19 @@ async function mailToggleStar(uid,ev){
 }
 function mailStartReply(){mailx.composing=true;mailx.sendStatus=null;if(activeTab===MAIL)renderViewport();setTimeout(()=>{const t=document.getElementById('mail-reply-text');if(t)t.focus()},50);}
 function mailCancelReply(){mailx.composing=false;mailx.sendStatus=null;if(activeTab===MAIL)renderViewport();}
+async function mailTrash(uid){
+  if(!confirm('Move this email to Trash?'))return;
+  try{
+    const r=await mailFetch('/mail/trash',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acct:mailx.acct,uid})});
+    const d=await r.json();
+    if(r.ok&&d.ok){
+      const li=mailx.lists[mailx.acct];if(li){const i=li.findIndex(x=>x.uid===uid);if(i>=0)li.splice(i,1);}
+      mailx.selUid=null;mailx.selMsg=null;mailx.composing=false;
+      if(activeTab===MAIL)renderViewport();
+    }else{alert('Trash failed: '+(d.detail||d.error||'error'));}
+  }catch(e){alert('Trash failed: '+String(e.message||e));}
+}
+function mailTrashCurrent(){const m=mailx.selMsg;if(m)mailTrash(m.uid);}
 async function mailSendReply(){
   const m=mailx.selMsg;if(!m)return;const toEl=document.getElementById('mail-reply-to');const bodyEl=document.getElementById('mail-reply-text');
   const to=(toEl?toEl.value:'').trim();const text=(bodyEl?bodyEl.value:'').trim();
@@ -964,7 +977,7 @@ function mailListHTML(forTwoPane){
 }
 function mailDetailHTML(){
   const m=mailx.selMsg;if(!m)return '';
-  const compose=mailx.composing?mailComposeHTML():`<div class="gmail-actions"><button class="gmail-action-btn" onclick="mailStartReply()">↩ Reply</button></div>`;
+  const compose=mailx.composing?mailComposeHTML():`<div class="gmail-actions"><button class="gmail-action-btn" onclick="mailStartReply()">↩ Reply</button><button class="gmail-action-btn" style="background:#7c2a2a;border-color:#7c2a2a;color:#fff" onclick="mailTrashCurrent()">🗑 Trash</button></div>`;
   const bodyHtml=m.html||('<pre style="white-space:pre-wrap;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;margin:0;padding:16px;color:#111;line-height:1.5">'+esc(m.text||'(no content)')+'</pre>');
   const heightScript=`<script>(function(){function r(){try{var h=Math.max(document.documentElement.scrollHeight,document.body?document.body.scrollHeight:0)+24;parent.postMessage({_ct:'h',id:'mailmsg',h:h},'*')}catch(e){}}r();window.addEventListener('load',r);setTimeout(r,150);setTimeout(r,800);setTimeout(r,2500);var imgs=document.querySelectorAll('img');for(var i=0;i<imgs.length;i++){if(!imgs[i].complete){imgs[i].addEventListener('load',r);imgs[i].addEventListener('error',r)}}})();<\/script>`;
   const bodyAttr=(bodyHtml+heightScript).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
