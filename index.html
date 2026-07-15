@@ -933,7 +933,7 @@ const MAIL_BASE='https://jarvis-voicejarvis-voice.onrender.com';
 let mailx={accts:null,acct:null,folder:'inbox',lists:{},selUid:null,selMsg:null,selThread:null,loadingList:false,loadingMsg:false,composing:false,composeNew:false,search:'',searchResults:null,searching:false,sendStatus:null,error:null};
 let mailSearchTimer=null;
 function mailListKey(){return mailx.acct+'|'+mailx.folder;}
-function switchMailFolder(f){if(f===mailx.folder)return;mailx.folder=f;mailx.selUid=null;mailx.selMsg=null;mailx.composing=false;mailx.composeNew=false;mailx.search='';mailx.searchResults=null;mailx.searching=false;mailx.error=null;renderViewport();loadMailList();}
+function switchMailFolder(f){if(f===mailx.folder)return;mailx.folder=f;mailx.limit=50;mailx.selUid=null;mailx.selMsg=null;mailx.composing=false;mailx.composeNew=false;mailx.search='';mailx.searchResults=null;mailx.searching=false;mailx.error=null;renderViewport();loadMailList();}
 function mailKey(){return localStorage.getItem('ct_mail_key')||''}
 function setMailKey(){const k=prompt('Paste the Email access key (MAIL_TOKEN value from Render):');if(k&&k.trim()){localStorage.setItem('ct_mail_key',k.trim());mailx.accts=null;mailx.error=null;loadMailAccounts();}}
 async function mailFetch(path,opts){const sep=path.includes('?')?'&':'?';const r=await fetch(MAIL_BASE+path+sep+'key='+encodeURIComponent(mailKey()),opts);if(r.status===401)throw new Error('unauth');return r;}
@@ -944,11 +944,12 @@ async function loadMailAccounts(){
 }
 async function loadMailList(force){
   if(!mailx.acct)return;const key=mailListKey();const cached=mailx.lists[key];mailx.loadingList=!cached||!!force;if(activeTab===MAIL)renderViewport();
-  try{const r=await mailFetch('/mail/list?acct='+encodeURIComponent(mailx.acct)+'&folder='+mailx.folder);const d=await r.json();if(!r.ok)throw new Error(d.detail||d.error||'mailbox error');mailx.lists[key]=d.messages||[];mailx.loadingList=false;mailx.error=null;}
+  try{const r=await mailFetch('/mail/list?acct='+encodeURIComponent(mailx.acct)+'&folder='+mailx.folder+'&limit='+(mailx.limit||50));const d=await r.json();if(!r.ok)throw new Error(d.detail||d.error||'mailbox error');mailx.lists[key]=d.messages||[];mailx.loadingList=false;mailx.error=null;}
   catch(e){mailx.loadingList=false;mailx.error=e.message==='unauth'?'Access key rejected':'Could not reach that inbox — '+String(e.message||e);}
   if(activeTab===MAIL)renderViewport();
 }
-function switchMailAcct(id){if(id===mailx.acct)return;mailx.acct=id;mailx.folder='inbox';mailx.selUid=null;mailx.selMsg=null;mailx.composing=false;mailx.composeNew=false;mailx.search='';mailx.searchResults=null;mailx.searching=false;mailx.error=null;renderViewport();loadMailList();}
+function switchMailAcct(id){if(id===mailx.acct)return;mailx.acct=id;mailx.folder='inbox';mailx.limit=50;mailx.selUid=null;mailx.selMsg=null;mailx.composing=false;mailx.composeNew=false;mailx.search='';mailx.searchResults=null;mailx.searching=false;mailx.error=null;renderViewport();loadMailList();}
+function mailLoadMore(){mailx.limit=Math.min(300,(mailx.limit||50)+50);loadMailList(true);}
 async function openMailMsg(uid,folder){
   folder=folder||mailx.folder;
   mailx.selUid=uid;mailx.selMsg=null;mailx.selThread=null;mailx.loadingMsg=true;mailx.composing=false;mailx.composeNew=false;mailx.sendStatus=null;if(activeTab===MAIL)renderViewport();
@@ -1105,7 +1106,9 @@ function mailListHTML(forTwoPane){
   if(mailx.error&&!list)return bar(`<div class="gmail-empty">${esc(mailx.error)}</div>`);
   if(list&&!list.length)return bar(`<div class="gmail-empty">${emptyMsg}</div>`);
   const rows=(list||[]).map(e=>mailRowHTML(e,forTwoPane)).join('');
-  return bar(`<div class="gmail-list-tab">${rows}</div>`);
+  const lim=(mailx.limit||50);
+  const more=(list.length>=lim&&lim<300)?`<div style="padding:14px;text-align:center"><button class="gmail-action-btn secondary" onclick="mailLoadMore()">${mailx.loadingList?'Loading…':'Load older messages'}</button></div>`:'';
+  return bar(`<div class="gmail-list-tab">${rows}${more}</div>`);
 }
 function mailDetailHTML(){
   const th=mailx.selThread;const target=mailx.selMsg;if(!th&&!target)return '';
