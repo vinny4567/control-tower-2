@@ -1412,6 +1412,7 @@ function wedOpenSchedLayout(){const fe=wedFeedEvent(wed.evId);if(!fe)return;
     lay.items.forEach(i=>i.id=wedNewId());d.events.unshift(lay);wedStore()}
   wed.cur=lay.id;wedLoad().cur=lay.id;wed.sel=null;wed.pane='plan';renderViewport()}
 function wedShowTpl(){wedFlush();wed.pane='tpl';wed.sel=null;renderViewport()}
+function wedShowCatering(){wedFlush();wed.pane='catering';wed.sel=null;renderViewport()}
 function wedOpenLayout(id){wed.cur=id;wedLoad().cur=id;wed.sel=null;wed.view='plan';renderViewport()}
 // Back from the plan editor: a schedule-linked layout returns to its event hub; anything else to the list.
 function wedBack(){wedFlush();const cur=wedCur();wed.sel=null;
@@ -1535,9 +1536,12 @@ function wedEventHTML(){const fe=wedFeedEvent(wed.evId);if(!fe){wed.view='list';
         <span class="wed-side-hint">Event tools</span>
         <button class="wed-side-btn ${wed.pane==='plan'?'active':''}" onclick="wedOpenSchedLayout()">📐 <span>Floor Plan<span class="sub">${lay?'saved layout ✓':'start from room template'}</span></span></button>
         <button class="wed-side-btn ${wed.pane==='tpl'?'active':''}" onclick="wedShowTpl()">📋 <span>Wedding Template<span class="sub">order form &amp; details</span></span></button>
+        <button class="wed-side-btn ${wed.pane==='catering'?'active':''}" onclick="wedShowCatering()">🍽 <span>Catering Template<span class="sub">catering order form</span></span></button>
       </div>
       ${wed.pane==='plan'
         ?`<div class="wed-main wed-main-col">${wedPlanChrome(true)}</div>`
+        :wed.pane==='catering'
+        ?`<div class="wed-main"><iframe src="https://order.angeliscatering.com/catering-internal.html" allow="storage-access fullscreen"></iframe></div>`
         :`<div class="wed-main"><iframe src="https://order.angeliscatering.com/wedding-internal.html" allow="storage-access fullscreen"></iframe></div>`}
     </div>
   </div>`}
