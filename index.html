@@ -358,6 +358,7 @@
     .wed-side-btn .sub{display:block;font-size:11px;font-weight:600;color:var(--text-muted);margin-top:2px}
     .wed-side-btn.active .sub{color:#3a2c05}
     .wed-main{flex:1;min-width:0;display:flex;background:var(--bg)}
+    .wed-main-col{flex-direction:column;min-height:0}
     .wed-main iframe{width:100%;height:100%;border:none;display:block;background:#fff}
     @media(max-width:700px){.wed-side{width:150px;padding:10px 8px}}
     /* event list */
@@ -1213,7 +1214,7 @@ function docsHTML(){
 // ═══ WEDDINGS TAB — schedule-app event list + drag-and-drop floor plans ═══
 const WED_FEED='https://restaurant-scheduler-hh5e.onrender.com/api/banquet-feed';
 const WED_W=1000,WED_H=700;
-let wed={data:null,cur:null,sel:null,scale:1,saveTimer:null,view:'list',evId:null,feed:null,feedErr:null,loading:false};
+let wed={data:null,cur:null,sel:null,scale:1,saveTimer:null,view:'list',evId:null,pane:'tpl',feed:null,feedErr:null,loading:false};
 function wedLoad(){if(!wed.data){try{wed.data=JSON.parse(localStorage.getItem('ct_weddings')||'null')}catch(e){wed.data=null}
   if(!wed.data)wed.data={events:[],template:{items:wedDefaultItems()},cur:null};
   if(!wed.data.template||!wed.data.template.items)wed.data.template={items:wedDefaultItems()};}
@@ -1253,14 +1254,16 @@ function wedDow(ymd){try{return new Date(ymd+'T00:00:00').toLocaleDateString([],
 function wedLayoutForSched(id){return wedLoad().events.find(e=>e.sched===id)||null}
 function wedFeedEvent(id){const feed=wed.feed||wedFeedCache();return ((feed&&feed.events)||[]).find(e=>e.id===id)||null}
 // Clicking an event opens its HUB (sidebar: floor plan, wedding template) — the layout no longer auto-opens.
-function wedOpenSched(id){if(!wedFeedEvent(id))return;wed.evId=id;wed.view='event';renderViewport()}
-// The sidebar's Floor Plan button — find-or-create the layout for this event, then open the editor.
+function wedOpenSched(id){if(!wedFeedEvent(id))return;wed.evId=id;wed.view='event';wed.pane='tpl';renderViewport()}
+// Sidebar Floor Plan button — find-or-create the layout, then show the editor IN the hub's main pane
+// (the Event-tools sidebar stays visible).
 function wedOpenSchedLayout(){const fe=wedFeedEvent(wed.evId);if(!fe)return;
   let lay=wedLayoutForSched(fe.id);
   if(!lay){const d=wedLoad();
     lay={id:wedNewId(),sched:fe.id,name:(fe.label||'Event')+' · '+wedPrettyDate(fe.date),items:JSON.parse(JSON.stringify(d.template.items)),updated:Date.now()};
     lay.items.forEach(i=>i.id=wedNewId());d.events.unshift(lay);wedStore()}
-  wed.cur=lay.id;wedLoad().cur=lay.id;wed.sel=null;wed.view='plan';renderViewport()}
+  wed.cur=lay.id;wedLoad().cur=lay.id;wed.sel=null;wed.pane='plan';renderViewport()}
+function wedShowTpl(){wedFlush();wed.pane='tpl';wed.sel=null;renderViewport()}
 function wedOpenLayout(id){wed.cur=id;wedLoad().cur=id;wed.sel=null;wed.view='plan';renderViewport()}
 // Back from the plan editor: a schedule-linked layout returns to its event hub; anything else to the list.
 function wedBack(){wedFlush();const cur=wedCur();wed.sel=null;
@@ -1280,7 +1283,8 @@ function wedNewEvent(){const d=wedLoad();
 function wedRename(v){const ev=wedCur();if(!ev)return;ev.name=v;ev.updated=Date.now();wedQueueSave()}
 function wedDeleteEvent(){const ev=wedCur();if(!ev)return;
   if(!confirm('Delete the floor plan "'+(ev.name||'this layout')+'"?'+(ev.sched?' (The event stays in the schedule app — only this layout is removed.)':'')))return;
-  const d=wedLoad();d.events=d.events.filter(e=>e.id!==ev.id);wed.cur=null;d.cur=null;wed.sel=null;wedStore();wedBack()}
+  const d=wedLoad();d.events=d.events.filter(e=>e.id!==ev.id);wed.cur=null;d.cur=null;wed.sel=null;wedStore();
+  if(wed.view==='event'){wed.pane='tpl';renderViewport()}else wedBack()}
 function wedSaveTemplate(){const ev=wedCur();if(!ev)return;if(!confirm('Make this layout the starting template for every new event?'))return;
   wedLoad().template={items:JSON.parse(JSON.stringify(ev.items))};wedStore()}
 // ── canvas ──
@@ -1341,10 +1345,9 @@ function wedListHTML(){const d=wedLoad();const feed=wed.feed||wedFeedCache();con
         <span class="wed-chev">›</span></div>`).join(''):''}
     </div>
   </div>`}
-function wedPlanHTML(){const ev=wedCur();if(!ev)return wedListHTML();
-  return `<div id="wed-root">
-    <div class="wed-bar">
-      <button class="wed-btn" onclick="wedBack()">‹ Events</button>
+function wedPlanChrome(embedded){const ev=wedCur();if(!ev)return '';
+  return `<div class="wed-bar">
+      ${embedded?'':'<button class="wed-btn" onclick="wedBack()">‹ Events</button>'}
       <input type="text" id="wed-name" value="${esc(ev.name||'')}" placeholder="Layout name" oninput="wedRename(this.value)">
       ${ev.sched?'<span style="font-size:11px;color:var(--text-muted);white-space:nowrap">linked to schedule</span>':''}
       ${ev.tpl?'<span style="font-size:11px;color:var(--accent);white-space:nowrap">this is your room template — press “Save as template” when done</span>':''}
@@ -1368,8 +1371,9 @@ function wedPlanHTML(){const ev=wedCur();if(!ev)return wedListHTML();
       <button class="wed-btn" onclick="wedRotate()">⟳ Rotate</button>
       <button class="wed-btn" onclick="wedDup()">⧉ Copy</button>
       <button class="wed-btn danger" onclick="wedRemove()">✕ Remove</button>
-    </div>
-  </div>`}
+    </div>`}
+function wedPlanHTML(){const ev=wedCur();if(!ev)return wedListHTML();
+  return `<div id="wed-root">${wedPlanChrome(false)}</div>`}
 function wedEventHTML(){const fe=wedFeedEvent(wed.evId);if(!fe){wed.view='list';return wedListHTML()}
   const lay=wedLayoutForSched(fe.id);
   return `<div id="wed-root">
@@ -1381,10 +1385,12 @@ function wedEventHTML(){const fe=wedFeedEvent(wed.evId);if(!fe){wed.view='list';
     <div class="wed-event">
       <div class="wed-side">
         <span class="wed-side-hint">Event tools</span>
-        <button class="wed-side-btn" onclick="wedOpenSchedLayout()">📐 <span>Floor Plan<span class="sub">${lay?'saved layout ✓':'start from room template'}</span></span></button>
-        <button class="wed-side-btn active">📋 <span>Wedding Template<span class="sub">order form &amp; details</span></span></button>
+        <button class="wed-side-btn ${wed.pane==='plan'?'active':''}" onclick="wedOpenSchedLayout()">📐 <span>Floor Plan<span class="sub">${lay?'saved layout ✓':'start from room template'}</span></span></button>
+        <button class="wed-side-btn ${wed.pane==='tpl'?'active':''}" onclick="wedShowTpl()">📋 <span>Wedding Template<span class="sub">order form &amp; details</span></span></button>
       </div>
-      <div class="wed-main"><iframe src="https://order.angeliscatering.com/wedding-internal.html" allow="storage-access fullscreen"></iframe></div>
+      ${wed.pane==='plan'
+        ?`<div class="wed-main wed-main-col">${wedPlanChrome(true)}</div>`
+        :`<div class="wed-main"><iframe src="https://order.angeliscatering.com/wedding-internal.html" allow="storage-access fullscreen"></iframe></div>`}
     </div>
   </div>`}
 function wedHTML(){wedLoad();return wed.view==='plan'?wedPlanHTML():wed.view==='event'?wedEventHTML():wedListHTML()}
@@ -1395,7 +1401,7 @@ function wedInit(){
   if(wed.view==='list'){if(!wed.feed&&!wed.loading)wedFetchFeed();return}
   const st=document.getElementById('wed-stage');if(!st)return;
   wedFit();wedPaint();
-  if(!wed._resize){wed._resize=true;window.addEventListener('resize',()=>{if(activeTab===WED&&wed.view==='plan')wedFit()})}
+  if(!wed._resize){wed._resize=true;window.addEventListener('resize',()=>{if(activeTab===WED&&document.getElementById('wed-stage'))wedFit()})}
   let drag=null;
   st.addEventListener('pointerdown',e=>{const el=e.target.closest('.wed-it');const ev=wedCur();if(!ev)return;
     if(!el){wed.sel=null;wedPaint();return}
