@@ -1011,7 +1011,7 @@ async function loadMailList(force){
   if(!mailx.acct)return;const key=mailListKey();
   if(!mailx.lists[key]&&mailx.folder==='inbox'){const snap=mailSnapGet(mailx.acct+'|inbox');if(snap)mailx.lists[key]=snap;}
   const cached=mailx.lists[key];mailx.loadingList=!cached||!!force;if(activeTab===MAIL)renderViewport();
-  try{const r=await mailFetch('/mail/list?acct='+encodeURIComponent(mailx.acct)+'&folder='+mailx.folder+'&limit='+(mailx.limit||50));const d=await r.json();if(!r.ok)throw new Error(d.detail||d.error||'mailbox error');mailx.lists[key]=d.messages||[];if(mailx.folder==='inbox'&&(mailx.limit||50)<=50)mailSnapPut(mailx.acct+'|inbox',d.messages||[]);mailx.loadingList=false;mailx.error=null;}
+  try{const r=await mailFetch('/mail/list?acct='+encodeURIComponent(mailx.acct)+'&folder='+mailx.folder+'&limit='+(mailx.limit||50)+(force?'&fresh=1':''));const d=await r.json();if(!r.ok)throw new Error(d.detail||d.error||'mailbox error');mailx.lists[key]=d.messages||[];if(mailx.folder==='inbox'&&(mailx.limit||50)<=50)mailSnapPut(mailx.acct+'|inbox',d.messages||[]);mailx.loadingList=false;mailx.error=null;}
   catch(e){mailx.loadingList=false;mailx.error=e.message==='unauth'?'Access key rejected':'Could not reach that inbox — '+String(e.message||e);}
   if(activeTab===MAIL)renderViewport();
 }
