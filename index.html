@@ -613,7 +613,7 @@ window.addEventListener('message',function(e){
     // data-msg-id sits on a wrapper div (threaded view) OR on the iframe itself (mail-bridge detail view)
     let el=document.querySelector('[data-msg-id="'+CSS.escape(e.data.id)+'"]');
     if(el&&el.tagName!=='IFRAME')el=el.querySelector('iframe');
-    if(el){const h=Math.min(Math.max(parseInt(e.data.h)||300,200),12000);el.style.height=h+'px'}
+    if(el){const h=Math.min(Math.max(parseInt(e.data.h)||120,44),12000);el.style.height=h+'px'}
   }catch(err){}
 });
 // Remember the inbox scroll position so opening/closing an email doesn't kick the list back to the top
@@ -1106,7 +1106,7 @@ function mailListHTML(forTwoPane){
   if(list&&!list.length)return bar(`<div class="gmail-empty">${emptyMsg}</div>`);
   const rows=(list||[]).map(e=>mailRowHTML(e,forTwoPane)).join('');
   const lim=(mailx.limit||50);
-  const more=(list.length>=lim&&lim<300)?`<div style="padding:14px;text-align:center"><button class="gmail-action-btn secondary" onclick="mailLoadMore()">${mailx.loadingList?'Loading…':'Load older messages'}</button></div>`:'';
+  const more=((list||[]).length>=lim&&lim<300)?`<div style="padding:14px;text-align:center"><button class="gmail-action-btn secondary" onclick="mailLoadMore()">${mailx.loadingList?'Loading…':'Load older messages'}</button></div>`:'';
   return bar(`<div class="gmail-list-tab">${rows}${more}</div>`);
 }
 function mailDetailHTML(){
@@ -1119,7 +1119,7 @@ function mailDetailHTML(){
   const blocks=msgs.map((mm,i)=>{
     const id='mailmsg'+i;
     const bodyHtml=mm.html||('<pre style="white-space:pre-wrap;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;margin:0;padding:16px;color:#111;line-height:1.5">'+esc(mm.text||'(no content)')+'</pre>');
-    const heightScript=`<script>(function(){function r(){try{var h=Math.max(document.documentElement.scrollHeight,document.body?document.body.scrollHeight:0)+24;parent.postMessage({_ct:'h',id:'${id}',h:h},'*')}catch(e){}}r();window.addEventListener('load',r);setTimeout(r,150);setTimeout(r,800);setTimeout(r,2500);var imgs=document.querySelectorAll('img');for(var i=0;i<imgs.length;i++){if(!imgs[i].complete){imgs[i].addEventListener('load',r);imgs[i].addEventListener('error',r)}}})();<\/script>`;
+    const heightScript=`<script>(function(){function r(){try{var max=0,b=document.body;if(b){var w=document.createTreeWalker(b,NodeFilter.SHOW_TEXT,null,false),n;while(n=w.nextNode()){if(!(n.nodeValue||'').trim())continue;var rg=document.createRange();rg.selectNodeContents(n);var bo=rg.getBoundingClientRect().bottom;if(bo>max)max=bo;}var ig=b.getElementsByTagName('img');for(var k=0;k<ig.length;k++){var bb=ig[k].getBoundingClientRect().bottom;if(bb>max)max=bb;}}var sc=Math.max(document.documentElement.scrollHeight,b?b.scrollHeight:0);var h=max>0?Math.min(sc,Math.ceil(max)+14):sc;parent.postMessage({_ct:'h',id:'${id}',h:h},'*')}catch(e){try{parent.postMessage({_ct:'h',id:'${id}',h:Math.max(document.documentElement.scrollHeight,document.body?document.body.scrollHeight:0)+24},'*')}catch(_){}}}r();window.addEventListener('load',r);setTimeout(r,150);setTimeout(r,800);setTimeout(r,2500);var imgs=document.querySelectorAll('img');for(var i=0;i<imgs.length;i++){if(!imgs[i].complete){imgs[i].addEventListener('load',r);imgs[i].addEventListener('error',r)}}})();<\/script>`;
     const bodyAttr=(bodyHtml+heightScript).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const who=mm.fromSelf?'You':esc(mm.from||'(unknown)');
     return `<div class="gmail-msg ${mm.fromSelf?'sent':''}"><div class="gmail-msg-head"><div class="gmail-msg-from-line"><span class="gmail-msg-from">${who}</span><span class="gmail-msg-date">${esc(mailFullDate(mm.date))}</span></div>${mm.fromSelf?'':`<div class="gmail-msg-fromfull">${esc(mm.fromAddr||'')}</div>`}</div><div class="gmail-msg-body"><iframe data-msg-id="${id}" srcdoc="${bodyAttr}" sandbox="allow-scripts"></iframe></div></div>`;
