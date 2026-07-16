@@ -11,7 +11,7 @@
   <meta name="theme-color" content="#0a0b0f">
   <title>The Watch Tower</title>
   <style>
-    :root{--bg:#0a0b0f;--surface:#12161f;--surface2:#1b2130;--border:#2b3346;--accent:#ffb300;--accent2:#22d3ee;--text:#eef2f8;--text-dim:#c3ccdb;--text-muted:#8791a3;--ph-bg:#0e121b;--header-h:48px;--ph-h:40px}
+    :root{--bg:#0a0b0f;--surface:#12161f;--surface2:#1b2130;--border:#2b3346;--accent:#ffb300;--accent2:#22d3ee;--text:#eef2f8;--text-dim:#c3ccdb;--text-muted:#8791a3;--ph-bg:#0e121b;--header-h:54px;--ph-h:40px}
     body.light{--bg:#f5f6fa;--surface:#ffffff;--surface2:#eef0f5;--border:#d8dce8;--accent:#6c63ff;--accent2:#10b981;--text:#1a1d2e;--text-dim:#5a6178;--text-muted:#9ba3b8;--ph-bg:#f0f1f6}
     body.light #app-header{box-shadow:0 1px 8px rgba(0,0,0,.08)}
     body.light #grid{background:var(--border)}
@@ -33,16 +33,16 @@
     .icon-btn{width:30px;height:30px;display:flex;align-items:center;justify-content:center;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--text-dim);cursor:pointer;font-size:14px;transition:all .12s}
     .icon-btn:hover{background:var(--surface2);color:var(--text);border-color:var(--accent)}
     #tab-bar{position:fixed;top:calc(var(--header-h) + env(safe-area-inset-top));left:0;right:0;height:56px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:stretch;z-index:90;box-shadow:0 1px 6px rgba(0,0,0,.2)}
-    .tab-list{flex:1;display:flex;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+    .tab-list{flex:1;min-width:0;align-self:stretch;display:flex;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none}
     .tab-list::-webkit-scrollbar{display:none}
-    .tab{padding:0 20px;display:flex;align-items:center;font-size:14px;font-weight:600;color:var(--text-dim);cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;transition:all .15s;user-select:none;-webkit-tap-highlight-color:transparent}
+    .tab{padding:0 13px;display:flex;align-items:center;font-size:13.5px;font-weight:600;color:var(--text-dim);cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;transition:all .15s;user-select:none;-webkit-tap-highlight-color:transparent}
     .tab:hover{color:var(--text);background:var(--surface2)}
     .tab.active{color:var(--accent);border-bottom-color:var(--accent);background:var(--bg)}
     body.light .tab.active{background:var(--surface2)}
     .tab-add{padding:0 18px;color:var(--text-muted);font-size:18px;font-weight:400}
     .tab-actions{display:flex;align-items:center;padding:0 10px;gap:4px;border-left:1px solid var(--border)}
     .tab-actions .pbtn{width:44px;height:44px;font-size:20px;border-radius:8px}
-    #viewport{position:fixed;top:calc(var(--header-h) + env(safe-area-inset-top) + 56px);left:0;right:0;bottom:env(safe-area-inset-bottom,0);background:var(--bg);overflow:hidden}
+    #viewport{position:fixed;top:calc(var(--header-h) + env(safe-area-inset-top));left:0;right:0;bottom:env(safe-area-inset-bottom,0);background:var(--bg);overflow:hidden}
     #viewport iframe{width:100%;height:100%;border:none;display:block}
     #viewport .launcher,#viewport .empty-state{width:100%;height:100%}
     /* DASHBOARD */
@@ -206,7 +206,9 @@
     .mail-search input::-webkit-search-cancel-button{-webkit-appearance:none}
     .mail-search-clear{background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:13px;padding:4px 6px;flex-shrink:0;border-radius:5px}
     .mail-search-clear:hover{color:var(--text)}
-    .mail-compose-btn{flex-shrink:0;background:var(--accent);color:#140f02;border:none;border-radius:9px;padding:9px 16px;font-weight:800;font-size:13px;cursor:pointer;font-family:inherit;white-space:nowrap;box-shadow:0 0 12px rgba(255,179,0,.25)}
+    .mail-compose-btn{flex-shrink:0;background:var(--accent);color:#140f02;border:none;border-radius:9px;padding:9px 12px;font-weight:800;font-size:15px;cursor:pointer;font-family:inherit;white-space:nowrap;box-shadow:0 0 12px rgba(255,179,0,.25)}
+    /* Search + accounts now live INSIDE the list pane; the region below holds folders + the message list */
+    .mail-list-region{flex:1;min-height:0;display:flex;flex-direction:column}
     .mail-compose-btn:hover{filter:brightness(1.08)}
     @media(max-width:600px){.mail-compose-btn{padding:9px 11px}}
     /* User chip in toolbar */
@@ -352,19 +354,14 @@
 <body>
 <header id="app-header">
   <div class="brand"><span>🦇</span><span>The Watch Tower</span><div class="live-dot"></div></div>
-  <div style="flex:1"></div>
+  <div class="tab-list" id="tab-list"></div>
   <div class="header-right">
+    <button class="icon-btn" onclick="reloadActive()" title="Reload">⟳</button>
+    <button class="icon-btn" onclick="popoutActive()" title="Open in new tab">↗</button>
     <button class="icon-btn" id="theme-btn" onclick="toggleTheme()" title="Toggle light/dark mode">☀️</button>
     <button class="icon-btn" onclick="openSettings()" title="Manage panels">⚙</button>
   </div>
 </header>
-<nav id="tab-bar">
-  <div class="tab-list" id="tab-list"></div>
-  <div class="tab-actions">
-    <button class="pbtn" onclick="reloadActive()" title="Reload">⟳</button>
-    <button class="pbtn" onclick="popoutActive()" title="Open in new tab">↗</button>
-  </div>
-</nav>
 <div id="viewport"></div>
 <div id="overlay" onclick="backdropClose(event)">
   <div id="modal">
@@ -1076,7 +1073,7 @@ function mailHTML(){
   if(!mailx.accts.length)return `<div class="mail-wrap"><div class="gmail-empty">No inboxes configured on the backend yet.</div></div>`;
   const subtabs=`<div class="mail-accts">${mailx.accts.map(a=>{const unread=(mailx.lists[a.id]||[]).filter(m=>m.unread).length;return `<button class="mail-acct ${mailx.acct===a.id?'active':''}" onclick="switchMailAcct('${a.id}')">${esc(a.label)}${unread?`<span class="mail-acct-badge">${unread}</span>`:''}</button>`}).join('')}</div>`;
   const accLabel=((mailx.accts||[]).find(a=>a.id===mailx.acct)||{}).label||'';
-  const actionbar=`<div class="mail-actionbar"><div class="mail-search"><span class="mail-search-ico">🔍</span><input id="mail-search-input" type="search" autocomplete="off" spellcheck="false" placeholder="Search ${esc(accLabel)} mail…" value="${esc(mailx.search||'')}" oninput="mailSearchInput(this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault();mailDoSearch();}">${mailx.search?`<button class="mail-search-clear" title="Clear" onclick="mailClearSearch()">✕</button>`:''}</div><button class="mail-compose-btn" onclick="mailStartCompose()">✎ Compose</button></div>`;
+  const actionbar=`<div class="mail-actionbar"><div class="mail-search"><span class="mail-search-ico">🔍</span><input id="mail-search-input" type="search" autocomplete="off" spellcheck="false" placeholder="Search ${esc(accLabel)} mail…" value="${esc(mailx.search||'')}" oninput="mailSearchInput(this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault();mailDoSearch();}">${mailx.search?`<button class="mail-search-clear" title="Clear" onclick="mailClearSearch()">✕</button>`:''}</div><button class="mail-compose-btn" onclick="mailStartCompose()" title="Compose new email">✎</button></div>`;
   const wide=window.innerWidth>=900;
   if(!wide){
     let inner;
@@ -1087,7 +1084,7 @@ function mailHTML(){
     return `<div class="mail-wrap">${subtabs}${actionbar}${inner}</div>`;
   }
   const detail=mailx.composeNew?mailComposeNewHTML():mailx.selMsg?mailDetailHTML():mailx.loadingMsg?'<div class="gmail-loading">Loading email…</div>':'<div class="gmail-empty-detail">Select an email to read</div>';
-  return `<div class="mail-wrap">${subtabs}${actionbar}<div class="gmail-mailbox"><div class="gmail-2pane"><div class="gmail-list-pane" id="mail-list-region">${mailListHTML(true)}</div><div class="gmail-detail-pane">${detail}</div></div></div></div>`;
+  return `<div class="mail-wrap"><div class="gmail-mailbox"><div class="gmail-2pane"><div class="gmail-list-pane">${actionbar}${subtabs}<div id="mail-list-region" class="mail-list-region">${mailListHTML(true)}</div></div><div class="gmail-detail-pane">${detail}</div></div></div></div>`;
 }
 function mailListHTML(forTwoPane){
   // Search view — server-side results across the whole mailbox, replaces the folder list while active.
