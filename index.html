@@ -326,11 +326,11 @@
     .docs-editor:empty::before{content:'Start typing…';color:#9a968c}
     .docs-empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:14px;text-align:center;padding:30px;line-height:1.6}
     @media(max-width:720px){.docs-side{width:140px}.docs-editor{padding:26px 20px}.docs-toolbar{gap:3px}}
-    /* ═══ WEDDINGS TAB — drag-and-drop floor plans ═══ */
+    /* ═══ WEDDINGS TAB — event list + drag-and-drop floor plans ═══ */
     #wed-root{display:flex;flex-direction:column;height:100%;overflow:hidden}
     .wed-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 12px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0}
     .wed-bar select,.wed-bar input[type=text]{background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:14px;min-width:0}
-    #wed-name{flex:1;max-width:260px;font-weight:700}
+    #wed-name{flex:1;max-width:280px;font-weight:700}
     .wed-btn{background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:8px 12px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap}
     .wed-btn:active{transform:scale(.96)}
     .wed-btn.amber{border-color:var(--accent);color:var(--accent)}
@@ -348,6 +348,23 @@
     .wed-sel{box-shadow:0 0 0 3px var(--accent),0 0 18px rgba(255,179,0,.5);z-index:5}
     .wed-tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:6px 12px;background:var(--surface);border-top:1px solid var(--border);flex-shrink:0}
     .wed-tools .hint{font-size:11px;color:var(--text-muted);margin-right:4px}
+    /* event list */
+    #wed-list{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:12px 14px 40px}
+    .wed-sec{font-size:11px;font-weight:800;letter-spacing:1.5px;color:var(--text-muted);margin:16px 2px 8px;text-transform:uppercase}
+    .wed-row{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:8px;cursor:pointer}
+    .wed-row:active{background:var(--surface2)}
+    .wed-datechip{width:58px;flex-shrink:0;text-align:center;border-right:1px solid var(--border);padding-right:12px}
+    .wed-datechip .dow{font-size:10px;font-weight:800;letter-spacing:1px;color:var(--text-muted)}
+    .wed-datechip .md{font-size:15px;font-weight:900;color:var(--accent);white-space:nowrap}
+    .wed-row .info{flex:1;min-width:0}
+    .wed-row .lbl{font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .wed-row .sub{font-size:12px;color:var(--text-muted);margin-top:2px}
+    .wed-tag{font-size:10px;font-weight:800;letter-spacing:.5px;border:1px solid var(--accent2);color:var(--accent2);border-radius:6px;padding:2px 7px;white-space:nowrap}
+    .wed-tag.party{border-color:var(--accent);color:var(--accent)}
+    .wed-plan-dot{font-size:11px;font-weight:800;color:var(--accent);white-space:nowrap}
+    .wed-chev{color:var(--text-muted);font-size:18px;flex-shrink:0}
+    .wed-empty{text-align:center;color:var(--text-muted);padding:30px 10px;font-size:13px}
+    .wed-feed-err{background:rgba(229,72,77,.12);border:1px solid #e5484d;color:#ff9a9d;border-radius:10px;padding:10px 12px;font-size:12px;margin-bottom:10px}
     @media (max-width:700px){.wed-bar{padding:6px 8px}.wed-btn{padding:7px 9px;font-size:12px}}
   </style>
 </head>
@@ -1181,9 +1198,10 @@ function docsHTML(){
   }
   return `<div class="docs-wrap">${side}${main}</div>`;
 }
-// ═══ WEDDINGS TAB — drag-and-drop event floor plans (per-event saves) ═══
+// ═══ WEDDINGS TAB — schedule-app event list + drag-and-drop floor plans ═══
+const WED_FEED='https://restaurant-scheduler-hh5e.onrender.com/api/banquet-feed';
 const WED_W=1000,WED_H=700;
-let wed={data:null,cur:null,sel:null,scale:1,saveTimer:null};
+let wed={data:null,cur:null,sel:null,scale:1,saveTimer:null,view:'list',feed:null,feedErr:null,loading:false};
 function wedLoad(){if(!wed.data){try{wed.data=JSON.parse(localStorage.getItem('ct_weddings')||'null')}catch(e){wed.data=null}
   if(!wed.data)wed.data={events:[],template:{items:wedDefaultItems()},cur:null};
   if(!wed.data.template||!wed.data.template.items)wed.data.template={items:wedDefaultItems()};}
@@ -1193,8 +1211,7 @@ function wedQueueSave(){clearTimeout(wed.saveTimer);wed.saveTimer=setTimeout(wed
 function wedFlush(){clearTimeout(wed.saveTimer);if(wed.data)wedStore()}
 function wedNewId(){return 'w'+Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
 function wedCur(){const d=wedLoad();return d.events.find(e=>e.id===wed.cur)||null}
-// Starting template modeled on the Angeli's banquet-room sheet: dance floor
-// center, rounds around it, buffet line on the left wall, kitchen doors.
+// Starting template modeled on the Angeli's banquet-room sheet.
 function wedDefaultItems(){const it=[];let n=1;
   const R=(x,y)=>it.push({id:wedNewId(),type:'round',x,y,w:76,h:76,label:String(n++)});
   R(305,95);R(425,75);R(545,75);R(665,85);R(785,95);R(895,140);
@@ -1209,18 +1226,43 @@ function wedDefaultItems(){const it=[];let n=1;
   it.push({id:wedNewId(),type:'door',x:120,y:52,w:130,h:34,label:'KITCHEN'});
   it.push({id:wedNewId(),type:'door',x:120,y:655,w:130,h:34,label:'KITCHEN'});
   return it}
-function wedNewEvent(fromTemplate){const d=wedLoad();
-  const ev={id:wedNewId(),name:'New Event',items:JSON.parse(JSON.stringify(fromTemplate!==false?d.template.items:[])),updated:Date.now()};
+// ── schedule-app feed ──
+function wedFeedCache(){try{return JSON.parse(localStorage.getItem('ct_wed_feed')||'null')}catch(e){return null}}
+async function wedFetchFeed(){if(wed.loading)return;wed.loading=true;wed.feedErr=null;
+  try{const r=await fetch(WED_FEED+'?key='+encodeURIComponent(GMAIL_BACKEND_KEY));
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.error||('HTTP '+r.status));
+    wed.feed=d;try{localStorage.setItem('ct_wed_feed',JSON.stringify({at:Date.now(),today:d.today,events:d.events}))}catch(e){}
+  }catch(e){wed.feedErr=e.message||'offline';if(!wed.feed)wed.feed=wedFeedCache()}
+  wed.loading=false;
+  if(activeTab===WED&&wed.view==='list')renderViewport()}
+function wedPrettyDate(ymd){try{const d=new Date(ymd+'T00:00:00');return d.toLocaleDateString([],{month:'short',day:'numeric'})}catch(e){return ymd}}
+function wedDow(ymd){try{return new Date(ymd+'T00:00:00').toLocaleDateString([],{weekday:'short'}).toUpperCase()}catch(e){return ''}}
+function wedLayoutForSched(id){return wedLoad().events.find(e=>e.sched===id)||null}
+function wedOpenSched(id){const fe=(wed.feed&&wed.feed.events||[]).find(e=>e.id===id);if(!fe)return;
+  let lay=wedLayoutForSched(id);
+  if(!lay){const d=wedLoad();
+    lay={id:wedNewId(),sched:id,name:(fe.label||'Event')+' · '+wedPrettyDate(fe.date),items:JSON.parse(JSON.stringify(d.template.items)),updated:Date.now()};
+    lay.items.forEach(i=>i.id=wedNewId());d.events.unshift(lay);wedStore()}
+  wed.cur=lay.id;wedLoad().cur=lay.id;wed.sel=null;wed.view='plan';renderViewport()}
+function wedOpenLayout(id){wed.cur=id;wedLoad().cur=id;wed.sel=null;wed.view='plan';renderViewport()}
+function wedBack(){wedFlush();wed.view='list';wed.sel=null;renderViewport()}
+function wedEditTemplate(){const d=wedLoad();let lay=d.events.find(e=>e.tpl);
+  if(!lay){lay={id:wedNewId(),tpl:true,name:'Room Template',items:JSON.parse(JSON.stringify(d.template.items)),updated:Date.now()};
+    lay.items.forEach(i=>i.id=wedNewId());d.events.unshift(lay);wedStore()}
+  wedOpenLayout(lay.id)}
+function wedNewEvent(){const d=wedLoad();
+  const ev={id:wedNewId(),name:'New Layout',items:JSON.parse(JSON.stringify(d.template.items)),updated:Date.now()};
   ev.items.forEach(i=>i.id=wedNewId());
-  d.events.unshift(ev);wed.cur=ev.id;d.cur=ev.id;wed.sel=null;wedStore();renderViewport();
+  d.events.unshift(ev);wed.cur=ev.id;d.cur=ev.id;wed.sel=null;wed.view='plan';wedStore();renderViewport();
   setTimeout(()=>{const n=document.getElementById('wed-name');if(n){n.focus();n.select()}},60)}
-function wedSwitch(id){wedFlush();wed.cur=id;wedLoad().cur=id;wed.sel=null;wedStore();renderViewport()}
-function wedRename(v){const ev=wedCur();if(!ev)return;ev.name=v;ev.updated=Date.now();wedQueueSave();
-  const s=document.getElementById('wed-picker');if(s)[...s.options].forEach(o=>{if(o.value===ev.id)o.textContent=v||'Untitled'})}
-function wedDeleteEvent(){const ev=wedCur();if(!ev)return;if(!confirm('Delete "'+(ev.name||'this event')+'"? This can\'t be undone.'))return;
-  const d=wedLoad();d.events=d.events.filter(e=>e.id!==ev.id);wed.cur=d.events[0]?d.events[0].id:null;d.cur=wed.cur;wed.sel=null;wedStore();renderViewport()}
+function wedRename(v){const ev=wedCur();if(!ev)return;ev.name=v;ev.updated=Date.now();wedQueueSave()}
+function wedDeleteEvent(){const ev=wedCur();if(!ev)return;
+  if(!confirm('Delete the floor plan "'+(ev.name||'this layout')+'"?'+(ev.sched?' (The event stays in the schedule app — only this layout is removed.)':'')))return;
+  const d=wedLoad();d.events=d.events.filter(e=>e.id!==ev.id);wed.cur=null;d.cur=null;wed.sel=null;wedStore();wedBack()}
 function wedSaveTemplate(){const ev=wedCur();if(!ev)return;if(!confirm('Make this layout the starting template for every new event?'))return;
   wedLoad().template={items:JSON.parse(JSON.stringify(ev.items))};wedStore()}
+// ── canvas ──
 function wedAdd(type){const ev=wedCur();if(!ev)return;
   const base={round:{w:76,h:76,label:String(ev.items.filter(i=>i.type==='round').length+1)},
     rect:{w:130,h:56,label:'TABLE'},dance:{w:260,h:195,label:'DANCE FLOOR'},
@@ -1243,19 +1285,49 @@ function wedItemHTML(it){const cls={round:'wed-round',rect:'wed-rect',dance:'wed
 function wedPaint(){const st=document.getElementById('wed-stage');const ev=wedCur();if(!st||!ev)return;
   st.innerHTML=ev.items.map(wedItemHTML).join('');
   const c=document.getElementById('wed-count');if(c){const r=ev.items.filter(i=>i.type==='round').length;c.textContent=r+' round table'+(r===1?'':'s')}}
-function wedHTML(){const d=wedLoad();if(!wed.cur)wed.cur=d.cur&&d.events.some(e=>e.id===d.cur)?d.cur:(d.events[0]?d.events[0].id:null);
-  if(!wed.cur)return `<div id="wed-root"><div style="margin:auto;text-align:center;padding:40px">
-    <div style="font-size:44px;margin-bottom:10px">💍</div>
-    <div style="font-size:17px;font-weight:800;margin-bottom:6px">Wedding floor plans</div>
-    <div style="font-size:13px;color:var(--text-muted);margin-bottom:18px">Drag tables around the room, save a layout for every event.</div>
-    <button class="wed-btn amber" onclick="wedNewEvent()" style="font-size:15px;padding:12px 22px">＋ First event (Angeli's room template)</button></div></div>`;
-  const ev=wedCur();
+// ── views ──
+function wedListHTML(){const d=wedLoad();const feed=wed.feed||wedFeedCache();const today=(feed&&feed.today)||new Date().toISOString().slice(0,10);
+  const evs=(feed&&feed.events)||[];
+  const upcoming=evs.filter(e=>e.date>=today);
+  const recent=evs.filter(e=>e.date<today).reverse();
+  const row=fe=>{const lay=wedLayoutForSched(fe.id);
+    return `<div class="wed-row" onclick="wedOpenSched(${fe.id})">
+      <div class="wed-datechip"><div class="dow">${wedDow(fe.date)}</div><div class="md">${esc(wedPrettyDate(fe.date))}</div></div>
+      <div class="info"><div class="lbl">${esc(fe.label)}</div>
+        <div class="sub">${fe.time?esc(fe.time)+' · ':''}staff ${fe.signupCount}/${fe.maxSignups}</div></div>
+      ${fe.schedule==='Day Parties'?'<span class="wed-tag party">DAY PARTY</span>':'<span class="wed-tag">WEDDING / EVENT</span>'}
+      ${lay?'<span class="wed-plan-dot">📐 plan ✓</span>':''}
+      <span class="wed-chev">›</span></div>`};
+  const manual=d.events.filter(e=>!e.sched&&!e.tpl);
   return `<div id="wed-root">
     <div class="wed-bar">
-      <select id="wed-picker" onchange="wedSwitch(this.value)">${d.events.map(e=>`<option value="${e.id}" ${e.id===wed.cur?'selected':''}>${esc(e.name||'Untitled')}</option>`).join('')}</select>
-      <input type="text" id="wed-name" value="${esc(ev.name||'')}" placeholder="Event name — e.g. Danielle & Karlus · Aug 2" oninput="wedRename(this.value)">
-      <button class="wed-btn amber" onclick="wedNewEvent()">＋ New</button>
-      <button class="wed-btn" onclick="wedSaveTemplate()" title="Use this layout as the starting point for new events">Save as template</button>
+      <span style="font-weight:800;font-size:15px">💍 Weddings & Events</span>
+      <span style="font-size:11px;color:var(--text-muted)">from the schedule app</span>
+      <span style="flex:1"></span>
+      <button class="wed-btn" onclick="wedFetchFeed()">${wed.loading?'…':'🔄 Refresh'}</button>
+      <button class="wed-btn" onclick="wedEditTemplate()">✎ Room template</button>
+      <button class="wed-btn amber" onclick="wedNewEvent()">＋ Blank layout</button>
+    </div>
+    <div id="wed-list">
+      ${wed.feedErr?`<div class="wed-feed-err">Couldn't reach the schedule app (${esc(wed.feedErr)})${feed?' — showing the last saved list.':''}</div>`:''}
+      ${!feed&&wed.loading?'<div class="wed-empty">Loading events…</div>':''}
+      ${feed&&!upcoming.length&&!recent.length?'<div class="wed-empty">No weddings or events on the schedule yet.<br>Post them in the schedule app and they\'ll show up here.</div>':''}
+      ${upcoming.length?'<div class="wed-sec">Upcoming</div>'+upcoming.map(row).join(''):''}
+      ${recent.length?'<div class="wed-sec">Past 30 days</div>'+recent.map(row).join(''):''}
+      ${manual.length?'<div class="wed-sec">My layouts (not on the schedule)</div>'+manual.map(l=>`<div class="wed-row" onclick="wedOpenLayout('${l.id}')">
+        <div class="wed-datechip"><div class="dow">PLAN</div><div class="md">📐</div></div>
+        <div class="info"><div class="lbl">${esc(l.name||'Untitled')}</div><div class="sub">${l.items.filter(i=>i.type==='round').length} round tables</div></div>
+        <span class="wed-chev">›</span></div>`).join(''):''}
+    </div>
+  </div>`}
+function wedPlanHTML(){const ev=wedCur();if(!ev)return wedListHTML();
+  return `<div id="wed-root">
+    <div class="wed-bar">
+      <button class="wed-btn" onclick="wedBack()">‹ Events</button>
+      <input type="text" id="wed-name" value="${esc(ev.name||'')}" placeholder="Layout name" oninput="wedRename(this.value)">
+      ${ev.sched?'<span style="font-size:11px;color:var(--text-muted);white-space:nowrap">linked to schedule</span>':''}
+      ${ev.tpl?'<span style="font-size:11px;color:var(--accent);white-space:nowrap">this is your room template — press “Save as template” when done</span>':''}
+      <button class="wed-btn" onclick="wedSaveTemplate()">Save as template</button>
       <button class="wed-btn" onclick="wedPrint()">🖨 Print</button>
       <button class="wed-btn danger" onclick="wedDeleteEvent()">Delete</button>
       <span class="wed-count" id="wed-count"></span>
@@ -1277,12 +1349,15 @@ function wedHTML(){const d=wedLoad();if(!wed.cur)wed.cur=d.cur&&d.events.some(e=
       <button class="wed-btn danger" onclick="wedRemove()">✕ Remove</button>
     </div>
   </div>`}
+function wedHTML(){wedLoad();return wed.view==='plan'?wedPlanHTML():wedListHTML()}
 function wedFit(){const wrap=document.getElementById('wed-stage-wrap'),st=document.getElementById('wed-stage');if(!wrap||!st)return;
   const s=Math.min((wrap.clientWidth-20)/WED_W,(wrap.clientHeight-20)/WED_H);wed.scale=s;
   st.style.transform=`translate(-50%,-50%) scale(${s})`}
-function wedInit(){const st=document.getElementById('wed-stage');if(!st)return;
+function wedInit(){
+  if(wed.view==='list'){if(!wed.feed&&!wed.loading)wedFetchFeed();return}
+  const st=document.getElementById('wed-stage');if(!st)return;
   wedFit();wedPaint();
-  if(!wed._resize){wed._resize=true;window.addEventListener('resize',()=>{if(activeTab===WED)wedFit()})}
+  if(!wed._resize){wed._resize=true;window.addEventListener('resize',()=>{if(activeTab===WED&&wed.view==='plan')wedFit()})}
   let drag=null;
   st.addEventListener('pointerdown',e=>{const el=e.target.closest('.wed-it');const ev=wedCur();if(!ev)return;
     if(!el){wed.sel=null;wedPaint();return}
@@ -1601,6 +1676,7 @@ function switchTab(id){
   if(activeTab===WED&&id!==WED)wedFlush();
   activeTab=id;cfg.activeTab=id;saveCfg();renderAll();
   if(id===DASH){loadCateringOrders();loadLiveOrders();}
+  if(id===WED){wed.view='list';wedFetchFeed();}
   if(id===MAIL){if(mailx.accts===null||mailx.accts==='error')loadMailAccounts();else if(mailx.acct)loadMailList();}
   if(gmailValid()){
     if(id===3&&!gmailTab.selectedEmail&&!gmailTab.loading)loadGmailTab();
