@@ -209,6 +209,16 @@
     .mail-compose-btn{flex-shrink:0;background:var(--accent);color:#140f02;border:none;border-radius:9px;padding:9px 12px;font-weight:800;font-size:15px;cursor:pointer;font-family:inherit;white-space:nowrap;box-shadow:0 0 12px rgba(255,179,0,.25)}
     /* Search + accounts now live INSIDE the list pane; the region below holds folders + the message list */
     .mail-list-region{flex:1;min-height:0;display:flex;flex-direction:column}
+    /* Attachments (email compose + reply) */
+    .mail-att-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}
+    .mail-att-chip{display:inline-flex;align-items:center;gap:6px;background:var(--surface2);border:1px solid var(--border);border-radius:14px;padding:4px 10px;font-size:12px;color:var(--text);max-width:260px}
+    .mail-att-chip .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .mail-att-chip em{color:var(--text-muted);font-style:normal;font-size:11px;flex-shrink:0}
+    .mail-att-chip button{background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:13px;padding:0 2px;flex-shrink:0}
+    .mail-att-chip button:hover{color:#f87171}
+    .mail-att-btn{background:transparent;border:1px solid var(--border);color:var(--text-dim);border-radius:14px;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit}
+    .mail-att-btn:hover{border-color:var(--accent);color:var(--text)}
+    .gmail-compose.dragover,#mail-new-form.dragover,.docs-editor.dragover{outline:2px dashed var(--accent);outline-offset:-6px}
     .mail-compose-btn:hover{filter:brightness(1.08)}
     @media(max-width:600px){.mail-compose-btn{padding:9px 11px}}
     /* User chip in toolbar */
@@ -959,7 +969,7 @@ function renderCompose(){
 if('serviceWorker'in navigator){navigator.serviceWorker.getRegistrations().then(rs=>rs.forEach(r=>r.unregister()));}
 // ═══ EMAIL TAB — consolidated multi-account catering inbox via the jarvis-voice mail bridge ═══
 const MAIL_BASE='https://jarvis-voicejarvis-voice.onrender.com';
-let mailx={accts:null,acct:null,folder:'inbox',lists:{},selUid:null,selMsg:null,selThread:null,loadingList:false,loadingMsg:false,composing:false,composeNew:false,search:'',searchResults:null,searching:false,sendStatus:null,error:null};
+let mailx={accts:null,acct:null,folder:'inbox',lists:{},selUid:null,selMsg:null,selThread:null,loadingList:false,loadingMsg:false,composing:false,composeNew:false,search:'',searchResults:null,searching:false,sendStatus:null,error:null,attach:[]};
 let mailSearchTimer=null;
 function mailListKey(){return mailx.acct+'|'+mailx.folder;}
 function switchMailFolder(f){if(f===mailx.folder)return;mailx.folder=f;mailx.limit=50;mailx.selUid=null;mailx.selMsg=null;mailx.composing=false;mailx.composeNew=false;mailx.search='';mailx.searchResults=null;mailx.searching=false;mailx.error=null;renderViewport();loadMailList();}
@@ -997,15 +1007,15 @@ async function mailToggleStar(uid,ev){
   try{await mailFetch('/mail/flag',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acct:mailx.acct,uid,flag:'star',on:now})});}
   catch(e){if(row)row.starred=!now;if(mailx.selMsg&&mailx.selMsg.uid===uid)mailx.selMsg.starred=!now;if(activeTab===MAIL)renderViewport();}
 }
-function mailStartReply(){mailx.composing=true;mailx.composeNew=false;mailx.sendStatus=null;if(activeTab===MAIL)renderViewport();setTimeout(()=>{const t=document.getElementById('mail-reply-text');if(t)t.focus()},50);}
+function mailStartReply(){mailx.composing=true;mailx.composeNew=false;mailx.sendStatus=null;mailx.attach=[];if(activeTab===MAIL)renderViewport();setTimeout(()=>{const t=document.getElementById('mail-reply-text');if(t)t.focus()},50);}
 // ── Search (server-side, whole mailbox) ──────────────────────────────
 function renderMailListRegion(){const el=document.getElementById('mail-list-region');if(el)el.innerHTML=mailListHTML(window.innerWidth>=900);}
 function mailSearchInput(v){mailx.search=v;clearTimeout(mailSearchTimer);if(!v.trim()){mailx.searchResults=null;mailx.searching=false;renderMailListRegion();return;}mailSearchTimer=setTimeout(mailDoSearch,450);}
 async function mailDoSearch(){const q=(mailx.search||'').trim();if(!q){mailx.searchResults=null;mailx.searching=false;renderMailListRegion();return;}mailx.searching=true;renderMailListRegion();try{const r=await mailFetch('/mail/search?acct='+encodeURIComponent(mailx.acct)+'&q='+encodeURIComponent(q));const d=await r.json();if(!r.ok)throw new Error(d.detail||d.error||'search failed');mailx.searchResults=d.messages||[];mailx.searchErr=null;}catch(e){mailx.searchResults=[];mailx.searchErr='Search failed — '+String(e.message||e);}mailx.searching=false;renderMailListRegion();}
 function mailClearSearch(){mailx.search='';mailx.searchResults=null;mailx.searching=false;if(activeTab===MAIL)renderViewport();setTimeout(()=>{const s=document.getElementById('mail-search-input');if(s)s.focus()},30);}
 // ── Compose a brand-new email ────────────────────────────────────────
-function mailStartCompose(){mailx.composeNew=true;mailx.composing=false;mailx.selUid=null;mailx.selMsg=null;mailx.sendStatus=null;if(activeTab===MAIL)renderViewport();setTimeout(()=>{const t=document.getElementById('mail-new-to');if(t)t.focus()},50);}
-function mailCancelCompose(){mailx.composeNew=false;mailx.sendStatus=null;if(activeTab===MAIL)renderViewport();}
+function mailStartCompose(){mailx.composeNew=true;mailx.composing=false;mailx.selUid=null;mailx.selMsg=null;mailx.sendStatus=null;mailx.attach=[];if(activeTab===MAIL)renderViewport();setTimeout(()=>{const t=document.getElementById('mail-new-to');if(t)t.focus()},50);}
+function mailCancelCompose(){mailx.composeNew=false;mailx.sendStatus=null;mailx.attach=[];if(activeTab===MAIL)renderViewport();}
 function setNewStatus(text,kind){const el=document.getElementById('mail-new-status');if(el){el.textContent=text;el.className='gmail-compose-status '+(kind||'');}}
 async function mailSendNew(){
   const to=(document.getElementById('mail-new-to')?.value||'').trim();
@@ -1013,11 +1023,12 @@ async function mailSendNew(){
   const text=(document.getElementById('mail-new-body')?.value||'').trim();
   if(!to)return setNewStatus('Add a recipient','error');
   if(!subject)return setNewStatus('Add a subject','error');
-  if(!text)return setNewStatus('Write a message','error');
+  if(!text&&!(mailx.attach||[]).length)return setNewStatus('Write a message','error');
   const acct=mailAcctObj();
   setNewStatus('Sending…','info');
   try{
-    await mailSend(acct,{to,subject,text});
+    await mailSend(acct,{to,subject,text,attach:mailx.attach||[]});
+    mailx.attach=[];
     setNewStatus('Sent ✓','success');setTimeout(()=>{mailx.composeNew=false;mailx.sendStatus=null;if(activeTab===MAIL)renderViewport();},1400);
   }catch(e){
     if(e.notConnected){setNewStatus('Not connected for sending yet','error');if(confirm(acct.email+' needs a one-time Google sign-in to send. Open it now?'))gmailConnectAccount(acct.email);return;}
@@ -1028,15 +1039,16 @@ function mailComposeNewHTML(){
   const lbl='display:block;font-size:11px;font-weight:800;color:var(--text-dim);text-transform:uppercase;letter-spacing:.05em;margin:0 0 4px';
   const inp='width:100%;background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:9px 12px;color:var(--text);font-size:14px;outline:none;font-family:inherit;margin-bottom:14px';
   const status=mailx.sendStatus?`<span id="mail-new-status" class="gmail-compose-status ${mailx.sendStatus.kind}">${esc(mailx.sendStatus.text)}</span>`:'<span id="mail-new-status" class="gmail-compose-status"></span>';
-  return `<div class="gmail-detail"><div class="gmail-detail-scroll"><div style="padding:20px 24px;max-width:780px;width:100%">
+  return `<div class="gmail-detail"><div class="gmail-detail-scroll"><div id="mail-new-form" style="padding:20px 24px;max-width:780px;width:100%" ondragover="mailDragOver(event)" ondragleave="mailDragLeave(event)" ondrop="mailDrop(event)">
     <div style="font-size:12px;color:var(--text-dim);margin-bottom:16px">New email from <b style="color:var(--accent)">${esc(acc.email||'')}</b></div>
     <label style="${lbl}">To</label><input id="mail-new-to" type="email" autocomplete="off" placeholder="recipient@example.com" style="${inp}">
     <label style="${lbl}">Subject</label><input id="mail-new-subject" type="text" placeholder="Subject" style="${inp}">
-    <label style="${lbl}">Message</label><textarea id="mail-new-body" placeholder="Write your message…" style="${inp};min-height:240px;resize:vertical;line-height:1.55;margin-bottom:0"></textarea>
+    <label style="${lbl}">Message</label><textarea id="mail-new-body" placeholder="Write your message… (drop files anywhere here to attach)" style="${inp};min-height:240px;resize:vertical;line-height:1.55;margin-bottom:0"></textarea>
+    ${mailAttRowHTML()}
   </div></div><div class="gmail-compose-bar" style="padding:12px 16px;border-top:1px solid var(--border);background:var(--surface)">${status}<div style="display:flex;gap:8px"><button class="gmail-action-btn secondary" onclick="mailCancelCompose()">Cancel</button><button class="gmail-action-btn" onclick="mailSendNew()">Send</button></div></div></div>`;
 }
 function mailRowHTML(e,forTwoPane,folderOverride){const openFolder=folderOverride||mailx.folder;const who=openFolder==='sent'?('To: '+esc(e.to||e.toAddr||'(no recipient)')):esc(e.from||e.fromAddr||'(unknown)');return `<div class="gmail-row ${e.unread?'unread':''} ${forTwoPane&&mailx.selUid===e.uid?'selected':''}" onclick="openMailMsg(${e.uid},'${openFolder}')"><div class="gmail-row-top"><div class="gmail-row-sender">${e.unread?'<span class="unread-badge">New</span>':''}${who}</div><div class="gmail-row-time"><button class="gmail-star ${e.starred?'starred':''}" onclick="mailToggleStar(${e.uid},event)" title="${e.starred?'Unstar':'Star'}">${e.starred?'★':'☆'}</button>${mailTime(e.date)}</div></div><div class="gmail-row-subject">${esc(e.subject)}</div></div>`;}
-function mailCancelReply(){mailx.composing=false;mailx.sendStatus=null;if(activeTab===MAIL)renderViewport();}
+function mailCancelReply(){mailx.composing=false;mailx.sendStatus=null;mailx.attach=[];if(activeTab===MAIL)renderViewport();}
 async function mailTrash(uid){
   if(!confirm('Move this email to Trash?'))return;
   try{
@@ -1050,6 +1062,27 @@ async function mailTrash(uid){
   }catch(e){alert('Trash failed: '+String(e.message||e));}
 }
 function mailTrashCurrent(){const m=mailx.selMsg;if(m)mailTrash(m.uid);}
+// ── Attachments: drag files onto the compose area (or 📎 pick) → sent as real MIME attachments ──
+const MAIL_ATT_MAX=20*1024*1024; // total, stays under Gmail's ~25MB message cap
+function fmtSize(n){return n>1048576?(n/1048576).toFixed(1)+' MB':Math.max(1,Math.round(n/1024))+' KB';}
+function mailAttTotal(){return (mailx.attach||[]).reduce((s,a)=>s+a.size,0);}
+function mailAddFiles(files){
+  [...(files||[])].forEach(f=>{
+    if(mailAttTotal()+f.size>MAIL_ATT_MAX){alert('Attachments are limited to 20 MB total — "'+f.name+'" doesn’t fit.');return;}
+    const rd=new FileReader();
+    rd.onload=()=>{const b64=String(rd.result).split(',')[1]||'';mailx.attach.push({name:f.name,type:f.type||'application/octet-stream',size:f.size,b64});paintMailAtt();};
+    rd.readAsDataURL(f);
+  });
+}
+function mailRemoveAtt(i){mailx.attach.splice(i,1);paintMailAtt();}
+function mailAttChipsHTML(){return (mailx.attach||[]).map((a,i)=>`<span class="mail-att-chip">📎 <span class="nm">${esc(a.name)}</span> <em>${fmtSize(a.size)}</em><button title="Remove" onclick="mailRemoveAtt(${i})">✕</button></span>`).join('');}
+function mailAttRowHTML(){return `<div class="mail-att-row"><button class="mail-att-btn" onclick="document.getElementById('mail-att-input').click()">📎 Attach files</button><input id="mail-att-input" type="file" multiple style="display:none" onchange="mailAddFiles(this.files);this.value=''"><span id="mail-att-chips" style="display:contents">${mailAttChipsHTML()}</span></div>`;}
+function paintMailAtt(){const el=document.getElementById('mail-att-chips');if(el)el.innerHTML=mailAttChipsHTML();}
+function mailDragOver(e){e.preventDefault();e.currentTarget.classList.add('dragover');}
+function mailDragLeave(e){e.currentTarget.classList.remove('dragover');}
+function mailDrop(e){e.preventDefault();e.currentTarget.classList.remove('dragover');const fs=e.dataTransfer&&e.dataTransfer.files;if(fs&&fs.length)mailAddFiles(fs);}
+// Targeted status update for the REPLY bar — avoids re-rendering the form (which would wipe the draft).
+function setReplyStatus(text,kind){const el=document.getElementById('mail-reply-status');if(el){el.textContent=text;el.className='gmail-compose-status '+(kind||'');}}
 // ── Sending: Gmail accounts go out via the Gmail API over HTTPS (Render blocks SMTP), the same
 // proven path the Reservations tab uses. Per-account access token vended by the scheduler. ──────
 function mailAcctObj(){return (mailx.accts||[]).find(a=>a.id===mailx.acct)||{};}
@@ -1060,13 +1093,35 @@ async function gmailAccessToken(email){
   const d=await r.json();if(!d.access_token)throw new Error('no access token');return d.access_token;
 }
 function b64url(s){return btoa(unescape(encodeURIComponent(s))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
-async function sendViaGmailApi(acct,{to,subject,text,inReplyTo,references}){
-  const token=await gmailAccessToken(acct.email);
-  const hdr=['From: '+acct.email,'To: '+to,'Subject: '+subject,'MIME-Version: 1.0','Content-Type: text/plain; charset=UTF-8'];
+function encMimeHeader(s){return /[^\x20-\x7E]/.test(s||'')?'=?UTF-8?B?'+btoa(unescape(encodeURIComponent(s)))+'?=':s;}
+function buildMime(acct,{to,subject,text,inReplyTo,references,attach}){
+  const hdr=['From: '+acct.email,'To: '+to,'Subject: '+encMimeHeader(subject),'MIME-Version: 1.0'];
   if(inReplyTo)hdr.push('In-Reply-To: '+inReplyTo);
   if(references)hdr.push('References: '+references);
-  const raw=b64url(hdr.join('\r\n')+'\r\n\r\n'+(text||''));
-  const r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({raw})});
+  if(!attach||!attach.length){
+    hdr.push('Content-Type: text/plain; charset=UTF-8');
+    return hdr.join('\r\n')+'\r\n\r\n'+(text||'');
+  }
+  const b='ctb_'+Date.now().toString(36)+'_wt';
+  hdr.push('Content-Type: multipart/mixed; boundary="'+b+'"');
+  let out=hdr.join('\r\n')+'\r\n\r\n';
+  out+='--'+b+'\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n'+(text||'')+'\r\n';
+  for(const a of attach){
+    const fn=(a.name||'file').replace(/["\r\n]/g,'');
+    out+='--'+b+'\r\nContent-Type: '+(a.type||'application/octet-stream')+'; name="'+fn+'"\r\nContent-Disposition: attachment; filename="'+fn+'"\r\nContent-Transfer-Encoding: base64\r\n\r\n'+a.b64.replace(/.{76}/g,'$&\r\n')+'\r\n';
+  }
+  return out+'--'+b+'--';
+}
+async function sendViaGmailApi(acct,payload){
+  const token=await gmailAccessToken(acct.email);
+  const mime=buildMime(acct,payload);
+  let r;
+  if(payload.attach&&payload.attach.length){
+    // attachments → the upload endpoint (raw RFC822 body; the JSON `raw` route caps out a few MB)
+    r=await fetch('https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send?uploadType=media',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'message/rfc822'},body:mime});
+  }else{
+    r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({raw:b64url(mime)})});
+  }
   if(!r.ok){const t=await r.text();throw new Error('Gmail '+r.status+': '+t.slice(0,160));}
   return r.json();
 }
@@ -1075,6 +1130,7 @@ function gmailConnectAccount(email){window.open(GMAIL_AUTH_ENDPOINT+'?account='+
 // Mac bridge: we queue it to jarvis-voice and the always-on Mac (sbc-sender.js) does the AT&T SMTP send.
 async function mailSend(acct,payload){
   if(acct.provider==='gmail')return sendViaGmailApi(acct,payload);
+  if(payload.attach&&payload.attach.length){const e=new Error('Attachments aren’t supported from '+(acct.label||'this account')+' yet — send it from a Gmail account.');e.noProvider=true;throw e;}
   return sendViaSbcBridge(acct,payload);
 }
 // Queue the send, then poll until the Mac actually sends it (or reports a failure / that it's offline).
@@ -1097,19 +1153,20 @@ async function sendViaSbcBridge(acct,payload){
 async function mailSendReply(){
   const m=mailx.selMsg;if(!m)return;const toEl=document.getElementById('mail-reply-to');const bodyEl=document.getElementById('mail-reply-text');
   const to=(toEl?toEl.value:'').trim();const text=(bodyEl?bodyEl.value:'').trim();
-  if(!to){mailx.sendStatus={text:'Add a recipient',kind:'error'};renderViewport();return;}
-  if(!text){mailx.sendStatus={text:'Write a message first',kind:'error'};renderViewport();return;}
+  // Status updates are TARGETED (setReplyStatus) — a full re-render here would wipe the typed draft.
+  if(!to){setReplyStatus('Add a recipient','error');return;}
+  if(!text&&!(mailx.attach||[]).length){setReplyStatus('Write a message first','error');return;}
   const acct=mailAcctObj();
   const subj=/^re:/i.test(m.subject||'')?m.subject:'Re: '+(m.subject||'');
-  mailx.sendStatus={text:'Sending…',kind:'info'};renderViewport();
+  setReplyStatus('Sending…','info');
   try{
-    await mailSend(acct,{to,subject:subj,text,inReplyTo:m.messageId,references:m.messageId});
-    mailx.sendStatus={text:'Sent ✓',kind:'success'};setTimeout(()=>{mailx.composing=false;mailx.sendStatus=null;if(mailx.selUid)openMailMsg(mailx.selUid,mailx.folder);else if(activeTab===MAIL)renderViewport();},1600);
+    await mailSend(acct,{to,subject:subj,text,inReplyTo:m.messageId,references:m.messageId,attach:mailx.attach||[]});
+    mailx.attach=[];
+    setReplyStatus('Sent ✓','success');setTimeout(()=>{mailx.composing=false;mailx.sendStatus=null;if(mailx.selUid)openMailMsg(mailx.selUid,mailx.folder);else if(activeTab===MAIL)renderViewport();},1600);
   }catch(e){
-    if(e.notConnected){mailx.sendStatus={text:'Not connected for sending yet',kind:'error'};if(activeTab===MAIL)renderViewport();if(confirm(acct.email+' needs a one-time Google sign-in to send. Open it now?'))gmailConnectAccount(acct.email);return;}
-    mailx.sendStatus={text:(e.noProvider?'':'Send failed: ')+String(e.message||e),kind:'error'};
+    if(e.notConnected){setReplyStatus('Not connected for sending yet','error');if(confirm(acct.email+' needs a one-time Google sign-in to send. Open it now?'))gmailConnectAccount(acct.email);return;}
+    setReplyStatus((e.noProvider?'':'Send failed: ')+String(e.message||e),'error');
   }
-  if(activeTab===MAIL)renderViewport();
 }
 function mailTime(iso){try{const d=new Date(iso);const now=new Date();if(d.toDateString()===now.toDateString())return d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});return d.toLocaleDateString([],{month:'short',day:'numeric'});}catch(e){return ''}}
 function mailFullDate(iso){try{return new Date(iso).toLocaleString([],{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});}catch(e){return String(iso||'')}}
@@ -1177,20 +1234,52 @@ function mailDetailHTML(){
 function mailComposeHTML(){
   const m=mailx.selMsg;const to=m.fromAddr||m.from||'';
   const inputStyle='background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:6px 10px;color:var(--text);font-size:13px;outline:none;margin-left:4px;flex:1;min-width:0';
-  const status=mailx.sendStatus?`<span class="gmail-compose-status ${mailx.sendStatus.kind}">${esc(mailx.sendStatus.text)}</span>`:'<span></span>';
-  return `<div class="gmail-compose"><div class="gmail-compose-to"><div style="display:flex;align-items:center;gap:4px">To:<input id="mail-reply-to" type="email" value="${esc(to)}" style="${inputStyle}"></div></div><textarea id="mail-reply-text" placeholder="Type your reply…"></textarea><div class="gmail-compose-bar">${status}<div style="display:flex;gap:8px"><button class="gmail-action-btn secondary" onclick="mailCancelReply()">Cancel</button><button class="gmail-action-btn" onclick="mailSendReply()">Send Reply</button></div></div></div>`;
+  const status=`<span id="mail-reply-status" class="gmail-compose-status ${mailx.sendStatus?mailx.sendStatus.kind:''}">${mailx.sendStatus?esc(mailx.sendStatus.text):''}</span>`;
+  return `<div class="gmail-compose" ondragover="mailDragOver(event)" ondragleave="mailDragLeave(event)" ondrop="mailDrop(event)"><div class="gmail-compose-to"><div style="display:flex;align-items:center;gap:4px">To:<input id="mail-reply-to" type="email" value="${esc(to)}" style="${inputStyle}"></div></div><textarea id="mail-reply-text" placeholder="Type your reply… (drop files here to attach)"></textarea>${mailAttRowHTML()}<div class="gmail-compose-bar">${status}<div style="display:flex;gap:8px"><button class="gmail-action-btn secondary" onclick="mailCancelReply()">Cancel</button><button class="gmail-action-btn" onclick="mailSendReply()">Send Reply</button></div></div></div>`;
 }
 // ═══ DOCUMENTS TAB — in-app word processor (replaces Word for quick typing) ═══
 let docsState={docs:null,current:null,saveTimer:null};
 function loadDocsData(){if(!docsState.docs){try{docsState.docs=JSON.parse(localStorage.getItem('ct_docs')||'[]')}catch(e){docsState.docs=[]}}return docsState.docs}
-function saveDocsData(){try{localStorage.setItem('ct_docs',JSON.stringify(docsState.docs||[]))}catch(e){}}
+function saveDocsData(){try{localStorage.setItem('ct_docs',JSON.stringify(docsState.docs||[]));return true}catch(e){const s=document.getElementById('docs-status');if(s){s.textContent='⚠ Too big to save — remove some images/files';s.style.color='#f87171'}return false}}
+// ── Drag files (or paste images) straight into a doc: images embed inline (compressed), other files
+// become download chips. Everything is stored IN the doc (data: URIs) so it survives reloads/print/.doc. ──
+function fileToDataURL(f){return new Promise(res=>{const r=new FileReader();r.onload=()=>res(String(r.result));r.onerror=()=>res(null);r.readAsDataURL(f)})}
+async function docCompressImage(f){
+  const url=await fileToDataURL(f);if(!url)return null;
+  if(f.size<300000)return url; // small images go in untouched
+  return new Promise(res=>{const img=new Image();
+    img.onload=()=>{try{const M=1400;let w=img.width,h=img.height;const s=Math.min(1,M/Math.max(w,h));w=Math.max(1,Math.round(w*s));h=Math.max(1,Math.round(h*s));
+      const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(img,0,0,w,h);res(c.toDataURL('image/jpeg',0.82))}catch(e){res(url)}};
+    img.onerror=()=>res(url);img.src=url})
+}
+function docInsertHTML(h){const ed=document.getElementById('docs-editor');if(!ed)return;ed.focus();try{document.execCommand('insertHTML',false,h)}catch(e){ed.insertAdjacentHTML('beforeend',h)}}
+async function docInsertFiles(files,ev){
+  if(ev&&typeof ev.clientX==='number'&&ev.clientX){try{const r=document.caretRangeFromPoint&&document.caretRangeFromPoint(ev.clientX,ev.clientY);if(r){const s=getSelection();s.removeAllRanges();s.addRange(r)}}catch(e){}}
+  for(const f of [...files]){
+    if((f.type||'').startsWith('image/')){
+      const url=await docCompressImage(f);
+      if(url)docInsertHTML('<img src="'+url+'" style="max-width:100%">');
+    }else{
+      if(f.size>1500000){alert('"'+f.name+'" is too big to store inside a doc (1.5 MB max for non-image files). Email it as an attachment instead.');continue}
+      const url=await fileToDataURL(f);if(!url)continue;
+      const fn=esc(f.name).replace(/"/g,'&quot;');
+      docInsertHTML('<a href="'+url+'" download="'+fn+'" style="display:inline-block;background:#efece4;border:1px solid #cfc9ba;border-radius:6px;padding:4px 10px;margin:2px;color:#333;text-decoration:none;font-family:-apple-system,sans-serif;font-size:13px">📎 '+esc(f.name)+' ('+fmtSize(f.size)+')</a>&nbsp;');
+    }
+  }
+  docsOnInput();
+}
+function docDragOver(e){e.preventDefault();e.currentTarget.classList.add('dragover')}
+function docDragLeave(e){e.currentTarget.classList.remove('dragover')}
+function docDrop(e){e.preventDefault();e.currentTarget.classList.remove('dragover');const fs=e.dataTransfer&&e.dataTransfer.files;if(fs&&fs.length)docInsertFiles(fs,e)}
+// Pasting a screenshot/photo: convert to a stored data: image (otherwise Safari inserts a blob: URL that dies on reload)
+function docPaste(e){const items=e.clipboardData&&e.clipboardData.items;if(!items)return;const fs=[];for(const it of items){if(it.kind==='file'){const f=it.getAsFile();if(f)fs.push(f)}}if(fs.length){e.preventDefault();docInsertFiles(fs,null)}}
 function newDocId(){return 'd'+Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
 function curDoc(){return loadDocsData().find(d=>d.id===docsState.current)||null}
 function docTime(ts){try{const d=new Date(ts);const now=new Date();const t=d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});return d.toDateString()===now.toDateString()?t:d.toLocaleDateString([],{month:'short',day:'numeric'})+', '+t}catch(e){return ''}}
 function docsNew(){const d={id:newDocId(),title:'Untitled',html:'',updated:Date.now()};loadDocsData().unshift(d);docsState.current=d.id;saveDocsData();renderViewport();setTimeout(()=>{const t=document.getElementById('docs-title-input');if(t){t.focus();t.select();}},50);}
 function docsSelect(id){if(id===docsState.current)return;docsFlush();docsState.current=id;renderViewport();}
 function docsDelete(id,ev){if(ev)ev.stopPropagation();if(!confirm('Delete this document? This cannot be undone.'))return;const arr=loadDocsData();const i=arr.findIndex(d=>d.id===id);if(i>=0)arr.splice(i,1);if(docsState.current===id)docsState.current=arr[0]?arr[0].id:null;saveDocsData();renderViewport();}
-function docsOnInput(){const d=curDoc();if(!d)return;const ed=document.getElementById('docs-editor');const ti=document.getElementById('docs-title-input');if(ed)d.html=ed.innerHTML;if(ti)d.title=ti.value.trim()||'Untitled';d.updated=Date.now();const li=document.querySelector('.docs-item[data-id="'+d.id+'"] .docs-item-title');if(li)li.textContent=d.title;const st=document.getElementById('docs-status');if(st)st.textContent='Saving…';clearTimeout(docsState.saveTimer);docsState.saveTimer=setTimeout(()=>{saveDocsData();const s=document.getElementById('docs-status');if(s)s.textContent='Saved ✓';},500);}
+function docsOnInput(){const d=curDoc();if(!d)return;const ed=document.getElementById('docs-editor');const ti=document.getElementById('docs-title-input');if(ed)d.html=ed.innerHTML;if(ti)d.title=ti.value.trim()||'Untitled';d.updated=Date.now();const li=document.querySelector('.docs-item[data-id="'+d.id+'"] .docs-item-title');if(li)li.textContent=d.title;const st=document.getElementById('docs-status');if(st)st.textContent='Saving…';clearTimeout(docsState.saveTimer);docsState.saveTimer=setTimeout(()=>{const ok=saveDocsData();const s=document.getElementById('docs-status');if(s&&ok){s.textContent='Saved ✓';s.style.color=''}},500);}
 function docsFlush(){const d=curDoc();if(!d)return;const ed=document.getElementById('docs-editor');const ti=document.getElementById('docs-title-input');if(ed)d.html=ed.innerHTML;if(ti)d.title=ti.value.trim()||'Untitled';clearTimeout(docsState.saveTimer);saveDocsData();}
 function docExec(cmd,val){try{document.execCommand('styleWithCSS',false,cmd==='fontSize');}catch(e){}document.execCommand(cmd,false,val||undefined);const ed=document.getElementById('docs-editor');if(ed)ed.focus();docsOnInput();}
 function docBlock(tag){if(!tag)return;document.execCommand('formatBlock',false,tag);const ed=document.getElementById('docs-editor');if(ed)ed.focus();docsOnInput();}
@@ -1225,7 +1314,7 @@ function docsHTML(){
       <button class="doc-tb wide" onclick="docsDownload()" title="Download as Word (.doc)">⬇ Word</button>
       <span class="docs-status" id="docs-status">Saved ✓</span>
     </div>`;
-    main=`<div class="docs-main"><div class="docs-titlebar"><input id="docs-title-input" class="docs-title-input" value="${esc(d.title||'')}" placeholder="Untitled" oninput="docsOnInput()"></div>${tb}<div class="docs-editor-wrap"><div id="docs-editor" class="docs-editor" contenteditable="true" oninput="docsOnInput()">${d.html||''}</div></div></div>`;
+    main=`<div class="docs-main"><div class="docs-titlebar"><input id="docs-title-input" class="docs-title-input" value="${esc(d.title||'')}" placeholder="Untitled" oninput="docsOnInput()"></div>${tb}<div class="docs-editor-wrap"><div id="docs-editor" class="docs-editor" contenteditable="true" oninput="docsOnInput()" ondragover="docDragOver(event)" ondragleave="docDragLeave(event)" ondrop="docDrop(event)" onpaste="docPaste(event)">${d.html||''}</div></div></div>`;
   }
   return `<div class="docs-wrap">${side}${main}</div>`;
 }
