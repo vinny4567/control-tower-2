@@ -1535,14 +1535,14 @@ function wedEventHTML(){const fe=wedFeedEvent(wed.evId);if(!fe){wed.view='list';
       <div class="wed-side">
         <span class="wed-side-hint">Event tools</span>
         <button class="wed-side-btn ${wed.pane==='plan'?'active':''}" onclick="wedOpenSchedLayout()">📐 <span>Floor Plan<span class="sub">${lay?'saved layout ✓':'start from room template'}</span></span></button>
-        <button class="wed-side-btn ${wed.pane==='tpl'?'active':''}" onclick="wedShowTpl()">📋 <span>Wedding Template<span class="sub">order form &amp; details</span></span></button>
-        <button class="wed-side-btn ${wed.pane==='catering'?'active':''}" onclick="wedShowCatering()">🍽 <span>Catering Template<span class="sub">catering order form</span></span></button>
+        <button class="wed-side-btn ${wed.pane==='tpl'?'active':''}" onclick="wedShowTpl()">📋 <span>Wedding Template<span class="sub">this event's copy · autosaves</span></span></button>
+        <button class="wed-side-btn ${wed.pane==='catering'?'active':''}" onclick="wedShowCatering()">🍽 <span>Catering Template<span class="sub">this event's copy · autosaves</span></span></button>
       </div>
       ${wed.pane==='plan'
         ?`<div class="wed-main wed-main-col">${wedPlanChrome(true)}</div>`
         :wed.pane==='catering'
-        ?`<div class="wed-main"><iframe src="https://order.angeliscatering.com/catering-internal.html" allow="storage-access fullscreen"></iframe></div>`
-        :`<div class="wed-main"><iframe src="https://order.angeliscatering.com/wedding-internal.html" allow="storage-access fullscreen"></iframe></div>`}
+        ?`<div class="wed-main"><iframe src="https://order.angeliscatering.com/catering-notes.html?event=sched-${fe.id}&name=${encodeURIComponent(fe.label)}" allow="storage-access fullscreen"></iframe></div>`
+        :`<div class="wed-main"><iframe src="https://order.angeliscatering.com/wedding-notes.html?event=sched-${fe.id}&name=${encodeURIComponent(fe.label)}" allow="storage-access fullscreen"></iframe></div>`}
     </div>
   </div>`}
 function wedHTML(){wedLoad();return wed.view==='plan'?wedPlanHTML():wed.view==='event'?wedEventHTML():wedListHTML()}
