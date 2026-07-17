@@ -1234,13 +1234,13 @@ function buildMime(acct,{to,subject,text,inReplyTo,references,attach}){
 async function sendViaGmailApi(acct,payload){
   const token=await gmailAccessToken(acct.email);
   const mime=buildMime(acct,payload);
-  let r;
-  if(payload.attach&&payload.attach.length){
-    // attachments → the upload endpoint (raw RFC822 body; the JSON `raw` route caps out a few MB)
-    r=await fetch('https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send?uploadType=media',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'message/rfc822'},body:mime});
-  }else{
-    r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({raw:b64url(mime)})});
-  }
+  // ALWAYS the plain endpoint — never /upload/. Verified 2026-07-16: the /upload/ route passes the CORS
+  // preflight but returns NO Access-Control-Allow-Origin on the actual response, so the browser sends the
+  // request (Gmail really does send the mail) and then blocks JS from reading the reply — fetch throws
+  // "Load failed" and the UI reports a false "Send failed" on mail that went out. The plain route returns
+  // CORS on success AND error, so real failures surface as real messages. It accepted a 29MB body when
+  // probed, so the old "JSON raw caps out a few MB" worry doesn't bite at our 20MB attachment cap.
+  const r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({raw:b64url(mime)})});
   if(!r.ok){const t=await r.text();throw new Error('Gmail '+r.status+': '+t.slice(0,160));}
   return r.json();
 }
@@ -1997,7 +1997,7 @@ function agTap(id){
   id=String(id);
   if(id.startsWith('sched-')){const sid=Number(id.slice(6));
     if(!wed.feed&&ag.feed)wed.feed=ag.feed;
-    if(wedFeedEvent(sid)){wed.evId=sid;wed.view='event';wed.pane='tpl';switchTab(WED)}
+    if(wedFeedEvent(sid)){switchTab(WED);wed.evId=sid;wed.view='event';wed.pane='tpl';renderViewport()}
     return}
   agOpen[id]=!agOpen[id];agendaRerender();
 }
