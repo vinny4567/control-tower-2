@@ -1237,16 +1237,29 @@ function buildMime(acct,{to,subject,text,inReplyTo,references,attach}){
   }
   return out+'--'+b+'--';
 }
+// Gmail does NOT reliably thread API-sent replies on In-Reply-To/References alone (verified live: the
+// "Re: Gift cards" reply had perfect headers and still landed in its own conversation). The send must
+// carry Gmail's own threadId — look it up from the message being replied to (fast indexed search).
+async function gmailThreadIdFor(token,rfcId){
+  if(!rfcId)return null;
+  try{
+    const q=encodeURIComponent('rfc822msgid:'+String(rfcId).replace(/^<|>$/g,''));
+    const r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?q='+q+'&maxResults=1',{headers:{Authorization:'Bearer '+token}});
+    if(!r.ok)return null;const d=await r.json();
+    return (d.messages&&d.messages[0])?d.messages[0].threadId:null;
+  }catch(e){return null}
+}
 async function sendViaGmailApi(acct,payload){
   const token=await gmailAccessToken(acct.email);
   const mime=buildMime(acct,payload);
+  const threadId=payload.inReplyTo?await gmailThreadIdFor(token,payload.inReplyTo):null;
   // ALWAYS the plain endpoint — never /upload/. Verified 2026-07-16: the /upload/ route passes the CORS
   // preflight but returns NO Access-Control-Allow-Origin on the actual response, so the browser sends the
   // request (Gmail really does send the mail) and then blocks JS from reading the reply — fetch throws
   // "Load failed" and the UI reports a false "Send failed" on mail that went out. The plain route returns
   // CORS on success AND error, so real failures surface as real messages. It accepted a 29MB body when
   // probed, so the old "JSON raw caps out a few MB" worry doesn't bite at our 20MB attachment cap.
-  const r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({raw:b64url(mime)})});
+  const r=await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(threadId?{raw:b64url(mime),threadId}:{raw:b64url(mime)})});
   if(!r.ok){const t=await r.text();throw new Error('Gmail '+r.status+': '+t.slice(0,160));}
   return r.json();
 }
@@ -1544,29 +1557,14 @@ function wedRenameVenue(){const v=wedVenueSel();if(!v){alert('Pick the venue to 
   list[list.indexOf(v)]=nn;d.venuesAt=Date.now();
   if(d.vtpls&&d.vtpls[v]){d.vtpls[nn]={...d.vtpls[v],at:Date.now()};delete d.vtpls[v]}
   wed.venueSel=nn;wedStore();renderViewport()}
-function wedVenuePremade(v){const it=[];let n=1;
-  const R=(x,y,w)=>it.push({id:wedNewId(),type:'round',x,y,w:w||76,h:w||76,label:String(n++)});
-  const B=(x,y)=>it.push({id:wedNewId(),type:'rect',x,y,w:56,h:130,label:'BUFFET'});
-  const D=(x,y)=>it.push({id:wedNewId(),type:'door',x,y,w:130,h:34,label:'KITCHEN'});
-  if(v==='Full Restaurant')return wedDefaultItems();
-  if(v==='Main Dining'){
-    [140,320].forEach(y=>{R(260,y);R(420,y);R(580,y);R(740,y)});
-    R(340,500);R(500,500);R(660,500);
-    B(120,230);B(120,410);D(150,60);
-  }else if(v==='Private Room'){
-    R(350,200);R(550,200);R(750,200);R(350,450);R(550,450);R(750,450);
-    B(160,325);D(170,80);
-  }else if(v==='Bar'){
-    it.push({id:wedNewId(),type:'rect',x:500,y:95,w:480,h:56,label:'BAR'});
-    R(280,300,64);R(470,300,64);R(660,300,64);R(370,480,64);R(560,480,64);
-  }
-  return it}
 function wedVenueItems(v){const d=wedLoad();const t=(d.vtpls||{})[v];
-  return (t&&t.items)?t.items:wedVenuePremade(v)}
+  return (t&&t.items)?t.items:[]}
 function wedVenueSel(){const el=document.getElementById('wed-venue');const v=el?el.value:'';wed.venueSel=v;return v}
-function wedLoadVenue(){const v=wedVenueSel();const ev=wedCur();if(!ev)return;
-  if(!v){alert('Pick a venue in the dropdown first.');return}
-  if(ev.items.length&&!confirm('Replace everything on the canvas with the "'+v+'" template?'))return;
+function wedVenuePicked(sel){const v=sel.value;const ev=wedCur();
+  if(!v||!ev){wed.venueSel=v;return}
+  const prev=wed.venueSel||'';
+  if(ev.items.length&&!confirm('Switch the canvas to "'+v+'"? What\'s on it now will be replaced.')){sel.value=prev;return}
+  wed.venueSel=v;
   ev.items=JSON.parse(JSON.stringify(wedVenueItems(v)));
   ev.items.forEach(i=>i.id=wedNewId());
   ev.updated=Date.now();wed.sel=null;wedStore();renderViewport()}
@@ -1706,11 +1704,10 @@ function wedPlanChrome(embedded){const ev=wedCur();if(!ev)return '';
       <input type="text" id="wed-name" value="${esc(ev.name||'')}" placeholder="Layout name" oninput="wedRename(this.value)">
       ${ev.sched?'<span style="font-size:11px;color:var(--text-muted);white-space:nowrap">linked to schedule</span>':''}
       ${ev.tpl?'<span style="font-size:11px;color:var(--accent);white-space:nowrap">this is your room template — press “Save as template” when done</span>':''}
-      <select id="wed-venue">
+      <select id="wed-venue" onchange="wedVenuePicked(this)">
         <option value="">📐 Venue…</option>
         ${wedVenueList().map(v=>`<option${wed.venueSel===v?' selected':''}>${esc(v)}</option>`).join('')}
       </select>
-      <button class="wed-btn" onclick="wedLoadVenue()">📐 Load</button>
       <button class="wed-btn" onclick="wedRenameVenue()" title="Rename this venue">✎ Rename</button>
       <button class="wed-btn" onclick="wedSaveVenue()">💾 Save</button>
       <button class="wed-btn" onclick="wedPrint()">🖨 Print</button>
