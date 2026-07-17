@@ -1297,7 +1297,7 @@ let docsState={docs:null,current:null,saveTimer:null};
 // old bucket and resets the cache so lists never bleed across events.
 function docsSetNS(ns){if(docsNS===ns)return;docsFlush();docsNS=ns;docsState.docs=null;docsState.current=null;}
 function loadDocsData(){if(!docsState.docs){try{docsState.docs=JSON.parse(localStorage.getItem(docsNS)||'[]')}catch(e){docsState.docs=[]}}return docsState.docs}
-function saveDocsData(){try{localStorage.setItem(docsNS,JSON.stringify(docsState.docs||[]));return true}catch(e){const s=document.getElementById('docs-status');if(s){s.textContent='⚠ Too big to save — remove some images/files';s.style.color='#f87171'}return false}}
+function saveDocsData(){try{localStorage.setItem(docsNS,JSON.stringify(docsState.docs||[]));if(!syncApplying)kvPush(docsNS,{items:docsState.docs||[],del:docsDelMap()},Date.now());return true}catch(e){const s=document.getElementById('docs-status');if(s){s.textContent='⚠ Too big to save — remove some images/files';s.style.color='#f87171'}return false}}
 // ── Drag files (or paste images) straight into a doc: images embed inline (compressed), other files
 // become download chips. Everything is stored IN the doc (data: URIs) so it survives reloads/print/.doc. ──
 function fileToDataURL(f){return new Promise(res=>{const r=new FileReader();r.onload=()=>res(String(r.result));r.onerror=()=>res(null);r.readAsDataURL(f)})}
@@ -1335,18 +1335,26 @@ function curDoc(){return loadDocsData().find(d=>d.id===docsState.current)||null}
 function docTime(ts){try{const d=new Date(ts);const now=new Date();const t=d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});return d.toDateString()===now.toDateString()?t:d.toLocaleDateString([],{month:'short',day:'numeric'})+', '+t}catch(e){return ''}}
 function docsNew(){const d={id:newDocId(),title:'Untitled',html:'',updated:Date.now()};loadDocsData().unshift(d);docsState.current=d.id;saveDocsData();renderViewport();setTimeout(()=>{const t=document.getElementById('docs-title-input');if(t){t.focus();t.select();}},50);}
 function docsSelect(id){if(id===docsState.current)return;docsFlush();docsState.current=id;renderViewport();}
-function docsDelete(id,ev){if(ev)ev.stopPropagation();if(!confirm('Delete this document? This cannot be undone.'))return;const arr=loadDocsData();const i=arr.findIndex(d=>d.id===id);if(i>=0)arr.splice(i,1);if(docsState.current===id)docsState.current=arr[0]?arr[0].id:null;saveDocsData();renderViewport();}
+function docsDelete(id,ev){if(ev)ev.stopPropagation();if(!confirm('Delete this document? This cannot be undone.'))return;try{const _dm=docsDelMap();_dm[id]=Date.now();localStorage.setItem(docsNS+'_del',JSON.stringify(_dm))}catch(e){}const arr=loadDocsData();const i=arr.findIndex(d=>d.id===id);if(i>=0)arr.splice(i,1);if(docsState.current===id)docsState.current=arr[0]?arr[0].id:null;saveDocsData();renderViewport();}
 function docsOnInput(){const d=curDoc();if(!d)return;const ed=document.getElementById('docs-editor');const ti=document.getElementById('docs-title-input');if(ed)d.html=ed.innerHTML;if(ti)d.title=ti.value.trim()||'Untitled';d.updated=Date.now();const li=document.querySelector('.docs-item[data-id="'+d.id+'"] .docs-item-title');if(li)li.textContent=d.title;const st=document.getElementById('docs-status');if(st)st.textContent='Saving…';clearTimeout(docsState.saveTimer);docsState.saveTimer=setTimeout(()=>{const ok=saveDocsData();const s=document.getElementById('docs-status');if(s&&ok){s.textContent='Saved ✓';s.style.color=''}},500);}
 function docsFlush(){const d=curDoc();if(!d)return;const ed=document.getElementById('docs-editor');const ti=document.getElementById('docs-title-input');if(ed)d.html=ed.innerHTML;if(ti)d.title=ti.value.trim()||'Untitled';clearTimeout(docsState.saveTimer);saveDocsData();}
 function docExec(cmd,val){try{document.execCommand('styleWithCSS',false,cmd==='fontSize');}catch(e){}document.execCommand(cmd,false,val||undefined);const ed=document.getElementById('docs-editor');if(ed)ed.focus();docsOnInput();}
 function docBlock(tag){if(!tag)return;document.execCommand('formatBlock',false,tag);const ed=document.getElementById('docs-editor');if(ed)ed.focus();docsOnInput();}
 function docsPrint(){const d=curDoc();if(!d)return;docsFlush();const f=document.createElement('iframe');f.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0';document.body.appendChild(f);const w=f.contentWindow,doc=w.document;doc.open();doc.write('<!doctype html><html><head><meta charset="utf-8"><title>'+esc(d.title||'Document')+'</title><style>@page{margin:1in}body{font-family:Georgia,\'Times New Roman\',serif;font-size:12pt;line-height:1.6;color:#000}h1{font-size:22pt}h2{font-size:16pt}ul,ol{padding-left:1.4em}</style></head><body>'+(d.html||'')+'</body></html>');doc.close();w.focus();setTimeout(()=>{try{w.print()}catch(e){}setTimeout(()=>f.remove(),1500);},300);}
 function docsDownload(){const d=curDoc();if(!d)return;docsFlush();const html='<!doctype html><html><head><meta charset="utf-8"><title>'+esc(d.title||'Document')+'</title></head><body style="font-family:Georgia,serif;font-size:12pt;line-height:1.6">'+(d.html||'')+'</body></html>';const blob=new Blob(['﻿'+html],{type:'application/msword'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=((d.title||'document').replace(/[^\w\- ]+/g,'').trim()||'document')+'.doc';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},600);}
+window.docsQ='';
+function docsSearchInput(v){window.docsQ=v;const host=document.getElementById('docs-list-items');if(!host)return;
+  const arr0=loadDocsData();const q=v.toLowerCase();
+  const arr=q?arr0.filter(d=>{const t=(d.title||'').toLowerCase();const b=(d.html||'').replace(/<[^>]*>/g,' ').toLowerCase();return t.includes(q)||b.includes(q)}):arr0;
+  host.innerHTML=arr.length?arr.map(d=>`<div class="docs-item ${docsState.current===d.id?'active':''}" data-id="${d.id}" onclick="docsSelect('${d.id}')"><div class="docs-item-title">${esc(d.title||'Untitled')}</div><div class="docs-item-date">${docTime(d.updated)}</div><button class="docs-item-del" onclick="docsDelete('${d.id}',event)" title="Delete">🗑</button></div>`).join(''):(q?'<div class="docs-empty">No documents match your search.</div>':'<div class="docs-empty">No documents yet.</div>');
+}
 function docsHTML(){
-  const arr=loadDocsData();
-  if(!docsState.current&&arr.length)docsState.current=arr[0].id;
-  const items=arr.length?arr.map(d=>`<div class="docs-item ${docsState.current===d.id?'active':''}" data-id="${d.id}" onclick="docsSelect('${d.id}')"><div class="docs-item-title">${esc(d.title||'Untitled')}</div><div class="docs-item-date">${docTime(d.updated)}</div><button class="docs-item-del" onclick="docsDelete('${d.id}',event)" title="Delete">🗑</button></div>`).join(''):'<div class="docs-empty">No documents yet.<br>Tap “＋ New Document” to start.</div>';
-  const side=`<div class="docs-side"><div class="docs-side-head"><button class="docs-new" onclick="docsNew()">＋ New Document</button></div><div class="docs-list">${items}</div></div>`;
+  const arr0=loadDocsData();
+  if(!docsState.current&&arr0.length)docsState.current=arr0[0].id;
+  const q=(window.docsQ||'').toLowerCase();
+  const arr=q?arr0.filter(d=>{const t=(d.title||'').toLowerCase();const b=(d.html||'').replace(/<[^>]*>/g,' ').toLowerCase();return t.includes(q)||b.includes(q)}):arr0;
+  const items=arr.length?arr.map(d=>`<div class="docs-item ${docsState.current===d.id?'active':''}" data-id="${d.id}" onclick="docsSelect('${d.id}')"><div class="docs-item-title">${esc(d.title||'Untitled')}</div><div class="docs-item-date">${docTime(d.updated)}</div><button class="docs-item-del" onclick="docsDelete('${d.id}',event)" title="Delete">🗑</button></div>`).join(''):(q?'<div class="docs-empty">No documents match your search.</div>':'<div class="docs-empty">No documents yet.<br>Tap “＋ New Document” to start.</div>');
+  const side=`<div class="docs-side"><div class="docs-side-head"><button class="docs-new" onclick="docsNew()">＋ New Document</button></div><div style="padding:8px 10px 2px"><input id="docs-search" type="search" placeholder="🔍 Search documents…" value="${esc(window.docsQ||'')}" oninput="docsSearchInput(this.value)" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:13px"></div><div class="docs-list" id="docs-list-items">${items}</div></div>`;
   const d=curDoc();
   let main;
   if(!d){main=`<div class="docs-main"><div class="docs-empty">Pick a document on the left, or create a new one to start typing.</div></div>`;}
@@ -1375,6 +1383,68 @@ function docsHTML(){
   }
   return `<div class="docs-wrap">${side}${main}</div>`;
 }
+// ═══ CROSS-DEVICE SYNC — /api/kv on the Angeli's backend (Supabase-durable).
+// Whole-value newest-wins for simple buckets; id-level merge with tombstones
+// for weddings + docs so Vinny and Dad can both edit without losing work. ═══
+const KV_URL='https://order.angeliscatering.com/api/kv/';
+const KV_TOKEN='ctsync-3e1fd98589118f5578125e3eb676cced';
+async function kvGet(k){try{const r=await fetch(KV_URL+encodeURIComponent(k)+'?token='+KV_TOKEN);if(!r.ok)return null;return await r.json()}catch(e){return null}}
+const kvPushTimers={};
+function kvPush(k,v,at){clearTimeout(kvPushTimers[k]);kvPushTimers[k]=setTimeout(()=>{try{fetch(KV_URL+encodeURIComponent(k)+'?token='+KV_TOKEN,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({v,at})}).catch(()=>{})}catch(e){}},1200)}
+let syncApplying=false;
+
+function wedMergeRemote(remote){
+  if(!remote||!remote.v)return false;
+  const R=remote.v,L=wedLoad();
+  const before=JSON.stringify({e:L.events,t:L.template,d:L.del});
+  const del={...(L.del||{})};Object.entries(R.del||{}).forEach(([id,ts])=>{if(!del[id]||ts>del[id])del[id]=ts});
+  const byId={};
+  [...(L.events||[]),...(R.events||[])].forEach(e=>{
+    if(!e||!e.id)return;
+    if(del[e.id]&&del[e.id]>=(e.updated||0))return;
+    const cur=byId[e.id];
+    if(!cur||(e.updated||0)>(cur.updated||0))byId[e.id]=e;
+  });
+  L.events=Object.values(byId).sort((a,b)=>(b.updated||0)-(a.updated||0));
+  if(R.template&&(R.template.at||0)>((L.template&&L.template.at)||0))L.template=R.template;
+  L.del=del;
+  const changed=JSON.stringify({e:L.events,t:L.template,d:L.del})!==before;
+  if(changed){syncApplying=true;wedStore();syncApplying=false;}
+  return changed;
+}
+async function wedPullSync(){
+  const remote=await kvGet('ct_weddings');
+  if(wedMergeRemote(remote)&&activeTab===WED)renderViewport();
+}
+
+function docsDelMap(){try{return JSON.parse(localStorage.getItem(docsNS+'_del')||'{}')}catch(e){return{}}}
+function docsMergeRemote(ns,remote){
+  if(ns!==docsNS)return false;
+  if(!remote||!remote.v)return false;
+  const R=remote.v;const L=loadDocsData();
+  const before=JSON.stringify(L);
+  const del=docsDelMap();Object.entries(R.del||{}).forEach(([id,ts])=>{if(!del[id]||ts>del[id])del[id]=ts});
+  const byId={};
+  [...L,...(R.items||[])].forEach(d=>{
+    if(!d||!d.id)return;
+    if(del[d.id]&&del[d.id]>=(d.updated||0))return;
+    const cur=byId[d.id];
+    if(!cur||(d.updated||0)>(cur.updated||0))byId[d.id]=d;
+  });
+  const merged=Object.values(byId).sort((a,b)=>(b.updated||0)-(a.updated||0));
+  try{localStorage.setItem(docsNS+'_del',JSON.stringify(del))}catch(e){}
+  const changed=JSON.stringify(merged)!==before;
+  if(changed){docsState.docs=merged;if(docsState.current&&!merged.some(d=>d.id===docsState.current))docsState.current=merged[0]?merged[0].id:null;syncApplying=true;saveDocsData();syncApplying=false;}
+  return changed;
+}
+async function docsPullSync(){
+  const ns=docsNS;
+  const remote=await kvGet(ns);
+  if(docsMergeRemote(ns,remote)){
+    if(activeTab===DOCS||(activeTab===WED&&wed.view==='event'&&wed.pane==='docs'))renderViewport();
+  }
+}
+
 // ═══ WEDDINGS TAB — schedule-app event list + drag-and-drop floor plans ═══
 const WED_FEED='https://restaurant-scheduler-hh5e.onrender.com/api/banquet-feed';
 const WED_W=1000,WED_H=700;
@@ -1383,7 +1453,7 @@ function wedLoad(){if(!wed.data){try{wed.data=JSON.parse(localStorage.getItem('c
   if(!wed.data)wed.data={events:[],template:{items:wedDefaultItems()},cur:null};
   if(!wed.data.template||!wed.data.template.items)wed.data.template={items:wedDefaultItems()};}
   return wed.data}
-function wedStore(){try{localStorage.setItem('ct_weddings',JSON.stringify(wed.data))}catch(e){}}
+function wedStore(){try{localStorage.setItem('ct_weddings',JSON.stringify(wed.data))}catch(e){}if(!syncApplying&&wed.data)kvPush('ct_weddings',wed.data,Date.now())}
 function wedQueueSave(){clearTimeout(wed.saveTimer);wed.saveTimer=setTimeout(wedStore,400)}
 function wedFlush(){clearTimeout(wed.saveTimer);if(wed.data)wedStore()}
 function wedNewId(){return 'w'+Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
@@ -1429,7 +1499,7 @@ function wedOpenSchedLayout(){const fe=wedFeedEvent(wed.evId);if(!fe)return;
   wed.cur=lay.id;wedLoad().cur=lay.id;wed.sel=null;wed.pane='plan';renderViewport()}
 function wedShowTpl(){wedFlush();wed.pane='tpl';wed.sel=null;renderViewport()}
 function wedShowCatering(){wedFlush();wed.pane='catering';wed.sel=null;renderViewport()}
-function wedShowDocs(){docsFlush();wedFlush();wed.pane='docs';wed.sel=null;renderViewport()}
+function wedShowDocs(){docsFlush();wedFlush();wed.pane='docs';wed.sel=null;renderViewport();docsPullSync()}
 function wedOpenLayout(id){wed.cur=id;wedLoad().cur=id;wed.sel=null;wed.view='plan';renderViewport()}
 // Back from the plan editor: a schedule-linked layout returns to its event hub; anything else to the list.
 function wedBack(){wedFlush();const cur=wedCur();wed.sel=null;
@@ -1447,12 +1517,12 @@ function wedNewEvent(){const d=wedLoad();
   d.events.unshift(ev);wed.cur=ev.id;d.cur=ev.id;wed.sel=null;wed.view='plan';wedStore();renderViewport();
   setTimeout(()=>{const n=document.getElementById('wed-name');if(n){n.focus();n.select()}},60)}
 function wedRename(v){const ev=wedCur();if(!ev)return;ev.name=v;ev.updated=Date.now();wedQueueSave()}
-function wedDeleteEvent(){const ev=wedCur();if(!ev)return;
+function wedDeleteEvent(){const ev=wedCur();if(!ev)return;const _d=wedLoad();_d.del=_d.del||{};_d.del[ev.id]=Date.now();
   if(!confirm('Delete the floor plan "'+(ev.name||'this layout')+'"?'+(ev.sched?' (The event stays in the schedule app — only this layout is removed.)':'')))return;
   const d=wedLoad();d.events=d.events.filter(e=>e.id!==ev.id);wed.cur=null;d.cur=null;wed.sel=null;wedStore();
   if(wed.view==='event'){wed.pane='tpl';renderViewport()}else wedBack()}
 function wedSaveTemplate(){const ev=wedCur();if(!ev)return;if(!confirm('Make this layout the starting template for every new event?'))return;
-  wedLoad().template={items:JSON.parse(JSON.stringify(ev.items))};wedStore()}
+  wedLoad().template={items:JSON.parse(JSON.stringify(ev.items)),at:Date.now()};wedStore()}
 // ── canvas ──
 function wedAdd(type){const ev=wedCur();if(!ev)return;
   const base={round:{w:76,h:76,label:String(ev.items.filter(i=>i.type==='round').length+1)},
@@ -1609,7 +1679,7 @@ function wedPrint(){const ev=wedCur();if(!ev)return;wedFlush();
   doc.close();w.focus();setTimeout(()=>{try{w.print()}catch(e){}setTimeout(()=>f.remove(),1500)},300)}
 
 function renderTabs(){const list=document.getElementById('tab-list');list.innerHTML=`<div class="tab ${activeTab===DASH?'active':''}" onclick="switchTab('${DASH}')">📊 Dashboard</div>`+`<div class="tab ${activeTab===MAIL?'active':''}" onclick="switchTab('${MAIL}')">📧 Email</div>`+`<div class="tab ${activeTab===DOCS?'active':''}" onclick="switchTab('${DOCS}')">📝 Docs</div>`+cfg.panels.map(p=>{const t=`<div class="tab ${activeTab===p.id?'active':''}" onclick="switchTab(${p.id})">${esc(p.name)}</div>`;return p.id===4?t+`<div class="tab ${activeTab===WED?'active':''}" onclick="switchTab('${WED}')">💍 Weddings</div>`:t;}).join('')+`<div class="tab ${activeTab===ONLINE?'active':''}" onclick="switchTab('${ONLINE}')">🤖 Jarvis</div>`+`<div class="tab tab-add" onclick="openSettings()" title="Add panel">＋</div>`}
-function renderViewport(){if(activeTab===WED){document.getElementById('viewport').innerHTML=wedHTML();wedInit();return}if(activeTab===DOCS){docsSetNS('ct_docs');document.getElementById('viewport').innerHTML=docsHTML();return}if(activeTab===MAIL){document.getElementById('viewport').innerHTML=mailHTML();restoreGmailListScroll();return}if(activeTab===ONLINE){document.getElementById('viewport').innerHTML=onlineHTML();renderChat();if(ordersKey())loadCmdConsole();return}if(activeTab===DASH){document.getElementById('viewport').innerHTML=dashboardHTML();return}const p=cfg.panels.find(x=>x.id===activeTab);if(!p){document.getElementById('viewport').innerHTML='';return}document.getElementById('viewport').innerHTML=bodyHTML(p);if(activeTab===3)restoreGmailListScroll()}
+function renderViewport(){if(activeTab===WED){document.getElementById('viewport').innerHTML=wedHTML();wedInit();return}if(activeTab===DOCS){docsSetNS('ct_docs');docsPullSync();document.getElementById('viewport').innerHTML=docsHTML();return}if(activeTab===MAIL){document.getElementById('viewport').innerHTML=mailHTML();restoreGmailListScroll();return}if(activeTab===ONLINE){document.getElementById('viewport').innerHTML=onlineHTML();renderChat();if(ordersKey())loadCmdConsole();return}if(activeTab===DASH){document.getElementById('viewport').innerHTML=dashboardHTML();return}const p=cfg.panels.find(x=>x.id===activeTab);if(!p){document.getElementById('viewport').innerHTML='';return}document.getElementById('viewport').innerHTML=bodyHTML(p);if(activeTab===3)restoreGmailListScroll()}
 
 // ── ONLINE TAB: Otter command bridge ───────────────────────────────
 // Queue actions to the reader userscript on the always-on Mac's Otter tab; it runs them there
@@ -1892,7 +1962,7 @@ function switchTab(id){
   if(activeTab===WED&&id!==WED)wedFlush();
   activeTab=id;cfg.activeTab=id;saveCfg();renderAll();
   if(id===DASH){loadCateringOrders();loadLiveOrders();}
-  if(id===WED){wed.view='list';wedFetchFeed();}
+  if(id===WED){wed.view='list';wedFetchFeed();wedPullSync();}
   if(id===MAIL){if(mailx.accts===null||mailx.accts==='error')loadMailAccounts();else if(mailx.acct)loadMailList();}
   if(gmailValid()){
     if(id===3&&!gmailTab.selectedEmail&&!gmailTab.loading)loadGmailTab();
