@@ -1467,7 +1467,8 @@ let syncApplying=false;
 function wedMergeRemote(remote){
   if(!remote||!remote.v)return false;
   const R=remote.v,L=wedLoad();
-  const before=JSON.stringify({e:L.events,t:L.template,d:L.del});
+  const before=JSON.stringify({e:L.events,t:L.template,d:L.del,v:L.vtpls});
+  const vt={...(L.vtpls||{})};Object.entries(R.vtpls||{}).forEach(([k,v])=>{if(!vt[k]||(v.at||0)>(vt[k].at||0))vt[k]=v});L.vtpls=vt;
   const del={...(L.del||{})};Object.entries(R.del||{}).forEach(([id,ts])=>{if(!del[id]||ts>del[id])del[id]=ts});
   const byId={};
   [...(L.events||[]),...(R.events||[])].forEach(e=>{
@@ -1479,7 +1480,7 @@ function wedMergeRemote(remote){
   L.events=Object.values(byId).sort((a,b)=>(b.updated||0)-(a.updated||0));
   if(R.template&&(R.template.at||0)>((L.template&&L.template.at)||0))L.template=R.template;
   L.del=del;
-  const changed=JSON.stringify({e:L.events,t:L.template,d:L.del})!==before;
+  const changed=JSON.stringify({e:L.events,t:L.template,d:L.del,v:L.vtpls})!==before;
   if(changed){syncApplying=true;wedStore();syncApplying=false;}
   return changed;
 }
@@ -1530,6 +1531,44 @@ function wedFlush(){clearTimeout(wed.saveTimer);if(wed.data)wedStore()}
 function wedNewId(){return 'w'+Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
 function wedCur(){const d=wedLoad();return d.events.find(e=>e.id===wed.cur)||null}
 // Starting template modeled on the Angeli's banquet-room sheet.
+// Venue floor-plan templates. Premades ship as starting points; "Save" on the
+// canvas overwrites that venue's template (stored in wed.data.vtpls, synced).
+const WED_VENUES=['Full Restaurant','Main Dining','Private Room','Bar'];
+function wedVenuePremade(v){const it=[];let n=1;
+  const R=(x,y,w)=>it.push({id:wedNewId(),type:'round',x,y,w:w||76,h:w||76,label:String(n++)});
+  const B=(x,y)=>it.push({id:wedNewId(),type:'rect',x,y,w:56,h:130,label:'BUFFET'});
+  const D=(x,y)=>it.push({id:wedNewId(),type:'door',x,y,w:130,h:34,label:'KITCHEN'});
+  if(v==='Full Restaurant')return wedDefaultItems();
+  if(v==='Main Dining'){
+    [140,320].forEach(y=>{R(260,y);R(420,y);R(580,y);R(740,y)});
+    R(340,500);R(500,500);R(660,500);
+    B(120,230);B(120,410);D(150,60);
+  }else if(v==='Private Room'){
+    R(350,200);R(550,200);R(750,200);R(350,450);R(550,450);R(750,450);
+    B(160,325);D(170,80);
+  }else if(v==='Bar'){
+    it.push({id:wedNewId(),type:'rect',x:500,y:95,w:480,h:56,label:'BAR'});
+    R(280,300,64);R(470,300,64);R(660,300,64);R(370,480,64);R(560,480,64);
+  }
+  return it}
+function wedVenueItems(v){const d=wedLoad();const t=(d.vtpls||{})[v];
+  return (t&&t.items)?t.items:wedVenuePremade(v)}
+function wedVenueSel(){const el=document.getElementById('wed-venue');const v=el?el.value:'';wed.venueSel=v;return v}
+function wedLoadVenue(){const v=wedVenueSel();const ev=wedCur();if(!ev)return;
+  if(!v){alert('Pick a venue in the dropdown first.');return}
+  if(ev.items.length&&!confirm('Replace everything on the canvas with the "'+v+'" template?'))return;
+  ev.items=JSON.parse(JSON.stringify(wedVenueItems(v)));
+  ev.items.forEach(i=>i.id=wedNewId());
+  ev.updated=Date.now();wed.sel=null;wedStore();renderViewport()}
+function wedSaveVenue(){const v=wedVenueSel();const ev=wedCur();if(!ev)return;
+  if(!v){alert('Pick a venue in the dropdown first, then Save.');return}
+  if(!confirm('Save this canvas as the "'+v+'" template? Every event will get this layout when it loads "'+v+'".'))return;
+  const d=wedLoad();d.vtpls=d.vtpls||{};
+  d.vtpls[v]={items:JSON.parse(JSON.stringify(ev.items)),at:Date.now()};
+  wedStore();alert('"'+v+'" template saved ✓')}
+function wedClearAll(){const ev=wedCur();if(!ev||!ev.items.length)return;
+  if(!confirm('Wipe the canvas clean? (The event and its notes/docs are untouched — only the floor plan empties.)'))return;
+  ev.items=[];wed.sel=null;ev.updated=Date.now();wedStore();renderViewport()}
 function wedDefaultItems(){const it=[];let n=1;
   const R=(x,y)=>it.push({id:wedNewId(),type:'round',x,y,w:76,h:76,label:String(n++)});
   R(305,95);R(425,75);R(545,75);R(665,85);R(785,95);R(895,140);
@@ -1566,8 +1605,8 @@ function wedOpenSched(id){if(!wedFeedEvent(id))return;wed.evId=id;wed.view='even
 function wedOpenSchedLayout(){const fe=wedFeedEvent(wed.evId);if(!fe)return;
   let lay=wedLayoutForSched(fe.id);
   if(!lay){const d=wedLoad();
-    lay={id:wedNewId(),sched:fe.id,name:(fe.label||'Event')+' · '+wedPrettyDate(fe.date),items:JSON.parse(JSON.stringify(d.template.items)),updated:Date.now()};
-    lay.items.forEach(i=>i.id=wedNewId());d.events.unshift(lay);wedStore()}
+    lay={id:wedNewId(),sched:fe.id,name:(fe.label||'Event')+' · '+wedPrettyDate(fe.date),items:[],updated:Date.now()};
+    d.events.unshift(lay);wedStore()}
   wed.cur=lay.id;wedLoad().cur=lay.id;wed.sel=null;wed.pane='plan';renderViewport()}
 function wedShowTpl(){wedFlush();wed.pane='tpl';wed.sel=null;renderViewport()}
 function wedShowCatering(){wedFlush();wed.pane='catering';wed.sel=null;renderViewport()}
@@ -1589,9 +1628,10 @@ function wedNewEvent(){const d=wedLoad();
   d.events.unshift(ev);wed.cur=ev.id;d.cur=ev.id;wed.sel=null;wed.view='plan';wedStore();renderViewport();
   setTimeout(()=>{const n=document.getElementById('wed-name');if(n){n.focus();n.select()}},60)}
 function wedRename(v){const ev=wedCur();if(!ev)return;ev.name=v;ev.updated=Date.now();wedQueueSave()}
-function wedDeleteEvent(){const ev=wedCur();if(!ev)return;const _d=wedLoad();_d.del=_d.del||{};_d.del[ev.id]=Date.now();
+function wedDeleteEvent(){const ev=wedCur();if(!ev)return;
   if(!confirm('Delete the floor plan "'+(ev.name||'this layout')+'"?'+(ev.sched?' (The event stays in the schedule app — only this layout is removed.)':'')))return;
-  const d=wedLoad();d.events=d.events.filter(e=>e.id!==ev.id);wed.cur=null;d.cur=null;wed.sel=null;wedStore();
+  const d=wedLoad();d.del=d.del||{};d.del[ev.id]=Date.now();
+  d.events=d.events.filter(e=>e.id!==ev.id);wed.cur=null;d.cur=null;wed.sel=null;wedStore();
   if(wed.view==='event'){wed.pane='tpl';renderViewport()}else wedBack()}
 function wedSaveTemplate(){const ev=wedCur();if(!ev)return;if(!confirm('Make this layout the starting template for every new event?'))return;
   wedLoad().template={items:JSON.parse(JSON.stringify(ev.items)),at:Date.now()};wedStore()}
@@ -1656,9 +1696,14 @@ function wedPlanChrome(embedded){const ev=wedCur();if(!ev)return '';
       <input type="text" id="wed-name" value="${esc(ev.name||'')}" placeholder="Layout name" oninput="wedRename(this.value)">
       ${ev.sched?'<span style="font-size:11px;color:var(--text-muted);white-space:nowrap">linked to schedule</span>':''}
       ${ev.tpl?'<span style="font-size:11px;color:var(--accent);white-space:nowrap">this is your room template — press “Save as template” when done</span>':''}
-      <button class="wed-btn" onclick="wedSaveTemplate()">Save as template</button>
+      <select id="wed-venue">
+        <option value="">📐 Venue…</option>
+        ${WED_VENUES.map(v=>`<option${wed.venueSel===v?' selected':''}>${v}</option>`).join('')}
+      </select>
+      <button class="wed-btn" onclick="wedLoadVenue()">📐 Load</button>
+      <button class="wed-btn" onclick="wedSaveVenue()">💾 Save</button>
       <button class="wed-btn" onclick="wedPrint()">🖨 Print</button>
-      <button class="wed-btn danger" onclick="wedDeleteEvent()">Delete</button>
+      <button class="wed-btn danger" onclick="wedClearAll()">🧹 Clear all</button>
       <span class="wed-count" id="wed-count"></span>
     </div>
     <div id="wed-stage-wrap"><div id="wed-stage"></div></div>
