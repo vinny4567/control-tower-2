@@ -1101,14 +1101,14 @@ async function openMailMsg(uid,folder){
       mailx.loadingMsg=false;
       if((changed||!cachedTh)&&activeTab===MAIL&&!mailx.composing)renderViewport();
     }
-    const mark=(arr)=>{const row=arr&&arr.find(m=>m.uid===uid);if(row)row.unread=false;};mark(mailx.lists[mailx.acct+'|'+folder]);mark(mailx.searchResults);}
+    const mark=(arr)=>{const row=arr&&arr.find(m=>m.uid===uid);if(row)row.unread=false;};mark(mailx.lists[mailx.acct+'|'+folder]);mark(mailx.searchResults);mailSyncSnap();renderMailAccts();}
   catch(e){if(!cachedTh){mailx.loadingMsg=false;mailx.error='Could not open that message — '+String(e.message||e);if(activeTab===MAIL)renderViewport();}}
   if(!cachedTh&&activeTab===MAIL)renderViewport();
 }
 function closeMailMsg(){mailx.selUid=null;mailx.selMsg=null;mailx.composing=false;if(activeTab===MAIL)renderViewport();}
 async function mailToggleStar(uid,ev){
   if(ev)ev.stopPropagation();const li=mailx.lists[mailListKey()];const row=li&&li.find(m=>m.uid===uid);const now=row?!row.starred:true;
-  if(row)row.starred=now;if(mailx.selMsg&&mailx.selMsg.uid===uid)mailx.selMsg.starred=now;if(activeTab===MAIL)renderViewport();
+  if(row)row.starred=now;if(mailx.selMsg&&mailx.selMsg.uid===uid)mailx.selMsg.starred=now;mailSyncSnap();if(activeTab===MAIL)renderViewport();
   try{await mailFetch('/mail/flag',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acct:mailx.acct,uid,flag:'star',on:now})});}
   catch(e){if(row)row.starred=!now;if(mailx.selMsg&&mailx.selMsg.uid===uid)mailx.selMsg.starred=!now;if(activeTab===MAIL)renderViewport();}
 }
@@ -1168,14 +1168,20 @@ function mailComposeNewHTML(){
 }
 function mailRowHTML(e,forTwoPane,folderOverride){const openFolder=folderOverride||mailx.folder;const who=openFolder==='sent'?('To: '+esc(e.to||e.toAddr||'(no recipient)')):esc(e.from||e.fromAddr||'(unknown)');return `<div class="gmail-row ${e.unread?'unread':''} ${forTwoPane&&mailx.selUid===e.uid?'selected':''}" onclick="openMailMsg(${e.uid},'${openFolder}')"><div class="gmail-row-top"><div class="gmail-row-sender">${e.unread?'<span class="unread-badge">New</span>':''}${who}</div><div class="gmail-row-time"><button class="gmail-star ${e.starred?'starred':''}" onclick="mailToggleStar(${e.uid},event)" title="${e.starred?'Unstar':'Star'}">${e.starred?'★':'☆'}</button>${mailTime(e.date)}</div></div><div class="gmail-row-subject">${esc(e.subject)}</div></div>`;}
 function mailCancelReply(){mailx.composing=false;mailx.sendStatus=null;mailx.attach=[];if(activeTab===MAIL)renderViewport();}
+// Persist the current inbox list to the on-device snapshot after a local change (trash/star/read) —
+// otherwise a reload repaints from the stale snapshot and "resurrects" the old state for a beat.
+function mailSyncSnap(){if(mailx.folder==='inbox'&&mailx.acct&&mailx.lists[mailx.acct+'|inbox'])mailSnapPut(mailx.acct+'|inbox',mailx.lists[mailx.acct+'|inbox']);}
 async function mailTrash(uid){
   if(!confirm('Move this email to Trash?'))return;
+  const folder=mailx.folder; // capture — the user may navigate while the request runs
   try{
-    const r=await mailFetch('/mail/trash',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acct:mailx.acct,uid})});
+    const r=await mailFetch('/mail/trash',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acct:mailx.acct,uid,folder})});
     const d=await r.json();
     if(r.ok&&d.ok){
-      const li=mailx.lists[mailListKey()];if(li){const i=li.findIndex(x=>x.uid===uid);if(i>=0)li.splice(i,1);}
-      mailx.selUid=null;mailx.selMsg=null;mailx.composing=false;
+      const li=mailx.lists[mailx.acct+'|'+folder];if(li){const i=li.findIndex(x=>x.uid===uid);if(i>=0)li.splice(i,1);}
+      delete mailThreadCache[mailx.acct+'|'+folder+'|'+uid];
+      mailx.selUid=null;mailx.selMsg=null;mailx.selThread=null;mailx.composing=false;
+      mailSyncSnap();
       if(activeTab===MAIL)renderViewport();
     }else{alert('Trash failed: '+(d.detail||d.error||'error'));}
   }catch(e){alert('Trash failed: '+String(e.message||e));}
