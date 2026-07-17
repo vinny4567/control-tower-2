@@ -1005,19 +1005,31 @@ async function loadMailAccounts(retry){
 async function mailPrefetch(acctId){
   try{const r=await mailFetch('/mail/list?acct='+encodeURIComponent(acctId)+'&folder=inbox&limit=50');const d=await r.json();
     if(r.ok&&d.messages){mailx.lists[acctId+'|inbox']=d.messages;mailSnapPut(acctId+'|inbox',d.messages);
-      if(activeTab===MAIL)renderMailAccts();}}catch(e){}
+      if(activeTab===MAIL)renderMailAccts();mailPrecacheTop(acctId,d.messages,2);}}catch(e){}
 }
 async function loadMailList(force){
   if(!mailx.acct)return;const key=mailListKey();
   if(!mailx.lists[key]&&mailx.folder==='inbox'){const snap=mailSnapGet(mailx.acct+'|inbox');if(snap)mailx.lists[key]=snap;}
   const cached=mailx.lists[key];mailx.loadingList=!cached||!!force;if(activeTab===MAIL)renderViewport();
-  try{const r=await mailFetch('/mail/list?acct='+encodeURIComponent(mailx.acct)+'&folder='+mailx.folder+'&limit='+(mailx.limit||50)+(force?'&fresh=1':''));const d=await r.json();if(!r.ok)throw new Error(d.detail||d.error||'mailbox error');mailx.lists[key]=d.messages||[];if(mailx.folder==='inbox'&&(mailx.limit||50)<=50)mailSnapPut(mailx.acct+'|inbox',d.messages||[]);mailx.loadingList=false;mailx.error=null;}
+  try{const r=await mailFetch('/mail/list?acct='+encodeURIComponent(mailx.acct)+'&folder='+mailx.folder+'&limit='+(mailx.limit||50)+(force?'&fresh=1':''));const d=await r.json();if(!r.ok)throw new Error(d.detail||d.error||'mailbox error');mailx.lists[key]=d.messages||[];if(mailx.folder==='inbox'&&(mailx.limit||50)<=50)mailSnapPut(mailx.acct+'|inbox',d.messages||[]);mailx.loadingList=false;mailx.error=null;if(mailx.folder==="inbox")mailPrecacheTop(mailx.acct,d.messages,3);}
   catch(e){mailx.loadingList=false;mailx.error=e.message==='unauth'?'Access key rejected':'Could not reach that inbox — '+String(e.message||e);}
   if(activeTab===MAIL)renderViewport();
 }
 function switchMailAcct(id){if(id===mailx.acct)return;mailx.acct=id;mailx.folder='inbox';mailx.limit=50;mailx.selUid=null;mailx.selMsg=null;mailx.composing=false;mailx.composeNew=false;mailx.search='';mailx.searchResults=null;mailx.searching=false;mailx.error=null;renderViewport();loadMailList();}
 function mailLoadMore(){mailx.limit=Math.min(300,(mailx.limit||50)+50);loadMailList(true);}
 let mailThreadCache={}; // acct|folder|uid -> thread, for the session — reopening an email is instant
+// Pre-download the top unread messages (peek=1 → stays unread) so tapping a NEW email is instant.
+let mailPeekInFlight={};
+function mailPrecacheTop(acctId,list,n){
+  (list||[]).filter(m=>m.unread).slice(0,n||3).forEach(m=>{
+    const ck=acctId+'|inbox|'+m.uid;
+    if(mailThreadCache[ck]||mailPeekInFlight[ck])return;
+    mailPeekInFlight[ck]=1;
+    mailFetch('/mail/msg?acct='+encodeURIComponent(acctId)+'&uid='+m.uid+'&folder=inbox&peek=1').then(r=>r.json()).then(d=>{
+      if(d&&d.message&&!mailThreadCache[ck])mailThreadCache[ck]={subject:d.message.subject,messages:[d.message],provisional:true};
+    }).catch(()=>{}).finally(()=>{delete mailPeekInFlight[ck]});
+  });
+}
 async function openMailMsg(uid,folder){
   folder=folder||mailx.folder;
   const ck=mailx.acct+'|'+folder+'|'+uid;
@@ -1075,7 +1087,7 @@ async function mailSilentRefresh(){
   const key=mailListKey();
   try{const r=await mailFetch('/mail/list?acct='+encodeURIComponent(mailx.acct)+'&folder='+mailx.folder+'&limit='+(mailx.limit||50));const d=await r.json();
     if(r.ok&&d.messages){mailx.lists[key]=d.messages;if(mailx.folder==='inbox'&&(mailx.limit||50)<=50)mailSnapPut(mailx.acct+'|inbox',d.messages);
-      if(!mailx.search)renderMailListRegion();renderMailAccts();}}catch(e){}
+      if(!mailx.search)renderMailListRegion();renderMailAccts();if(mailx.folder==="inbox")mailPrecacheTop(mailx.acct,d.messages,3);}}catch(e){}
 }
 function mailSearchInput(v){mailx.search=v;clearTimeout(mailSearchTimer);if(!v.trim()){mailx.searchResults=null;mailx.searching=false;renderMailListRegion();return;}mailSearchTimer=setTimeout(mailDoSearch,450);}
 async function mailDoSearch(){const q=(mailx.search||'').trim();if(!q){mailx.searchResults=null;mailx.searching=false;renderMailListRegion();return;}mailx.searching=true;renderMailListRegion();try{const r=await mailFetch('/mail/search?acct='+encodeURIComponent(mailx.acct)+'&q='+encodeURIComponent(q));const d=await r.json();if(!r.ok)throw new Error(d.detail||d.error||'search failed');mailx.searchResults=d.messages||[];mailx.searchErr=null;}catch(e){mailx.searchResults=[];mailx.searchErr='Search failed — '+String(e.message||e);}mailx.searching=false;renderMailListRegion();}
