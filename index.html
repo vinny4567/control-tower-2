@@ -1656,22 +1656,35 @@ function wedAdd(type){const ev=wedCur();if(!ev)return;
   const it={id:wedNewId(),type,x:WED_W/2,y:WED_H/2,...base};
   ev.items.push(it);ev.updated=Date.now();wed.sel=it.id;wedQueueSave();wedPaint();
   if(type==='text'||type==='box')wedEditLabel(it.id)}
-// Type-in-place label editor: the label span becomes an editable textbox right on
-// the canvas. Enter/blur commits, Esc cancels. An empty Text item removes itself.
-function wedEditLabel(id){wed.sel=id;wedPaint();
-  const el=document.querySelector(`#wed-stage [data-wid="${id}"]`);if(!el)return;
-  const sp=el.querySelector('.wed-lbl');const it=wedCur().items.find(i=>i.id===id);if(!sp||!it)return;
-  try{sp.contentEditable='plaintext-only'}catch(_){sp.contentEditable='true'}
-  sp.classList.add('editing');
-  const done=commit=>{if(!sp.isContentEditable)return;sp.contentEditable='false';
-    if(commit){it.label=sp.textContent.replace(/\n/g,' ').trim();
-      if(it.type==='text'&&!it.label){const ev=wedCur();ev.items=ev.items.filter(x=>x.id!==id);wed.sel=null}
-      wedTouch()}else wedPaint()};
-  sp.addEventListener('blur',()=>done(true),{once:true});
-  sp.addEventListener('keydown',e=>{
-    if(e.key==='Enter'){e.preventDefault();sp.blur()}
-    else if(e.key==='Escape'){e.preventDefault();done(false)}});
-  setTimeout(()=>{sp.focus();try{document.execCommand('selectAll',false,null)}catch(_){}},30)}
+// Label editor: a real textbox pops up over the piece. Enter/blur saves, Esc closes.
+// (Inline element handlers — immune to the re-render/closure detachment that broke
+// the contenteditable approach.)
+function wedEditLabel(id){const ev=wedCur();const it=ev&&ev.items.find(x=>x.id===id);if(!it)return;
+  wed.sel=id;wedPaint();
+  const wrap=document.getElementById('wed-stage-wrap'),stg=document.getElementById('wed-stage');if(!wrap||!stg)return;
+  const old=document.getElementById('wed-edit');if(old){old.onblur=null;old.remove()}
+  const el=stg.querySelector(`[data-wid="${id}"]`);
+  const wr=wrap.getBoundingClientRect();
+  let left=wr.width/2,top=wr.height/2;
+  if(el){const r=el.getBoundingClientRect();left=r.left+r.width/2-wr.left;top=r.top+r.height/2-wr.top}
+  const inp=document.createElement('input');
+  inp.id='wed-edit';inp.type='text';inp.value=it.label||'';inp.placeholder='Type a label…';
+  inp.autocomplete='off';inp.dataset.wid=id;
+  inp.style.cssText=`position:absolute;left:${left}px;top:${top}px;transform:translate(-50%,-50%);width:190px;z-index:30;background:#0a0b0f;border:2px solid var(--accent);border-radius:8px;color:var(--text);font-size:15px;font-weight:700;padding:9px 10px;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,.6)`;
+  inp.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();wedEditCommit()}else if(e.key==='Escape'){e.preventDefault();wedEditCancel()}};
+  inp.onblur=()=>wedEditCommit();
+  wrap.appendChild(inp);
+  setTimeout(()=>{inp.focus();inp.select()},30)}
+function wedEditCommit(){const inp=document.getElementById('wed-edit');if(!inp)return;
+  const id=inp.dataset.wid,v=inp.value.trim();inp.onblur=null;inp.remove();
+  const ev=wedCur();const it=ev&&ev.items.find(x=>x.id===id);if(!ev||!it)return;
+  it.label=v;
+  if(it.type==='text'&&!v){ev.items=ev.items.filter(x=>x.id!==id);wed.sel=null}
+  wedTouch()}
+function wedEditCancel(){const inp=document.getElementById('wed-edit');if(!inp)return;
+  const id=inp.dataset.wid;inp.onblur=null;inp.remove();
+  const ev=wedCur();const it=ev&&ev.items.find(x=>x.id===id);
+  if(ev&&it&&it.type==='text'&&!it.label){ev.items=ev.items.filter(x=>x.id!==id);wed.sel=null;wedTouch()}else wedPaint()}
 function wedSelItem(){const ev=wedCur();return ev?ev.items.find(i=>i.id===wed.sel):null}
 function wedRenameItem(){if(wed.sel)wedEditLabel(wed.sel)}
 function wedRotate(){const it=wedSelItem();if(!it)return;it.rot=((it.rot||0)+45)%360;wedTouch()}
