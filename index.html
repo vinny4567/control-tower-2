@@ -49,6 +49,46 @@
     .dashboard{width:100%;height:100%;overflow-y:auto;padding:20px;padding-bottom:48px}
     .dash-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;max-width:1500px;margin:0 auto}
     .dash-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:12px;min-height:180px;transition:transform .15s,box-shadow .15s}
+    /* Dashboard agenda + calendar (Coming Up card) */
+    .ag-head{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+    .ag-title{font-size:18px;font-weight:800;color:var(--accent);letter-spacing:.04em}
+    .ag-legend{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--text-dim);margin-right:auto}
+    .ag-leg{display:flex;align-items:center;gap:5px}
+    .ag-err{font-size:11px;color:#ff7043}
+    .ag-btn{background:transparent;border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:3px 10px;cursor:pointer;font-size:13px}
+    .ag-btn:hover{color:var(--accent);border-color:var(--accent)}
+    .ag-body{display:grid;grid-template-columns:340px 1fr;gap:20px;align-items:start}
+    @media(max-width:860px){.ag-body{grid-template-columns:1fr}}
+    .ag-mnav{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+    .ag-mon{flex:1;text-align:center;font-weight:700;color:var(--text);font-size:14px}
+    .ag-todaybtn{font-size:11px}
+    .ag-dowrow{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;font-size:10px;color:var(--text-muted);margin-bottom:4px}
+    .ag-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+    .ag-day{aspect-ratio:1;border:1px solid transparent;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:12px;color:var(--text-muted)}
+    .ag-day.ag-has{cursor:pointer;color:var(--text);background:rgba(255,179,0,0.05)}
+    .ag-day.ag-has:hover{border-color:var(--border)}
+    .ag-day.ag-today{border-color:var(--accent);color:var(--accent);font-weight:800}
+    .ag-day.ag-selday{background:rgba(255,179,0,0.18);border-color:var(--accent)}
+    .ag-dots{display:flex;gap:2px;height:5px}
+    .ag-dot{width:5px;height:5px;border-radius:50%;display:inline-block}
+    .ag-dot.ag-cat{background:#ffb300}.ag-dot.ag-party{background:#4dd0e1}.ag-dot.ag-wed{background:#f06292}
+    .ag-list{display:flex;flex-direction:column;gap:4px;max-height:520px;overflow-y:auto;padding-right:4px}
+    .ag-filter{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-dim);margin-bottom:4px}
+    .ag-datehead{font-size:11px;font-weight:800;color:var(--text-dim);letter-spacing:.08em;margin:10px 0 2px;border-bottom:1px solid var(--border);padding-bottom:3px}
+    .ag-datehead.ag-dh-today{color:var(--accent);border-color:var(--accent)}
+    .ag-item{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:9px;border:1px solid var(--border);border-left-width:3px;cursor:pointer;background:var(--surface2)}
+    .ag-item:hover{filter:brightness(1.15)}
+    .ag-item.ag-cat{border-left-color:#ffb300}.ag-item.ag-party{border-left-color:#4dd0e1}.ag-item.ag-wed{border-left-color:#f06292}
+    .ag-ico{font-size:15px;flex:none}
+    .ag-time{width:62px;flex:none;font-size:11px;color:var(--text-dim);font-variant-numeric:tabular-nums}
+    .ag-main{display:flex;flex-direction:column;min-width:0;flex:1}
+    .ag-label{font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .ag-sub{font-size:11px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .ag-go{color:var(--accent);font-weight:800;flex:none}
+    .ag-det{border:1px solid var(--border);border-top:none;border-radius:0 0 9px 9px;margin:-4px 0 3px 0;padding:8px 12px 8px 30px;display:flex;flex-direction:column;gap:3px;background:rgba(0,0,0,0.3)}
+    .ag-dr{display:flex;gap:8px;font-size:12px;color:var(--text-dim)}
+    .ag-dr b{color:var(--text);font-weight:600}
+    .ag-empty{color:var(--text-muted);font-size:13px;padding:24px;text-align:center}
     .dash-card:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.25)}
     .dash-card.wide{grid-column:span 2}
     @media (max-width:760px){.dash-card.wide{grid-column:span 1}}
@@ -1209,8 +1249,7 @@ function gmailConnectAccount(email){window.open(GMAIL_AUTH_ENDPOINT+'?account='+
 // Mac bridge: we queue it to jarvis-voice and the always-on Mac (sbc-sender.js) does the AT&T SMTP send.
 async function mailSend(acct,payload){
   if(acct.provider==='gmail')return sendViaGmailApi(acct,payload);
-  if(payload.attach&&payload.attach.length){const e=new Error('Attachments aren’t supported from '+(acct.label||'this account')+' yet — send it from a Gmail account.');e.noProvider=true;throw e;}
-  return sendViaSbcBridge(acct,payload);
+  return sendViaSbcBridge(acct,payload);   // attachments included — nodemailer builds the MIME on the Mac
 }
 // Queue the send, then poll until the Mac actually sends it (or reports a failure / that it's offline).
 async function sendViaSbcBridge(acct,payload){
@@ -1828,6 +1867,140 @@ function fallbackCopyRes(el,done){
 }
 // ── CATERING ORDERS ───────────────────────────────────────────────
 const CATERING_ORDERS_API='https://order.angeliscatering.com/api/orders';
+// ── DASHBOARD AGENDA + CALENDAR ─────────────────────────────────────────────
+// "Coming Up": every event from all three books on one card —
+//   🍝 catering orders + 🎉 private-party bookings (angelis backend /api/orders)
+//   💍 Weddings/Events + Day Parties (scheduler banquet-feed)
+const AG_ORDERS_API='https://order.angeliscatering.com/api/orders';
+let ag={orders:null,feed:null,at:0,err:null,loading:false};
+let agMonth='';   // 'YYYY-MM' shown in the calendar
+let agSel='';     // day filter ('' = all upcoming)
+let agOpen={};    // expanded agenda rows
+function agToday(){const n=new Date();return n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-'+String(n.getDate()).padStart(2,'0')}
+async function agendaLoad(force){
+  if(ag.loading)return; if(!force&&ag.at&&Date.now()-ag.at<60000)return;
+  ag.loading=true;
+  if(!ag.orders&&!ag.feed){try{const c=JSON.parse(localStorage.getItem('ct_agenda')||'null');if(c){ag.orders=c.orders;ag.feed=c.feed}}catch(e){}}
+  const [o,f]=await Promise.all([
+    fetch(AG_ORDERS_API).then(r=>r.ok?r.json():null).catch(()=>null),
+    fetch(WED_FEED+'?key='+encodeURIComponent(GMAIL_BACKEND_KEY)).then(r=>r.ok?r.json():null).catch(()=>null)
+  ]);
+  if(o)ag.orders=o; if(f)ag.feed=f;
+  ag.err=((!o&&!ag.orders)||(!f&&!ag.feed))?'a calendar feed is offline':null;
+  ag.at=Date.now();ag.loading=false;
+  try{localStorage.setItem('ct_agenda',JSON.stringify({orders:ag.orders,feed:ag.feed}))}catch(e){}
+  agendaRerender();
+}
+function agendaEnsure(){agendaLoad(false);
+  if(!window._agTick)window._agTick=setInterval(()=>{if(activeTab===DASH)agendaLoad(false)},120000)}
+function agendaRerender(){const el=document.getElementById('ag-card');if(el&&activeTab===DASH)el.outerHTML=agendaCardHTML()}
+function agMin(t){const m=/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec((t||'').trim());if(!m)return -1;
+  let h=(+m[1])%12;if(/pm/i.test(m[3]))h+=12;return h*60+(+m[2])}
+function agItems(){
+  const out=[];
+  (ag.orders||[]).forEach(o=>{
+    const id=String(o.id||'');
+    if(id.startsWith('party-')||o.type==='party-booking'){
+      const d=String(o.eventDate||'').slice(0,10);if(!/^\d{4}-\d{2}-\d{2}$/.test(d))return;
+      const c=o.customer||{};const who=[c.firstName,c.lastName].filter(Boolean).join(' ').trim();
+      const gc=o.finalGuestCount||o.guestCount;
+      out.push({date:d,time:o.startTime||(o.timeSlot?o.timeSlot.charAt(0).toUpperCase()+o.timeSlot.slice(1):''),
+        kind:'party',label:who||o.occasion||'Private party',
+        sub:[o.room==='private'?'Private room':(o.room||''),gc?gc+' guests':'',o.packageName||''].filter(Boolean).join(' · '),o,id});
+    }else{
+      const d=String(o.eventDateRaw||'').slice(0,10);if(!/^\d{4}-\d{2}-\d{2}$/.test(d))return;
+      out.push({date:d,time:(o.eventTime&&o.eventTime!=='Select a time')?o.eventTime:'',
+        kind:'cat',label:o.name||'Catering order',
+        sub:[o.serviceType||'',(o.guests&&o.guests!=='—')?o.guests+' guests':'',o.total||''].filter(Boolean).join(' · '),o,id});
+    }
+  });
+  (((ag.feed||{}).events)||[]).forEach(e=>{
+    out.push({date:e.date,time:e.time||'',kind:'wed',label:e.label||'Event',
+      sub:[e.schedule||'',e.signupCount?e.signupCount+' staff':''].filter(Boolean).join(' · '),sched:e.id,id:'sched-'+e.id});
+  });
+  out.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:agMin(a.time)-agMin(b.time));
+  return out;
+}
+const AG_KIND={cat:{ico:'🍝',name:'Catering',cls:'ag-cat'},party:{ico:'🎉',name:'Party',cls:'ag-party'},wed:{ico:'💍',name:'Wedding/Event',cls:'ag-wed'}};
+function agPretty(d){try{return new Date(d+'T00:00:00').toLocaleDateString([],{weekday:'short',month:'short',day:'numeric'}).toUpperCase()}catch(e){return d}}
+function agendaCardHTML(){
+  const today=agToday();
+  if(!agMonth)agMonth=today.slice(0,7);
+  const items=agItems();
+  const byDate={};items.forEach(it=>{(byDate[it.date]=byDate[it.date]||[]).push(it)});
+  const [gy,gm]=agMonth.split('-').map(Number);
+  const startDow=new Date(gy,gm-1,1).getDay();
+  const dim=new Date(gy,gm,0).getDate();
+  const monLabel=new Date(gy,gm-1,1).toLocaleDateString([],{month:'long',year:'numeric'});
+  let cells='';
+  for(let i=0;i<startDow;i++)cells+='<div class="ag-day"></div>';
+  for(let d=1;d<=dim;d++){
+    const ds=agMonth+'-'+String(d).padStart(2,'0');
+    const kinds=[...new Set((byDate[ds]||[]).map(e=>e.kind))];
+    cells+=`<div class="ag-day${ds===today?' ag-today':''}${ds===agSel?' ag-selday':''}${kinds.length?' ag-has':''}"${kinds.length?` onclick="agPick('${ds}')"`:''}><span>${d}</span><span class="ag-dots">${kinds.map(k=>`<span class="ag-dot ${AG_KIND[k].cls}"></span>`).join('')}</span></div>`;
+  }
+  let list=items.filter(it=>agSel?it.date===agSel:it.date>=today);
+  if(!agSel)list=list.slice(0,120);
+  let lh='',lastD='';
+  list.forEach(it=>{
+    if(it.date!==lastD){lastD=it.date;
+      lh+=`<div class="ag-datehead${it.date===today?' ag-dh-today':''}">${it.date===today?'TODAY · ':''}${agPretty(it.date)}</div>`}
+    const K=AG_KIND[it.kind];
+    lh+=`<div class="ag-item ${K.cls}" onclick="agTap('${it.id}')"><span class="ag-ico">${K.ico}</span><span class="ag-time">${esc(it.time||'—')}</span><span class="ag-main"><span class="ag-label">${esc(it.label)}</span>${it.sub?`<span class="ag-sub">${esc(it.sub)}</span>`:''}</span>${it.kind==='wed'?'<span class="ag-go">→</span>':''}</div>`;
+    if(agOpen[it.id]&&it.o)lh+=agDetailHTML(it);
+  });
+  if(!list.length)lh=`<div class="ag-empty">${agSel?'Nothing on this day':'Nothing coming up'}${ag.orders===null&&ag.at===0?' — loading…':''}</div>`;
+  return `<div class="dash-card" id="ag-card" style="grid-column:1/-1;min-height:auto">
+    <div class="ag-head">
+      <div class="ag-title">📅 Coming Up</div>
+      <div class="ag-legend">${Object.values(AG_KIND).map(k=>`<span class="ag-leg"><span class="ag-dot ${k.cls}"></span>${k.name}</span>`).join('')}</div>
+      ${ag.err?`<span class="ag-err">⚠ ${esc(ag.err)}</span>`:''}
+      <button class="ag-btn" onclick="agendaLoad(true)" title="Refresh now">↻</button>
+    </div>
+    <div class="ag-body">
+      <div class="ag-cal">
+        <div class="ag-mnav">
+          <button class="ag-btn" onclick="agNav(-1)">‹</button>
+          <div class="ag-mon">${monLabel}</div>
+          <button class="ag-btn" onclick="agNav(1)">›</button>
+          <button class="ag-btn ag-todaybtn" onclick="agNav(0)">Today</button>
+        </div>
+        <div class="ag-dowrow"><div>S</div><div>M</div><div>T</div><div>W</div><div>T</div><div>F</div><div>S</div></div>
+        <div class="ag-grid">${cells}</div>
+      </div>
+      <div class="ag-list">${agSel?`<div class="ag-filter">Showing ${agPretty(agSel)} only <button class="ag-btn" onclick="agPick('')">✕ all upcoming</button></div>`:''}${lh}</div>
+    </div>
+  </div>`;
+}
+function agDetailHTML(it){
+  const o=it.o,rows=[];
+  const add=(k,v)=>{const t=(v==null?'':String(v)).trim();if(t&&t!=='—')rows.push(`<div class="ag-dr"><span>${k}</span><b>${esc(t)}</b></div>`)};
+  if(it.kind==='cat'){
+    add('Service',o.serviceType);add('Time',o.eventTime!=='Select a time'?o.eventTime:'');add('Guests',o.guests);
+    add('Phone',o.phone);if(o.isDelivery)add('Address',o.address);add('Total',o.total);add('Notes',o.specialInstructions);
+  }else{
+    const c=o.customer||{};
+    add('Time',o.startTime||o.timeSlot);add('Room',o.room);add('Guests',o.finalGuestCount||o.guestCount);
+    add('Package',o.packageName);add('Occasion',o.occasion);add('Phone',c.phone);add('Email',c.email);add('Status',o.status);
+    if(o.estimatedTotal)add('Est. total','$'+Number(o.estimatedTotal).toFixed(2));
+    add('Deposit',o.depositPaidAt?'paid ✓':'not paid');add('Requests',o.specialRequests);
+  }
+  return `<div class="ag-det">${rows.join('')||'<div class="ag-dr">No details</div>'}</div>`;
+}
+function agPick(d){agSel=(agSel===d)?'':d;if(agSel)agMonth=agSel.slice(0,7);agendaRerender()}
+function agNav(dir){
+  if(dir===0){agMonth=agToday().slice(0,7);agSel='';agendaRerender();return}
+  let [y,m]=agMonth.split('-').map(Number);m+=dir;if(m<1){m=12;y--}if(m>12){m=1;y++}
+  agMonth=y+'-'+String(m).padStart(2,'0');agendaRerender();
+}
+function agTap(id){
+  id=String(id);
+  if(id.startsWith('sched-')){const sid=Number(id.slice(6));
+    if(!wed.feed&&ag.feed)wed.feed=ag.feed;
+    if(wedFeedEvent(sid)){wed.evId=sid;wed.view='event';wed.pane='tpl';switchTab(WED)}
+    return}
+  agOpen[id]=!agOpen[id];agendaRerender();
+}
 let cateringOrders=null;          // fetched order list (null = not loaded yet)
 let cateringExpanded={};          // order id -> true if its items are expanded
 async function loadCateringOrders(){
@@ -1942,6 +2115,7 @@ function dashboardHTML(){
   const cateringBase=(cateringPanel?.url||'https://order.angeliscatering.com/catering-internal.html').split('?')[0].split('#')[0];
   // Kick off the clock ticker (idempotent)
   setTimeout(startDashboardClock,0);
+  setTimeout(agendaEnsure,0);
   // Pre-render the current time + date directly in the HTML so the clock NEVER flashes "--:--"
   // when the dashboard re-renders during polls
   const _n=new Date();
@@ -1957,6 +2131,7 @@ function dashboardHTML(){
           <div id="dash-clock-time" style="font-size:52px;font-weight:800;color:var(--text);letter-spacing:-0.03em;line-height:1;font-variant-numeric:tabular-nums">${_timeStr}</div>
           <div id="dash-clock-date" style="font-size:14px;color:var(--text-dim);font-weight:600">${_dateStr}</div>
         </div>
+        ${agendaCardHTML()}
         <!-- Reservations + Upcoming Catering + Online Orders cards + Busy buttons removed for now (re-add from git history) -->
       </div>
     </div>
