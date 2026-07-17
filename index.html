@@ -1026,7 +1026,19 @@ async function openMailMsg(uid,folder){
   if(cachedTh){ // paint instantly from cache, then refresh silently underneath
     mailx.selThread=cachedTh;const cm=cachedTh.messages||[];
     mailx.selMsg=[...cm].reverse().find(m=>!m.fromSelf)||cm[cm.length-1]||null;mailx.loadingMsg=false;
-  }else{mailx.selMsg=null;mailx.selThread=null;mailx.loadingMsg=true;}
+  }else{
+    mailx.selMsg=null;mailx.selThread=null;mailx.loadingMsg=true;
+    // Progressive open: fetch the single message in parallel — it lands well before the full
+    // conversation, so the email appears immediately and the thread fills in underneath.
+    mailFetch('/mail/msg?acct='+encodeURIComponent(mailx.acct)+'&uid='+uid+'&folder='+folder).then(r=>r.json()).then(d=>{
+      if(d&&d.message&&mailx.selUid===uid&&mailx.loadingMsg&&!mailx.selThread){
+        const m=d.message;
+        mailx.selThread={subject:m.subject,messages:[m],provisional:true};
+        mailx.selMsg=m;mailx.loadingMsg=false;
+        if(activeTab===MAIL&&!mailx.composing&&!mailx.composeNew)renderViewport();
+      }
+    }).catch(()=>{});
+  }
   if(activeTab===MAIL)renderViewport();
   try{const r=await mailFetch('/mail/thread?acct='+encodeURIComponent(mailx.acct)+'&uid='+uid+'&folder='+folder);const d=await r.json();if(!r.ok)throw new Error(d.detail||d.error||'error');
     mailThreadCache[ck]=d;
