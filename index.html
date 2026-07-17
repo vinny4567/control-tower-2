@@ -1279,9 +1279,13 @@ function mailComposeHTML(){
   return `<div class="gmail-compose" ondragover="mailDragOver(event)" ondragleave="mailDragLeave(event)" ondrop="mailDrop(event)"><div class="gmail-compose-to"><div style="display:flex;align-items:center;gap:4px">To:<input id="mail-reply-to" type="email" value="${esc(to)}" style="${inputStyle}"></div></div><textarea id="mail-reply-text" placeholder="Type your reply… (drop files here to attach)"></textarea>${mailAttRowHTML()}<div class="gmail-compose-bar">${status}<div style="display:flex;gap:8px"><button class="gmail-action-btn secondary" onclick="mailCancelReply()">Cancel</button><button class="gmail-action-btn" onclick="mailSendReply()">Send Reply</button></div></div></div>`;
 }
 // ═══ DOCUMENTS TAB — in-app word processor (replaces Word for quick typing) ═══
+let docsNS='ct_docs';
 let docsState={docs:null,current:null,saveTimer:null};
-function loadDocsData(){if(!docsState.docs){try{docsState.docs=JSON.parse(localStorage.getItem('ct_docs')||'[]')}catch(e){docsState.docs=[]}}return docsState.docs}
-function saveDocsData(){try{localStorage.setItem('ct_docs',JSON.stringify(docsState.docs||[]));return true}catch(e){const s=document.getElementById('docs-status');if(s){s.textContent='⚠ Too big to save — remove some images/files';s.style.color='#f87171'}return false}}
+// Switch the docs storage bucket (global tab vs per-event docs). Flushes the
+// old bucket and resets the cache so lists never bleed across events.
+function docsSetNS(ns){if(docsNS===ns)return;docsFlush();docsNS=ns;docsState.docs=null;docsState.current=null;}
+function loadDocsData(){if(!docsState.docs){try{docsState.docs=JSON.parse(localStorage.getItem(docsNS)||'[]')}catch(e){docsState.docs=[]}}return docsState.docs}
+function saveDocsData(){try{localStorage.setItem(docsNS,JSON.stringify(docsState.docs||[]));return true}catch(e){const s=document.getElementById('docs-status');if(s){s.textContent='⚠ Too big to save — remove some images/files';s.style.color='#f87171'}return false}}
 // ── Drag files (or paste images) straight into a doc: images embed inline (compressed), other files
 // become download chips. Everything is stored IN the doc (data: URIs) so it survives reloads/print/.doc. ──
 function fileToDataURL(f){return new Promise(res=>{const r=new FileReader();r.onload=()=>res(String(r.result));r.onerror=()=>res(null);r.readAsDataURL(f)})}
@@ -1413,6 +1417,7 @@ function wedOpenSchedLayout(){const fe=wedFeedEvent(wed.evId);if(!fe)return;
   wed.cur=lay.id;wedLoad().cur=lay.id;wed.sel=null;wed.pane='plan';renderViewport()}
 function wedShowTpl(){wedFlush();wed.pane='tpl';wed.sel=null;renderViewport()}
 function wedShowCatering(){wedFlush();wed.pane='catering';wed.sel=null;renderViewport()}
+function wedShowDocs(){docsFlush();wedFlush();wed.pane='docs';wed.sel=null;renderViewport()}
 function wedOpenLayout(id){wed.cur=id;wedLoad().cur=id;wed.sel=null;wed.view='plan';renderViewport()}
 // Back from the plan editor: a schedule-linked layout returns to its event hub; anything else to the list.
 function wedBack(){wedFlush();const cur=wedCur();wed.sel=null;
@@ -1537,11 +1542,14 @@ function wedEventHTML(){const fe=wedFeedEvent(wed.evId);if(!fe){wed.view='list';
         <button class="wed-side-btn ${wed.pane==='plan'?'active':''}" onclick="wedOpenSchedLayout()">📐 <span>Floor Plan<span class="sub">${lay?'saved layout ✓':'start from room template'}</span></span></button>
         <button class="wed-side-btn ${wed.pane==='tpl'?'active':''}" onclick="wedShowTpl()">📋 <span>Wedding Template<span class="sub">this event's copy · autosaves</span></span></button>
         <button class="wed-side-btn ${wed.pane==='catering'?'active':''}" onclick="wedShowCatering()">🍽 <span>Catering Template<span class="sub">this event's copy · autosaves</span></span></button>
+        <button class="wed-side-btn ${wed.pane==='docs'?'active':''}" onclick="wedShowDocs()">📝 <span>Docs<span class="sub">this event's documents &amp; files</span></span></button>
       </div>
       ${wed.pane==='plan'
         ?`<div class="wed-main wed-main-col">${wedPlanChrome(true)}</div>`
         :wed.pane==='catering'
         ?`<div class="wed-main"><iframe src="https://order.angeliscatering.com/catering-notes.html?event=sched-${fe.id}&name=${encodeURIComponent(fe.label)}" allow="storage-access fullscreen"></iframe></div>`
+        :wed.pane==='docs'
+        ?`<div class="wed-main wed-main-col">${(docsSetNS('ct_docs_ev_sched-'+fe.id),docsHTML())}</div>`
         :`<div class="wed-main"><iframe src="https://order.angeliscatering.com/wedding-notes.html?event=sched-${fe.id}&name=${encodeURIComponent(fe.label)}" allow="storage-access fullscreen"></iframe></div>`}
     </div>
   </div>`}
@@ -1589,7 +1597,7 @@ function wedPrint(){const ev=wedCur();if(!ev)return;wedFlush();
   doc.close();w.focus();setTimeout(()=>{try{w.print()}catch(e){}setTimeout(()=>f.remove(),1500)},300)}
 
 function renderTabs(){const list=document.getElementById('tab-list');list.innerHTML=`<div class="tab ${activeTab===DASH?'active':''}" onclick="switchTab('${DASH}')">📊 Dashboard</div>`+`<div class="tab ${activeTab===MAIL?'active':''}" onclick="switchTab('${MAIL}')">📧 Email</div>`+`<div class="tab ${activeTab===DOCS?'active':''}" onclick="switchTab('${DOCS}')">📝 Docs</div>`+cfg.panels.map(p=>{const t=`<div class="tab ${activeTab===p.id?'active':''}" onclick="switchTab(${p.id})">${esc(p.name)}</div>`;return p.id===4?t+`<div class="tab ${activeTab===WED?'active':''}" onclick="switchTab('${WED}')">💍 Weddings</div>`:t;}).join('')+`<div class="tab ${activeTab===ONLINE?'active':''}" onclick="switchTab('${ONLINE}')">🤖 Jarvis</div>`+`<div class="tab tab-add" onclick="openSettings()" title="Add panel">＋</div>`}
-function renderViewport(){if(activeTab===WED){document.getElementById('viewport').innerHTML=wedHTML();wedInit();return}if(activeTab===DOCS){document.getElementById('viewport').innerHTML=docsHTML();return}if(activeTab===MAIL){document.getElementById('viewport').innerHTML=mailHTML();restoreGmailListScroll();return}if(activeTab===ONLINE){document.getElementById('viewport').innerHTML=onlineHTML();renderChat();if(ordersKey())loadCmdConsole();return}if(activeTab===DASH){document.getElementById('viewport').innerHTML=dashboardHTML();return}const p=cfg.panels.find(x=>x.id===activeTab);if(!p){document.getElementById('viewport').innerHTML='';return}document.getElementById('viewport').innerHTML=bodyHTML(p);if(activeTab===3)restoreGmailListScroll()}
+function renderViewport(){if(activeTab===WED){document.getElementById('viewport').innerHTML=wedHTML();wedInit();return}if(activeTab===DOCS){docsSetNS('ct_docs');document.getElementById('viewport').innerHTML=docsHTML();return}if(activeTab===MAIL){document.getElementById('viewport').innerHTML=mailHTML();restoreGmailListScroll();return}if(activeTab===ONLINE){document.getElementById('viewport').innerHTML=onlineHTML();renderChat();if(ordersKey())loadCmdConsole();return}if(activeTab===DASH){document.getElementById('viewport').innerHTML=dashboardHTML();return}const p=cfg.panels.find(x=>x.id===activeTab);if(!p){document.getElementById('viewport').innerHTML='';return}document.getElementById('viewport').innerHTML=bodyHTML(p);if(activeTab===3)restoreGmailListScroll()}
 
 // ── ONLINE TAB: Otter command bridge ───────────────────────────────
 // Queue actions to the reader userscript on the always-on Mac's Otter tab; it runs them there
