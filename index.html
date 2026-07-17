@@ -1467,7 +1467,8 @@ let syncApplying=false;
 function wedMergeRemote(remote){
   if(!remote||!remote.v)return false;
   const R=remote.v,L=wedLoad();
-  const before=JSON.stringify({e:L.events,t:L.template,d:L.del,v:L.vtpls});
+  const before=JSON.stringify({e:L.events,t:L.template,d:L.del,v:L.vtpls,n:L.venues});
+  if((R.venuesAt||0)>(L.venuesAt||0)&&Array.isArray(R.venues)&&R.venues.length){L.venues=R.venues;L.venuesAt=R.venuesAt}
   const vt={...(L.vtpls||{})};Object.entries(R.vtpls||{}).forEach(([k,v])=>{if(!vt[k]||(v.at||0)>(vt[k].at||0))vt[k]=v});L.vtpls=vt;
   const del={...(L.del||{})};Object.entries(R.del||{}).forEach(([id,ts])=>{if(!del[id]||ts>del[id])del[id]=ts});
   const byId={};
@@ -1480,7 +1481,7 @@ function wedMergeRemote(remote){
   L.events=Object.values(byId).sort((a,b)=>(b.updated||0)-(a.updated||0));
   if(R.template&&(R.template.at||0)>((L.template&&L.template.at)||0))L.template=R.template;
   L.del=del;
-  const changed=JSON.stringify({e:L.events,t:L.template,d:L.del,v:L.vtpls})!==before;
+  const changed=JSON.stringify({e:L.events,t:L.template,d:L.del,v:L.vtpls,n:L.venues})!==before;
   if(changed){syncApplying=true;wedStore();syncApplying=false;}
   return changed;
 }
@@ -1534,6 +1535,15 @@ function wedCur(){const d=wedLoad();return d.events.find(e=>e.id===wed.cur)||nul
 // Venue floor-plan templates. Premades ship as starting points; "Save" on the
 // canvas overwrites that venue's template (stored in wed.data.vtpls, synced).
 const WED_VENUES=['Full Restaurant','Main Dining','Private Room','Bar'];
+function wedVenueList(){const d=wedLoad();if(!Array.isArray(d.venues)||!d.venues.length){d.venues=WED_VENUES.slice();d.venuesAt=d.venuesAt||0}return d.venues}
+function wedRenameVenue(){const v=wedVenueSel();if(!v){alert('Pick the venue to rename in the dropdown first.');return}
+  const nn=(prompt('New name for "'+v+'":',v)||'').trim();
+  if(!nn||nn===v)return;
+  const d=wedLoad();const list=wedVenueList();
+  if(list.includes(nn)){alert('There is already a venue called "'+nn+'".');return}
+  list[list.indexOf(v)]=nn;d.venuesAt=Date.now();
+  if(d.vtpls&&d.vtpls[v]){d.vtpls[nn]={...d.vtpls[v],at:Date.now()};delete d.vtpls[v]}
+  wed.venueSel=nn;wedStore();renderViewport()}
 function wedVenuePremade(v){const it=[];let n=1;
   const R=(x,y,w)=>it.push({id:wedNewId(),type:'round',x,y,w:w||76,h:w||76,label:String(n++)});
   const B=(x,y)=>it.push({id:wedNewId(),type:'rect',x,y,w:56,h:130,label:'BUFFET'});
@@ -1698,9 +1708,10 @@ function wedPlanChrome(embedded){const ev=wedCur();if(!ev)return '';
       ${ev.tpl?'<span style="font-size:11px;color:var(--accent);white-space:nowrap">this is your room template — press “Save as template” when done</span>':''}
       <select id="wed-venue">
         <option value="">📐 Venue…</option>
-        ${WED_VENUES.map(v=>`<option${wed.venueSel===v?' selected':''}>${v}</option>`).join('')}
+        ${wedVenueList().map(v=>`<option${wed.venueSel===v?' selected':''}>${esc(v)}</option>`).join('')}
       </select>
       <button class="wed-btn" onclick="wedLoadVenue()">📐 Load</button>
+      <button class="wed-btn" onclick="wedRenameVenue()" title="Rename this venue">✎ Rename</button>
       <button class="wed-btn" onclick="wedSaveVenue()">💾 Save</button>
       <button class="wed-btn" onclick="wedPrint()">🖨 Print</button>
       <button class="wed-btn danger" onclick="wedClearAll()">🧹 Clear all</button>
