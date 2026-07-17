@@ -397,6 +397,9 @@
     .wed-dance{border:3px dashed var(--accent);background:rgba(255,179,0,.05);color:var(--accent);font-size:15px;border-radius:4px;letter-spacing:2px}
     .wed-door{background:var(--surface2);border:1.5px solid var(--text-muted);color:var(--text-muted);font-size:10px;border-radius:3px;letter-spacing:1.5px}
     .wed-text{color:var(--text-dim);font-size:14px;background:transparent}
+    .wed-box{border:2px solid var(--text-dim);background:rgba(255,255,255,.03);color:var(--text);font-size:12px;border-radius:6px;letter-spacing:1px}
+    .wed-lbl{display:inline-block;min-width:8px;min-height:1em;max-width:none}
+    .wed-lbl.editing{outline:2px solid var(--accent);background:rgba(0,0,0,.6);padding:2px 8px;border-radius:5px;min-width:50px;color:var(--text);cursor:text;letter-spacing:normal}
     .wed-sel{box-shadow:0 0 0 3px var(--accent),0 0 18px rgba(255,179,0,.5);z-index:5}
     .wed-tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:6px 12px;background:var(--surface);border-top:1px solid var(--border);flex-shrink:0}
     .wed-tools .hint{font-size:11px;color:var(--text-muted);margin-right:4px}
@@ -1649,11 +1652,28 @@ function wedSaveTemplate(){const ev=wedCur();if(!ev)return;if(!confirm('Make thi
 function wedAdd(type){const ev=wedCur();if(!ev)return;
   const base={round:{w:76,h:76,label:String(ev.items.filter(i=>i.type==='round').length+1)},
     rect:{w:130,h:56,label:'TABLE'},dance:{w:260,h:195,label:'DANCE FLOOR'},
-    door:{w:130,h:34,label:'DOOR'},text:{w:160,h:30,label:'Tap ✎ to edit'}}[type];
+    door:{w:130,h:34,label:'DOOR'},box:{w:150,h:100,label:''},text:{w:170,h:34,label:''}}[type];
   const it={id:wedNewId(),type,x:WED_W/2,y:WED_H/2,...base};
-  ev.items.push(it);ev.updated=Date.now();wed.sel=it.id;wedQueueSave();wedPaint()}
+  ev.items.push(it);ev.updated=Date.now();wed.sel=it.id;wedQueueSave();wedPaint();
+  if(type==='text'||type==='box')wedEditLabel(it.id)}
+// Type-in-place label editor: the label span becomes an editable textbox right on
+// the canvas. Enter/blur commits, Esc cancels. An empty Text item removes itself.
+function wedEditLabel(id){wed.sel=id;wedPaint();
+  const el=document.querySelector(`#wed-stage [data-wid="${id}"]`);if(!el)return;
+  const sp=el.querySelector('.wed-lbl');const it=wedCur().items.find(i=>i.id===id);if(!sp||!it)return;
+  try{sp.contentEditable='plaintext-only'}catch(_){sp.contentEditable='true'}
+  sp.classList.add('editing');
+  const done=commit=>{if(!sp.isContentEditable)return;sp.contentEditable='false';
+    if(commit){it.label=sp.textContent.replace(/\n/g,' ').trim();
+      if(it.type==='text'&&!it.label){const ev=wedCur();ev.items=ev.items.filter(x=>x.id!==id);wed.sel=null}
+      wedTouch()}else wedPaint()};
+  sp.addEventListener('blur',()=>done(true),{once:true});
+  sp.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){e.preventDefault();sp.blur()}
+    else if(e.key==='Escape'){e.preventDefault();done(false)}});
+  setTimeout(()=>{sp.focus();try{document.execCommand('selectAll',false,null)}catch(_){}},30)}
 function wedSelItem(){const ev=wedCur();return ev?ev.items.find(i=>i.id===wed.sel):null}
-function wedRenameItem(){const it=wedSelItem();if(!it)return;const v=prompt('Label:',it.label||'');if(v===null)return;it.label=v;wedTouch()}
+function wedRenameItem(){if(wed.sel)wedEditLabel(wed.sel)}
 function wedRotate(){const it=wedSelItem();if(!it)return;it.rot=((it.rot||0)+45)%360;wedTouch()}
 function wedGrow(f){const it=wedSelItem();if(!it)return;it.w=Math.max(24,Math.min(500,Math.round(it.w*f)));
   it.h=it.type==='round'?it.w:Math.max(20,Math.min(500,Math.round(it.h*f)));wedTouch()}
@@ -1663,8 +1683,8 @@ function wedDup(){const ev=wedCur();const it=wedSelItem();if(!ev||!it)return;
   ev.items.push(c);wed.sel=c.id;wedTouch()}
 function wedRemove(){const ev=wedCur();if(!ev||!wed.sel)return;ev.items=ev.items.filter(i=>i.id!==wed.sel);wed.sel=null;wedTouch()}
 function wedTouch(){const ev=wedCur();if(ev)ev.updated=Date.now();wedQueueSave();wedPaint()}
-function wedItemHTML(it){const cls={round:'wed-round',rect:'wed-rect',dance:'wed-dance',door:'wed-door',text:'wed-text'}[it.type]||'wed-rect';
-  return `<div class="wed-it ${cls} ${wed.sel===it.id?'wed-sel':''}" data-wid="${it.id}" style="left:${it.x}px;top:${it.y}px;width:${it.w}px;height:${it.h}px;transform:translate(-50%,-50%) rotate(${it.rot||0}deg)">${esc(it.label||'')}${wed.sel===it.id?'<div class="wed-rot" title="Drag to spin">⟳</div>':''}</div>`}
+function wedItemHTML(it){const cls={round:'wed-round',rect:'wed-rect',dance:'wed-dance',door:'wed-door',text:'wed-text',box:'wed-box'}[it.type]||'wed-rect';
+  return `<div class="wed-it ${cls} ${wed.sel===it.id?'wed-sel':''}" data-wid="${it.id}" style="left:${it.x}px;top:${it.y}px;width:${it.w}px;height:${it.h}px;transform:translate(-50%,-50%) rotate(${it.rot||0}deg)"><span class="wed-lbl" style="transform:rotate(${-(it.rot||0)}deg)">${esc(it.label||'')}</span>${wed.sel===it.id?'<div class="wed-rot" title="Drag to spin">⟳</div>':''}</div>`}
 function wedPaint(){const st=document.getElementById('wed-stage');const ev=wedCur();if(!st||!ev)return;
   st.innerHTML=ev.items.map(wedItemHTML).join('');
   const c=document.getElementById('wed-count');if(c){const r=ev.items.filter(i=>i.type==='round').length;c.textContent=r+' round table'+(r===1?'':'s')}}
@@ -1721,11 +1741,11 @@ function wedPlanChrome(embedded){const ev=wedCur();if(!ev)return '';
       <span class="hint">ADD</span>
       <button class="wed-btn" onclick="wedAdd('round')">⚪ Table</button>
       <button class="wed-btn" onclick="wedAdd('rect')">▭ Banquet</button>
+      <button class="wed-btn" onclick="wedAdd('box')">⬜ Box</button>
       <button class="wed-btn" onclick="wedAdd('dance')">🕺 Dance floor</button>
       <button class="wed-btn" onclick="wedAdd('door')">🚪 Door</button>
       <button class="wed-btn" onclick="wedAdd('text')">🔤 Text</button>
       <span class="hint" style="margin-left:10px">SELECTED</span>
-      <button class="wed-btn" onclick="wedRenameItem()">✎ Label</button>
       <button class="wed-btn" onclick="wedGrow(1.12)">＋ Bigger</button>
       <button class="wed-btn" onclick="wedGrow(0.89)">－ Smaller</button>
       <button class="wed-btn" onclick="wedRotate()">⟳ Rotate</button>
@@ -1769,7 +1789,7 @@ function wedInit(){
   wedFit();wedPaint();
   if(!wed._resize){wed._resize=true;window.addEventListener('resize',()=>{if(activeTab===WED&&document.getElementById('wed-stage'))wedFit()})}
   let drag=null;
-  st.addEventListener('pointerdown',e=>{const el=e.target.closest('.wed-it');const ev=wedCur();if(!ev)return;
+  st.addEventListener('pointerdown',e=>{if(e.target.isContentEditable)return;const el=e.target.closest('.wed-it');const ev=wedCur();if(!ev)return;
     if(el&&e.target.closest('.wed-rot')){const it=ev.items.find(i=>i.id===el.dataset.wid);if(!it)return;
       const r=el.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2;
       drag={it,el,rotate:true,cx,cy,base:(it.rot||0)-Math.atan2(e.clientY-cy,e.clientX-cx)*180/Math.PI,moved:false};
@@ -1787,7 +1807,8 @@ function wedInit(){
       const s45=Math.round(raw/45)*45;
       const r=(Math.abs(raw-s45)<6?s45:Math.round(raw/5)*5)%360;
       if(r!==(drag.it.rot||0)){drag.it.rot=r;drag.moved=true;
-        drag.el.style.transform=`translate(-50%,-50%) rotate(${r}deg)`}
+        drag.el.style.transform=`translate(-50%,-50%) rotate(${r}deg)`;
+        const lb=drag.el.querySelector('.wed-lbl');if(lb)lb.style.transform=`rotate(${-r}deg)`}
       return}
     const dx=(e.clientX-drag.sx)/wed.scale,dy=(e.clientY-drag.sy)/wed.scale;
     if(Math.abs(dx)>2||Math.abs(dy)>2)drag.moved=true;
@@ -1804,8 +1825,9 @@ function wedPrint(){const ev=wedCur();if(!ev)return;wedFlush();
     const base='position:absolute;display:flex;align-items:center;justify-content:center;font-weight:700;text-align:center;line-height:1.1;';
     const look={round:'border:2px solid #000;border-radius:50%;font-size:13px;',
       rect:'border:2px solid #000;font-size:9px;',dance:'border:2.5px dashed #000;font-size:11px;letter-spacing:2px;',
-      door:'border:1.5px solid #555;color:#555;font-size:8px;letter-spacing:1px;',text:'font-size:11px;'}[it.type]||'';
-    return `<div style="${base}${look}${style}">${esc(it.label||'')}</div>`}).join('');
+      door:'border:1.5px solid #555;color:#555;font-size:8px;letter-spacing:1px;',text:'font-size:11px;',
+      box:'border:2px solid #000;font-size:9px;border-radius:6px;letter-spacing:1px;'}[it.type]||'';
+    return `<div style="${base}${look}${style}"><span style="display:inline-block;transform:rotate(${-(it.rot||0)}deg)">${esc(it.label||'')}</span></div>`}).join('');
   doc.open();doc.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(ev.name||'Floor plan')}</title>
     <style>@page{size:landscape;margin:.4in}body{font-family:-apple-system,Helvetica,sans-serif;color:#000}</style></head><body>
     <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
