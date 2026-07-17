@@ -1802,7 +1802,7 @@ function wedInit(){
   wedFit();wedPaint();
   if(!wed._resize){wed._resize=true;window.addEventListener('resize',()=>{if(activeTab===WED&&document.getElementById('wed-stage'))wedFit()})}
   let drag=null;
-  st.addEventListener('pointerdown',e=>{if(e.target.isContentEditable)return;const el=e.target.closest('.wed-it');const ev=wedCur();if(!ev)return;
+  st.addEventListener('pointerdown',e=>{if(e.target.id==='wed-edit')return;wedEditCommit();const el=e.target.closest('.wed-it');const ev=wedCur();if(!ev)return;
     if(el&&e.target.closest('.wed-rot')){const it=ev.items.find(i=>i.id===el.dataset.wid);if(!it)return;
       const r=el.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2;
       drag={it,el,rotate:true,cx,cy,base:(it.rot||0)-Math.atan2(e.clientY-cy,e.clientX-cx)*180/Math.PI,moved:false};
