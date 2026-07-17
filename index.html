@@ -1005,7 +1005,7 @@ async function loadMailAccounts(retry){
 async function mailPrefetch(acctId){
   try{const r=await mailFetch('/mail/list?acct='+encodeURIComponent(acctId)+'&folder=inbox&limit=50');const d=await r.json();
     if(r.ok&&d.messages){mailx.lists[acctId+'|inbox']=d.messages;mailSnapPut(acctId+'|inbox',d.messages);
-      if(activeTab===MAIL&&!mailx.selMsg&&!mailx.composing&&!mailx.composeNew){const el=document.querySelector('.mail-accts');if(el)renderViewport();}}}catch(e){}
+      if(activeTab===MAIL)renderMailAccts();}}catch(e){}
 }
 async function loadMailList(force){
   if(!mailx.acct)return;const key=mailListKey();
@@ -1062,7 +1062,21 @@ async function mailToggleStar(uid,ev){
 }
 function mailStartReply(){mailx.composing=true;mailx.composeNew=false;mailx.sendStatus=null;mailx.attach=[];if(activeTab===MAIL)renderViewport();setTimeout(()=>{const t=document.getElementById('mail-reply-text');if(t)t.focus()},50);}
 // ── Search (server-side, whole mailbox) ──────────────────────────────
-function renderMailListRegion(){const el=document.getElementById('mail-list-region');if(el)el.innerHTML=mailListHTML(window.innerWidth>=900);}
+function renderMailListRegion(){const el=document.getElementById('mail-list-region');if(!el)return;
+  const sc=el.querySelector('.gmail-list-tab');const top=sc?sc.scrollTop:0;
+  el.innerHTML=mailListHTML(window.innerWidth>=900);
+  const sc2=el.querySelector('.gmail-list-tab');if(sc2&&top)sc2.scrollTop=top;}
+function mailAcctBtnsHTML(){return (mailx.accts||[]).map(a=>{const unread=(mailx.lists[a.id+'|inbox']||[]).filter(m=>m.unread).length;return `<button class="mail-acct ${mailx.acct===a.id?'active':''}" onclick="switchMailAcct('${a.id}')">${esc(a.label)}${unread?`<span class="mail-acct-badge">${unread}</span>`:''}</button>`}).join('');}
+function renderMailAccts(){const el=document.querySelector('.mail-accts');if(el&&Array.isArray(mailx.accts))el.innerHTML=mailAcctBtnsHTML();}
+// Silent refresh of the account/folder being viewed — updates the list pane + badges IN PLACE
+// (never re-renders the reading pane, so an open email / draft is untouched).
+async function mailSilentRefresh(){
+  if(!mailx.acct||mailx.loadingList)return;
+  const key=mailListKey();
+  try{const r=await mailFetch('/mail/list?acct='+encodeURIComponent(mailx.acct)+'&folder='+mailx.folder+'&limit='+(mailx.limit||50));const d=await r.json();
+    if(r.ok&&d.messages){mailx.lists[key]=d.messages;if(mailx.folder==='inbox'&&(mailx.limit||50)<=50)mailSnapPut(mailx.acct+'|inbox',d.messages);
+      if(!mailx.search)renderMailListRegion();renderMailAccts();}}catch(e){}
+}
 function mailSearchInput(v){mailx.search=v;clearTimeout(mailSearchTimer);if(!v.trim()){mailx.searchResults=null;mailx.searching=false;renderMailListRegion();return;}mailSearchTimer=setTimeout(mailDoSearch,450);}
 async function mailDoSearch(){const q=(mailx.search||'').trim();if(!q){mailx.searchResults=null;mailx.searching=false;renderMailListRegion();return;}mailx.searching=true;renderMailListRegion();try{const r=await mailFetch('/mail/search?acct='+encodeURIComponent(mailx.acct)+'&q='+encodeURIComponent(q));const d=await r.json();if(!r.ok)throw new Error(d.detail||d.error||'search failed');mailx.searchResults=d.messages||[];mailx.searchErr=null;}catch(e){mailx.searchResults=[];mailx.searchErr='Search failed — '+String(e.message||e);}mailx.searching=false;renderMailListRegion();}
 function mailClearSearch(){mailx.search='';mailx.searchResults=null;mailx.searching=false;if(activeTab===MAIL)renderViewport();setTimeout(()=>{const s=document.getElementById('mail-search-input');if(s)s.focus()},30);}
@@ -1229,7 +1243,7 @@ function mailHTML(){
   if(mailx.accts==='error')return `<div class="gmail-signin"><div class="gmail-signin-card"><div class="gs-ico">⚠️</div><h2>Couldn't reach the mail bridge</h2><p>${esc(mailx.error||'')}</p><button class="signin-btn" onclick="loadMailAccounts()">Retry</button></div></div>`;
   if(mailx.accts===null)return `<div class="mail-wrap"><div class="gmail-loading">Connecting to your inboxes…</div></div>`;
   if(!mailx.accts.length)return `<div class="mail-wrap"><div class="gmail-empty">No inboxes configured on the backend yet.</div></div>`;
-  const subtabs=`<div class="mail-accts">${mailx.accts.map(a=>{const unread=(mailx.lists[a.id]||[]).filter(m=>m.unread).length;return `<button class="mail-acct ${mailx.acct===a.id?'active':''}" onclick="switchMailAcct('${a.id}')">${esc(a.label)}${unread?`<span class="mail-acct-badge">${unread}</span>`:''}</button>`}).join('')}</div>`;
+  const subtabs=`<div class="mail-accts">${mailAcctBtnsHTML()}</div>`;
   const accLabel=((mailx.accts||[]).find(a=>a.id===mailx.acct)||{}).label||'';
   const actionbar=`<div class="mail-actionbar"><div class="mail-search"><span class="mail-search-ico">🔍</span><input id="mail-search-input" type="search" autocomplete="off" spellcheck="false" placeholder="Search ${esc(accLabel)} mail…" value="${esc(mailx.search||'')}" oninput="mailSearchInput(this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault();mailDoSearch();}">${mailx.search?`<button class="mail-search-clear" title="Clear" onclick="mailClearSearch()">✕</button>`:''}</div><button class="mail-compose-btn" onclick="mailStartCompose()" title="Compose new email">✎</button></div>`;
   const wide=window.innerWidth>=900;
@@ -2135,7 +2149,13 @@ window.addEventListener('load',()=>{setTimeout(()=>{
   if(activeTab===MAIL)loadMailAccounts();
 },800)});
 // Keep the open inbox fresh (only when the Email tab is showing and nothing is open/being composed)
-setInterval(()=>{if(activeTab===MAIL&&mailx.acct&&!mailx.selMsg&&!mailx.composing&&!mailx.composeNew&&!mailx.search&&!mailx.loadingList)loadMailList();},20000);
+// Auto-refresh ALL inboxes while the Email tab is open: the viewed folder updates in place (list pane
+// only — never disturbs an open email or a draft), the other accounts prefetch so their badges stay live.
+setInterval(()=>{
+  if(activeTab!==MAIL||!mailKey()||!Array.isArray(mailx.accts))return;
+  mailSilentRefresh();
+  mailx.accts.forEach(a=>{if(a.id!==mailx.acct)mailPrefetch(a.id);});
+},25000);
 // Keep catering orders fresh while the dashboard is open
 setInterval(()=>{if(activeTab===DASH)loadCateringOrders()},60000);
 // Keep live online orders fresh (faster cadence) while the dashboard is open
