@@ -1554,6 +1554,7 @@ async function wedFetchFeed(){if(wed.loading)return;wed.loading=true;wed.feedErr
   }catch(e){wed.feedErr=e.message||'offline';if(!wed.feed)wed.feed=wedFeedCache()}
   wed.loading=false;
   if(activeTab===WED&&wed.view==='list')renderViewport()}
+if(!window._wedTick)window._wedTick=setInterval(()=>{if(activeTab===WED)wedFetchFeed()},120000);
 function wedPrettyDate(ymd){try{const d=new Date(ymd+'T00:00:00');return d.toLocaleDateString([],{month:'short',day:'numeric'})}catch(e){return ymd}}
 function wedDow(ymd){try{return new Date(ymd+'T00:00:00').toLocaleDateString([],{weekday:'short'}).toUpperCase()}catch(e){return ''}}
 function wedLayoutForSched(id){return wedLoad().events.find(e=>e.sched===id)||null}
@@ -1636,9 +1637,6 @@ function wedListHTML(){const d=wedLoad();const feed=wed.feed||wedFeedCache();con
       <span style="font-weight:800;font-size:15px">💍 Weddings & Events</span>
       <span style="font-size:11px;color:var(--text-muted)">from the schedule app</span>
       <span style="flex:1"></span>
-      <button class="wed-btn" onclick="wedFetchFeed()">${wed.loading?'…':'🔄 Refresh'}</button>
-      <button class="wed-btn" onclick="wedEditTemplate()">✎ Room template</button>
-      <button class="wed-btn amber" onclick="wedNewEvent()">＋ Blank layout</button>
     </div>
     <div id="wed-list">
       ${wed.feedErr?`<div class="wed-feed-err">Couldn't reach the schedule app (${esc(wed.feedErr)})${feed?' — showing the last saved list.':''}</div>`:''}
