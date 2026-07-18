@@ -1024,11 +1024,21 @@ function mailLabelChips(){
   if(dirs===undefined)mailLoadFolders(mailx.acct);
   if(!Array.isArray(dirs)||!dirs.length)return [];
   const out=[];
-  const cat=dirs.find(d=>/cater/i.test(d.path));
-  const wed=dirs.find(d=>/wedding|bridal/i.test(d.path));
+  const cat=mailPickLabel(dirs,['catering','cater']);
+  const wed=mailPickLabel(dirs,['wedding inquir','wedding','bridal']);
   if(cat)out.push(['label:'+cat.path,'🍝 '+cat.name]);
   if(wed)out.push(['label:'+wed.path,'💍 '+wed.name]);
   return out}
+// Best label for a chip: exact name beats prefix beats contains; earlier search
+// words beat later ones; ties go to the shorter name.
+function mailPickLabel(dirs,words){let best=null,bs=-1;
+  dirs.forEach(d=>{const n=(d.name||'').trim().toLowerCase();let s=-1;
+    words.forEach((w,i)=>{const base=(words.length-i)*10;
+      if(n===w)s=Math.max(s,base+5);
+      else if(n.startsWith(w))s=Math.max(s,base+3);
+      else if(n.includes(w))s=Math.max(s,base+1)});
+    if(s>bs||(s===bs&&s>=0&&best&&d.name.length<best.name.length)){bs=s;best=d}});
+  return bs>=0?best:null}
 async function mailLoadFolders(acctId){
   if(!acctId)return;
   mailx.labelDirs=mailx.labelDirs||{};
