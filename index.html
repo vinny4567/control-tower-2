@@ -1017,6 +1017,31 @@ const MAIL_BASE='https://jarvis-voicejarvis-voice.onrender.com';
 let mailx={accts:null,acct:null,folder:'inbox',lists:{},selUid:null,selMsg:null,selThread:null,loadingList:false,loadingMsg:false,composing:false,composeNew:false,search:'',searchResults:null,searching:false,sendStatus:null,error:null,attach:[]};
 let mailSearchTimer=null;
 function mailListKey(){return mailx.acct+'|'+mailx.folder;}
+// Gmail-label inboxes: the backend lists the account's label folders; any label
+// matching catering / wedding gets its own chip next to Inbox — same views he has in Gmail.
+function mailLabelChips(){
+  const dirs=mailx.labelDirs&&mailx.labelDirs[mailx.acct];
+  if(dirs===undefined)mailLoadFolders(mailx.acct);
+  if(!Array.isArray(dirs)||!dirs.length)return [];
+  const out=[];
+  const cat=dirs.find(d=>/cater/i.test(d.path));
+  const wed=dirs.find(d=>/wedding|bridal/i.test(d.path));
+  if(cat)out.push(['label:'+cat.path,'🍝 '+cat.name]);
+  if(wed)out.push(['label:'+wed.path,'💍 '+wed.name]);
+  return out}
+async function mailLoadFolders(acctId){
+  if(!acctId)return;
+  mailx.labelDirs=mailx.labelDirs||{};
+  if(acctId in mailx.labelDirs)return;
+  mailx.labelDirs[acctId]=null;
+  try{const c=JSON.parse(localStorage.getItem('ct_mail_labels')||'{}');
+    if(c[acctId]){mailx.labelDirs[acctId]=c[acctId];if(activeTab===MAIL)renderViewport()}}catch(e){}
+  try{const r=await mailFetch('/mail/folders?acct='+encodeURIComponent(acctId));const d=await r.json();
+    if(r.ok&&Array.isArray(d.folders)){mailx.labelDirs[acctId]=d.folders;
+      try{const c=JSON.parse(localStorage.getItem('ct_mail_labels')||'{}');c[acctId]=d.folders;localStorage.setItem('ct_mail_labels',JSON.stringify(c))}catch(e){}
+      if(activeTab===MAIL)renderViewport()}
+    else if(mailx.labelDirs[acctId]===null)mailx.labelDirs[acctId]=[];
+  }catch(e){if(mailx.labelDirs[acctId]===null)mailx.labelDirs[acctId]=[]}}
 function switchMailFolder(f){if(f===mailx.folder)return;mailx.folder=f;mailx.limit=50;mailx.selUid=null;mailx.selMsg=null;mailx.composing=false;mailx.composeNew=false;mailx.search='';mailx.searchResults=null;mailx.searching=false;mailx.error=null;renderViewport();loadMailList();}
 function mailKey(){return localStorage.getItem('ct_mail_key')||''}
 function setMailKey(){const k=prompt('Paste the Email access key (MAIL_TOKEN value from Render):');if(k&&k.trim()){localStorage.setItem('ct_mail_key',k.trim());mailx.accts=null;mailx.error=null;loadMailAccounts();}}
@@ -1056,7 +1081,7 @@ async function loadMailList(force){
   if(!mailx.acct)return;const key=mailListKey();
   if(!mailx.lists[key]&&mailx.folder==='inbox'){const snap=mailSnapGet(mailx.acct+'|inbox');if(snap)mailx.lists[key]=snap;}
   const cached=mailx.lists[key];mailx.loadingList=!cached||!!force;if(activeTab===MAIL)renderViewport();
-  try{const r=await mailFetch('/mail/list?acct='+encodeURIComponent(mailx.acct)+'&folder='+mailx.folder+'&limit='+(mailx.limit||50)+(force?'&fresh=1':''));const d=await r.json();if(!r.ok)throw new Error(d.detail||d.error||'mailbox error');mailx.lists[key]=d.messages||[];if(mailx.folder==='inbox'&&(mailx.limit||50)<=50)mailSnapPut(mailx.acct+'|inbox',d.messages||[]);mailx.loadingList=false;mailx.error=null;if(mailx.folder==="inbox")mailPrecacheTop(mailx.acct,d.messages,3);}
+  try{const r=await mailFetch('/mail/list?acct='+encodeURIComponent(mailx.acct)+'&folder='+encodeURIComponent(mailx.folder)+'&limit='+(mailx.limit||50)+(force?'&fresh=1':''));const d=await r.json();if(!r.ok)throw new Error(d.detail||d.error||'mailbox error');mailx.lists[key]=d.messages||[];if(mailx.folder==='inbox'&&(mailx.limit||50)<=50)mailSnapPut(mailx.acct+'|inbox',d.messages||[]);mailx.loadingList=false;mailx.error=null;if(mailx.folder==="inbox")mailPrecacheTop(mailx.acct,d.messages,3);}
   catch(e){mailx.loadingList=false;mailx.error=e.message==='unauth'?'Access key rejected':'Could not reach that inbox — '+String(e.message||e);}
   if(activeTab===MAIL)renderViewport();
 }
@@ -1087,7 +1112,7 @@ async function openMailMsg(uid,folder){
     mailx.selMsg=null;mailx.selThread=null;mailx.loadingMsg=true;
     // Progressive open: fetch the single message in parallel — it lands well before the full
     // conversation, so the email appears immediately and the thread fills in underneath.
-    mailFetch('/mail/msg?acct='+encodeURIComponent(mailx.acct)+'&uid='+uid+'&folder='+folder).then(r=>r.json()).then(d=>{
+    mailFetch('/mail/msg?acct='+encodeURIComponent(mailx.acct)+'&uid='+uid+'&folder='+encodeURIComponent(folder)).then(r=>r.json()).then(d=>{
       if(d&&d.message&&mailx.selUid===uid&&mailx.loadingMsg&&!mailx.selThread){
         const m=d.message;
         mailx.selThread={subject:m.subject,messages:[m],provisional:true};
@@ -1097,7 +1122,7 @@ async function openMailMsg(uid,folder){
     }).catch(()=>{});
   }
   if(activeTab===MAIL)renderViewport();
-  try{const r=await mailFetch('/mail/thread?acct='+encodeURIComponent(mailx.acct)+'&uid='+uid+'&folder='+folder);const d=await r.json();if(!r.ok)throw new Error(d.detail||d.error||'error');
+  try{const r=await mailFetch('/mail/thread?acct='+encodeURIComponent(mailx.acct)+'&uid='+uid+'&folder='+encodeURIComponent(folder));const d=await r.json();if(!r.ok)throw new Error(d.detail||d.error||'error');
     mailThreadCache[ck]=d;
     const changed=!cachedTh||(cachedTh.messages||[]).length!==(d.messages||[]).length;
     if(mailx.selUid===uid){ // still viewing this message
@@ -1114,7 +1139,7 @@ function closeMailMsg(){mailx.selUid=null;mailx.selMsg=null;mailx.composing=fals
 async function mailToggleStar(uid,ev){
   if(ev)ev.stopPropagation();const li=mailx.lists[mailListKey()];const row=li&&li.find(m=>m.uid===uid);const now=row?!row.starred:true;
   if(row)row.starred=now;if(mailx.selMsg&&mailx.selMsg.uid===uid)mailx.selMsg.starred=now;mailSyncSnap();if(activeTab===MAIL)renderViewport();
-  try{await mailFetch('/mail/flag',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acct:mailx.acct,uid,flag:'star',on:now})});}
+  try{await mailFetch('/mail/flag',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acct:mailx.acct,uid,flag:'star',on:now,folder:mailx.folder})});}
   catch(e){if(row)row.starred=!now;if(mailx.selMsg&&mailx.selMsg.uid===uid)mailx.selMsg.starred=!now;if(activeTab===MAIL)renderViewport();}
 }
 function mailStartReply(){mailx.composing=true;mailx.composeNew=false;mailx.sendStatus=null;mailx.attach=[];if(activeTab===MAIL)renderViewport();setTimeout(()=>{const t=document.getElementById('mail-reply-text');if(t)t.focus()},50);}
@@ -1130,7 +1155,7 @@ function renderMailAccts(){const el=document.querySelector('.mail-accts');if(el&
 async function mailSilentRefresh(){
   if(!mailx.acct||mailx.loadingList)return;
   const key=mailListKey();
-  try{const r=await mailFetch('/mail/list?acct='+encodeURIComponent(mailx.acct)+'&folder='+mailx.folder+'&limit='+(mailx.limit||50));const d=await r.json();
+  try{const r=await mailFetch('/mail/list?acct='+encodeURIComponent(mailx.acct)+'&folder='+encodeURIComponent(mailx.folder)+'&limit='+(mailx.limit||50));const d=await r.json();
     if(r.ok&&d.messages){mailx.lists[key]=d.messages;if(mailx.folder==='inbox'&&(mailx.limit||50)<=50)mailSnapPut(mailx.acct+'|inbox',d.messages);
       if(!mailx.search)renderMailListRegion();renderMailAccts();if(mailx.folder==="inbox")mailPrecacheTop(mailx.acct,d.messages,3);}}catch(e){}
 }
@@ -1344,8 +1369,8 @@ function mailListHTML(forTwoPane){
     return hdr+`<div class="gmail-list-tab">${res.map(e=>mailRowHTML(e,forTwoPane,'inbox')).join('')}</div>`;
   }
   const list=mailx.lists[mailListKey()];
-  const F=[['inbox','📥 Inbox'],['sent','📤 Sent'],['starred','⭐ Starred'],['trash','🗑 Trash']];
-  const tabs=`<div class="gmail-folders">${F.map(([id,label])=>`<button class="gmail-fld${mailx.folder===id?' active':''}" onclick="switchMailFolder('${id}')">${label}</button>`).join('')}</div>`;
+  const F=[['inbox','📥 Inbox'],['sent','📤 Sent'],['starred','⭐ Starred'],['trash','🗑 Trash'],...mailLabelChips()];
+  const tabs=`<div class="gmail-folders">${F.map(([id,label])=>`<button class="gmail-fld${mailx.folder===id?' active':''}" data-f="${esc(id)}" onclick="switchMailFolder(this.dataset.f)">${esc(label)}</button>`).join('')}</div>`;
   const bar=(extra='')=>`<div class="gmail-toolbar">${tabs}<button class="gmail-refresh" onclick="loadMailList(true)" title="Refresh">⟳</button></div>${extra}`;
   const emptyMsg=mailx.folder==='starred'?'No starred emails.':mailx.folder==='trash'?'Trash is empty.':'No emails in this inbox.';
   if(mailx.loadingList&&!list)return bar('<div class="gmail-loading">Loading…</div>');
