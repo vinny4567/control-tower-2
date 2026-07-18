@@ -487,15 +487,15 @@ function defaultLayout(){return window.innerWidth<1280?2:3}
 const DEFAULT_PANELS=[
   {id:1,emoji:'📅',name:'Schedule',url:'https://restaurant-scheduler-hh5e.onrender.com/dashboard',launcher:false},
   {id:2,emoji:'💰',name:'Tipout',url:'https://vinny4567.github.io/tipout/?v=37',launcher:false},
-  {id:3,emoji:'📧',name:'Reservations',url:'https://mail.google.com/mail/u/3/#inbox',launcher:true,iosScheme:'googlegmail://'},
   {id:5,emoji:'🗺️',name:'Map',url:'https://angelis-backend.onrender.com/reservations-internal.html',launcher:false},
   {id:4,emoji:'🍱',name:'Catering',url:'https://order.angeliscatering.com/catering-internal.html',launcher:false},
   {id:7,emoji:'🥂',name:'Private Party',url:'https://order.angeliscatering.com/parties-internal-form.html',launcher:false},
   {id:8,emoji:'🧮',name:'Calculator',url:'',launcher:false},
 ];
 function loadCfg(){try{const r=localStorage.getItem(KEY);if(r){const c=JSON.parse(r);
-  // Migration: remove the old Online Orders tab if it exists in saved config
-  if(c.panels)c.panels=c.panels.filter(p=>p.id!==6);
+  // Migration: remove the old Online Orders tab + the Reservations launcher
+  // (the Reservations inbox is a full account inside the Email tab now)
+  if(c.panels)c.panels=c.panels.filter(p=>p.id!==6&&p.id!==3);
   // Migration: add Private Party tab if missing
   if(c.panels&&!c.panels.find(p=>p.id===7)){
     c.panels.push({id:7,emoji:'🥂',name:'Private Party',url:'https://order.angeliscatering.com/parties-internal-form.html',launcher:false});
@@ -517,13 +517,11 @@ function loadCfg(){try{const r=localStorage.getItem(KEY);if(r){const c=JSON.pars
   if(tip&&(tip.url||'').match(/vinny4567\.github\.io\/tipout/)){
     tip.url='https://vinny4567.github.io/tipout/?v=37';
   }
-  // Migration: rename panels — Gmail→Reservations, Reservations→Map
-  const gmailPanel=c.panels?.find(p=>p.id===3);
-  if(gmailPanel&&gmailPanel.name==='Gmail')gmailPanel.name='Reservations';
+  // Migration: rename old Reservations panel (id 5) to Map
   const mapPanel=c.panels?.find(p=>p.id===5);
   if(mapPanel&&mapPanel.name==='Reservations'){mapPanel.name='Map';mapPanel.emoji='🗺️';}
-  // Migration: move Map (5) to right after Reservations (3); Weddings now renders after Catering (4)
-  if(c.panels){const mi=c.panels.findIndex(p=>p.id===5),ri=c.panels.findIndex(p=>p.id===3);if(mi>-1&&ri>-1&&mi!==ri+1){const mp=c.panels.splice(mi,1)[0];const ri2=c.panels.findIndex(p=>p.id===3);c.panels.splice(ri2+1,0,mp);}}
+  // Migration: keep Map (5) right after Tipout (2)
+  if(c.panels){const mi=c.panels.findIndex(p=>p.id===5),ti=c.panels.findIndex(p=>p.id===2);if(mi>-1&&ti>-1&&mi!==ti+1){const mp=c.panels.splice(mi,1)[0];const ti2=c.panels.findIndex(p=>p.id===2);c.panels.splice(ti2+1,0,mp);}}
   return c}}catch(e){}return{layout:defaultLayout(),panels:DEFAULT_PANELS.map(p=>({...p}))}}
 function saveCfg(){localStorage.setItem(KEY,JSON.stringify(cfg))}
 const DASH='dashboard';
@@ -1268,7 +1266,8 @@ function setReplyStatus(text,kind){const el=document.getElementById('mail-reply-
 // proven path the Reservations tab uses. Per-account access token vended by the scheduler. ──────
 function mailAcctObj(){return (mailx.accts||[]).find(a=>a.id===mailx.acct)||{};}
 async function gmailAccessToken(email){
-  const r=await fetch(GMAIL_TOKEN_ENDPOINT+'?account='+encodeURIComponent(email)+'&key='+encodeURIComponent(GMAIL_BACKEND_KEY));
+  const acctQ=email==='angelisreservations1478@gmail.com'?'':('account='+encodeURIComponent(email)+'&');
+  const r=await fetch(GMAIL_TOKEN_ENDPOINT+'?'+acctQ+'key='+encodeURIComponent(GMAIL_BACKEND_KEY));
   if(r.status===404){const e=new Error('not_connected');e.notConnected=true;throw e;}
   if(!r.ok)throw new Error('token '+r.status);
   const d=await r.json();if(!d.access_token)throw new Error('no access token');return d.access_token;
