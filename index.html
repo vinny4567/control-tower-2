@@ -1026,8 +1026,10 @@ function mailLabelChips(){
   const out=[];
   const cat=mailPickLabel(dirs,['catering','cater']);
   const wed=mailPickLabel(dirs,['wedding inquir','wedding','bridal']);
-  if(cat)out.push(['label:'+cat.path,'🍝 '+cat.name]);
-  if(wed)out.push(['label:'+wed.path,'💍 '+wed.name]);
+  const un=(mailx.labelUnseen||{})[mailx.acct]||{};
+  const tag=d=>un[d.path]>0?' ('+un[d.path]+')':'';
+  if(cat)out.push(['label:'+cat.path,'🍝 '+cat.name+tag(cat)]);
+  if(wed)out.push(['label:'+wed.path,'💍 '+wed.name+tag(wed)]);
   return out}
 // Best label for a chip: exact name beats prefix beats contains; earlier search
 // words beat later ones; ties go to the shorter name.
@@ -1049,9 +1051,23 @@ async function mailLoadFolders(acctId){
   try{const r=await mailFetch('/mail/folders?acct='+encodeURIComponent(acctId));const d=await r.json();
     if(r.ok&&Array.isArray(d.folders)){mailx.labelDirs[acctId]=d.folders;
       try{const c=JSON.parse(localStorage.getItem('ct_mail_labels')||'{}');c[acctId]=d.folders;localStorage.setItem('ct_mail_labels',JSON.stringify(c))}catch(e){}
+      mailLoadUnseen(acctId);
       if(activeTab===MAIL)renderViewport()}
     else if(mailx.labelDirs[acctId]===null)mailx.labelDirs[acctId]=[];
   }catch(e){if(mailx.labelDirs[acctId]===null)mailx.labelDirs[acctId]=[]}}
+async function mailLoadUnseen(acctId){
+  const dirs=mailx.labelDirs&&mailx.labelDirs[acctId];
+  if(!acctId||!Array.isArray(dirs)||!dirs.length)return;
+  const saved=mailx.acct;mailx.acct=acctId;
+  const paths=mailLabelChips().map(([id])=>id.slice(6));
+  mailx.acct=saved;
+  if(!paths.length)return;
+  try{const r=await mailFetch('/mail/unseen?acct='+encodeURIComponent(acctId)+'&folders='+encodeURIComponent(paths.join('|')));
+    const d=await r.json();
+    if(r.ok&&d.unseen){mailx.labelUnseen=mailx.labelUnseen||{};mailx.labelUnseen[acctId]=d.unseen;
+      if(activeTab===MAIL)renderViewport()}
+  }catch(e){}}
+if(!window._mailLabTick)window._mailLabTick=setInterval(()=>{if(activeTab===MAIL&&mailx.acct)mailLoadUnseen(mailx.acct)},60000);
 function switchMailFolder(f){if(f===mailx.folder)return;mailx.folder=f;mailx.limit=50;mailx.selUid=null;mailx.selMsg=null;mailx.composing=false;mailx.composeNew=false;mailx.search='';mailx.searchResults=null;mailx.searching=false;mailx.error=null;renderViewport();loadMailList();}
 function mailKey(){return localStorage.getItem('ct_mail_key')||''}
 function setMailKey(){const k=prompt('Paste the Email access key (MAIL_TOKEN value from Render):');if(k&&k.trim()){localStorage.setItem('ct_mail_key',k.trim());mailx.accts=null;mailx.error=null;loadMailAccounts();}}
