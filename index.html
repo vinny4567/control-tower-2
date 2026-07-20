@@ -2070,6 +2070,9 @@ function agItems(){
     }
   });
   (((ag.feed||{}).events)||[]).forEach(e=>{
+    // 🥂-prefixed events are auto-synced FROM party bookings — the agenda already
+    // shows those as 🎉 party rows, so skip the schedule twin here.
+    if((e.label||'').startsWith('🥂'))return;
     out.push({date:e.date,time:e.time||'',kind:'wed',label:e.label||'Event',
       sub:[e.schedule||'',e.signupCount?e.signupCount+' staff':''].filter(Boolean).join(' · '),sched:e.id,id:'sched-'+e.id});
   });
