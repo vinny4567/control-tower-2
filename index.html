@@ -1899,7 +1899,7 @@ function wedPrint(){const ev=wedCur();if(!ev)return;wedFlush();
   doc.close();w.focus();setTimeout(()=>{try{w.print()}catch(e){}setTimeout(()=>f.remove(),1500)},300)}
 
 function renderTabs(){const list=document.getElementById('tab-list');list.innerHTML=`<div class="tab ${activeTab===DASH?'active':''}" onclick="switchTab('${DASH}')">📊 Dashboard</div>`+`<div class="tab ${activeTab===MAIL?'active':''}" onclick="switchTab('${MAIL}')">📧 Email</div>`+`<div class="tab ${activeTab===DOCS?'active':''}" onclick="switchTab('${DOCS}')">📝 Docs</div>`+cfg.panels.map(p=>{const t=`<div class="tab ${activeTab===p.id?'active':''}" onclick="switchTab(${p.id})">${esc(p.name)}</div>`;return p.id===4?t+`<div class="tab ${activeTab===WED?'active':''}" onclick="switchTab('${WED}')">💍 Weddings</div>`:t;}).join('')+`<div class="tab ${activeTab===ONLINE?'active':''}" onclick="switchTab('${ONLINE}')">🤖 Jarvis</div>`+`<div class="tab tab-add" onclick="openSettings()" title="Add panel">＋</div>`}
-function renderViewport(){if(activeTab===WED){document.getElementById('viewport').innerHTML=wedHTML();wedInit();return}if(activeTab===DOCS){docsSetNS('ct_docs');docsPullSync();document.getElementById('viewport').innerHTML=docsHTML();return}if(activeTab===MAIL){document.getElementById('viewport').innerHTML=mailHTML();restoreGmailListScroll();return}if(activeTab===ONLINE){document.getElementById('viewport').innerHTML=onlineHTML();renderChat();if(ordersKey())loadCmdConsole();return}if(activeTab===DASH){const vp=document.getElementById('viewport');const sc=vp.querySelector('.dashboard');const top=sc?sc.scrollTop:0;vp.innerHTML=dashboardHTML();if(top){const sc2=vp.querySelector('.dashboard');if(sc2)sc2.scrollTop=top}return}const p=cfg.panels.find(x=>x.id===activeTab);if(!p){document.getElementById('viewport').innerHTML='';return}document.getElementById('viewport').innerHTML=bodyHTML(p);if(activeTab===3)restoreGmailListScroll()}
+function renderViewport(){if(activeTab===WED){document.getElementById('viewport').innerHTML=wedHTML();wedInit();return}if(activeTab===DOCS){docsSetNS('ct_docs');docsPullSync();document.getElementById('viewport').innerHTML=docsHTML();return}if(activeTab===MAIL){document.getElementById('viewport').innerHTML=mailHTML();restoreGmailListScroll();return}if(activeTab===ONLINE){document.getElementById('viewport').innerHTML=onlineHTML();renderChat();if(ordersKey())loadCmdConsole();return}if(activeTab===DASH){const vp=document.getElementById('viewport');const sc=vp.querySelector('.dashboard');const top=sc?sc.scrollTop:0;const al=vp.querySelector('.ag-list');const alTop=al?al.scrollTop:0;vp.innerHTML=dashboardHTML();if(top){const sc2=vp.querySelector('.dashboard');if(sc2)sc2.scrollTop=top}if(alTop){const al2=vp.querySelector('.ag-list');if(al2)al2.scrollTop=alTop}return}const p=cfg.panels.find(x=>x.id===activeTab);if(!p){document.getElementById('viewport').innerHTML='';return}document.getElementById('viewport').innerHTML=bodyHTML(p);if(activeTab===3)restoreGmailListScroll()}
 
 // ── ONLINE TAB: Otter command bridge ───────────────────────────────
 // Queue actions to the reader userscript on the always-on Mac's Otter tab; it runs them there
@@ -2048,7 +2048,10 @@ async function agendaLoad(force){
 }
 function agendaEnsure(){agendaLoad(false);
   if(!window._agTick)window._agTick=setInterval(()=>{if(activeTab===DASH)agendaLoad(false)},120000)}
-function agendaRerender(){const el=document.getElementById('ag-card');if(el&&activeTab===DASH)el.outerHTML=agendaCardHTML()}
+function agendaRerender(){const el=document.getElementById('ag-card');if(!el||activeTab!==DASH)return;
+  const l=el.querySelector('.ag-list');const t=l?l.scrollTop:0;
+  el.outerHTML=agendaCardHTML();
+  if(t){const l2=document.querySelector('#ag-card .ag-list');if(l2)l2.scrollTop=t}}
 function agMin(t){const m=/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec((t||'').trim());if(!m)return -1;
   let h=(+m[1])%12;if(/pm/i.test(m[3]))h+=12;return h*60+(+m[2])}
 function agItems(){
