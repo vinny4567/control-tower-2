@@ -376,6 +376,21 @@
     .docs-editor:empty::before{content:'Start typing…';color:#9a968c}
     .docs-empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:14px;text-align:center;padding:30px;line-height:1.6}
     @media(max-width:720px){.docs-side{width:140px}.docs-editor{padding:26px 20px}.docs-toolbar{gap:3px}}
+    /* Liquor portals launcher */
+    .liq-wrap{padding:26px;max-width:1100px;margin:0 auto}
+    .liq-head{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:20px}
+    .liq-title{font-size:22px;font-weight:800;color:var(--accent)}
+    .liq-sub{font-size:12px;color:var(--text-muted)}
+    .liq-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
+    .liq-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;cursor:pointer;transition:transform .12s,border-color .12s;position:relative}
+    .liq-card:hover{transform:translateY(-2px);border-color:var(--accent)}
+    .liq-name{font-size:17px;font-weight:800;color:var(--text)}
+    .liq-launch{color:var(--accent);font-weight:800;margin-left:4px}
+    .liq-note{font-size:12px;color:var(--text-dim);margin-top:6px}
+    .liq-url{font-size:11px;color:var(--text-muted);margin-top:10px;font-family:monospace}
+    .liq-actions{position:absolute;top:12px;right:12px;display:flex;gap:6px;opacity:.55}
+    .liq-card:hover .liq-actions{opacity:1}
+    .liq-tip{margin-top:22px;font-size:12px;color:var(--text-muted)}
     /* ═══ WEDDINGS TAB — event list + drag-and-drop floor plans ═══ */
     #wed-root{display:flex;flex-direction:column;height:100%;overflow:hidden}
     .wed-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 12px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0}
@@ -529,6 +544,7 @@ const ONLINE='online';
 const MAIL='mailbox';
 const DOCS='docs';
 const WED='weddings';
+const LIQ='liquor';
 const CMD_API='https://jarvis-voicejarvis-voice.onrender.com/cmd';
 let cmdConsoleTimer=null;
 let cfg=loadCfg(),focused=null,editing=null,activeTab=cfg.activeTab||DASH;
@@ -689,6 +705,9 @@ window.addEventListener('load',()=>initGmail());
 
 // ── GMAIL MAILBOX TAB ─────────────────────────────────────────────
 let gmailTab={emails:null,loading:false,selectedId:null,selectedEmail:null,loadingDetail:false,composing:null,sendStatus:null};
+// Injected into every email-body iframe: any link click opens in a NEW TAB (noopener). Without this
+// the sandbox just swallows clicks. Pairs with allow-popups(-to-escape-sandbox) on the iframes.
+const MAIL_LINK_SCRIPT=`<script>document.addEventListener('click',function(e){var a=e.target&&e.target.closest?e.target.closest('a[href]'):null;if(!a)return;var h=a.getAttribute('href')||'';if(!h||h.charAt(0)==='#'||/^javascript:/i.test(h))return;e.preventDefault();try{window.open(a.href,'_blank','noopener')}catch(_){}},true);<\/script>`;
 // Listen for height reports from email body iframes — auto-grow each iframe to fit its content
 window.addEventListener('message',function(e){
   if(!e.data||e.data._ct!=='h'||!e.data.id||!e.data.h)return;
@@ -979,12 +998,12 @@ function gmailDetailHTML(forSinglePane){
     const transformedBody=isSent
       ? renderSentBody(m.body||'')
       : transformReservationEmail(m.body||'',m.subject||e.subject||'');
-    const fullBody=transformedBody+heightScript;
+    const fullBody=transformedBody+heightScript+MAIL_LINK_SCRIPT;
     // FULL entity-escape — including < and > — so the outer HTML parser never sees raw <script>
     // tags inside this attribute (which can confuse Safari). The iframe still decodes everything
     // back to real HTML when it loads the srcdoc.
     const bodyAttr=fullBody.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    return `<div class="gmail-msg ${isSent?'sent':''}" data-msg-id="${esc(m.id)}"><div class="gmail-msg-head"><div class="gmail-msg-from-line"><span class="gmail-msg-from">${isSent?'You':esc(parseSender(m.from))}</span><span class="gmail-msg-date">${esc(m.date)}</span></div>${isSent?'':`<div class="gmail-msg-fromfull">${esc(m.from)}</div>`}</div><div class="gmail-msg-body"><iframe srcdoc="${bodyAttr}" sandbox="allow-scripts"></iframe></div></div>`;
+    return `<div class="gmail-msg ${isSent?'sent':''}" data-msg-id="${esc(m.id)}"><div class="gmail-msg-head"><div class="gmail-msg-from-line"><span class="gmail-msg-from">${isSent?'You':esc(parseSender(m.from))}</span><span class="gmail-msg-date">${esc(m.date)}</span></div>${isSent?'':`<div class="gmail-msg-fromfull">${esc(m.from)}</div>`}</div><div class="gmail-msg-body"><iframe srcdoc="${bodyAttr}" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"></iframe></div></div>`;
   }).join('');
   return `<div class="gmail-detail"><div class="gmail-detail-scroll"><div class="gmail-thread">${subjectBar}${msgs}</div></div>${composeUI}</div>`;
 }
@@ -1417,9 +1436,9 @@ function mailDetailHTML(){
     const id='mailmsg'+i;
     const bodyHtml=mm.html||('<pre style="white-space:pre-wrap;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;margin:0;padding:16px;color:#111;line-height:1.5">'+esc(mm.text||'(no content)')+'</pre>');
     const heightScript=`<script>(function(){function r(){try{var max=0,b=document.body;if(b){var w=document.createTreeWalker(b,NodeFilter.SHOW_TEXT,null,false),n;while(n=w.nextNode()){if(!(n.nodeValue||'').trim())continue;var rg=document.createRange();rg.selectNodeContents(n);var bo=rg.getBoundingClientRect().bottom;if(bo>max)max=bo;}var ig=b.getElementsByTagName('img');for(var k=0;k<ig.length;k++){var bb=ig[k].getBoundingClientRect().bottom;if(bb>max)max=bb;}}var sc=Math.max(document.documentElement.scrollHeight,b?b.scrollHeight:0);var h=max>0?Math.min(sc,Math.ceil(max)+14):sc;parent.postMessage({_ct:'h',id:'${id}',h:h},'*')}catch(e){try{parent.postMessage({_ct:'h',id:'${id}',h:Math.max(document.documentElement.scrollHeight,document.body?document.body.scrollHeight:0)+24},'*')}catch(_){}}}r();window.addEventListener('load',r);setTimeout(r,150);setTimeout(r,800);setTimeout(r,2500);var imgs=document.querySelectorAll('img');for(var i=0;i<imgs.length;i++){if(!imgs[i].complete){imgs[i].addEventListener('load',r);imgs[i].addEventListener('error',r)}}})();<\/script>`;
-    const bodyAttr=(bodyHtml+heightScript).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const bodyAttr=(bodyHtml+heightScript+MAIL_LINK_SCRIPT).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const who=mm.fromSelf?'You':esc(mm.from||'(unknown)');
-    return `<div class="gmail-msg ${mm.fromSelf?'sent':''}"><div class="gmail-msg-head"><div class="gmail-msg-from-line"><span class="gmail-msg-from">${who}</span><span class="gmail-msg-date">${esc(mailFullDate(mm.date))}</span></div>${mm.fromSelf?'':`<div class="gmail-msg-fromfull">${esc(mm.fromAddr||'')}</div>`}</div><div class="gmail-msg-body"><iframe data-msg-id="${id}" srcdoc="${bodyAttr}" sandbox="allow-scripts"></iframe></div></div>`;
+    return `<div class="gmail-msg ${mm.fromSelf?'sent':''}"><div class="gmail-msg-head"><div class="gmail-msg-from-line"><span class="gmail-msg-from">${who}</span><span class="gmail-msg-date">${esc(mailFullDate(mm.date))}</span></div>${mm.fromSelf?'':`<div class="gmail-msg-fromfull">${esc(mm.fromAddr||'')}</div>`}</div><div class="gmail-msg-body"><iframe data-msg-id="${id}" srcdoc="${bodyAttr}" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"></iframe></div></div>`;
   }).join('');
   return `<div class="gmail-detail"><div class="gmail-detail-scroll"><div class="gmail-thread">${subjectBar}${blocks}</div></div>${compose}</div>`;
 }
@@ -1587,6 +1606,66 @@ async function docsPullSync(){
 }
 
 // ═══ WEDDINGS TAB — schedule-app event list + drag-and-drop floor plans ═══
+// ── LIQUOR ORDERING PORTALS ─────────────────────────────────────────────────────
+// The distributor portals (Breakthru, Southern, beer houses) all refuse to render
+// inside another site (frame-ancestors/XFO — verified live), so this tab is a
+// launcher hub: big buttons that open each portal in its own browser tab where
+// the saved logins work. The list is editable and syncs across devices.
+let liq={list:null};
+function liqDefaults(){return [
+  {name:'Breakthru NOW',url:'https://now.breakthrubev.com/bbg/en/',note:"Acct 700182622 · spirits & wine"},
+  {name:"Southern Glazer's Proof",url:'https://www.sgproof.com',note:'Wine & premium spirits'},
+]}
+function liqLoad(){if(liq.list)return liq.list;
+  try{const r=JSON.parse(localStorage.getItem('ct_liq')||'null');liq.list=(r&&r.v)||null}catch(e){}
+  if(!liq.list)liq.list=liqDefaults();
+  return liq.list}
+function liqStore(){const at=Date.now();
+  try{localStorage.setItem('ct_liq',JSON.stringify({v:liq.list,at}))}catch(e){}
+  if(typeof kvPush==='function')kvPush('ct_liq',liq.list,at);
+  if(activeTab===LIQ)renderViewport()}
+async function liqPull(){try{
+  const remote=await kvGet('ct_liq');
+  let localAt=0;try{localAt=(JSON.parse(localStorage.getItem('ct_liq')||'{}').at)||0}catch(e){}
+  if(remote&&remote.v&&(remote.at||0)>localAt){liq.list=remote.v;
+    try{localStorage.setItem('ct_liq',JSON.stringify({v:liq.list,at:remote.at}))}catch(e){}
+    if(activeTab===LIQ)renderViewport()}
+}catch(e){}}
+function liqOpen(i){const p=liqLoad()[i];if(p)window.open(p.url,'_blank')}
+function liqAdd(){const name=(prompt('Portal name:')||'').trim();if(!name)return;
+  let url=(prompt('Portal web address:')||'').trim();if(!url)return;
+  if(!/^https?:/i.test(url))url='https://'+url;
+  const note=(prompt('Note (account #, what you order there) — optional:')||'').trim();
+  liqLoad().push({name,url,note});liqStore()}
+function liqEdit(i){const p=liqLoad()[i];if(!p)return;
+  const name=(prompt('Name:',p.name)||'').trim();if(!name)return;
+  let url=(prompt('Web address:',p.url)||'').trim();if(!url)return;
+  if(!/^https?:/i.test(url))url='https://'+url;
+  p.name=name;p.url=url;p.note=(prompt('Note:',p.note||'')||'').trim();liqStore()}
+function liqRemove(i){const p=liqLoad()[i];if(!p)return;
+  if(!confirm('Remove "'+p.name+'" from the list?'))return;
+  liqLoad().splice(i,1);liqStore()}
+function liqHTML(){const list=liqLoad();
+  return `<div class="liq-wrap">
+    <div class="liq-head">
+      <span class="liq-title">🥃 Liquor Ordering</span>
+      <span class="liq-sub">Portals open in their own tab — logins &amp; carts work normally there.</span>
+      <span style="flex:1"></span>
+      <button class="wed-btn" onclick="liqAdd()">＋ Add portal</button>
+    </div>
+    <div class="liq-grid">
+      ${list.map((p,i)=>`<div class="liq-card" onclick="liqOpen(${i})">
+        <div class="liq-name">${esc(p.name)} <span class="liq-launch">↗</span></div>
+        ${p.note?`<div class="liq-note">${esc(p.note)}</div>`:''}
+        <div class="liq-url">${esc(p.url.replace(/^https?:\/\//,'').replace(/\/$/,''))}</div>
+        <div class="liq-actions">
+          <button class="wed-btn" onclick="event.stopPropagation();liqEdit(${i})">✎</button>
+          <button class="wed-btn danger" onclick="event.stopPropagation();liqRemove(${i})">✕</button>
+        </div>
+      </div>`).join('')}
+    </div>
+    <div class="liq-tip">💡 Tip: the Liquor Inventory sheet's Supplier column tells you which portal carries each item.</div>
+  </div>`}
 const WED_FEED='https://restaurant-scheduler-hh5e.onrender.com/api/banquet-feed';
 const WED_W=1000,WED_H=700;
 let wed={data:null,cur:null,sel:null,scale:1,saveTimer:null,view:'list',evId:null,pane:'tpl',feed:null,feedErr:null,loading:false};
@@ -1899,8 +1978,8 @@ function wedPrint(){const ev=wedCur();if(!ev)return;wedFlush();
     <div style="position:relative;width:100%;padding-top:66%;border:2.5px solid #000">${items}</div></body></html>`);
   doc.close();w.focus();setTimeout(()=>{try{w.print()}catch(e){}setTimeout(()=>f.remove(),1500)},300)}
 
-function renderTabs(){const list=document.getElementById('tab-list');list.innerHTML=`<div class="tab ${activeTab===DASH?'active':''}" onclick="switchTab('${DASH}')">📊 Dashboard</div>`+`<div class="tab ${activeTab===MAIL?'active':''}" onclick="switchTab('${MAIL}')">📧 Email</div>`+`<div class="tab ${activeTab===DOCS?'active':''}" onclick="switchTab('${DOCS}')">📝 Docs</div>`+cfg.panels.map(p=>{const t=`<div class="tab ${activeTab===p.id?'active':''}" onclick="switchTab(${p.id})">${esc(p.name)}</div>`;return p.id===4?t+`<div class="tab ${activeTab===WED?'active':''}" onclick="switchTab('${WED}')">💍 Weddings</div>`:t;}).join('')+`<div class="tab ${activeTab===ONLINE?'active':''}" onclick="switchTab('${ONLINE}')">🤖 Jarvis</div>`+`<div class="tab tab-add" onclick="openSettings()" title="Add panel">＋</div>`}
-function renderViewport(){if(activeTab===WED){document.getElementById('viewport').innerHTML=wedHTML();wedInit();return}if(activeTab===DOCS){docsSetNS('ct_docs');docsPullSync();document.getElementById('viewport').innerHTML=docsHTML();return}if(activeTab===MAIL){document.getElementById('viewport').innerHTML=mailHTML();restoreGmailListScroll();return}if(activeTab===ONLINE){document.getElementById('viewport').innerHTML=onlineHTML();renderChat();if(ordersKey())loadCmdConsole();return}if(activeTab===DASH){const vp=document.getElementById('viewport');const sc=vp.querySelector('.dashboard');const top=sc?sc.scrollTop:0;const al=vp.querySelector('.ag-list');const alTop=al?al.scrollTop:0;vp.innerHTML=dashboardHTML();if(top){const sc2=vp.querySelector('.dashboard');if(sc2)sc2.scrollTop=top}if(alTop){const al2=vp.querySelector('.ag-list');if(al2)al2.scrollTop=alTop}return}const p=cfg.panels.find(x=>x.id===activeTab);if(!p){document.getElementById('viewport').innerHTML='';return}document.getElementById('viewport').innerHTML=bodyHTML(p);if(activeTab===3)restoreGmailListScroll()}
+function renderTabs(){const list=document.getElementById('tab-list');list.innerHTML=`<div class="tab ${activeTab===DASH?'active':''}" onclick="switchTab('${DASH}')">📊 Dashboard</div>`+`<div class="tab ${activeTab===MAIL?'active':''}" onclick="switchTab('${MAIL}')">📧 Email</div>`+`<div class="tab ${activeTab===DOCS?'active':''}" onclick="switchTab('${DOCS}')">📝 Docs</div>`+cfg.panels.map(p=>{const t=`<div class="tab ${activeTab===p.id?'active':''}" onclick="switchTab(${p.id})">${esc(p.name)}</div>`;return p.id===4?t+`<div class="tab ${activeTab===WED?'active':''}" onclick="switchTab('${WED}')">💍 Weddings</div>`:t;}).join('')+`<div class="tab ${activeTab===LIQ?'active':''}" onclick="switchTab('${LIQ}')">🥃 Liquor</div>`+`<div class="tab ${activeTab===ONLINE?'active':''}" onclick="switchTab('${ONLINE}')">🤖 Jarvis</div>`+`<div class="tab tab-add" onclick="openSettings()" title="Add panel">＋</div>`}
+function renderViewport(){if(activeTab===WED){document.getElementById('viewport').innerHTML=wedHTML();wedInit();return}if(activeTab===DOCS){docsSetNS('ct_docs');docsPullSync();document.getElementById('viewport').innerHTML=docsHTML();return}if(activeTab===MAIL){document.getElementById('viewport').innerHTML=mailHTML();restoreGmailListScroll();return}if(activeTab===LIQ){document.getElementById('viewport').innerHTML=liqHTML();return}if(activeTab===ONLINE){document.getElementById('viewport').innerHTML=onlineHTML();renderChat();if(ordersKey())loadCmdConsole();return}if(activeTab===DASH){const vp=document.getElementById('viewport');const sc=vp.querySelector('.dashboard');const top=sc?sc.scrollTop:0;const al=vp.querySelector('.ag-list');const alTop=al?al.scrollTop:0;vp.innerHTML=dashboardHTML();if(top){const sc2=vp.querySelector('.dashboard');if(sc2)sc2.scrollTop=top}if(alTop){const al2=vp.querySelector('.ag-list');if(al2)al2.scrollTop=alTop}return}const p=cfg.panels.find(x=>x.id===activeTab);if(!p){document.getElementById('viewport').innerHTML='';return}document.getElementById('viewport').innerHTML=bodyHTML(p);if(activeTab===3)restoreGmailListScroll()}
 
 // ── ONLINE TAB: Otter command bridge ───────────────────────────────
 // Queue actions to the reader userscript on the always-on Mac's Otter tab; it runs them there
@@ -2339,6 +2418,7 @@ function switchTab(id){
   activeTab=id;cfg.activeTab=id;saveCfg();renderAll();
   if(id===DASH){loadCateringOrders();loadLiveOrders();}
   if(id===WED){wed.view='list';wedFetchFeed();wedPullSync();}
+  if(id===LIQ){liqPull();}
   if(id===MAIL){if(mailx.accts===null||mailx.accts==='error')loadMailAccounts();else if(mailx.acct)loadMailList();}
   if(gmailValid()){
     if(id===3&&!gmailTab.selectedEmail&&!gmailTab.loading)loadGmailTab();
