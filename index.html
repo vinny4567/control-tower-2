@@ -376,6 +376,7 @@
     .docs-editor:empty::before{content:'Start typing…';color:#9a968c}
     .docs-empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:14px;text-align:center;padding:30px;line-height:1.6}
     @media(max-width:720px){.docs-side{width:140px}.docs-editor{padding:26px 20px}.docs-toolbar{gap:3px}}
+    .gmail-thread-count{display:inline-block;background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:9px;padding:0 7px;font-size:10.5px;margin-left:6px;vertical-align:1px}
     /* Liquor portals launcher */
     .liq-wrap{padding:26px;max-width:1100px;margin:0 auto}
     .liq-head{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:20px}
@@ -1182,7 +1183,7 @@ async function openMailMsg(uid,folder){
 }
 function closeMailMsg(){mailx.selUid=null;mailx.selMsg=null;mailx.composing=false;if(activeTab===MAIL)renderViewport();}
 async function mailToggleStar(uid,ev){
-  if(ev)ev.stopPropagation();const li=mailx.lists[mailListKey()];const row=li&&li.find(m=>m.uid===uid);const now=row?!row.starred:true;
+  if(ev)ev.stopPropagation();const li=mailx.lists[mailListKey()];const row=li&&li.find(m=>String(m.uid)===String(uid));const now=row?!row.starred:true;
   if(row)row.starred=now;if(mailx.selMsg&&mailx.selMsg.uid===uid)mailx.selMsg.starred=now;mailSyncSnap();if(activeTab===MAIL)renderViewport();
   try{await mailFetch('/mail/flag',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acct:mailx.acct,uid,flag:'star',on:now,folder:mailx.folder})});}
   catch(e){if(row)row.starred=!now;if(mailx.selMsg&&mailx.selMsg.uid===uid)mailx.selMsg.starred=!now;if(activeTab===MAIL)renderViewport();}
@@ -1241,7 +1242,17 @@ function mailComposeNewHTML(){
     ${mailAttRowHTML()}
   </div></div><div class="gmail-compose-bar" style="padding:12px 16px;border-top:1px solid var(--border);background:var(--surface)">${status}<div style="display:flex;gap:8px"><button class="gmail-action-btn secondary" onclick="mailCancelCompose()">Cancel</button><button class="gmail-action-btn" onclick="mailSendNew()">Send</button></div></div></div>`;
 }
-function mailRowHTML(e,forTwoPane,folderOverride){const openFolder=folderOverride||mailx.folder;const who=openFolder==='sent'?('To: '+esc(e.to||e.toAddr||'(no recipient)')):esc(e.from||e.fromAddr||'(unknown)');return `<div class="gmail-row ${e.unread?'unread':''} ${forTwoPane&&mailx.selUid===e.uid?'selected':''}" onclick="openMailMsg(${e.uid},'${openFolder}')"><div class="gmail-row-top"><div class="gmail-row-sender">${e.unread?'<span class="unread-badge">New</span>':''}${who}</div><div class="gmail-row-time"><button class="gmail-star ${e.starred?'starred':''}" onclick="mailToggleStar(${e.uid},event)" title="${e.starred?'Unstar':'Star'}">${e.starred?'★':'☆'}</button>${mailTime(e.date)}</div></div><div class="gmail-row-subject">${esc(e.subject)}</div></div>`;}
+function mailNormSubj(x){x=String(x||'').toLowerCase().trim();while(/^(re|fw|fwd)\s*:/i.test(x))x=x.replace(/^(re|fw|fwd)\s*:\s*/i,'');return x.replace(/\s+/g,' ')||'(no subject)'}
+// One row per CONVERSATION: lists arrive newest-first, so the first message of a
+// subject keeps the row and later ones just bump its count (Gmail-style collapse).
+function mailGroupList(list){if(!Array.isArray(list))return list;
+  const seen=new Map(),out=[];
+  for(const m of list){const k=mailNormSubj(m.subject);
+    const g=seen.get(k);
+    if(!g){const r={...m,_count:1};seen.set(k,r);out.push(r)}
+    else g._count++;}
+  return out}
+function mailRowHTML(e,forTwoPane,folderOverride){const openFolder=folderOverride||mailx.folder;const who=openFolder==='sent'?('To: '+esc(e.to||e.toAddr||'(no recipient)')):esc(e.from||e.fromAddr||'(unknown)');return `<div class="gmail-row ${e.unread?'unread':''} ${forTwoPane&&String(mailx.selUid)===String(e.uid)?'selected':''}" onclick="openMailMsg('${e.uid}','${openFolder}')"><div class="gmail-row-top"><div class="gmail-row-sender">${e.unread?'<span class="unread-badge">New</span>':''}${who}</div><div class="gmail-row-time"><button class="gmail-star ${e.starred?'starred':''}" onclick="mailToggleStar('${e.uid}',event)" title="${e.starred?'Unstar':'Star'}">${e.starred?'★':'☆'}</button>${mailTime(e.date)}</div></div><div class="gmail-row-subject">${esc(e.subject)}${e._count>1?` <span class="gmail-thread-count">${e._count}</span>`:''}</div></div>`;}
 function mailCancelReply(){mailx.composing=false;mailx.sendStatus=null;mailx.attach=[];mailx.draft="";mailx.draftTo=null;if(activeTab===MAIL)renderViewport();}
 // Persist the current inbox list to the on-device snapshot after a local change (trash/star/read) —
 // otherwise a reload repaints from the stale snapshot and "resurrects" the old state for a beat.
@@ -1412,9 +1423,10 @@ function mailListHTML(forTwoPane){
     if(mailx.searching&&mailx.searchResults===null)return hdr+'<div class="gmail-loading">Searching…</div>';
     if(mailx.searchErr&&!res.length)return hdr+`<div class="gmail-empty">${esc(mailx.searchErr)}</div>`;
     if(!res.length)return hdr+`<div class="gmail-empty">No matches for “${esc(mailx.search)}”.</div>`;
-    return hdr+`<div class="gmail-list-tab">${res.map(e=>mailRowHTML(e,forTwoPane,'inbox')).join('')}</div>`;
+    return hdr+`<div class="gmail-list-tab">${mailGroupList(res).map(e=>mailRowHTML(e,forTwoPane,'inbox')).join('')}</div>`;
   }
-  const list=mailx.lists[mailListKey()];
+  const list0=mailx.lists[mailListKey()];
+  const list=(mailx.folder==='trash')?list0:mailGroupList(list0);
   const F=[['inbox','📥 Inbox'],['sent','📤 Sent'],['starred','⭐ Starred'],['trash','🗑 Trash'],...mailLabelChips()];
   const tabs=`<div class="gmail-folders">${F.map(([id,label])=>`<button class="gmail-fld${mailx.folder===id?' active':''}" data-f="${esc(id)}" onclick="switchMailFolder(this.dataset.f)">${esc(label)}</button>`).join('')}</div>`;
   const bar=(extra='')=>`<div class="gmail-toolbar">${tabs}<button class="gmail-refresh" onclick="loadMailList(true)" title="Refresh">⟳</button></div>${extra}`;
@@ -1424,7 +1436,7 @@ function mailListHTML(forTwoPane){
   if(list&&!list.length)return bar(`<div class="gmail-empty">${emptyMsg}</div>`);
   const rows=(list||[]).map(e=>mailRowHTML(e,forTwoPane)).join('');
   const lim=(mailx.limit||50);
-  const more=((list||[]).length>=lim&&lim<300)?`<div style="padding:14px;text-align:center"><button class="gmail-action-btn secondary" onclick="mailLoadMore()">${mailx.loadingList?'Loading…':'Load older messages'}</button></div>`:'';
+  const more=(((typeof list0!=='undefined'?list0:list)||[]).length>=lim&&lim<300)?`<div style="padding:14px;text-align:center"><button class="gmail-action-btn secondary" onclick="mailLoadMore()">${mailx.loadingList?'Loading…':'Load older messages'}</button></div>`:'';
   return bar(`<div class="gmail-list-tab">${rows}${more}</div>`);
 }
 function mailDetailHTML(){
