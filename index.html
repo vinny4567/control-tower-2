@@ -1754,6 +1754,59 @@ function wedOpenSchedLayout(){const fe=wedFeedEvent(wed.evId);if(!fe)return;
     d.events.unshift(lay);wedStore()}
   wed.cur=lay.id;wedLoad().cur=lay.id;wed.sel=null;wed.pane='plan';renderViewport()}
 function wedShowTpl(){wedFlush();wed.pane='tpl';wed.sel=null;renderViewport()}
+// ── Customer Emails pane: link the customer's address to the event once (kv-synced with the
+// weddings store), then pull their emails from all three inboxes via the mail bridge. ──
+function wedCustMail(fe){const d=wedLoad();return (d.custMail||{})['sched-'+fe.id]||''}
+function wedLinkMail(){const fe=wedFeedEvent(wed.evId);if(!fe)return;
+  const inp=document.getElementById('wedm-addr');const v=(inp?inp.value:'').trim();
+  if(!v||v.indexOf('@')===-1){alert('Enter the customer’s email address.');return}
+  const d=wedLoad();(d.custMail=d.custMail||{})['sched-'+fe.id]=v;wedStore();
+  wed.mailRes=null;renderViewport();wedMailLoad(fe);}
+function wedUnlinkMail(){const fe=wedFeedEvent(wed.evId);if(!fe)return;
+  const d=wedLoad();if(d.custMail)delete d.custMail['sched-'+fe.id];wedStore();wed.mailRes=null;renderViewport();}
+function wedShowMail(){wedFlush();wed.pane='mail';wed.sel=null;renderViewport();
+  const fe=wedFeedEvent(wed.evId);if(fe&&wedCustMail(fe))wedMailLoad(fe);}
+async function wedMailLoad(fe){
+  const addr=wedCustMail(fe);if(!addr)return;
+  const key='sched-'+fe.id;
+  wed.mailRes={key,loading:true,rows:[],err:null};paintWedMail();
+  if(!mailKey()){wed.mailRes={key,loading:false,rows:[],err:'Connect the Email tab first (enter the access key there once).'};paintWedMail();return}
+  let accts=Array.isArray(mailx.accts)?mailx.accts:(mailSnapGet&&mailSnapGet('accounts'))||[];
+  if(!accts.length){try{const r=await mailFetch('/mail/accounts');const d=await r.json();accts=d.accounts||[]}catch(e){}}
+  const results=await Promise.all(accts.map(a=>
+    mailFetch('/mail/search?acct='+encodeURIComponent(a.id)+'&q='+encodeURIComponent(addr))
+      .then(r=>r.json()).then(d=>(d.messages||[]).map(m=>({...m,acctId:a.id,acctLabel:a.label}))).catch(()=>[])));
+  if(!wed.mailRes||wed.mailRes.key!==key)return; // user moved on
+  const rows=results.flat().sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,40);
+  wed.mailRes={key,loading:false,rows,err:null};paintWedMail();}
+function paintWedMail(){const el=document.getElementById('wed-mail-list');if(el)el.innerHTML=wedMailListHTML()}
+function wedMailListHTML(){
+  const r=wed.mailRes;
+  if(!r||r.loading)return '<div class="gmail-loading">Searching all three inboxes…</div>';
+  if(r.err)return '<div class="gmail-empty">'+esc(r.err)+'</div>';
+  if(!r.rows.length)return '<div class="gmail-empty">No emails found for this address yet.</div>';
+  return r.rows.map(m=>`<div class="gmail-row" onclick="wedMailOpen('${m.acctId}',${m.uid})">
+    <div class="gmail-row-top"><div class="gmail-row-sender">${m.unread?'<span class="unread-badge">New</span>':''}${esc(m.from||m.fromAddr||'')}</div>
+    <div class="gmail-row-time"><span style="font-size:10px;color:var(--accent);font-weight:800;margin-right:6px">${esc(m.acctLabel||'')}</span>${mailTime(m.date)}</div></div>
+    <div class="gmail-row-subject">${esc(m.subject)}</div></div>`).join('');}
+function wedMailOpen(acctId,uid){
+  mailx.acct=acctId;mailx.folder='inbox';mailx.selUid=null;mailx.selMsg=null;mailx.selThread=null;
+  switchTab(MAIL);setTimeout(()=>openMailMsg(uid,'inbox'),60);}
+function wedMailPaneHTML(fe){
+  const addr=wedCustMail(fe);
+  if(!addr)return `<div class="wed-main wed-main-col"><div style="max-width:430px;margin:60px auto 0;text-align:center;padding:0 20px">
+    <div style="font-size:34px">📧</div><div style="font-weight:800;font-size:17px;margin:10px 0 6px">Link the customer’s email</div>
+    <div style="font-size:13px;color:var(--text-dim);line-height:1.5;margin-bottom:14px">Enter the email address ${esc(fe.label)} uses and every message they’ve sent to any of your inboxes will show here.</div>
+    <input id="wedm-addr" type="email" placeholder="customer@example.com" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:11px 13px;color:var(--text);font-size:15px;outline:none;font-family:inherit" onkeydown="if(event.key==='Enter')wedLinkMail()">
+    <button class="wed-btn amber" style="margin-top:10px;width:100%;padding:11px" onclick="wedLinkMail()">Save &amp; find emails</button>
+  </div></div>`;
+  return `<div class="wed-main wed-main-col"><div class="wed-bar" style="border-bottom:1px solid var(--border)">
+      <span style="font-size:13px;color:var(--text-dim)">Customer:</span><span style="font-weight:800;font-size:14px">${esc(addr)}</span>
+      <button class="wed-btn" onclick="wedUnlinkMail()" title="Change address">✎ Change</button>
+      <span style="flex:1"></span>
+      <button class="wed-btn" onclick="wedMailLoad(wedFeedEvent(wed.evId))">🔄 Refresh</button>
+    </div>
+    <div id="wed-mail-list" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch">${wedMailListHTML()}</div></div>`;}
 function wedShowCatering(){wedFlush();wed.pane='catering';wed.sel=null;renderViewport()}
 function wedShowDocs(){docsFlush();wedFlush();wed.pane='docs';wed.sel=null;renderViewport();docsPullSync()}
 function wedOpenLayout(id){wed.cur=id;wedLoad().cur=id;wed.sel=null;wed.view='plan';renderViewport()}
@@ -1914,6 +1967,7 @@ function wedEventHTML(){const fe=wedFeedEvent(wed.evId);if(!fe){wed.view='list';
         <button class="wed-side-btn ${wed.pane==='tpl'?'active':''}" onclick="wedShowTpl()">📋 <span>Wedding Template<span class="sub">this event's copy · autosaves</span></span></button>
         <button class="wed-side-btn ${wed.pane==='catering'?'active':''}" onclick="wedShowCatering()">🍽 <span>Catering Template<span class="sub">this event's copy · autosaves</span></span></button>
         <button class="wed-side-btn ${wed.pane==='docs'?'active':''}" onclick="wedShowDocs()">📝 <span>Docs<span class="sub">this event's documents &amp; files</span></span></button>
+        <button class="wed-side-btn ${wed.pane==='mail'?'active':''}" onclick="wedShowMail()">📧 <span>Customer Emails<span class="sub">${wedCustMail(fe)?esc(wedCustMail(fe)):'link the customer’s email'}</span></span></button>
       </div>
       ${wed.pane==='plan'
         ?`<div class="wed-main wed-main-col">${wedPlanChrome(true)}</div>`
@@ -1921,6 +1975,8 @@ function wedEventHTML(){const fe=wedFeedEvent(wed.evId);if(!fe){wed.view='list';
         ?`<div class="wed-main"><iframe src="https://order.angeliscatering.com/catering-notes.html?event=sched-${fe.id}&name=${encodeURIComponent(fe.label)}" allow="storage-access fullscreen"></iframe></div>`
         :wed.pane==='docs'
         ?`<div class="wed-main wed-main-col">${(docsSetNS('ct_docs_ev_sched-'+fe.id),docsHTML())}</div>`
+        :wed.pane==='mail'
+        ?wedMailPaneHTML(fe)
         :`<div class="wed-main"><iframe src="https://order.angeliscatering.com/wedding-notes.html?event=sched-${fe.id}&name=${encodeURIComponent(fe.label)}" allow="storage-access fullscreen"></iframe></div>`}
     </div>
   </div>`}
