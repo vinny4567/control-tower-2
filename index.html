@@ -1651,10 +1651,15 @@ function liqStore(){const at=Date.now();
   if(activeTab===LIQ)renderViewport()}
 async function liqPull(){try{
   const remote=await kvGet('ct_liq');
-  let localAt=0;try{localAt=(JSON.parse(localStorage.getItem('ct_liq')||'{}').at)||0}catch(e){}
+  let localAt=0,localV=null;try{const j=JSON.parse(localStorage.getItem('ct_liq')||'{}');localAt=j.at||0;localV=j.v||null}catch(e){}
   if(remote&&remote.v&&(remote.at||0)>localAt){liq.list=remote.v;
     try{localStorage.setItem('ct_liq',JSON.stringify({v:liq.list,at:remote.at}))}catch(e){}
     if(activeTab===LIQ)renderViewport()}
+  else if(localV&&localAt>((remote&&remote.at)||0)){
+    // SELF-HEAL: local edits never made it to the cloud (closed app before the debounced push fired,
+    // or the push failed) — sync them up now so they can't be lost or stay device-only.
+    kvPush('ct_liq',localV,localAt);
+  }
 }catch(e){}}
 function liqOpen(i){const p=liqLoad()[i];if(p)window.open(p.url,'_blank')}
 function liqAdd(){const name=(prompt('Portal name:')||'').trim();if(!name)return;
