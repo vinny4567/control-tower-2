@@ -1173,11 +1173,12 @@ async function openMailMsg(uid,folder){
       mailx.selThread=d;const msgs=d.messages||[];
       mailx.selMsg=[...msgs].reverse().find(m=>!m.fromSelf)||msgs[msgs.length-1]||null;
       mailx.loadingMsg=false;
-      if((changed||!cachedTh)&&activeTab===MAIL&&!mailx.composing)renderViewport();
+      if((changed||!cachedTh)&&activeTab===MAIL&&!mailx.composing&&!mailx.composeNew)renderViewport();
     }
     const mark=(arr)=>{const row=arr&&arr.find(m=>m.uid===uid);if(row)row.unread=false;};mark(mailx.lists[mailx.acct+'|'+folder]);mark(mailx.searchResults);mailSyncSnap();renderMailAccts();}
-  catch(e){if(!cachedTh){mailx.loadingMsg=false;mailx.error='Could not open that message — '+String(e.message||e);if(activeTab===MAIL)renderViewport();}}
-  if(!cachedTh&&activeTab===MAIL)renderViewport();
+  catch(e){if(!cachedTh){mailx.loadingMsg=false;mailx.error='Could not open that message — '+String(e.message||e);if(activeTab===MAIL&&!mailx.composing&&!mailx.composeNew)renderViewport();}}
+  // NEVER repaint over an open compose — a re-render rebuilds the form and wipes the draft
+  if(!cachedTh&&activeTab===MAIL&&!mailx.composing&&!mailx.composeNew)renderViewport();
 }
 function closeMailMsg(){mailx.selUid=null;mailx.selMsg=null;mailx.composing=false;if(activeTab===MAIL)renderViewport();}
 async function mailToggleStar(uid,ev){
@@ -1186,7 +1187,7 @@ async function mailToggleStar(uid,ev){
   try{await mailFetch('/mail/flag',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acct:mailx.acct,uid,flag:'star',on:now,folder:mailx.folder})});}
   catch(e){if(row)row.starred=!now;if(mailx.selMsg&&mailx.selMsg.uid===uid)mailx.selMsg.starred=!now;if(activeTab===MAIL)renderViewport();}
 }
-function mailStartReply(){mailx.composing=true;mailx.composeNew=false;mailx.sendStatus=null;mailx.attach=[];if(activeTab===MAIL)renderViewport();setTimeout(()=>{const t=document.getElementById('mail-reply-text');if(t)t.focus()},50);}
+function mailStartReply(){mailx.composing=true;mailx.composeNew=false;mailx.sendStatus=null;mailx.attach=[];mailx.draft="";mailx.draftTo=null;if(activeTab===MAIL)renderViewport();setTimeout(()=>{const t=document.getElementById('mail-reply-text');if(t)t.focus()},50);}
 // ── Search (server-side, whole mailbox) ──────────────────────────────
 function renderMailListRegion(){const el=document.getElementById('mail-list-region');if(!el)return;
   const sc=el.querySelector('.gmail-list-tab');const top=sc?sc.scrollTop:0;
@@ -1207,8 +1208,8 @@ function mailSearchInput(v){mailx.search=v;clearTimeout(mailSearchTimer);if(!v.t
 async function mailDoSearch(){const q=(mailx.search||'').trim();if(!q){mailx.searchResults=null;mailx.searching=false;renderMailListRegion();return;}mailx.searching=true;renderMailListRegion();try{const r=await mailFetch('/mail/search?acct='+encodeURIComponent(mailx.acct)+'&q='+encodeURIComponent(q));const d=await r.json();if(!r.ok)throw new Error(d.detail||d.error||'search failed');mailx.searchResults=d.messages||[];mailx.searchErr=null;}catch(e){mailx.searchResults=[];mailx.searchErr='Search failed — '+String(e.message||e);}mailx.searching=false;renderMailListRegion();}
 function mailClearSearch(){mailx.search='';mailx.searchResults=null;mailx.searching=false;if(activeTab===MAIL)renderViewport();setTimeout(()=>{const s=document.getElementById('mail-search-input');if(s)s.focus()},30);}
 // ── Compose a brand-new email ────────────────────────────────────────
-function mailStartCompose(){mailx.composeNew=true;mailx.composing=false;mailx.selUid=null;mailx.selMsg=null;mailx.sendStatus=null;mailx.attach=[];if(activeTab===MAIL)renderViewport();setTimeout(()=>{const t=document.getElementById('mail-new-to');if(t)t.focus()},50);}
-function mailCancelCompose(){mailx.composeNew=false;mailx.sendStatus=null;mailx.attach=[];if(activeTab===MAIL)renderViewport();}
+function mailStartCompose(){mailx.composeNew=true;mailx.composing=false;mailx.selUid=null;mailx.selMsg=null;mailx.sendStatus=null;mailx.attach=[];mailx.draftNew={to:"",subject:"",body:""};if(activeTab===MAIL)renderViewport();setTimeout(()=>{const t=document.getElementById('mail-new-to');if(t)t.focus()},50);}
+function mailCancelCompose(){mailx.composeNew=false;mailx.sendStatus=null;mailx.attach=[];mailx.draftNew=null;if(activeTab===MAIL)renderViewport();}
 function setNewStatus(text,kind){const el=document.getElementById('mail-new-status');if(el){el.textContent=text;el.className='gmail-compose-status '+(kind||'');}}
 async function mailSendNew(){
   const to=(document.getElementById('mail-new-to')?.value||'').trim();
@@ -1221,7 +1222,7 @@ async function mailSendNew(){
   setNewStatus('Sending…','info');
   try{
     await mailSend(acct,{to,subject,text,attach:mailx.attach||[]});
-    mailx.attach=[];
+    mailx.attach=[];mailx.draftNew=null;
     setNewStatus('Sent ✓','success');setTimeout(()=>{mailx.composeNew=false;mailx.sendStatus=null;if(activeTab===MAIL)renderViewport();},1400);
   }catch(e){
     if(e.notConnected){setNewStatus('Not connected for sending yet','error');if(confirm(acct.email+' needs a one-time Google sign-in to send. Open it now?'))gmailConnectAccount(acct.email);return;}
@@ -1234,14 +1235,14 @@ function mailComposeNewHTML(){
   const status=mailx.sendStatus?`<span id="mail-new-status" class="gmail-compose-status ${mailx.sendStatus.kind}">${esc(mailx.sendStatus.text)}</span>`:'<span id="mail-new-status" class="gmail-compose-status"></span>';
   return `<div class="gmail-detail"><div class="gmail-detail-scroll"><div id="mail-new-form" style="padding:20px 24px;max-width:780px;width:100%" ondragover="mailDragOver(event)" ondragleave="mailDragLeave(event)" ondrop="mailDrop(event)">
     <div style="font-size:12px;color:var(--text-dim);margin-bottom:16px">New email from <b style="color:var(--accent)">${esc(acc.email||'')}</b></div>
-    <label style="${lbl}">To</label><input id="mail-new-to" type="email" autocomplete="off" placeholder="recipient@example.com" style="${inp}">
-    <label style="${lbl}">Subject</label><input id="mail-new-subject" type="text" placeholder="Subject" style="${inp}">
-    <label style="${lbl}">Message</label><textarea id="mail-new-body" placeholder="Write your message… (drop files anywhere here to attach)" style="${inp};min-height:240px;resize:vertical;line-height:1.55;margin-bottom:0"></textarea>
+    <label style="${lbl}">To</label><input id="mail-new-to" type="email" autocomplete="off" placeholder="recipient@example.com" value="${esc((mailx.draftNew||{}).to||'')}" oninput="(mailx.draftNew=mailx.draftNew||{}).to=this.value" style="${inp}">
+    <label style="${lbl}">Subject</label><input id="mail-new-subject" type="text" placeholder="Subject" value="${esc((mailx.draftNew||{}).subject||'')}" oninput="(mailx.draftNew=mailx.draftNew||{}).subject=this.value" style="${inp}">
+    <label style="${lbl}">Message</label><textarea id="mail-new-body" placeholder="Write your message… (drop files anywhere here to attach)" style="${inp};min-height:240px;resize:vertical;line-height:1.55;margin-bottom:0" oninput="(mailx.draftNew=mailx.draftNew||{}).body=this.value">${esc((mailx.draftNew||{}).body||'')}</textarea>
     ${mailAttRowHTML()}
   </div></div><div class="gmail-compose-bar" style="padding:12px 16px;border-top:1px solid var(--border);background:var(--surface)">${status}<div style="display:flex;gap:8px"><button class="gmail-action-btn secondary" onclick="mailCancelCompose()">Cancel</button><button class="gmail-action-btn" onclick="mailSendNew()">Send</button></div></div></div>`;
 }
 function mailRowHTML(e,forTwoPane,folderOverride){const openFolder=folderOverride||mailx.folder;const who=openFolder==='sent'?('To: '+esc(e.to||e.toAddr||'(no recipient)')):esc(e.from||e.fromAddr||'(unknown)');return `<div class="gmail-row ${e.unread?'unread':''} ${forTwoPane&&mailx.selUid===e.uid?'selected':''}" onclick="openMailMsg(${e.uid},'${openFolder}')"><div class="gmail-row-top"><div class="gmail-row-sender">${e.unread?'<span class="unread-badge">New</span>':''}${who}</div><div class="gmail-row-time"><button class="gmail-star ${e.starred?'starred':''}" onclick="mailToggleStar(${e.uid},event)" title="${e.starred?'Unstar':'Star'}">${e.starred?'★':'☆'}</button>${mailTime(e.date)}</div></div><div class="gmail-row-subject">${esc(e.subject)}</div></div>`;}
-function mailCancelReply(){mailx.composing=false;mailx.sendStatus=null;mailx.attach=[];if(activeTab===MAIL)renderViewport();}
+function mailCancelReply(){mailx.composing=false;mailx.sendStatus=null;mailx.attach=[];mailx.draft="";mailx.draftTo=null;if(activeTab===MAIL)renderViewport();}
 // Persist the current inbox list to the on-device snapshot after a local change (trash/star/read) —
 // otherwise a reload repaints from the stale snapshot and "resurrects" the old state for a beat.
 function mailSyncSnap(){if(mailx.folder==='inbox'&&mailx.acct&&mailx.lists[mailx.acct+'|inbox'])mailSnapPut(mailx.acct+'|inbox',mailx.lists[mailx.acct+'|inbox']);}
@@ -1373,7 +1374,7 @@ async function mailSendReply(){
   setReplyStatus('Sending…','info');
   try{
     await mailSend(acct,{to,subject:subj,text,inReplyTo:m.messageId,references:m.messageId,attach:mailx.attach||[]});
-    mailx.attach=[];
+    mailx.attach=[];mailx.draft="";mailx.draftTo=null;
     setReplyStatus('Sent ✓','success');setTimeout(()=>{mailx.composing=false;mailx.sendStatus=null;if(mailx.selUid)openMailMsg(mailx.selUid,mailx.folder);else if(activeTab===MAIL)renderViewport();},1600);
   }catch(e){
     if(e.notConnected){setReplyStatus('Not connected for sending yet','error');if(confirm(acct.email+' needs a one-time Google sign-in to send. Open it now?'))gmailConnectAccount(acct.email);return;}
@@ -1447,7 +1448,8 @@ function mailComposeHTML(){
   const m=mailx.selMsg;const to=m.fromAddr||m.from||'';
   const inputStyle='background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:6px 10px;color:var(--text);font-size:13px;outline:none;margin-left:4px;flex:1;min-width:0';
   const status=`<span id="mail-reply-status" class="gmail-compose-status ${mailx.sendStatus?mailx.sendStatus.kind:''}">${mailx.sendStatus?esc(mailx.sendStatus.text):''}</span>`;
-  return `<div class="gmail-compose" ondragover="mailDragOver(event)" ondragleave="mailDragLeave(event)" ondrop="mailDrop(event)"><div class="gmail-compose-to"><div style="display:flex;align-items:center;gap:4px">To:<input id="mail-reply-to" type="email" value="${esc(to)}" style="${inputStyle}"></div></div><textarea id="mail-reply-text" placeholder="Type your reply… (drop files here to attach)"></textarea>${mailAttRowHTML()}<div class="gmail-compose-bar">${status}<div style="display:flex;gap:8px"><button class="gmail-action-btn secondary" onclick="mailCancelReply()">Cancel</button><button class="gmail-action-btn" onclick="mailSendReply()">Send Reply</button></div></div></div>`;
+  // Draft lives in STATE (oninput) and is restored on every render — no repaint can wipe typed text.
+  return `<div class="gmail-compose" ondragover="mailDragOver(event)" ondragleave="mailDragLeave(event)" ondrop="mailDrop(event)"><div class="gmail-compose-to"><div style="display:flex;align-items:center;gap:4px">To:<input id="mail-reply-to" type="email" value="${esc(mailx.draftTo!=null?mailx.draftTo:to)}" oninput="mailx.draftTo=this.value" style="${inputStyle}"></div></div><textarea id="mail-reply-text" placeholder="Type your reply… (drop files here to attach)" oninput="mailx.draft=this.value">${esc(mailx.draft||'')}</textarea>${mailAttRowHTML()}<div class="gmail-compose-bar">${status}<div style="display:flex;gap:8px"><button class="gmail-action-btn secondary" onclick="mailCancelReply()">Cancel</button><button class="gmail-action-btn" onclick="mailSendReply()">Send Reply</button></div></div></div>`;
 }
 // ═══ DOCUMENTS TAB — in-app word processor (replaces Word for quick typing) ═══
 let docsNS='ct_docs';
