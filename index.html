@@ -1753,7 +1753,8 @@ function wedPaint(){const st=document.getElementById('wed-stage');const ev=wedCu
   const c=document.getElementById('wed-count');if(c){const r=ev.items.filter(i=>i.type==='round').length;c.textContent=r+' round table'+(r===1?'':'s')}}
 // ── views ──
 function wedListHTML(){const d=wedLoad();const feed=wed.feed||wedFeedCache();const today=(feed&&feed.today)||new Date().toISOString().slice(0,10);
-  const evs=(feed&&feed.events)||[];
+  // Weddings tab shows weddings/events only — Day Parties stay on the schedule app + dashboard
+  const evs=((feed&&feed.events)||[]).filter(e=>e.schedule!=='Day Parties');
   const upcoming=evs.filter(e=>e.date>=today);
   const recent=evs.filter(e=>e.date<today).reverse();
   const row=fe=>{const lay=wedLayoutForSched(fe.id);
