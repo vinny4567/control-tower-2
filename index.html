@@ -2108,7 +2108,7 @@ function agendaCardHTML(){
     if(it.date!==lastD){lastD=it.date;
       lh+=`<div class="ag-datehead${it.date===today?' ag-dh-today':''}">${it.date===today?'TODAY · ':''}${agPretty(it.date)}</div>`}
     const K=AG_KIND[it.kind];
-    lh+=`<div class="ag-item ${K.cls}" onclick="agTap('${it.id}')"><span class="ag-ico">${K.ico}</span><span class="ag-time">${esc(it.time||'—')}</span><span class="ag-main"><span class="ag-label">${esc(it.label)}</span>${it.sub?`<span class="ag-sub">${esc(it.sub)}</span>`:''}</span>${it.kind==='wed'?'<span class="ag-go">→</span>':''}</div>`;
+    lh+=`<div class="ag-item ${K.cls}" onclick="agTap('${it.id}')"><span class="ag-ico">${K.ico}</span><span class="ag-time">${esc(it.time||'—')}</span><span class="ag-main"><span class="ag-label">${esc(it.label)}</span>${it.sub?`<span class="ag-sub">${esc(it.sub)}</span>`:''}</span>${it.kind==='wed'?'<span class="ag-go">→</span>':it.kind==='cat'?`<span class="ag-go" onclick="event.stopPropagation();agOpenCat('${it.id}')" title="Open in Catering">→</span>`:''}</div>`;
     if(agOpen[it.id]&&it.o)lh+=agDetailHTML(it);
   });
   if(!list.length)lh=`<div class="ag-empty">${agSel?'Nothing on this day':'Nothing coming up'}${ag.orders===null&&ag.at===0?' — loading…':''}</div>`;
@@ -2154,6 +2154,19 @@ function agNav(dir){
   if(dir===0){agMonth=agToday().slice(0,7);agSel='';agendaRerender();return}
   let [y,m]=agMonth.split('-').map(Number);m+=dir;if(m<1){m=12;y--}if(m>12){m=1;y++}
   agMonth=y+'-'+String(m).padStart(2,'0');agendaRerender();
+}
+// Arrow on a catering agenda row: open the Catering tab and tell the page
+// (once it's up — it's a big page) to open that order from its log.
+function agOpenCat(id){
+  switchTab(4);
+  const sid=String(id),t0=Date.now();
+  const timer=setInterval(()=>{
+    const f=document.querySelector('#viewport iframe');
+    if(f&&f.contentWindow){try{f.contentWindow.postMessage({ctOpenOrder:sid},'https://order.angeliscatering.com')}catch(e){}}
+    if(Date.now()-t0>25000)clearInterval(timer);
+  },900);
+  const ack=e=>{if(e.data&&e.data.ctOpenOrderAck===sid){clearInterval(timer);window.removeEventListener('message',ack)}};
+  window.addEventListener('message',ack);
 }
 function agTap(id){
   id=String(id);
