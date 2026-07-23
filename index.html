@@ -1627,13 +1627,23 @@ async function docsPullSync(){
 // launcher hub: big buttons that open each portal in its own browser tab where
 // the saved logins work. The list is editable and syncs across devices.
 let liq={list:null};
+const LIQ_SHEET_URL='https://docs.google.com/spreadsheets/d/1zirXBei9N5mBHU6j8FctMAHKrXxUyyxlXH-LFzGypjo/edit';
 function liqDefaults(){return [
+  {name:'📋 Liquor Inventory Sheet',url:LIQ_SHEET_URL,note:'Count sheet · prices · supplier per item'},
   {name:'Breakthru NOW',url:'https://now.breakthrubev.com/bbg/en/',note:"Acct 700182622 · spirits & wine"},
   {name:"Southern Glazer's Proof",url:'https://www.sgproof.com',note:'Wine & premium spirits'},
 ]}
 function liqLoad(){if(liq.list)return liq.list;
   try{const r=JSON.parse(localStorage.getItem('ct_liq')||'null');liq.list=(r&&r.v)||null}catch(e){}
   if(!liq.list)liq.list=liqDefaults();
+  // One-time migration: pin the Inventory Sheet at the top of already-saved lists. The flag persists
+  // per device so a deliberate later removal by the user is respected (no resurrection on reload).
+  const hasSheet=liq.list.some(p=>(p.url||'').includes('1zirXBei9N5mBHU6j8FctMAHKrXxUyyxlXH-LFzGypjo'));
+  if(!hasSheet&&!localStorage.getItem('ct_liq_sheet_added')){
+    liq.list.unshift({name:'📋 Liquor Inventory Sheet',url:LIQ_SHEET_URL,note:'Count sheet · prices · supplier per item'});
+    try{localStorage.setItem('ct_liq_sheet_added','1')}catch(e){}
+    liqStore();
+  }else if(hasSheet){try{localStorage.setItem('ct_liq_sheet_added','1')}catch(e){}}
   return liq.list}
 function liqStore(){const at=Date.now();
   try{localStorage.setItem('ct_liq',JSON.stringify({v:liq.list,at}))}catch(e){}
