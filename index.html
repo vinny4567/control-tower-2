@@ -1537,7 +1537,9 @@ document.addEventListener('pointerup',function(){if(docDragImg){docDragImg=null;
 function docsCleanHTML(html){
   const t=document.createElement('div');t.innerHTML=String(html||'');
   t.querySelectorAll('style,script,meta,link,title,xml,head,o\\:p').forEach(el=>el.remove());
-  const KEEP=new Set(['P','DIV','BR','B','STRONG','I','EM','U','S','STRIKE','H1','H2','H3','H4','UL','OL','LI','FONT','IMG','A','TABLE','TBODY','THEAD','TR','TD','TH','BLOCKQUOTE','SPAN','HR']);
+  // SPAN deliberately absent: a cleaned span carries nothing, and Word wraps whole
+  // documents in one — block content inside an inline span collapses the paper's height.
+  const KEEP=new Set(['P','DIV','BR','B','STRONG','I','EM','U','S','STRIKE','H1','H2','H3','H4','UL','OL','LI','FONT','IMG','A','TABLE','TBODY','THEAD','TR','TD','TH','BLOCKQUOTE','HR']);
   [...t.querySelectorAll('*')].forEach(el=>{
     if(!KEEP.has(el.tagName)){
       const par=el.parentNode;if(!par)return;
