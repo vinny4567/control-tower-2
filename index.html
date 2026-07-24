@@ -1493,7 +1493,7 @@ async function docInsertFiles(files,ev){
       const url=await docCompressImage(f);
       if(url)docInsertFloatImg(url,ev); // dropped images float free (draggable); pasted ones too
     }else{
-      if(f.size>1500000){alert('"'+f.name+'" is too big to store inside a doc (1.5 MB max for non-image files). Email it as an attachment instead.');continue}
+      if(f.size>4000000){alert('"'+f.name+'" is too big to store inside a doc (4 MB max). Email it as an attachment instead.');continue}
       const url=await fileToDataURL(f);if(!url)continue;
       const fn=esc(f.name).replace(/"/g,'&quot;');
       docInsertHTML('<a href="'+url+'" download="'+fn+'" style="display:inline-block;background:#efece4;border:1px solid #cfc9ba;border-radius:6px;padding:4px 10px;margin:2px;color:#333;text-decoration:none;font-family:-apple-system,sans-serif;font-size:13px">📎 '+esc(f.name)+' ('+fmtSize(f.size)+')</a>&nbsp;');
@@ -1800,27 +1800,62 @@ function wedDow(ymd){try{return new Date(ymd+'T00:00:00').toLocaleDateString([],
 function wedLayoutForSched(id){return wedLoad().events.find(e=>e.sched===id)||null}
 function wedFeedEvent(id){const feed=wed.feed||wedFeedCache();return ((feed&&feed.events)||[]).find(e=>e.id===id)||null}
 // Clicking an event opens its HUB (sidebar: floor plan, wedding template) — the layout no longer auto-opens.
-function wedOpenSched(id){if(!wedFeedEvent(id))return;wed.evId=id;wed.view='event';wed.pane='tpl';renderViewport()}
+function wedOpenSched(id){if(!wedFeedEvent(id))return;wed.evId=id;wed.view="event";wed.pane="tpl";wed.mailView=null;wed.mailRes=null;renderViewport()}
 // Sidebar Floor Plan button — find-or-create the layout, then show the editor IN the hub's main pane
 // (the Event-tools sidebar stays visible).
 function wedOpenSchedLayout(){const fe=wedFeedEvent(wed.evId);if(!fe)return;
   let lay=wedLayoutForSched(fe.id);
   if(!lay){const d=wedLoad();
-    lay={id:wedNewId(),sched:fe.id,name:(fe.label||'Event')+' · '+wedPrettyDate(fe.date),items:[],updated:Date.now()};
+    lay={id:wedNewId(),sched:fe.id,name:(wedName(fe)||"Event")+" · "+wedPrettyDate(fe.date),items:[],updated:Date.now()};
     d.events.unshift(lay);wedStore()}
   wed.cur=lay.id;wedLoad().cur=lay.id;wed.sel=null;wed.pane='plan';renderViewport()}
 function wedShowTpl(){wedFlush();wed.pane='tpl';wed.sel=null;renderViewport()}
-// ── Customer Emails pane: link the customer's address to the event once (kv-synced with the
-// weddings store), then pull their emails from all three inboxes via the mail bridge. ──
-function wedCustMail(fe){const d=wedLoad();return (d.custMail||{})['sched-'+fe.id]||''}
+// ── Per-event META (customer email + name override): its OWN kv key with per-field timestamps and
+// MERGE-on-pull — so Vinny and Dad editing on different screens always converge instead of the
+// whole-blob last-write-wins clobbering each other's changes. ──
+let wedMeta=null;
+function wedMetaLoad(){if(wedMeta)return wedMeta;try{wedMeta=(JSON.parse(localStorage.getItem('ct_wed_meta')||'{}').v)||{}}catch(e){wedMeta={}}return wedMeta}
+function wedMetaMerge(a,b){const out={};const keys=new Set([...Object.keys(a||{}),...Object.keys(b||{})]);
+  keys.forEach(k=>{const A=(a||{})[k]||{},B=(b||{})[k]||{};out[k]={
+    email:((B.emailAt||0)>(A.emailAt||0))?B.email:A.email,
+    emailAt:Math.max(A.emailAt||0,B.emailAt||0),
+    name:((B.nameAt||0)>(A.nameAt||0))?B.name:A.name,
+    nameAt:Math.max(A.nameAt||0,B.nameAt||0)};});
+  return out}
+function wedMetaPersist(m){wedMeta=m;try{localStorage.setItem('ct_wed_meta',JSON.stringify({v:m,at:Date.now()}))}catch(e){}}
+async function wedMetaPull(){try{
+  let m=wedMetaLoad();
+  // one-time import of the legacy custMail map (from the local blob AND the cloud blob — the cloud
+  // copy covers "linked on Dad's screen, my computer never pulled it")
+  const importCM=cm=>{for(const k in (cm||{})){if(cm[k]&&!(m[k]&&m[k].email))m[k]={...(m[k]||{}),email:cm[k],emailAt:1}}};
+  importCM((wedLoad()||{}).custMail);
+  try{const rb=await kvGet('ct_weddings');importCM(rb&&rb.v&&rb.v.custMail)}catch(e){}
+  const remote=await kvGet('ct_wed_meta');
+  const merged=wedMetaMerge(m,(remote&&remote.v)||{});
+  wedMetaPersist(merged);
+  if(JSON.stringify(merged)!==JSON.stringify((remote&&remote.v)||{}))kvPush('ct_wed_meta',merged,Date.now());
+  if(activeTab===WED)renderViewport();
+}catch(e){}}
+function wedMetaSet(id,field,val){
+  const m=wedMetaLoad();const k='sched-'+id;m[k]={...(m[k]||{})};m[k][field]=val;m[k][field+'At']=Date.now();
+  wedMetaPersist(m);
+  // merge with the cloud before pushing so we never erase the other screen's entries
+  kvGet('ct_wed_meta').then(remote=>{const merged=wedMetaMerge(wedMetaLoad(),(remote&&remote.v)||{});wedMetaPersist(merged);kvPush('ct_wed_meta',merged,Date.now());}).catch(()=>{kvPush('ct_wed_meta',wedMetaLoad(),Date.now())});
+}
+function wedName(fe){const m=wedMetaLoad()['sched-'+fe.id];return (m&&m.name)||fe.label}
+function wedRenameEvent(){const fe=wedFeedEvent(wed.evId);if(!fe)return;
+  const v=prompt('Event name (clear it to go back to the schedule name):',wedName(fe));
+  if(v===null)return;wedMetaSet(fe.id,'name',v.trim());renderViewport();}
+// ── Customer Emails pane ──
+function wedCustMail(fe){const m=wedMetaLoad()['sched-'+fe.id];return (m&&m.email)||''}
 function wedLinkMail(){const fe=wedFeedEvent(wed.evId);if(!fe)return;
   const inp=document.getElementById('wedm-addr');const v=(inp?inp.value:'').trim();
   if(!v||v.indexOf('@')===-1){alert('Enter the customer’s email address.');return}
-  const d=wedLoad();(d.custMail=d.custMail||{})['sched-'+fe.id]=v;wedStore();
+  wedMetaSet(fe.id,'email',v);
   wed.mailRes=null;renderViewport();wedMailLoad(fe);}
 function wedUnlinkMail(){const fe=wedFeedEvent(wed.evId);if(!fe)return;
-  const d=wedLoad();if(d.custMail)delete d.custMail['sched-'+fe.id];wedStore();wed.mailRes=null;renderViewport();}
-function wedShowMail(){wedFlush();wed.pane='mail';wed.sel=null;renderViewport();
+  wedMetaSet(fe.id,'email','');wed.mailRes=null;wed.mailView=null;renderViewport();}
+function wedShowMail(){wedFlush();wed.pane="mail";wed.sel=null;wed.mailView=null;renderViewport();
   const fe=wedFeedEvent(wed.evId);if(fe&&wedCustMail(fe))wedMailLoad(fe);}
 async function wedMailLoad(fe){
   const addr=wedCustMail(fe);if(!addr)return;
@@ -1845,17 +1880,51 @@ function wedMailListHTML(){
     <div class="gmail-row-top"><div class="gmail-row-sender">${m.unread?'<span class="unread-badge">New</span>':''}${esc(m.from||m.fromAddr||'')}</div>
     <div class="gmail-row-time"><span style="font-size:10px;color:var(--accent);font-weight:800;margin-right:6px">${esc(m.acctLabel||'')}</span>${mailTime(m.date)}</div></div>
     <div class="gmail-row-subject">${esc(m.subject)}</div></div>`).join('');}
-function wedMailOpen(acctId,uid){
-  mailx.acct=acctId;mailx.folder='inbox';mailx.selUid=null;mailx.selMsg=null;mailx.selThread=null;
-  switchTab(MAIL);setTimeout(()=>openMailMsg(uid,'inbox'),60);}
+// Open the conversation RIGHT IN the hub pane (no jump to the Email tab).
+async function wedMailOpen(acctId,uid){
+  wed.mailView={loading:true,acctId,uid,thread:null};renderViewport();
+  try{const r=await mailFetch('/mail/thread?acct='+encodeURIComponent(acctId)+'&uid='+uid+'&folder=inbox');const d=await r.json();
+    if(!r.ok)throw new Error(d.detail||d.error||'error');
+    if(wed.mailView&&wed.mailView.uid===uid){wed.mailView.thread=d;wed.mailView.loading=false;if(activeTab===WED)renderViewport();}}
+  catch(e){if(wed.mailView&&wed.mailView.uid===uid){wed.mailView={...wed.mailView,loading:false,err:String(e.message||e)};if(activeTab===WED)renderViewport();}}
+}
+function wedMailBack(){wed.mailView=null;renderViewport();}
+// Reply still uses the full Email tab composer (drafts, attachments) — one tap when you need it.
+function wedMailReply(){const v=wed.mailView;if(!v)return;
+  mailx.acct=v.acctId;mailx.folder='inbox';mailx.selUid=null;mailx.selMsg=null;mailx.selThread=null;
+  switchTab(MAIL);setTimeout(()=>{openMailMsg(v.uid,'inbox');setTimeout(()=>mailStartReply(),700);},60);}
+function wedThreadHTML(){
+  const v=wed.mailView;
+  if(v.loading)return '<div class="gmail-loading">Opening conversation…</div>';
+  if(v.err)return '<div class="gmail-empty">'+esc(v.err)+'</div>';
+  const msgs=(v.thread&&v.thread.messages)||[];
+  const blocks=msgs.map((mm,i)=>{
+    const id='wedm'+i;
+    const bodyHtml=mm.html||('<pre style="white-space:pre-wrap;font-family:-apple-system,Helvetica,Arial,sans-serif;font-size:14px;margin:0;padding:16px;color:#111;line-height:1.5">'+esc(mm.text||'(no content)')+'</pre>');
+    const hs=`<script>(function(){function r(){try{var h=Math.max(document.documentElement.scrollHeight,document.body?document.body.scrollHeight:0)+24;parent.postMessage({_ct:'h',id:'${id}',h:h},'*')}catch(e){}}r();window.addEventListener('load',r);setTimeout(r,150);setTimeout(r,800);})();<\/script>`;
+    const bodyAttr=(bodyHtml+hs+MAIL_LINK_SCRIPT).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const who=mm.fromSelf?'You':esc(mm.from||'(unknown)');
+    return `<div class="gmail-msg ${mm.fromSelf?'sent':''}"><div class="gmail-msg-head"><div class="gmail-msg-from-line"><span class="gmail-msg-from">${who}</span><span class="gmail-msg-date">${esc(mailFullDate(mm.date))}</span></div>${mm.fromSelf?'':`<div class="gmail-msg-fromfull">${esc(mm.fromAddr||'')}</div>`}</div><div class="gmail-msg-body"><iframe data-msg-id="${id}" srcdoc="${bodyAttr}" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"></iframe></div></div>`;
+  }).join('');
+  return `<div class="gmail-thread" style="padding:16px 18px 24px">`+
+    `<div class="gmail-thread-subject"><span class="subj-text">${esc((v.thread&&v.thread.subject)||'')}</span></div>`+
+    (msgs.length>1?`<div class="gmail-thread-count">${msgs.length} messages</div>`:'')+blocks+`</div>`;
+}
 function wedMailPaneHTML(fe){
   const addr=wedCustMail(fe);
   if(!addr)return `<div class="wed-main wed-main-col"><div style="max-width:430px;margin:60px auto 0;text-align:center;padding:0 20px">
     <div style="font-size:34px">📧</div><div style="font-weight:800;font-size:17px;margin:10px 0 6px">Link the customer’s email</div>
-    <div style="font-size:13px;color:var(--text-dim);line-height:1.5;margin-bottom:14px">Enter the email address ${esc(fe.label)} uses and every message they’ve sent to any of your inboxes will show here.</div>
+    <div style="font-size:13px;color:var(--text-dim);line-height:1.5;margin-bottom:14px">Enter the email address ${esc(wedName(fe))} uses and every message they’ve sent to any of your inboxes will show here.</div>
     <input id="wedm-addr" type="email" placeholder="customer@example.com" style="width:100%;background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:11px 13px;color:var(--text);font-size:15px;outline:none;font-family:inherit" onkeydown="if(event.key==='Enter')wedLinkMail()">
     <button class="wed-btn amber" style="margin-top:10px;width:100%;padding:11px" onclick="wedLinkMail()">Save &amp; find emails</button>
   </div></div>`;
+  if(wed.mailView)return `<div class="wed-main wed-main-col"><div class="wed-bar" style="border-bottom:1px solid var(--border)">
+      <button class="wed-btn" onclick="wedMailBack()">‹ All emails</button>
+      <span style="font-weight:800;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(addr)}</span>
+      <span style="flex:1"></span>
+      <button class="wed-btn amber" onclick="wedMailReply()">↩ Reply</button>
+    </div>
+    <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch">${wedThreadHTML()}</div></div>`;
   return `<div class="wed-main wed-main-col"><div class="wed-bar" style="border-bottom:1px solid var(--border)">
       <span style="font-size:13px;color:var(--text-dim)">Customer:</span><span style="font-weight:800;font-size:14px">${esc(addr)}</span>
       <button class="wed-btn" onclick="wedUnlinkMail()" title="Change address">✎ Change</button>
@@ -1951,7 +2020,7 @@ function wedListHTML(){const d=wedLoad();const feed=wed.feed||wedFeedCache();con
   const row=fe=>{const lay=wedLayoutForSched(fe.id);
     return `<div class="wed-row" onclick="wedOpenSched(${fe.id})">
       <div class="wed-datechip"><div class="dow">${wedDow(fe.date)}</div><div class="md">${esc(wedPrettyDate(fe.date))}</div></div>
-      <div class="info"><div class="lbl">${esc(fe.label)}</div>
+      <div class="info"><div class="lbl">${esc(wedName(fe))}</div>
         <div class="sub">${fe.time?esc(fe.time)+' · ':''}staff ${fe.signupCount}/${fe.maxSignups}</div></div>
       ${fe.schedule==='Day Parties'?'<span class="wed-tag party">DAY PARTY</span>':'<span class="wed-tag">WEDDING / EVENT</span>'}
       ${lay?'<span class="wed-plan-dot">📐 plan ✓</span>':''}
@@ -2013,7 +2082,7 @@ function wedEventHTML(){const fe=wedFeedEvent(wed.evId);if(!fe){wed.view='list';
   return `<div id="wed-root">
     <div class="wed-bar">
       <button class="wed-btn" onclick="wedBackToList()">‹ Events</button>
-      <span style="font-weight:800;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(fe.label)} · ${esc(wedPrettyDate(fe.date))}</span>
+      <span style="font-weight:800;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(wedName(fe))} · ${esc(wedPrettyDate(fe.date))}</span><button class="wed-btn" onclick="wedRenameEvent()" title="Rename this event">✎</button>
       <span style="font-size:11px;color:var(--text-muted);white-space:nowrap">${fe.time?esc(fe.time)+' · ':''}staff ${fe.signupCount}/${fe.maxSignups}</span>
     </div>
     <div class="wed-event">
@@ -2532,7 +2601,7 @@ function switchTab(id){
   if(activeTab===WED&&id!==WED)wedFlush();
   activeTab=id;cfg.activeTab=id;saveCfg();renderAll();
   if(id===DASH){loadCateringOrders();loadLiveOrders();}
-  if(id===WED){wed.view='list';wedFetchFeed();wedPullSync();}
+  if(id===WED){wed.view='list';wedFetchFeed();wedPullSync();wedMetaPull();}
   if(id===LIQ){liqPull();}
   if(id===MAIL){if(mailx.accts===null||mailx.accts==='error')loadMailAccounts();else if(mailx.acct)loadMailList();}
   if(gmailValid()){
