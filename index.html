@@ -1865,7 +1865,7 @@ async function wedSchedLoad(fe){
     wed.schedRes={key,loading:false,staff:d.staff||[],reserves:d.reserves||[],max:(d.event&&d.event.maxSignups)||fe.maxSignups,err:null};
   }catch(e){if(wed.schedRes&&wed.schedRes.key===key)wed.schedRes={key,loading:false,staff:[],reserves:[],max:fe.maxSignups,err:'Couldn’t reach the schedule — '+String(e.message||e)};}
   paintWedSched();}
-function paintWedSched(){const el=document.getElementById('wed-sched-list');if(el)el.innerHTML=wedSchedListHTML();const c=document.getElementById('wed-sched-count');if(c)c.textContent=(wed.schedRes&&!wed.schedRes.loading&&!wed.schedRes.err)?((wed.schedRes.staff.length+(wed.schedRes.reserves||[]).length)+' working'):''}
+function paintWedSched(){const el=document.getElementById('wed-sched-list');if(el)el.innerHTML=wedSchedListHTML();const c=document.getElementById('wed-sched-count');if(c)c.textContent=(wed.schedRes&&!wed.schedRes.loading&&!wed.schedRes.err)?((wed.schedRes.staff.length+(wed.schedRes.reserves||[]).length)+' on reserve'):''}
 function wedFmtTime(t){if(!t||!/^\d{1,2}:\d{2}/.test(t))return '';const[h,m]=t.split(':').map(Number);const ap=h>=12?'PM':'AM';const hh=(h%12)||12;return hh+(m?':'+String(m).padStart(2,'0'):'')+' '+ap}
 function wedSchedListHTML(){
   const s=wed.schedRes;
@@ -1875,12 +1875,12 @@ function wedSchedListHTML(){
   // chips). To Vinny they're all just "who's working it", so show ONE combined list.
   const seen=new Set();const crew=[...(s.staff||[]),...(s.reserves||[])].filter(p=>{const k=(p.name||'').toLowerCase().replace(/\s+/g,' ');if(!k||seen.has(k))return false;seen.add(k);return true});
   if(!crew.length)return '<div class="gmail-empty">No staff on this event yet.</div>';
-  return `<div style="padding:12px 16px 4px;font-size:11px;font-weight:800;color:var(--accent);text-transform:uppercase;letter-spacing:.08em">Working this event <span style="color:var(--text-muted)">· ${crew.length}${s.max?' of '+s.max:''}</span></div>`+
+  return `<div style="padding:12px 16px 4px;font-size:11px;font-weight:800;color:var(--accent);text-transform:uppercase;letter-spacing:.08em">On Reserve <span style="color:var(--text-muted)">· ${crew.length}${s.max?' of '+s.max:''}</span></div>`+
     crew.map(p=>`<div style="display:flex;align-items:baseline;padding:8px 16px;border-bottom:1px solid var(--border)"><span style="font-weight:700;font-size:14px">${esc((p.name||'').replace(/\s+/g,' '))}</span></div>`).join('');}
 function wedSchedPaneHTML(fe){
   return `<div class="wed-main wed-main-col"><div class="wed-bar" style="border-bottom:1px solid var(--border)">
       <span style="font-weight:800;font-size:14px">📅 ${esc(wedDow(fe.date))} ${esc(wedPrettyDate(fe.date))}</span>
-      <span id="wed-sched-count" style="font-size:12px;color:var(--text-muted)">${wed.schedRes&&!wed.schedRes.loading&&!wed.schedRes.err?(wed.schedRes.staff.length+(wed.schedRes.reserves||[]).length)+' working':''}</span>
+      <span id="wed-sched-count" style="font-size:12px;color:var(--text-muted)">${wed.schedRes&&!wed.schedRes.loading&&!wed.schedRes.err?(wed.schedRes.staff.length+(wed.schedRes.reserves||[]).length)+' on reserve':''}</span>
       <span style="flex:1"></span>
       <button class="wed-btn" onclick="wedSchedLoad(wedFeedEvent(wed.evId))">🔄 Refresh</button>
     </div>
