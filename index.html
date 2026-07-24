@@ -1862,19 +1862,46 @@ function wedMetaMerge(a,b){const out={};const keys=new Set([...Object.keys(a||{}
     nameAt:Math.max(A.nameAt||0,B.nameAt||0)};});
   return out}
 function wedMetaPersist(m){wedMeta=m;try{localStorage.setItem('ct_wed_meta',JSON.stringify({v:m,at:Date.now()}))}catch(e){}}
+function uiTyping(){const a=document.activeElement;return !!(a&&(a.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)))}
+let wedMetaImported=false;
 async function wedMetaPull(){try{
   let m=wedMetaLoad();
-  // one-time import of the legacy custMail map (from the local blob AND the cloud blob — the cloud
-  // copy covers "linked on Dad's screen, my computer never pulled it")
-  const importCM=cm=>{for(const k in (cm||{})){if(cm[k]&&!(m[k]&&m[k].email))m[k]={...(m[k]||{}),email:cm[k],emailAt:1}}};
-  importCM((wedLoad()||{}).custMail);
-  try{const rb=await kvGet('ct_weddings');importCM(rb&&rb.v&&rb.v.custMail)}catch(e){}
+  if(!wedMetaImported){wedMetaImported=true;
+    // one-time import of the legacy custMail map (from the local blob AND the cloud blob — the cloud
+    // copy covers "linked on Dad's screen, my computer never pulled it")
+    const importCM=cm=>{for(const k in (cm||{})){if(cm[k]&&!(m[k]&&m[k].email))m[k]={...(m[k]||{}),email:cm[k],emailAt:1}}};
+    importCM((wedLoad()||{}).custMail);
+    try{const rb=await kvGet('ct_weddings');importCM(rb&&rb.v&&rb.v.custMail)}catch(e){}
+  }
   const remote=await kvGet('ct_wed_meta');
   const merged=wedMetaMerge(m,(remote&&remote.v)||{});
+  const changed=JSON.stringify(merged)!==JSON.stringify(wedMeta||{});
   wedMetaPersist(merged);
   if(JSON.stringify(merged)!==JSON.stringify((remote&&remote.v)||{}))kvPush('ct_wed_meta',merged,Date.now());
-  if(activeTab===WED)renderViewport();
+  if(changed)wedMetaApplyUI();
 }catch(e){}}
+// Surgical UI refresh when meta (names/emails) changes underneath us — never disturbs the plan
+// editor mid-drag, the template iframes, or anything the user is typing into.
+function wedMetaApplyUI(){
+  if(activeTab!==WED)return;
+  if(wed.view==='list'){if(!uiTyping())renderViewport();return}
+  if(wed.view!=='event')return;
+  const fe=wedFeedEvent(wed.evId);if(!fe)return;
+  const bar=document.querySelector('#wed-root .wed-bar span');
+  if(bar)bar.textContent=wedName(fe)+' · '+wedPrettyDate(fe.date);
+  const mailBtn=[...document.querySelectorAll('.wed-side-btn')].find(b=>/Customer Emails/.test(b.textContent));
+  if(mailBtn){const sub=mailBtn.querySelector('.sub');if(sub)sub.textContent=wedCustMail(fe)||'link the customer’s email';}
+  if(wed.pane==='mail'&&!wed.mailView&&!uiTyping()){renderViewport();const addr=wedCustMail(fe);if(addr)wedMailLoad(fe);}
+}
+// Live propagation: poll the (tiny) meta store while the Weddings tab is open, and re-sync the
+// moment the screen wakes / the app returns to the foreground.
+if(!window._wedMetaTick)window._wedMetaTick=setInterval(()=>{if(activeTab===WED)wedMetaPull()},10000);
+if(!window._wedSyncTick)window._wedSyncTick=setInterval(()=>{if(activeTab===WED&&wed.view==='list'&&!uiTyping())wedPullSync()},45000);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState!=='visible')return;
+  if(activeTab===WED){wedMetaPull();wedFetchFeed();if(wed.view==='list')wedPullSync();}
+  else if(typeof LIQ!=='undefined'&&activeTab===LIQ)liqPull();
+  else if(activeTab===DOCS)docsPullSync();
+});
 function wedMetaSet(id,field,val){
   const m=wedMetaLoad();const k='sched-'+id;m[k]={...(m[k]||{})};m[k][field]=val;m[k][field+'At']=Date.now();
   wedMetaPersist(m);
