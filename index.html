@@ -1531,7 +1531,39 @@ document.addEventListener('pointermove',function(e){
 },{passive:false});
 document.addEventListener('pointerup',function(){if(docDragImg){docDragImg=null;docsOnInput();}});
 // Pasting a screenshot/photo: convert to a stored data: image (otherwise Safari inserts a blob: URL that dies on reload)
-function docPaste(e){const items=e.clipboardData&&e.clipboardData.items;if(!items)return;const fs=[];for(const it of items){if(it.kind==='file'){const f=it.getAsFile();if(f)fs.push(f)}}if(fs.length){e.preventDefault();docInsertFiles(fs,null)}}
+// Pasted Word/website content drags along its own fonts, colors, highlights and
+// broken markup that fight the paper theme (and stray closing tags can even
+// escape the editor). Keep the structure, drop the costume.
+function docsCleanHTML(html){
+  const t=document.createElement('div');t.innerHTML=String(html||'');
+  t.querySelectorAll('style,script,meta,link,title,xml,head,o\\:p').forEach(el=>el.remove());
+  const KEEP=new Set(['P','DIV','BR','B','STRONG','I','EM','U','S','STRIKE','H1','H2','H3','H4','UL','OL','LI','FONT','IMG','A','TABLE','TBODY','THEAD','TR','TD','TH','BLOCKQUOTE','SPAN','HR']);
+  [...t.querySelectorAll('*')].forEach(el=>{
+    if(!KEEP.has(el.tagName)){
+      const par=el.parentNode;if(!par)return;
+      while(el.firstChild)par.insertBefore(el.firstChild,el);
+      par.removeChild(el);return}
+    const align=(el.style&&el.style.textAlign)||'';
+    const size=el.tagName==='FONT'?el.getAttribute('size'):null;
+    const href=el.tagName==='A'?el.getAttribute('href'):null;
+    const src=el.tagName==='IMG'?el.getAttribute('src'):null;
+    const cls=el.tagName==='IMG'?el.getAttribute('class'):null;
+    const st=el.getAttribute('style')||'';
+    [...el.attributes].forEach(a=>el.removeAttribute(a.name));
+    if(align)el.style.textAlign=align;
+    if(size)el.setAttribute('size',size);
+    if(href){el.setAttribute('href',href);el.setAttribute('target','_blank')}
+    if(src){el.setAttribute('src',src);if(cls)el.setAttribute('class',cls);el.style.maxWidth='100%'}
+    if(el.tagName==='IMG'&&/position:\s*absolute/.test(st)&&cls)el.setAttribute('style',st);
+  });
+  return t.innerHTML}
+function docPaste(e){
+  const items=e.clipboardData&&e.clipboardData.items;if(!items)return;
+  const fs=[];for(const it of items){if(it.kind==='file'){const f=it.getAsFile();if(f)fs.push(f)}}
+  if(fs.length){e.preventDefault();docInsertFiles(fs,null);return}
+  const html=e.clipboardData.getData('text/html');
+  if(html){e.preventDefault();document.execCommand('insertHTML',false,docsCleanHTML(html));docsOnInput();return}
+}
 function newDocId(){return 'd'+Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
 function curDoc(){return loadDocsData().find(d=>d.id===docsState.current)||null}
 function docTime(ts){try{const d=new Date(ts);const now=new Date();const t=d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});return d.toDateString()===now.toDateString()?t:d.toLocaleDateString([],{month:'short',day:'numeric'})+', '+t}catch(e){return ''}}
@@ -1581,7 +1613,7 @@ function docsHTML(){
       <button class="doc-tb wide" onclick="docsDownload()" title="Download as Word (.doc)">⬇ Word</button>
       <span class="docs-status" id="docs-status">Saved ✓</span>
     </div>`;
-    main=`<div class="docs-main"><div class="docs-titlebar"><input id="docs-title-input" class="docs-title-input" value="${esc(d.title||'')}" placeholder="Untitled" oninput="docsOnInput()"></div>${tb}<div class="docs-editor-wrap"><div id="docs-editor" class="docs-editor" contenteditable="true" oninput="docsOnInput()" onpointerdown="docFloatDown(event)" ondragover="docDragOver(event)" ondragleave="docDragLeave(event)" ondrop="docDrop(event)" onpaste="docPaste(event)">${d.html||''}</div></div></div>`;
+    main=`<div class="docs-main"><div class="docs-titlebar"><input id="docs-title-input" class="docs-title-input" value="${esc(d.title||'')}" placeholder="Untitled" oninput="docsOnInput()"></div>${tb}<div class="docs-editor-wrap"><div id="docs-editor" class="docs-editor" contenteditable="true" oninput="docsOnInput()" onpointerdown="docFloatDown(event)" ondragover="docDragOver(event)" ondragleave="docDragLeave(event)" ondrop="docDrop(event)" onpaste="docPaste(event)">${docsCleanHTML(d.html||'')}</div></div></div>`;
   }
   return `<div class="docs-wrap">${side}${main}</div>`;
 }
