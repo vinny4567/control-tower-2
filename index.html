@@ -1592,7 +1592,14 @@ const KV_URL='https://order.angeliscatering.com/api/kv/';
 const KV_TOKEN='ctsync-3e1fd98589118f5578125e3eb676cced';
 async function kvGet(k){try{const r=await fetch(KV_URL+encodeURIComponent(k)+'?token='+KV_TOKEN);if(!r.ok)return null;return await r.json()}catch(e){return null}}
 const kvPushTimers={};
-function kvPush(k,v,at){clearTimeout(kvPushTimers[k]);kvPushTimers[k]=setTimeout(()=>{try{fetch(KV_URL+encodeURIComponent(k)+'?token='+KV_TOKEN,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({v,at})}).catch(()=>{})}catch(e){}},1200)}
+const kvPending={}; // k -> {v,at} not yet sent (debounce window)
+function kvSend(k,p,keepalive){try{fetch(KV_URL+encodeURIComponent(k)+'?token='+KV_TOKEN,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:p.v,at:p.at}),keepalive:!!keepalive}).catch(()=>{})}catch(e){}}
+function kvPush(k,v,at){kvPending[k]={v,at};clearTimeout(kvPushTimers[k]);kvPushTimers[k]=setTimeout(()=>{const p=kvPending[k];delete kvPending[k];if(p)kvSend(k,p,false)},1200)}
+// Closing/backgrounding the app used to kill pending pushes (the 1.2s debounce) — edits made right
+// before putting the iPad down stayed device-only. Flush everything the moment we lose the foreground.
+function kvFlushNow(keepalive){for(const k in kvPending){const p=kvPending[k];delete kvPending[k];clearTimeout(kvPushTimers[k]);kvSend(k,p,keepalive)}}
+window.addEventListener('pagehide',()=>kvFlushNow(true));
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')kvFlushNow(false)});
 let syncApplying=false;
 
 function wedMergeRemote(remote){
@@ -2768,11 +2775,17 @@ function applyTheme(light){document.body.classList.toggle('light',light);documen
 function toggleTheme(){const light=!document.body.classList.contains('light');localStorage.setItem('angeli_tower_theme',light?'light':'dark');applyTheme(light)}
 applyTheme(localStorage.getItem('angeli_tower_theme')==='light');
 renderAll();
-// Preload data for whichever tab is active on launch
+// Preload data for whichever tab is active on launch — a REFRESH must behave like switching to the
+// tab (the sync pulls used to run only on switchTab, so a reload landing on a tab showed stale/empty
+// synced data — that's how a linked customer email "disappeared" on refresh).
 window.addEventListener('load',()=>{setTimeout(()=>{
   if(activeTab===3&&gmailValid()&&gmailTab.emails===null)loadGmailTab();
   if(activeTab===DASH){loadCateringOrders();loadLiveOrders();}
   if(activeTab===MAIL)loadMailAccounts();
+  if(activeTab===WED){wedFetchFeed();wedPullSync();}
+  if(activeTab===LIQ)liqPull();
+  if(activeTab===DOCS)docsPullSync();
+  wedMetaPull(); // tiny + holds the customer-email links — always sync at boot
 },800)});
 // Keep the open inbox fresh (only when the Email tab is showing and nothing is open/being composed)
 // Auto-refresh ALL inboxes while the Email tab is open: the viewed folder updates in place (list pane
