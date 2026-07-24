@@ -1855,34 +1855,32 @@ function wedShowTpl(){wedFlush();wed.pane='tpl';wed.sel=null;renderViewport()}
 function wedShowSched(){wedFlush();wed.pane='sched';wed.sel=null;renderViewport();
   const fe=wedFeedEvent(wed.evId);if(fe)wedSchedLoad(fe);}
 async function wedSchedLoad(fe){
-  const key=fe.date;
-  wed.schedRes={key,loading:true,rows:[],err:null};paintWedSched();
+  const key='ev'+fe.id;
+  wed.schedRes={key,loading:true,staff:[],reserves:[],max:fe.maxSignups,err:null};paintWedSched();
   try{
-    const r=await fetch('https://restaurant-scheduler-hh5e.onrender.com/api/roster/today?date='+encodeURIComponent(fe.date)+'&key='+encodeURIComponent(GMAIL_BACKEND_KEY));
+    const r=await fetch(WED_FEED+'?event='+encodeURIComponent(fe.id)+'&key='+encodeURIComponent(GMAIL_BACKEND_KEY));
     const d=await r.json();
-    if(!r.ok)throw new Error(d.error||'roster error');
+    if(!r.ok)throw new Error(d.error||'schedule error');
     if(!wed.schedRes||wed.schedRes.key!==key)return;
-    wed.schedRes={key,loading:false,rows:d.roster||[],err:null};
-  }catch(e){if(wed.schedRes&&wed.schedRes.key===key)wed.schedRes={key,loading:false,rows:[],err:'Couldn’t reach the schedule — '+String(e.message||e)};}
+    wed.schedRes={key,loading:false,staff:d.staff||[],reserves:d.reserves||[],max:(d.event&&d.event.maxSignups)||fe.maxSignups,err:null};
+  }catch(e){if(wed.schedRes&&wed.schedRes.key===key)wed.schedRes={key,loading:false,staff:[],reserves:[],max:fe.maxSignups,err:'Couldn’t reach the schedule — '+String(e.message||e)};}
   paintWedSched();}
-function paintWedSched(){const el=document.getElementById('wed-sched-list');if(el)el.innerHTML=wedSchedListHTML();const c=document.getElementById('wed-sched-count');if(c)c.textContent=(wed.schedRes&&!wed.schedRes.loading&&!wed.schedRes.err)?wed.schedRes.rows.length+' scheduled':''}
+function paintWedSched(){const el=document.getElementById('wed-sched-list');if(el)el.innerHTML=wedSchedListHTML();const c=document.getElementById('wed-sched-count');if(c)c.textContent=(wed.schedRes&&!wed.schedRes.loading&&!wed.schedRes.err)?((wed.schedRes.staff.length+(wed.schedRes.reserves||[]).length)+' working'):''}
 function wedFmtTime(t){if(!t||!/^\d{1,2}:\d{2}/.test(t))return '';const[h,m]=t.split(':').map(Number);const ap=h>=12?'PM':'AM';const hh=(h%12)||12;return hh+(m?':'+String(m).padStart(2,'0'):'')+' '+ap}
 function wedSchedListHTML(){
   const s=wed.schedRes;
-  if(!s||s.loading)return '<div class="gmail-loading">Loading the day’s schedule…</div>';
+  if(!s||s.loading)return '<div class="gmail-loading">Loading the event’s crew…</div>';
   if(s.err)return '<div class="gmail-empty">'+esc(s.err)+'</div>';
-  if(!s.rows.length)return '<div class="gmail-empty">Nothing on the schedule for this date yet.</div>';
-  const groups={};
-  s.rows.forEach(p=>{(groups[p.position||'Other']=groups[p.position||'Other']||[]).push(p)});
-  const order=Object.keys(groups).sort((a,b)=>groups[b].length-groups[a].length||a.localeCompare(b));
-  return order.map(g=>`<div style="padding:12px 16px 4px;font-size:11px;font-weight:800;color:var(--accent);text-transform:uppercase;letter-spacing:.08em">${esc(g)} <span style="color:var(--text-muted)">· ${groups[g].length}</span></div>`+
-    groups[g].map(p=>{const t1=wedFmtTime(p.startTime),t2=wedFmtTime(p.endTime);const time=t1?(t2&&t2!==t1?t1+' – '+t2:t1):'';
-      return `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:7px 16px;border-bottom:1px solid var(--border)"><span style="font-weight:700;font-size:14px">${esc(p.fullName||'')}</span><span style="font-size:12px;color:var(--text-dim);font-variant-numeric:tabular-nums">${time}</span></div>`}).join('')
-  ).join('');}
+  // The scheduler stores event crews two ways (event sign-ups AND date reserves — the "+Reserve"
+  // chips). To Vinny they're all just "who's working it", so show ONE combined list.
+  const seen=new Set();const crew=[...(s.staff||[]),...(s.reserves||[])].filter(p=>{const k=(p.name||'').toLowerCase().replace(/\s+/g,' ');if(!k||seen.has(k))return false;seen.add(k);return true});
+  if(!crew.length)return '<div class="gmail-empty">No staff on this event yet.</div>';
+  return `<div style="padding:12px 16px 4px;font-size:11px;font-weight:800;color:var(--accent);text-transform:uppercase;letter-spacing:.08em">Working this event <span style="color:var(--text-muted)">· ${crew.length}${s.max?' of '+s.max:''}</span></div>`+
+    crew.map(p=>`<div style="display:flex;align-items:baseline;padding:8px 16px;border-bottom:1px solid var(--border)"><span style="font-weight:700;font-size:14px">${esc((p.name||'').replace(/\s+/g,' '))}</span></div>`).join('');}
 function wedSchedPaneHTML(fe){
   return `<div class="wed-main wed-main-col"><div class="wed-bar" style="border-bottom:1px solid var(--border)">
       <span style="font-weight:800;font-size:14px">📅 ${esc(wedDow(fe.date))} ${esc(wedPrettyDate(fe.date))}</span>
-      <span id="wed-sched-count" style="font-size:12px;color:var(--text-muted)">${wed.schedRes&&!wed.schedRes.loading&&!wed.schedRes.err?wed.schedRes.rows.length+' scheduled':''}</span>
+      <span id="wed-sched-count" style="font-size:12px;color:var(--text-muted)">${wed.schedRes&&!wed.schedRes.loading&&!wed.schedRes.err?(wed.schedRes.staff.length+(wed.schedRes.reserves||[]).length)+' working':''}</span>
       <span style="flex:1"></span>
       <button class="wed-btn" onclick="wedSchedLoad(wedFeedEvent(wed.evId))">🔄 Refresh</button>
     </div>
