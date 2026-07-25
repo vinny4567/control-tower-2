@@ -479,6 +479,18 @@
     .wed-main-col{flex-direction:column;min-height:0}
     .wed-main iframe{width:100%;height:100%;border:none;display:block;background:#fff}
     @media(max-width:700px){.wed-side{width:150px;padding:10px 8px}}
+    /* Event Sheet form */
+    .sh-wrap{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:4px 0 0}
+    .sh-sec{padding:16px 16px 6px;font-size:11px;font-weight:800;color:var(--accent);text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--border);margin-bottom:4px}
+    .sh-row{display:flex;align-items:center;gap:12px;padding:6px 16px}
+    .sh-row label{flex:0 0 150px;font-size:13px;color:var(--text-dim);font-weight:600}
+    .sh-in{flex:1;min-width:0;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;font-family:inherit;padding:8px 10px;outline:none}
+    .sh-in:focus{border-color:var(--accent)}
+    .sh-in:disabled{opacity:.65}
+    .sh-num{max-width:130px;flex:0 0 130px}
+    .sh-money{flex:1;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+    .sh-calc{font-size:12.5px;color:var(--text-dim)}
+    @media(max-width:760px){.sh-row{flex-direction:column;align-items:stretch;gap:4px}.sh-row label{flex:none}.sh-num{max-width:none;flex:1}}
     /* event list */
     #wed-list{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:12px 14px 40px}
     .wed-sec{font-size:11px;font-weight:800;letter-spacing:1.5px;color:var(--text-muted);margin:16px 2px 8px;text-transform:uppercase}
@@ -1956,7 +1968,7 @@ const TK_EQUIP=[
  ['GLASSES','Wine glasses',{c:1}],
  ['GLASSES','Highball glasses',{c:1.5}],
  ['GLASSES','Champagne glasses',{c:1},'toast'],
- ['GLASSES','Coffee mugs',{f:0}],
+ ['GLASSES','Coffee mugs',{f:0},'coffee'],
  ['GLASSES','Wine glass racks',{f:6}],
  ['GLASSES','Champagne glass racks',{f:0},'toast'],
  ['GLASSES','Plastic cups (wine)',{f:0}],
@@ -2467,10 +2479,10 @@ function wedMetaApplyUI(){
 }
 // Live propagation: poll the (tiny) meta store while the Weddings tab is open, and re-sync the
 // moment the screen wakes / the app returns to the foreground.
-if(!window._wedMetaTick)window._wedMetaTick=setInterval(()=>{if(activeTab===WED)wedMetaPull()},10000);
+if(!window._wedMetaTick)window._wedMetaTick=setInterval(()=>{if(activeTab===WED){wedMetaPull();if(wed.pane==='sheet')wedSheetPull()}},10000);
 if(!window._wedSyncTick)window._wedSyncTick=setInterval(()=>{if(activeTab===WED&&wed.view==='list'&&!uiTyping())wedPullSync()},45000);
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState!=='visible')return;
-  if(activeTab===WED){wedMetaPull();wedFetchFeed();if(wed.view==='list')wedPullSync();}
+  if(activeTab===WED){wedMetaPull();wedFetchFeed();if(wed.pane==='sheet')wedSheetPull();if(wed.view==='list')wedPullSync();}
   else if(typeof LIQ!=='undefined'&&activeTab===LIQ)liqPull();
   else if(activeTab===DOCS)docsPullSync();
 });
@@ -2609,9 +2621,166 @@ function wedSeedEventDoc(fe){
   docsState.current=id;saveDocsData();
   return true;
 }
+// ═══ EVENT SHEET — the proposal form (Template.pdf) with dropdowns from the real catering menu ═══
+// Per-event, per-FIELD timestamped + merged (same two-screen-safe pattern as ct_wed_meta).
+const SH_APPS=['','Toasted Ravioli','Mini Bruschetta','Roasted Red Pepper Crostini','Caprese Flatbread','Fresh Fruit Kabobs','Caprese Kabobs','Bacon Wrapped Dates','Peppadew Peppers w/ Goat Cheese','Asparagus Wrapped w/ Prosciutto','Ricotta Flatbread','Shrimp Cocktail','Stuffed Mushrooms','Mini Meatballs','Butternut Gnocchi','Sausage & Pepper Kabobs','Mini Chicken Parmigiana Sandwiches','Antipasto Display','Vegetable Display','Domestic Cheese Display'];
+const SH_SALADS=['','House Salad','Caesar Salad','Angeli’s Special Salad','Chopped Antipasto','Cold Pasta Salad'];
+const SH_CHICKEN=['','Piccata','Marsala','Limone','Vesuvio','Margherita','Armenta','Parmigiana','Saltimbocca','Jenella','Pesto','Florentine','Giardiniara'];
+const SH_SAUCE=['','Marinara','Vodka Cream','Primavera','Pesto Cream','Bolognese','Alfredo','Pasta & Peas','Baked Mostaccioli'];
+const SH_PASTA=['','Bowtie','Rigatoni','Mostaccioli','Rotini'];
+const SH_PROTEIN=['','Sausage & Peppers','Italian Beef','Filet (8 oz)','Chicken Tenders','BBQ Pork','Chopped Beef Brisket','BBQ Chicken Breast','Chicken & Steak Fajitas'];
+const SH_SIDES=['','Red Skinned Mashed Potatoes','Steamed Asparagus','Roasted Vegetables','Sweet Corn','Italian Potato Salad','Baked Beans','Cole Slaw','Pasta Salad','Roasted Vegetable Orzo Feta Salad','Green Beans','Watermelon','Fresh Fruit Salad'];
+const SH_LATE=['','Vienna All Beef Hot Dogs w/ Cart','Mini Chicken Parmesan Sandwiches','Italian Beef','Pizza','Meatball Sliders','Filet Sliders','Shaved Turkey Sliders','Shaved Ham Sliders','Shaved Roast Beef Sliders','Vegetarian Focaccia'];
+const SH_DESSERT=['','Not Included in Quote','Mini Tiramisu','Mini Cannolis','Mini Brownies','Mini Carrot Cake','Assorted Cookies','Assorted Italian Pastries','Mini New York Cheesecake','Assorted Mini Pastries'];
+const SH_BAR=['','Provided through the venue','Soda, Juice & Water Package — $6.95 pp','Beer, Wine & Soda — $17.95 pp','Standard Liquor Bar — $24.95 pp','Premium Liquor Bar — $29.95 pp','Bar Mixer Package — $2.00 pp','Bar Glassware — $3.00 pp'];
+const SH_SERVICE=['','Family Style','Plated','Buffet','Stations'];
+const SH_LABOR=0.20, SH_TAX=0.0775; // matches the template's math exactly (20% labor, 7.75% Naperville)
+
+let wedSheet=null;
+function wedSheetLoad(){if(wedSheet)return wedSheet;try{wedSheet=(JSON.parse(localStorage.getItem('ct_wed_sheet')||'{}').v)||{}}catch(e){wedSheet={}}return wedSheet}
+function wedSheetPersist(m){wedSheet=m;try{localStorage.setItem('ct_wed_sheet',JSON.stringify({v:m,at:Date.now()}))}catch(e){}}
+function wedSheetMerge(a,b){const out={};const keys=new Set([...Object.keys(a||{}),...Object.keys(b||{})]);
+  keys.forEach(k=>{const A=(a||{})[k]||{},B=(b||{})[k]||{};const f={};
+    new Set([...Object.keys(A),...Object.keys(B)]).forEach(fld=>{
+      const x=A[fld],y=B[fld];
+      f[fld]=((y&&y.at||0)>(x&&x.at||0))?y:x;});
+    out[k]=f;});
+  return out}
+function wedSheetGet(id,field){const e=wedSheetLoad()['sched-'+id];const f=e&&e[field];return (f&&f.v)||''}
+function wedSheetSet(id,field,val){
+  const m=wedSheetLoad();const k='sched-'+id;m[k]={...(m[k]||{})};m[k][field]={v:val,at:Date.now()};
+  wedSheetPersist(m);
+  kvGet('ct_wed_sheet').then(r=>{const merged=wedSheetMerge(wedSheetLoad(),(r&&r.v)||{});wedSheetPersist(merged);kvPush('ct_wed_sheet',merged,Date.now())})
+    .catch(()=>kvPush('ct_wed_sheet',wedSheetLoad(),Date.now()));
+}
+async function wedSheetPull(){try{
+  const remote=await kvGet('ct_wed_sheet');
+  const merged=wedSheetMerge(wedSheetLoad(),(remote&&remote.v)||{});
+  const changed=JSON.stringify(merged)!==JSON.stringify(wedSheet||{});
+  wedSheetPersist(merged);
+  if(JSON.stringify(merged)!==JSON.stringify((remote&&remote.v)||{}))kvPush('ct_wed_sheet',merged,Date.now());
+  if(changed&&activeTab===WED&&wed.pane==='sheet'&&!uiTyping())renderViewport();
+}catch(e){}}
+function wedSheetShow(){wedFlush();wed.pane='sheet';wed.sel=null;renderViewport();wedSheetPull();}
+// price row: per-person → labor 20% → tax 7.75% → total (auto, live)
+function shMoney(n){return isFinite(n)?('$ '+n.toFixed(2)):''}
+function shCalc(pp){const p=parseFloat(pp)||0;if(!p)return null;const l=p*SH_LABOR,t=(p+l)*SH_TAX;return {p,l,t,total:p+l+t}}
+function wedSheetCalcRow(id,key){
+  const c=shCalc(wedSheetGet(id,key));
+  const el=document.getElementById('sh-calc-'+key);
+  if(el)el.innerHTML=c?`Labor <b>${shMoney(c.l)}</b> · Tax <b>${shMoney(c.t)}</b> · <b style="color:var(--accent)">Total ${shMoney(c.total)}</b>`:'<span style="color:var(--text-muted)">enter a per-person price</span>';
+}
+function shSel(id,field,opts,ph){const cur=wedSheetGet(id,field);
+  return `<select class="sh-in" onchange="wedSheetSet(${id},'${field}',this.value)">`+opts.map(o=>`<option value="${esc(o)}"${o===cur?' selected':''}>${esc(o||('— '+(ph||'choose')+' —'))}</option>`).join('')+`</select>`}
+function shTxt(id,field,ph){return `<input class="sh-in" type="text" placeholder="${esc(ph||'')}" value="${esc(wedSheetGet(id,field))}" oninput="wedSheetSet(${id},'${field}',this.value)">`}
+function shNum(id,field,ph,onCalc){return `<input class="sh-in sh-num" type="number" step="0.01" placeholder="${esc(ph||'')}" value="${esc(wedSheetGet(id,field))}" oninput="wedSheetSet(${id},'${field}',this.value);${onCalc?`wedSheetCalcRow(${id},'${field}')`:''}">`}
+function shPriceRow(id,label,key){
+  return `<div class="sh-row"><label>${esc(label)}</label><div class="sh-money">${shNum(id,key,'per person',true)}<span id="sh-calc-${key}" class="sh-calc"></span></div></div>`}
+function wedSheetPaneHTML(fe){
+  const id=fe.id;
+  const sec=t=>`<div class="sh-sec">${esc(t)}</div>`;
+  const row=(l,c)=>`<div class="sh-row"><label>${esc(l)}</label>${c}</div>`;
+  return `<div class="wed-main wed-main-col">
+    <div class="wed-bar" style="border-bottom:1px solid var(--border)">
+      <span style="font-weight:800;font-size:14px">📋 Event Sheet</span>
+      <span style="font-size:11px;color:var(--text-muted)">saves + syncs as you pick</span>
+      <span style="flex:1"></span>
+      <button class="wed-btn" onclick="wedSheetPrint()">🖨 Print / Save PDF</button>
+      <button class="wed-btn" onclick="wedSheetWord()">⬇ Word</button>
+    </div>
+    <div class="sh-wrap">
+      ${sec('Proposal')}
+      ${row('Date of proposal',shTxt(id,'pdate','e.g. '+wedPrettyDate(new Date().toISOString().slice(0,10))))}
+      ${row('To (client)',shTxt(id,'to',wedName(fe)))}
+      ${row('Occasion',shTxt(id,'occasion','Wedding Reception'))}
+      ${row('Event date',`<input class="sh-in" type="text" value="${esc(wedDow(fe.date)+' '+wedPrettyDate(fe.date))}" disabled>`)}
+      ${row('Venue',shTxt(id,'venue','Crawford Banquet Hall, Naperville'))}
+      ${row('Service style',shSel(id,'service',SH_SERVICE,'style'))}
+      ${sec('Appetizers')}
+      ${row('Appetizer 1',shSel(id,'app1',SH_APPS,'appetizer'))}
+      ${row('Appetizer 2',shSel(id,'app2',SH_APPS,'appetizer'))}
+      ${row('Appetizer 3',shSel(id,'app3',SH_APPS,'appetizer'))}
+      ${row('Appetizer 4',shSel(id,'app4',SH_APPS,'appetizer'))}
+      ${row('Salad',shSel(id,'salad',SH_SALADS,'salad'))}
+      ${row('Salad notes',shTxt(id,'saladNote','Bleu cheese on the side in boats'))}
+      ${row('Palate cleanser',shTxt(id,'cleanser','Lemon Ice For All'))}
+      ${sec('Entrées')}
+      ${row('Chicken',shSel(id,'chicken',SH_CHICKEN,'style'))}
+      ${row('Second entrée',shSel(id,'protein',SH_PROTEIN,'entrée'))}
+      ${row('Pasta sauce',shSel(id,'sauce',SH_SAUCE,'sauce'))}
+      ${row('Pasta type',shSel(id,'pasta',SH_PASTA,'pasta'))}
+      ${row('Side 1',shSel(id,'side1',SH_SIDES,'side'))}
+      ${row('Side 2',shSel(id,'side2',SH_SIDES,'side'))}
+      ${sec('Pricing — labor 20% + tax 7.75% calculate automatically')}
+      ${shPriceRow(id,'Adult entrée','pAdult')}
+      ${shPriceRow(id,'Vegetarian','pVeg')}
+      ${shPriceRow(id,'Kids meal','pKids')}
+      ${shPriceRow(id,'Vendor meal','pVendor')}
+      ${sec('Guest count')}
+      ${row('Adults',shNum(id,'nAdults','0'))}
+      ${row('Kids',shNum(id,'nKids','0'))}
+      ${row('Vendors',shNum(id,'nVendors','0'))}
+      ${sec('Late night, bar & dessert')}
+      ${row('Late night 1',shSel(id,'late1',SH_LATE,'option'))}
+      ${row('Late night 1 price',shTxt(id,'late1p','$ 4 per hot dog + $75 cart'))}
+      ${row('Late night 2',shSel(id,'late2',SH_LATE,'option'))}
+      ${row('Late night 2 price',shTxt(id,'late2p',''))}
+      ${row('Bar',shSel(id,'bar',SH_BAR,'bar'))}
+      ${row('Dessert',shSel(id,'dessert',SH_DESSERT,'dessert'))}
+      ${row('Coffee station',shTxt(id,'coffee','Coffee & Hot Tea Station After Dinner'))}
+      ${sec('Notes')}
+      <div class="sh-row"><label>Notes</label><textarea class="sh-in" rows="4" oninput="wedSheetSet(${id},'notes',this.value)">${esc(wedSheetGet(id,'notes'))}</textarea></div>
+      <div style="height:40px"></div>
+    </div>
+  </div>`}
+// ── The printed letter: Tony's format, filled from the picks ──
+function wedSheetLetter(fe){
+  const id=fe.id,g=f=>wedSheetGet(id,f);
+  const apps=[g('app1'),g('app2'),g('app3'),g('app4')].filter(Boolean);
+  const line=(l,v)=>v?`<p><b>${l}</b> ${v}</p>`:'';
+  const priceLine=(label,key)=>{const c=shCalc(g(key));return c?`<p>${label}: <b>${shMoney(c.p)}</b> Per Person &nbsp; Plus Labor ${shMoney(c.l)} &nbsp; Sales Tax ${shMoney(c.t)} &nbsp; <b>Total: ${shMoney(c.total)}</b></p>`:''};
+  const counts=[g('nAdults')?g('nAdults')+' adults':'',g('nKids')?g('nKids')+' kids':'',g('nVendors')?g('nVendors')+' vendors':''].filter(Boolean).join(' · ');
+  return `<div style="text-align:center"><b>Angeli’s Catering</b><br>1478 East Chicago Ave<br>Naperville, IL 60540<br>Phone 630-420-1122</div>
+  <p>${esc(g('pdate')||'')}</p>
+  ${line('To:',esc(g('to')||wedName(fe)))}
+  <p><b>From:</b> Angeli’s Catering</p>
+  <p><b>Re:</b> Proposal for ${esc(g('occasion')||'Event')} — ${esc(wedDow(fe.date))} ${esc(wedPrettyDate(fe.date))}</p>
+  ${line('Venue:',esc(g('venue')||''))}
+  <h2 style="text-align:center">Your Reception</h2>
+  ${apps.length?`<h3 style="text-align:center">~~ Appetizers ~~</h3><p style="text-align:center">${apps.map(a=>'~ '+esc(a)+' ~').join(' &nbsp;&nbsp; ')}</p>`:''}
+  ${g('salad')?`<p style="text-align:center">~ ${esc(g('salad'))}${g('service')==='Plated'?' (Plated)':''} ~${g('saladNote')?'<br>( '+esc(g('saladNote'))+' )':''}</p>`:''}
+  ${g('cleanser')?`<p style="text-align:center">~ ${esc(g('cleanser'))} ~</p>`:''}
+  <h3 style="text-align:center">~~ Entrées ~~${g('service')?`<br><span style="font-size:.8em">~~ Entrée to be Served ${esc(g('service'))} ~~</span>`:''}</h3>
+  ${g('chicken')?`<p><b>Chicken ${esc(g('chicken'))}</b></p>`:''}
+  ${g('protein')?`<p><b>${esc(g('protein'))}</b></p>`:''}
+  ${(g('sauce')||g('pasta'))?`<p><b>${esc([g('sauce'),g('pasta')].filter(Boolean).join(' — '))}</b></p>`:''}
+  ${(g('side1')||g('side2'))?`<p><b>${esc([g('side1'),g('side2')].filter(Boolean).join(' &nbsp;·&nbsp; '))}</b></p>`:''}
+  ${priceLine('Entrée','pAdult')}
+  ${priceLine('Vegetarian Meals','pVeg')}
+  ${priceLine('Kids Meals','pKids')}
+  ${priceLine('Vendor Meals','pVendor')}
+  ${counts?`<p><b>Guest Count:</b> ${esc(counts)}</p>`:''}
+  ${(g('late1')||g('late2'))?`<h3>Late Night Options:</h3>${g('late1')?`<p>${esc(g('late1'))}${g('late1p')?' — '+esc(g('late1p')):''}</p>`:''}${g('late2')?`<p>${esc(g('late2'))}${g('late2p')?' — '+esc(g('late2p')):''}</p>`:''}`:''}
+  ${g('bar')?`<p><b>Bar:</b> ${esc(g('bar'))}</p>`:''}
+  <h3 style="text-align:center">~~ The Following Items will be on Each Table ~~</h3>
+  <p style="text-align:center">~ Baskets of Bread Rolls and Butter (Variety) — Our Bread ~<br>~ Lemon Slices in Water Glasses ~ &nbsp; ~ Olive Oil on Tables ~<br>~ Salt and Pepper on Each Table ~ &nbsp; ~ Parmesan on Tables ~<br>~ Carafes of Water on Each Table ~</p>
+  <h3 style="text-align:center">~~ Dessert ~~</h3>
+  <p style="text-align:center">${esc(g('dessert')||'Not Included in Quote')}${g('coffee')?'<br>~ '+esc(g('coffee'))+' ~':''}</p>
+  ${g('notes')?`<p><b>Notes:</b><br>${esc(g('notes')).replace(/\n/g,'<br>')}</p>`:''}
+  <p style="margin-top:22px">Sincerely,<br><b>Tony Angeli</b><br>Angeli’s Catering &nbsp; Cell Phone 630-669-5015</p>`}
+function wedSheetPrint(){const fe=wedFeedEvent(wed.evId);if(!fe)return;
+  const f=document.createElement('iframe');f.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0';document.body.appendChild(f);
+  const w=f.contentWindow,doc=w.document;doc.open();
+  doc.write('<!doctype html><html><head><meta charset="utf-8"><title>'+esc(wedName(fe))+' — Proposal</title><style>@page{margin:.9in}body{font-family:Georgia,\'Times New Roman\',serif;font-size:12pt;line-height:1.55;color:#000}h2{font-size:19pt;margin:.5em 0}h3{font-size:14pt;margin:.9em 0 .3em}p{margin:.35em 0}</style></head><body>'+wedSheetLetter(fe)+'</body></html>');
+  doc.close();w.focus();setTimeout(()=>{try{w.print()}catch(e){}setTimeout(()=>f.remove(),1500)},300)}
+function wedSheetWord(){const fe=wedFeedEvent(wed.evId);if(!fe)return;
+  const html='<!doctype html><html><head><meta charset="utf-8"><title>Proposal</title></head><body style="font-family:Georgia,serif;font-size:12pt;line-height:1.55">'+wedSheetLetter(fe)+'</body></html>';
+  const blob=new Blob(['﻿'+html],{type:'application/msword'});const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);a.download=(wedName(fe).replace(/[^\w\- ]+/g,'').trim()||'proposal')+' Proposal.doc';
+  document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},600)}
+
 function wedShowDocs(){docsFlush();wedFlush();wed.pane='docs';wed.sel=null;
   const fe=wedFeedEvent(wed.evId);
-  if(fe){try{if(wedSeedEventDoc(fe))console.log('event sheet seeded')}catch(e){}}
   renderViewport();docsPullSync()}
 function wedOpenLayout(id){wed.cur=id;wedLoad().cur=id;wed.sel=null;wed.view='plan';renderViewport()}
 // Back from the plan editor: a schedule-linked layout returns to its event hub; anything else to the list.
@@ -2772,6 +2941,7 @@ function wedEventHTML(){const fe=wedFeedEvent(wed.evId);if(!fe){wed.view='list';
         <button class="wed-side-btn ${wed.pane==='catering'?'active':''}" onclick="wedShowCatering()">🍽 <span>Catering Template<span class="sub">this event's copy · autosaves</span></span></button>
         <button class="wed-side-btn ${wed.pane==='docs'?'active':''}" onclick="wedShowDocs()">📝 <span>Docs<span class="sub">this event's documents &amp; files</span></span></button>
         <button class="wed-side-btn ${wed.pane==='truck'?'active':''}" onclick="wedShowTruck()">🚚 <span>Truck Packing<span class="sub">auto packing list by guests &amp; bar</span></span></button>
+        <button class="wed-side-btn ${wed.pane==='sheet'?'active':''}" onclick="wedSheetShow()">📋 <span>Event Sheet<span class="sub">proposal · dropdowns</span></span></button>
         <button class="wed-side-btn ${wed.pane==='mail'?'active':''}" onclick="wedShowMail()">📧 <span>Customer Emails<span class="sub">${wedCustMail(fe)?esc(wedCustMail(fe)):'link the customer’s email'}</span></span></button>
         <button class="wed-side-btn ${wed.pane==='sched'?'active':''}" onclick="wedShowSched()">📅 <span>Day Schedule<span class="sub">who's working ${esc(wedPrettyDate(fe.date))}</span></span></button>
       </div>
@@ -2787,6 +2957,8 @@ function wedEventHTML(){const fe=wedFeedEvent(wed.evId);if(!fe){wed.view='list';
         ?wedMailPaneHTML(fe)
         :wed.pane==='sched'
         ?wedSchedPaneHTML(fe)
+        :wed.pane==='sheet'
+        ?wedSheetPaneHTML(fe)
         :`<div class="wed-main"><iframe src="https://order.angeliscatering.com/wedding-notes.html?event=sched-${fe.id}&name=${encodeURIComponent(fe.label)}" allow="storage-access fullscreen"></iframe></div>`}
     </div>
   </div>`}
