@@ -390,18 +390,21 @@
     .tk-tog{font-size:12px}
     .tk-tier{font-size:11px;color:var(--text-muted)}
     .tk-scroll{flex:1;overflow-y:auto;padding:14px}
-    .tk-table{width:100%;border-collapse:collapse;font-size:13px;max-width:900px}
-    .tk-table th{position:sticky;top:-14px;background:var(--surface);color:var(--text-dim);text-align:left;padding:7px 8px;border-bottom:1px solid var(--border);font-size:11px;letter-spacing:.05em}
-    .tk-table td{border-bottom:1px solid var(--border);padding:4px 8px}
-    .tk-sec td{background:var(--surface);font-weight:800;color:var(--accent);font-size:11.5px;letter-spacing:.08em;padding:8px}
+    .tk-table{width:100%;border-collapse:collapse;font-size:16px;max-width:1050px}
+    .tk-table th{position:sticky;top:-14px;background:var(--surface);color:var(--text-dim);text-align:left;padding:9px 10px;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.05em}
+    .tk-table td{border-bottom:1px solid var(--border);padding:7px 10px}
+    .tk-sec td{background:var(--surface);font-weight:800;color:var(--accent);font-size:14px;letter-spacing:.08em;padding:10px}
     .tk-qty{width:74px}
-    .tk-ov{width:64px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 6px;font-size:13px;font-weight:700;text-align:right}
+    .tk-ov{width:70px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px;font-size:16px;font-weight:800;text-align:right}
     .tk-ov.tk-oved{border-color:var(--accent);color:var(--accent)}
-    .tk-item{color:var(--text)}
-    .tk-c{width:64px;text-align:center;cursor:pointer;color:var(--text-muted);font-size:15px;user-select:none}
+    .tk-item{color:var(--text);font-size:16px;font-weight:600;white-space:nowrap}
+    .tk-note{min-width:150px}
+    .tk-note input{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:6px;padding:8px;font-size:14px;box-sizing:border-box}
+    .tk-note input:focus{color:var(--text);border-color:var(--accent)}
+    .tk-c{width:70px;text-align:center;cursor:pointer;color:var(--text-muted);font-size:18px;user-select:none}
     .tk-c.on{color:#2ecc71;font-weight:800}
     .tk-need{width:130px}
-    .tk-need input{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 6px;font-size:12px;box-sizing:border-box}
+    .tk-need input{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px;font-size:14px;box-sizing:border-box}
     .tk-notes-wrap{max-width:900px;margin-top:16px}
     .tk-sec-label{font-weight:800;color:var(--accent);font-size:11.5px;letter-spacing:.08em;margin-bottom:6px}
     .tk-notes{width:100%;min-height:90px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:10px;padding:10px;font-size:13px;font-family:inherit;box-sizing:border-box}
@@ -1466,7 +1469,7 @@ function mailSmartRowHTML(m,forTwoPane){
   return `<div class="gmail-row ${m.unread?'unread':''} ${forTwoPane&&mailx.selUid===m.uid?'selected':''}" onclick="mailSmartOpen('${m.acctId}','${m.uid}')">
     <div class="gmail-row-top"><div class="gmail-row-sender">${m.unread?'<span class="unread-badge">New</span>':''}${esc(m.from||m.fromAddr||'(unknown)')}</div>
     <div class="gmail-row-time"><span style="font-size:10px;color:var(--accent);font-weight:800;margin-right:6px">${esc(m.acctLabel||'')}</span>${mailTime(m.date)}</div></div>
-    <div class="gmail-row-subject">${esc(m.subject)}</div></div>`;}
+    <div class="gmail-row-subject">${esc(m.subject)}${m._count>1?` <span class="gmail-thread-count">${m._count}</span>`:''}</div></div>`;}
 function mailListHTML(forTwoPane){
   // Search view — server-side results across the whole mailbox, replaces the folder list while active.
   if(mailx.search&&(mailx.searching||mailx.searchResults!==null)){
@@ -1489,7 +1492,7 @@ function mailListHTML(forTwoPane){
     let body;
     if(!sr||sr.loading)body='<div class="gmail-loading">Searching every inbox for '+esc(cfg.q)+'…</div>';
     else if(!sr.rows.length)body='<div class="gmail-empty">No '+esc(cfg.q)+' emails found.</div>';
-    else body=`<div style="padding:8px 16px 2px;font-size:11px;font-weight:800;color:var(--accent);text-transform:uppercase;letter-spacing:.08em">${cfg.label} · ${sr.rows.length} across all inboxes</div>`+`<div class="gmail-list-tab">${sr.rows.map(m=>mailSmartRowHTML(m,forTwoPane)).join('')}</div>`;
+    else{const grouped=mailGroupList(sr.rows);body=`<div style="padding:8px 16px 2px;font-size:11px;font-weight:800;color:var(--accent);text-transform:uppercase;letter-spacing:.08em">${cfg.label} · ${grouped.length} conversation${grouped.length===1?'':'s'} across all inboxes</div>`+`<div class="gmail-list-tab">${grouped.map(m=>mailSmartRowHTML(m,forTwoPane)).join('')}</div>`;}
     return bar(body);
   }
   const emptyMsg=mailx.folder==='starred'?'No starred emails.':mailx.folder==='trash'?'Trash is empty.':'No emails in this inbox.';
@@ -2038,12 +2041,16 @@ function tkNeed(key,val){const d=tkLoad();
   d.checks[key]=d.checks[key]||{};d.checks[key].need=val;tkStore()}
 function tkResetChecks(){if(!confirm('Clear all the Ordered / On Truck checkmarks for this event?'))return;
   const d=tkLoad();d.checks={};tkStore();renderViewport()}
+function tkNote(key,val){const d=tkLoad();d.itemNotes=d.itemNotes||{};
+  const t=String(val).trim();if(t==='')delete d.itemNotes[key];else d.itemNotes[key]=t;tkStore()}
 function tkRowHTML(it,d){
   const ov=d.ov[it.key];const q=(ov!=null&&ov!=='')?ov:it.auto;
   const ch=d.checks[it.key]||{};
+  const note=(d.itemNotes||{})[it.key]||'';
   return `<tr>
     <td class="tk-qty"><input class="tk-ov ${ov!=null?'tk-oved':''}" value="${esc(String(q))}" onchange="tkOv('${esc(it.key)}',this.value===String(${JSON.stringify(String(it.auto))})?'':this.value)" title="Auto: ${esc(String(it.auto))} — type to override"></td>
     <td class="tk-item">${esc(it.label)}</td>
+    <td class="tk-note"><input value="${esc(note)}" placeholder="note…" onchange="tkNote('${esc(it.key)}',this.value)"></td>
     <td class="tk-c ${ch.ordered==='Y'?'on':''}" onclick="tkChk('${esc(it.key)}','ordered')">${ch.ordered==='Y'?'✔':''}</td>
     <td class="tk-c ${ch.truck==='Y'?'on':''}" onclick="tkChk('${esc(it.key)}','truck')">${ch.truck==='Y'?'✔':''}</td>
     <td class="tk-need"><input value="${esc(ch.need||'')}" onchange="tkNeed('${esc(it.key)}',this.value)"></td>
@@ -2053,7 +2060,7 @@ function truckHTML(fe){
   let lastSec='',body='';
   items.forEach(it=>{
     if(it.sec!==lastSec){lastSec=it.sec;
-      body+=`<tr class="tk-sec"><td colspan="5">${esc(it.sec)}</td></tr>`}
+      body+=`<tr class="tk-sec"><td colspan="6">${esc(it.sec)}</td></tr>`}
     body+=tkRowHTML(it,d)});
   const tier=TK_TIERS[tkTierIdx(Math.max(1,+d.guests||1))];
   return `<div class="tk-wrap">
@@ -2074,7 +2081,7 @@ function truckHTML(fe){
     </div>
     <div class="tk-scroll">
       <table class="tk-table">
-        <thead><tr><th>Qty</th><th>Item</th><th>Ordered</th><th>On Truck</th><th>Still needed</th></tr></thead>
+        <thead><tr><th>Qty</th><th>Item</th><th>Notes</th><th>Ordered</th><th>On Truck</th><th>Still needed</th></tr></thead>
         <tbody>${body}</tbody>
       </table>
       <div class="tk-notes-wrap"><div class="tk-sec-label">CHANGES OR SPECIAL REQUESTS</div>
@@ -2090,7 +2097,8 @@ function tkPrint(){
     if(!q&&q!==0)return rows+=(it.sec!==lastSec?((lastSec=it.sec),`<tr><td colspan="5" class="sec">${it.sec}</td></tr>`):'')+
       `<tr><td></td><td>${it.label}</td><td>${ch.ordered||''}</td><td>${ch.truck||''}</td><td>${ch.need||''}</td></tr>`;
     if(it.sec!==lastSec){lastSec=it.sec;rows+=`<tr><td colspan="5" class="sec">${it.sec}</td></tr>`}
-    rows+=`<tr><td class="q">${q}</td><td>${it.label}</td><td>${ch.ordered||''}</td><td>${ch.truck||''}</td><td>${ch.need||''}</td></tr>`});
+    const nt=(d.itemNotes||{})[it.key]||'';
+    rows+=`<tr><td class="q">${q}</td><td>${it.label}${nt?' — <i>'+nt.replace(/</g,'&lt;')+'</i>':''}</td><td>${ch.ordered||''}</td><td>${ch.truck||''}</td><td>${ch.need||''}</td></tr>`});
   const w=window.open('','_blank');
   w.document.write(`<html><head><title>Truck Packing — ${fe?fe.label:''}</title><style>
     body{font-family:-apple-system,Helvetica,sans-serif;color:#000;font-size:11px;margin:24px}
