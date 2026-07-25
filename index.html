@@ -2101,17 +2101,17 @@ function tkItems(){
 function tkRename(key,val){const d=tkLoad();d.renames=d.renames||{};
   const t=String(val).trim();
   if(t==='')delete d.renames[key];else d.renames[key]=t;
-  tkStore();renderViewport()}
-function tkHide(key){const d=tkLoad();d.hidden=d.hidden||{};d.hidden[key]=1;tkStore();renderViewport()}
+  tkStore();tkRerender()}
+function tkHide(key){const d=tkLoad();d.hidden=d.hidden||{};d.hidden[key]=1;tkStore();tkRerender()}
 function tkRestoreHidden(){const d=tkLoad();const n=Object.keys(d.hidden||{}).length;
   if(!n)return;if(!confirm('Bring back the '+n+' removed item'+(n===1?'':'s')+'?'))return;
-  d.hidden={};tkStore();renderViewport()}
+  d.hidden={};tkStore();tkRerender()}
 function tkSet(field,val){const d=tkLoad();
   if(field==='guests')d.guests=Math.max(1,parseInt(val)||1);
   else if(field==='pkg')d.pkg=val;
   else if(field==='toast')d.toast=!!val;
   else if(field==='notes')d.notes=val;
-  tkStore();if(field!=='notes')renderViewport()}
+  tkStore();if(field!=='notes')tkRerender()}
 function tkOv(key,val){const d=tkLoad();
   const t=String(val).trim();
   if(t==='')delete d.ov[key];else d.ov[key]=t;
@@ -2119,11 +2119,11 @@ function tkOv(key,val){const d=tkLoad();
 function tkChk(key,col){const d=tkLoad();
   d.checks[key]=d.checks[key]||{};
   d.checks[key][col]=d.checks[key][col]==='Y'?'':'Y';
-  tkStore();renderViewport()}
+  tkStore();tkRerender()}
 function tkNeed(key,val){const d=tkLoad();
   d.checks[key]=d.checks[key]||{};d.checks[key].need=val;tkStore()}
 function tkResetChecks(){if(!confirm('Clear all the Ordered / On Truck checkmarks for this event?'))return;
-  const d=tkLoad();d.checks={};tkStore();renderViewport()}
+  const d=tkLoad();d.checks={};tkStore();tkRerender()}
 function tkRowHTML(it,d){
   const ov=d.ov[it.key];const q=(ov!=null&&ov!=='')?ov:it.auto;
   const ch=d.checks[it.key]||{};
@@ -2136,9 +2136,12 @@ function tkRowHTML(it,d){
     <td class="tk-need"><input value="${esc(ch.need||'')}" onchange="tkNeed('${esc(it.key)}',this.value)"></td>
     <td class="tk-x"><button onclick="tkHide('${esc(it.key)}')" title="Remove from this event's list">✕</button></td>
   </tr>`}
+function tkRerender(){const sc=document.querySelector('.tk-scroll');const t=sc?sc.scrollTop:0;
+  renderViewport();
+  const sc2=document.querySelector('.tk-scroll');if(sc2&&t)sc2.scrollTop=t}
 function tkCollapsed(){try{return JSON.parse(localStorage.getItem('ct_tk_collapse')||'{}')}catch(e){return{}}}
 function tkToggleSec(sec){const c=tkCollapsed();if(c[sec])delete c[sec];else c[sec]=1;
-  localStorage.setItem('ct_tk_collapse',JSON.stringify(c));renderViewport()}
+  localStorage.setItem('ct_tk_collapse',JSON.stringify(c));tkRerender()}
 function tkGroupSecs(grp){const drinks=s=>s.startsWith('🍸')||s.startsWith('🥤');
   return [...new Set(tkItems().map(i=>i.sec))].filter(s=>grp==='drinks'?drinks(s):!drinks(s))}
 function tkToggleGroup(grp){
@@ -2149,7 +2152,7 @@ function tkToggleGroup(grp){
   const focused=mine.every(s=>!c[s])&&others.every(s=>c[s]);
   if(focused){mine.concat(others).forEach(s=>delete c[s]);}
   else{mine.forEach(s=>delete c[s]);others.forEach(s=>c[s]=1);}
-  localStorage.setItem('ct_tk_collapse',JSON.stringify(c));renderViewport()}
+  localStorage.setItem('ct_tk_collapse',JSON.stringify(c));tkRerender()}
 function truckHTML(fe){
   const d=tkLoad();const items=tkItems();const coll=tkCollapsed();
   let lastSec='',body='';
