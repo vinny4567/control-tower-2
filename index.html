@@ -393,7 +393,9 @@
     .tk-table{width:100%;border-collapse:collapse;font-size:16px;max-width:1050px}
     .tk-table th{position:sticky;top:-14px;background:var(--surface);color:var(--text-dim);text-align:left;padding:9px 10px;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.05em}
     .tk-table td{border-bottom:1px solid var(--border);padding:7px 10px}
-    .tk-sec td{background:var(--surface);font-weight:800;color:var(--accent);font-size:14px;letter-spacing:.08em;padding:10px}
+    .tk-sec td{background:var(--surface);font-weight:800;color:var(--accent);font-size:14px;letter-spacing:.08em;padding:10px;cursor:pointer;user-select:none}
+    .tk-sec:hover td{filter:brightness(1.2)}
+    .tk-caret{display:inline-block;width:16px;color:var(--text-dim)}
     .tk-qty{width:74px}
     .tk-ov{width:70px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px;font-size:16px;font-weight:800;text-align:right}
     .tk-ov.tk-oved{border-color:var(--accent);color:var(--accent)}
@@ -1938,11 +1940,18 @@ const TK_EQUIP=[
  ['PLATES','B&B plates',{c:2}],
  ['PLATES','Salad plates',{c:1}],
  ['PLATES','Dinner plates',{c:1,plus:10}],
+ ['PLATES','Plate covers',{f:0}],
+ ['PLATES','Disposable white 6\" chinets',{f:0}],
+ ['PLATES','Disposable white plastic app plates',{f:0}],
  ['GLASSES','Water glasses',{c:1}],
  ['GLASSES','Wine glasses',{c:1}],
  ['GLASSES','Highball glasses',{c:1.5}],
  ['GLASSES','Champagne glasses',{c:1,toast:true}],
  ['GLASSES','Coffee mugs',{f:0}],
+ ['GLASSES','Wine glass racks',{f:6}],
+ ['GLASSES','Champagne glass racks',{f:0}],
+ ['GLASSES','Plastic cups (wine)',{f:0}],
+ ['GLASSES','Plastic highball cups',{f:0}],
  ['SILVERWARE','Forks',{c:2}],
  ['SILVERWARE','Knives',{c:1}],
  ['SILVERWARE','Spoons',{c:2}],
@@ -1962,6 +1971,8 @@ const TK_EQUIP=[
  ['LINENS & NAPKINS','52x114 tablecloths',{f:2}],
  ['LINENS & NAPKINS','52x52 white linens',{f:4}],
  ['LINENS & NAPKINS','Chair ties (color in note)',{f:8}],
+ ['LINENS & NAPKINS','White cloth napkin roll-ups',{f:0}],
+ ['LINENS & NAPKINS','Satin chair covers',{f:0}],
  ['LINENS & NAPKINS','Angelis linen bag',{f:1}],
  ['SERVING & CHAFING','Chafers',{f:6}],
  ['SERVING & CHAFING','4-hr sternos',{f:12}],
@@ -1980,22 +1991,49 @@ const TK_EQUIP=[
  ['SERVING & CHAFING','Squeeze bottles for dressing',{f:3}],
  ['SERVING & CHAFING','Ground pepper mill',{f:1}],
  ['SERVING & CHAFING','Cake knife & spatula',{f:1}],
+ ['SERVING & CHAFING','Family style bowls',{f:0}],
+ ['SERVING & CHAFING','Empty full pan (for chafer)',{f:0}],
+ ['SERVING & CHAFING','Boats for dressings on table',{f:0}],
+ ['SERVING & CHAFING','Stainless pots for cooking',{f:0}],
+ ['SERVING & CHAFING','Tongs / spatulas / ladles',{f:0}],
+ ['SERVING & CHAFING','Table #s w/ stands',{f:0}],
+ ['SERVING & CHAFING','Bowl covers',{f:0}],
+ ['SERVING & CHAFING','Filled parmesan containers',{f:0}],
+ ['SERVING & CHAFING','Olive oil for tables',{f:0}],
+ ['SERVING & CHAFING','Cups crushed red pepper',{f:0}],
+ ['SERVING & CHAFING','Lemon slices (chef ticket)',{f:0}],
+ ['SERVING & CHAFING','Butter (wedding · on tickets)',{f:1}],
  ['COFFEE','Coffee (1 reg · 1 decaf)',{f:2}],
  ['COFFEE','Coffee urns w/ sternos',{f:2}],
+ ['COFFEE','Coffee makers',{f:0}],
+ ['COFFEE','Cream dispenser & sugar',{f:1}],
+ ['COFFEE','Regular/decaf signs + hot water',{f:1}],
+ ['COFFEE','Tea setup',{f:0}],
  ['BAR EQUIPMENT','Coolers of ice (water & bar)',{f:2}],
  ['BAR EQUIPMENT','Ice scoops',{f:4}],
  ['BAR EQUIPMENT','Wine openers',{f:4}],
+ ['BAR EQUIPMENT','Ice scoops (lemon ice)',{f:2}],
+ ['BAR EQUIPMENT','Cooler w/ soda & water (staff)',{f:1}],
  ['CARTS & TRANSPORT','Rolling racks',{f:2}],
  ['CARTS & TRANSPORT','Large black carts',{f:3}],
  ['CARTS & TRANSPORT','Bus tubs (clean-up)',{f:4}],
  ['CARTS & TRANSPORT','Mirrored bus covers',{f:4}],
  ['CARTS & TRANSPORT','Mesh baskets',{f:1}],
+ ['CARTS & TRANSPORT','Empty milk crates',{f:0}],
  ['CLEANING & MISC','Rags/towels',{f:10}],
  ['CLEANING & MISC','Garbage liners (roll)',{f:1}],
  ['CLEANING & MISC','Plastic roll to cover tables',{f:1}],
  ['CLEANING & MISC','Dish soap',{f:1}],
  ['CLEANING & MISC','Scrub pads',{f:1}],
- ['CLEANING & MISC','Lighters',{f:2}]
+ ['CLEANING & MISC','Garbage can (no wrap)',{f:1}],
+ ['CLEANING & MISC','Lighters',{f:2}],
+ ['KITCHEN & COOKING','Black aprons',{f:2}],
+ ['KITCHEN & COOKING','Small propane (full)',{f:0}],
+ ['KITCHEN & COOKING','Cast iron burners',{f:0}],
+ ['KITCHEN & COOKING','Small chest freezer',{f:0}],
+ ['KITCHEN & COOKING','Extension cord',{f:0}],
+ ['KITCHEN & COOKING','Electric hot boxes',{f:0}],
+ ['KITCHEN & COOKING','Hot dog cart w/ umbrella',{f:0}]
 ];
 const TK_MIXERS=[
  ['Coke (cases)',{cs:40}],['Diet Coke (cases)',{cs:70}],['Sprite (cases)',{cs:80}],['Bottled water (cases)',{cs:25}],
@@ -2005,7 +2043,23 @@ const TK_MIXERS=[
 ];
 let tk={data:null,evId:null,timer:null};
 function tkKey(){return 'ct_truck_ev_sched-'+wed.evId}
-function tkBlank(){return {guests:100,pkg:'std',toast:true,checks:{},ov:{},notes:'',at:0}}
+function tkMaster(){try{const r=JSON.parse(localStorage.getItem('ct_truck_master')||'null');return (r&&r.v)||null}catch(e){return null}}
+function tkBlank(){const m=tkMaster()||{};
+  return {guests:m.guests||100,pkg:m.pkg||'std',toast:m.toast!==undefined?m.toast:true,
+    checks:{},ov:{},renames:{...(m.renames||{})},hidden:{...(m.hidden||{})},notes:'',at:0}}
+function tkSaveMaster(){const d=tkLoad();
+  if(!confirm('Make THIS sheet the starting template for every NEW event?\n(Carries the item names, removed items, guest count, and bar choice — not the checkmarks.)'))return;
+  const m={guests:d.guests,pkg:d.pkg,toast:d.toast,renames:{...(d.renames||{})},hidden:{...(d.hidden||{})}};
+  const at=Date.now();
+  try{localStorage.setItem('ct_truck_master',JSON.stringify({v:m,at}))}catch(e){}
+  if(typeof kvPush==='function')kvPush('ct_truck_master',m,at);
+  alert('Saved — new events will start from this setup ✓')}
+async function tkPullMaster(){try{
+  const remote=await kvGet('ct_truck_master');
+  let localAt=0;try{localAt=(JSON.parse(localStorage.getItem('ct_truck_master')||'{}').at)||0}catch(e){}
+  if(remote&&remote.v&&(remote.at||0)>localAt)
+    localStorage.setItem('ct_truck_master',JSON.stringify({v:remote.v,at:remote.at}));
+}catch(e){}}
 function tkLoad(){
   if(tk.data&&tk.evId===wed.evId)return tk.data;
   tk.evId=wed.evId;
@@ -2081,13 +2135,22 @@ function tkRowHTML(it,d){
     <td class="tk-need"><input value="${esc(ch.need||'')}" onchange="tkNeed('${esc(it.key)}',this.value)"></td>
     <td class="tk-x"><button onclick="tkHide('${esc(it.key)}')" title="Remove from this event's list">✕</button></td>
   </tr>`}
+function tkCollapsed(){try{return JSON.parse(localStorage.getItem('ct_tk_collapse')||'{}')}catch(e){return{}}}
+function tkToggleSec(sec){const c=tkCollapsed();if(c[sec])delete c[sec];else c[sec]=1;
+  localStorage.setItem('ct_tk_collapse',JSON.stringify(c));renderViewport()}
+function tkGroupSecs(grp){const drinks=s=>s.startsWith('🍸')||s.startsWith('🥤');
+  return [...new Set(tkItems().map(i=>i.sec))].filter(s=>grp==='drinks'?drinks(s):!drinks(s))}
+function tkToggleGroup(grp){const c=tkCollapsed();const secs=tkGroupSecs(grp);
+  const anyOpen=secs.some(s=>!c[s]);
+  secs.forEach(s=>{if(anyOpen)c[s]=1;else delete c[s]});
+  localStorage.setItem('ct_tk_collapse',JSON.stringify(c));renderViewport()}
 function truckHTML(fe){
-  const d=tkLoad();const items=tkItems();
+  const d=tkLoad();const items=tkItems();const coll=tkCollapsed();
   let lastSec='',body='';
   items.forEach(it=>{
     if(it.sec!==lastSec){lastSec=it.sec;
-      body+=`<tr class="tk-sec"><td colspan="6">${esc(it.sec)}</td></tr>`}
-    body+=tkRowHTML(it,d)});
+      body+=`<tr class="tk-sec" onclick="tkToggleSec('${esc(it.sec)}')"><td colspan="6"><span class="tk-caret">${coll[it.sec]?'▸':'▾'}</span> ${esc(it.sec)}</td></tr>`}
+    if(!coll[it.sec])body+=tkRowHTML(it,d)});
   const tier=TK_TIERS[tkTierIdx(Math.max(1,+d.guests||1))];
   return `<div class="tk-wrap">
     <div class="tk-head">
@@ -2102,7 +2165,10 @@ function truckHTML(fe){
       <label class="tk-tog"><input type="checkbox" ${d.toast?'checked':''} onchange="tkSet('toast',this.checked)"> Champagne toast</label>
       <span class="tk-tier">using the ${tier}-guest sheet${(+d.guests>240)?' (scaled up)':''}</span>
       <span style="flex:1"></span>
+      <button class="wed-btn" onclick="tkToggleGroup('drinks')">🍸 Drinks ▾▸</button>
+      <button class="wed-btn" onclick="tkToggleGroup('equip')">📦 Equipment ▾▸</button>
       <button class="wed-btn" onclick="tkPrint()">🖨 Print</button>
+      <button class="wed-btn" onclick="tkSaveMaster()" title="New events start from this sheet's item names, removed items, guests & bar choice">💾 Set as default</button>
       <button class="wed-btn" onclick="tkResetChecks()">↺ Clear checks</button>
       ${Object.keys(d.hidden||{}).length?`<button class="wed-btn" onclick="tkRestoreHidden()">♻ Removed (${Object.keys(d.hidden||{}).length})</button>`:''}
     </div>
@@ -2139,7 +2205,7 @@ function tkPrint(){
     <div class="notes"><b>Changes or special requests:</b><br>${(d.notes||'').replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>
     </body></html>`);
   w.document.close();setTimeout(()=>{try{w.print()}catch(e){}},400)}
-function wedShowTruck(){wedFlush();wed.pane='truck';wed.sel=null;renderViewport();tkPull()}
+function wedShowTruck(){wedFlush();wed.pane='truck';wed.sel=null;renderViewport();tkPull();tkPullMaster()}
 const WED_FEED='https://restaurant-scheduler-hh5e.onrender.com/api/banquet-feed';
 const WED_W=1000,WED_H=700;
 let wed={data:null,cur:null,sel:null,scale:1,saveTimer:null,view:'list',evId:null,pane:'tpl',feed:null,feedErr:null,loading:false};
