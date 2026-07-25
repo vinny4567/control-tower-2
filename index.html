@@ -395,6 +395,9 @@
     .tk-table td{border-bottom:1px solid var(--border);padding:7px 10px}
     .tk-sec td{background:var(--surface);font-weight:800;color:var(--accent);font-size:14px;letter-spacing:.08em;padding:10px;cursor:pointer;user-select:none}
     .tk-sec:hover td{filter:brightness(1.2)}
+    .tk-drag{width:34px;text-align:center;cursor:grab;touch-action:none;color:var(--text-muted);font-size:16px;user-select:none;-webkit-user-select:none}
+    .tk-drag:active{cursor:grabbing;color:var(--accent)}
+    tr.tk-dragging{opacity:.55;background:var(--surface2)}
     .tk-add{float:right;background:transparent;border:1px solid var(--border);color:var(--text-dim);border-radius:6px;padding:3px 10px;font-size:11.5px;cursor:pointer;font-weight:700}
     .tk-add:hover{color:var(--accent);border-color:var(--accent)}
     .tk-caret{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border:1.5px solid var(--border);border-radius:5px;color:var(--accent);background:var(--surface2);margin-right:6px;font-size:11px}
@@ -2050,11 +2053,12 @@ function tkMaster(){try{const r=JSON.parse(localStorage.getItem('ct_truck_master
 function tkBlank(){const m=tkMaster()||{};
   return {guests:m.guests||100,pkg:m.pkg||'std',toast:m.toast!==undefined?m.toast:true,
     checks:{},ov:{},renames:{...(m.renames||{})},hidden:{...(m.hidden||{})},
-    custom:(m.custom||[]).map(c=>({...c})),notes:'',at:0}}
+    custom:(m.custom||[]).map(c=>({...c})),order:JSON.parse(JSON.stringify(m.order||{})),notes:'',at:0}}
 function tkSaveMaster(){const d=tkLoad();
   if(!confirm('Make THIS sheet the starting template for every NEW event?\n(Carries the item names, removed items, guest count, and bar choice — not the checkmarks.)'))return;
   const m={guests:d.guests,pkg:d.pkg,toast:d.toast,renames:{...(d.renames||{})},hidden:{...(d.hidden||{})},
-    custom:(d.custom||[]).map(c=>{const eff=(d.ov||{})['cu:'+c.id];return {...c,qty:(eff!=null&&eff!=='')?(+eff||0):(c.qty||0)}})};
+    custom:(d.custom||[]).map(c=>{const eff=(d.ov||{})['cu:'+c.id];return {...c,qty:(eff!=null&&eff!=='')?(+eff||0):(c.qty||0)}}),
+    order:JSON.parse(JSON.stringify(d.order||{}))};
   const at=Date.now();
   try{localStorage.setItem('ct_truck_master',JSON.stringify({v:m,at}))}catch(e){}
   if(typeof kvPush==='function')kvPush('ct_truck_master',m,at);
@@ -2095,7 +2099,13 @@ function tkEquipQty(rule,g,d){
 function tkItems(){
   const d=tkLoad();const g=Math.max(1,+d.guests||1);
   const out=[];
-  const finish=list=>list.filter(it=>!(d.hidden||{})[it.key]).map(it=>({...it,disp:(d.renames||{})[it.key]||it.label}));
+  const finish=list=>{
+    list=list.filter(it=>!(d.hidden||{})[it.key]).map(it=>({...it,disp:(d.renames||{})[it.key]||it.label}));
+    const ord=d.order||{};const idx=new Map(list.map((it,i)=>[it.key,i]));
+    return list.sort((a,b)=>{
+      if(a.sec!==b.sec)return idx.get(a.key)-idx.get(b.key);
+      const oa=(ord[a.sec]||[]).indexOf(a.key),ob=(ord[b.sec]||[]).indexOf(b.key);
+      return (oa<0?1e6+idx.get(a.key):oa)-(ob<0?1e6+idx.get(b.key):ob)});};
   const pkgName=d.pkg==='std'?'STANDARD BAR':d.pkg==='prem'?'PREMIUM BAR':'BEER & WINE BAR';
   (TK_BARS[d.pkg]||TK_BARS.std).forEach(row=>{
     out.push({sec:'🍸 '+row[6]+' — '+pkgName,key:'bar:'+row[0],label:row[0],auto:tkBarQty(row,g)})});
@@ -2156,7 +2166,8 @@ function tkRowHTML(it,d){
   const ov=d.ov[it.key];const q=(ov!=null&&ov!=='')?ov:it.auto;
   const ch=d.checks[it.key]||{};
   const renamed=!!(d.renames||{})[it.key];
-  return `<tr>
+  return `<tr data-key="${esc(it.key)}" data-sec="${esc(it.sec)}">
+    <td class="tk-drag" onpointerdown="tkDragStart(event)" title="Drag to reorder">≡</td>
     <td class="tk-qty"><input class="tk-ov ${ov!=null?'tk-oved':''}" value="${esc(String(q))}" onchange="tkOv('${esc(it.key)}',this.value===String(${JSON.stringify(String(it.auto))})?'':this.value)" title="Auto: ${esc(String(it.auto))} — type to override"></td>
     <td class="tk-item"><input class="tk-name ${renamed?'tk-renamed':''}" value="${esc(it.disp)}" onchange="tkRename('${esc(it.key)}',this.value===${JSON.stringify('')}?'':this.value)" title="Tap to edit the item name${renamed?' (edited — clear to restore: '+esc(it.label)+')':''}"></td>
     <td class="tk-c ${ch.ordered==='Y'?'on':''}" onclick="tkChk('${esc(it.key)}','ordered')">${ch.ordered==='Y'?'✔':''}</td>
@@ -2164,6 +2175,27 @@ function tkRowHTML(it,d){
     <td class="tk-need"><input value="${esc(ch.need||'')}" onchange="tkNeed('${esc(it.key)}',this.value)"></td>
     <td class="tk-x"><button onclick="${it.custom?`tkRemoveCustom('${esc(it.key)}')`:`tkHide('${esc(it.key)}')`}" title="${it.custom?'Delete this custom item':'Remove from this event\'s list'}">✕</button></td>
   </tr>`}
+let tkDragCtx=null;
+function tkDragStart(e){
+  e.preventDefault();
+  const tr=e.target.closest('tr');if(!tr||!tr.dataset.key)return;
+  tkDragCtx={tr,sec:tr.dataset.sec};
+  tr.classList.add('tk-dragging');
+  const move=ev=>{if(!tkDragCtx)return;ev.preventDefault();
+    const sec=tkDragCtx.sec,me=tkDragCtx.tr;
+    const rows=[...me.parentNode.querySelectorAll('tr[data-sec]')].filter(r=>r.dataset.sec===sec&&r!==me);
+    let placed=false;
+    for(const r of rows){const b=r.getBoundingClientRect();
+      if(ev.clientY<b.top+b.height/2){r.parentNode.insertBefore(me,r);placed=true;break}}
+    if(!placed&&rows.length){const last=rows[rows.length-1];last.parentNode.insertBefore(me,last.nextSibling)}};
+  const up=()=>{document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);document.removeEventListener('pointercancel',up);
+    if(!tkDragCtx)return;
+    const {tr:me,sec}=tkDragCtx;me.classList.remove('tk-dragging');
+    const keys=[...me.parentNode.querySelectorAll('tr[data-sec]')].filter(r=>r.dataset.sec===sec).map(r=>r.dataset.key);
+    const d=tkLoad();d.order=d.order||{};d.order[sec]=keys;tkStore();tkDragCtx=null};
+  document.addEventListener('pointermove',move);
+  document.addEventListener('pointerup',up);
+  document.addEventListener('pointercancel',up);}
 function tkRerender(){const sc=document.querySelector('.tk-scroll');const t=sc?sc.scrollTop:0;
   renderViewport();
   const sc2=document.querySelector('.tk-scroll');if(sc2&&t)sc2.scrollTop=t}
@@ -2186,7 +2218,7 @@ function truckHTML(fe){
   let lastSec='',body='';
   items.forEach(it=>{
     if(it.sec!==lastSec){lastSec=it.sec;
-      body+=`<tr class="tk-sec" onclick="tkToggleSec('${esc(it.sec)}')"><td colspan="6"><span class="tk-caret">${coll[it.sec]?'▸':'▾'}</span> ${esc(it.sec)}<button class="tk-add" onclick="event.stopPropagation();tkAddItem('${esc(it.sec)}')" title="Add an item to this category">＋ add item</button></td></tr>`}
+      body+=`<tr class="tk-sec" onclick="tkToggleSec('${esc(it.sec)}')"><td colspan="7"><span class="tk-caret">${coll[it.sec]?'▸':'▾'}</span> ${esc(it.sec)}<button class="tk-add" onclick="event.stopPropagation();tkAddItem('${esc(it.sec)}')" title="Add an item to this category">＋ add item</button></td></tr>`}
     if(!coll[it.sec])body+=tkRowHTML(it,d)});
   const tier=TK_TIERS[tkTierIdx(Math.max(1,+d.guests||1))];
   return `<div class="tk-wrap">
@@ -2211,7 +2243,7 @@ function truckHTML(fe){
     </div>
     <div class="tk-scroll">
       <table class="tk-table">
-        <thead><tr><th>Qty</th><th>Item</th><th>Ordered</th><th>On Truck</th><th>Still needed</th><th></th></tr></thead>
+        <thead><tr><th></th><th>Qty</th><th>Item</th><th>Ordered</th><th>On Truck</th><th>Still needed</th><th></th></tr></thead>
         <tbody>${body}</tbody>
       </table>
       <div class="tk-notes-wrap"><div class="tk-sec-label">CHANGES OR SPECIAL REQUESTS</div>
