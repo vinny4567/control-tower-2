@@ -1276,7 +1276,11 @@ function mailComposeNewHTML(){
 function mailNormSubj(x){x=String(x||'').toLowerCase().trim();while(/^(re|fw|fwd)\s*:/i.test(x))x=x.replace(/^(re|fw|fwd)\s*:\s*/i,'');return x.replace(/\s+/g,' ')||'(no subject)'}
 // One row per CONVERSATION: lists arrive newest-first, so the first message of a
 // subject keeps the row and later ones just bump its count (Gmail-style collapse).
+// Senders Vinny never wants to see (unsubscribe didn't take) — hidden from every
+// inbox list view. They still exist in Gmail/trash; this is display-level.
+const MAIL_BLOCKED_SENDERS=/pinterest/i;
 function mailGroupList(list){if(!Array.isArray(list))return list;
+  list=list.filter(m=>!MAIL_BLOCKED_SENDERS.test(String(m.from||'')+' '+String(m.fromAddr||'')));
   const seen=new Map(),out=[];
   for(const m of list){const k=mailNormSubj(m.subject);
     const g=seen.get(k);
@@ -1459,7 +1463,7 @@ async function mailSmartLoad(k){
     mailFetch('/mail/search?acct='+encodeURIComponent(a.id)+'&q='+encodeURIComponent(cfg.q))
       .then(r=>r.json()).then(d=>(d.messages||[]).map(m=>({...m,acctId:a.id,acctLabel:a.label}))).catch(()=>[])));
   if(!mailx.smartRes||mailx.smartRes.k!==k)return;
-  const rows=res.flat().sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,60);
+  const rows=mailGroupList(res.flat().sort((a,b)=>new Date(b.date)-new Date(a.date))).slice(0,60);
   mailx.smartRes={k,loading:false,rows,err:null};
   renderMailListRegion();}
 function mailSmartOpen(acctId,uid){
