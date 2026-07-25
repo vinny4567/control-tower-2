@@ -2164,11 +2164,12 @@ function tkResetChecks(){if(!confirm('Clear all the Ordered / On Truck checkmark
   const d=tkLoad();d.checks={};tkStore();tkRerender()}
 function tkRowHTML(it,d){
   const ov=d.ov[it.key];const q=(ov!=null&&ov!=='')?ov:it.auto;
+  const qd=(q===0||q==='0')?'':q;
   const ch=d.checks[it.key]||{};
   const renamed=!!(d.renames||{})[it.key];
   return `<tr data-key="${esc(it.key)}" data-sec="${esc(it.sec)}">
     <td class="tk-drag" onpointerdown="tkDragStart(event)" title="Drag to reorder">≡</td>
-    <td class="tk-qty"><input class="tk-ov ${ov!=null?'tk-oved':''}" value="${esc(String(q))}" onfocus="this.select()" onchange="tkOv('${esc(it.key)}',this.value===String(${JSON.stringify(String(it.auto))})?'':this.value)" title="Auto: ${esc(String(it.auto))} — type to override"></td>
+    <td class="tk-qty"><input class="tk-ov ${ov!=null?'tk-oved':''}" value="${esc(String(qd))}" onfocus="this.select()" onchange="tkOv('${esc(it.key)}',this.value===String(${JSON.stringify(String(it.auto))})?'':this.value)" title="Auto: ${esc(String(it.auto))} — type to override"></td>
     <td class="tk-item"><input class="tk-name ${renamed?'tk-renamed':''}" value="${esc(it.disp)}" onchange="tkRename('${esc(it.key)}',this.value===${JSON.stringify('')}?'':this.value)" title="Tap to edit the item name${renamed?' (edited — clear to restore: '+esc(it.label)+')':''}"></td>
     <td class="tk-c ${ch.ordered==='Y'?'on':''}" onclick="tkChk('${esc(it.key)}','ordered')">${ch.ordered==='Y'?'✔':''}</td>
     <td class="tk-c ${ch.truck==='Y'?'on':''}" onclick="tkChk('${esc(it.key)}','truck')">${ch.truck==='Y'?'✔':''}</td>
@@ -2259,7 +2260,7 @@ function tkPrint(){
     if(!q&&q!==0)return rows+=(it.sec!==lastSec?((lastSec=it.sec),`<tr><td colspan="5" class="sec">${it.sec}</td></tr>`):'')+
       `<tr><td></td><td>${it.disp||it.label}</td><td>${ch.ordered||''}</td><td>${ch.truck||''}</td><td>${ch.need||''}</td></tr>`;
     if(it.sec!==lastSec){lastSec=it.sec;rows+=`<tr><td colspan="5" class="sec">${it.sec}</td></tr>`}
-    rows+=`<tr><td class="q">${q}</td><td>${it.disp||it.label}</td><td>${ch.ordered||''}</td><td>${ch.truck||''}</td><td>${ch.need||''}</td></tr>`});
+    rows+=`<tr><td class="q">${(q===0||q==='0')?'':q}</td><td>${it.disp||it.label}</td><td>${ch.ordered||''}</td><td>${ch.truck||''}</td><td>${ch.need||''}</td></tr>`});
   const w=window.open('','_blank');
   w.document.write(`<html><head><title>Truck Packing — ${fe?fe.label:''}</title><style>
     body{font-family:-apple-system,Helvetica,sans-serif;color:#000;font-size:11px;margin:24px}
