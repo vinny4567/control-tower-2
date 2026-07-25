@@ -2141,9 +2141,14 @@ function tkToggleSec(sec){const c=tkCollapsed();if(c[sec])delete c[sec];else c[s
   localStorage.setItem('ct_tk_collapse',JSON.stringify(c));renderViewport()}
 function tkGroupSecs(grp){const drinks=s=>s.startsWith('🍸')||s.startsWith('🥤');
   return [...new Set(tkItems().map(i=>i.sec))].filter(s=>grp==='drinks'?drinks(s):!drinks(s))}
-function tkToggleGroup(grp){const c=tkCollapsed();const secs=tkGroupSecs(grp);
-  const anyOpen=secs.some(s=>!c[s]);
-  secs.forEach(s=>{if(anyOpen)c[s]=1;else delete c[s]});
+function tkToggleGroup(grp){
+  // Focus mode: show THIS group's sections, fold the other group away.
+  // Pressing the same button again reopens everything.
+  const c=tkCollapsed();
+  const mine=tkGroupSecs(grp),others=tkGroupSecs(grp==='drinks'?'equip':'drinks');
+  const focused=mine.every(s=>!c[s])&&others.every(s=>c[s]);
+  if(focused){mine.concat(others).forEach(s=>delete c[s]);}
+  else{mine.forEach(s=>delete c[s]);others.forEach(s=>c[s]=1);}
   localStorage.setItem('ct_tk_collapse',JSON.stringify(c));renderViewport()}
 function truckHTML(fe){
   const d=tkLoad();const items=tkItems();const coll=tkCollapsed();
@@ -2166,8 +2171,8 @@ function truckHTML(fe){
       <label class="tk-tog"><input type="checkbox" ${d.toast?'checked':''} onchange="tkSet('toast',this.checked)"> Champagne toast</label>
       <span class="tk-tier">using the ${tier}-guest sheet${(+d.guests>240)?' (scaled up)':''}</span>
       <span style="flex:1"></span>
-      <button class="wed-btn" onclick="tkToggleGroup('drinks')">🍸 Drinks ▾▸</button>
-      <button class="wed-btn" onclick="tkToggleGroup('equip')">📦 Equipment ▾▸</button>
+      <button class="wed-btn" onclick="tkToggleGroup('drinks')">🍸 Liquor</button>
+      <button class="wed-btn" onclick="tkToggleGroup('equip')">📦 Equipment</button>
       <button class="wed-btn" onclick="tkPrint()">🖨 Print</button>
       <button class="wed-btn" onclick="tkSaveMaster()" title="New events start from this sheet's item names, removed items, guests & bar choice">💾 Set as default</button>
       <button class="wed-btn" onclick="tkResetChecks()">↺ Clear checks</button>
