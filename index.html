@@ -2244,13 +2244,10 @@ function tkToggleSec(sec){const c=tkCollapsed();if(c[sec])delete c[sec];else c[s
 function tkGroupSecs(grp){const drinks=s=>s.startsWith('🍸')||s.startsWith('🥤');
   return [...new Set(tkItems().map(i=>i.sec))].filter(s=>grp==='drinks'?drinks(s):!drinks(s))}
 function tkToggleGroup(grp){
-  // Focus mode: show THIS group's sections, fold the other group away.
-  // Pressing the same button again reopens everything.
-  const c=tkCollapsed();
-  const mine=tkGroupSecs(grp),others=tkGroupSecs(grp==='drinks'?'equip':'drinks');
-  const focused=mine.every(s=>!c[s])&&others.every(s=>c[s]);
-  if(focused){mine.concat(others).forEach(s=>delete c[s]);}
-  else{mine.forEach(s=>delete c[s]);others.forEach(s=>c[s]=1);}
+  // Independent: this button opens or collapses ONLY its own group's sections.
+  const c=tkCollapsed();const mine=tkGroupSecs(grp);
+  const anyOpen=mine.some(s=>!c[s]);
+  mine.forEach(s=>{if(anyOpen)c[s]=1;else delete c[s]});
   localStorage.setItem('ct_tk_collapse',JSON.stringify(c));tkRerender()}
 function truckHTML(fe){
   const d=tkLoad();const items=tkItems();const coll=tkCollapsed();
