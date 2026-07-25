@@ -380,6 +380,31 @@
     .docs-empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:14px;text-align:center;padding:30px;line-height:1.6}
     @media(max-width:720px){.docs-side{width:140px}.docs-editor{padding:26px 20px}.docs-toolbar{gap:3px}}
     .gmail-thread-count{display:inline-block;background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:9px;padding:0 7px;font-size:10.5px;margin-left:6px;vertical-align:1px}
+    /* Truck packing tool */
+    .tk-wrap{display:flex;flex-direction:column;height:100%;overflow:hidden}
+    .tk-head{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:10px 14px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0;font-size:13px}
+    .tk-title{font-weight:800;font-size:15px;color:var(--accent)}
+    .tk-head label{display:flex;align-items:center;gap:6px;color:var(--text-dim)}
+    .tk-in{background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 8px;font-size:13px;width:auto}
+    .tk-head input[type=number]{width:70px}
+    .tk-tog{font-size:12px}
+    .tk-tier{font-size:11px;color:var(--text-muted)}
+    .tk-scroll{flex:1;overflow-y:auto;padding:14px}
+    .tk-table{width:100%;border-collapse:collapse;font-size:13px;max-width:900px}
+    .tk-table th{position:sticky;top:-14px;background:var(--surface);color:var(--text-dim);text-align:left;padding:7px 8px;border-bottom:1px solid var(--border);font-size:11px;letter-spacing:.05em}
+    .tk-table td{border-bottom:1px solid var(--border);padding:4px 8px}
+    .tk-sec td{background:var(--surface);font-weight:800;color:var(--accent);font-size:11.5px;letter-spacing:.08em;padding:8px}
+    .tk-qty{width:74px}
+    .tk-ov{width:64px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 6px;font-size:13px;font-weight:700;text-align:right}
+    .tk-ov.tk-oved{border-color:var(--accent);color:var(--accent)}
+    .tk-item{color:var(--text)}
+    .tk-c{width:64px;text-align:center;cursor:pointer;color:var(--text-muted);font-size:15px;user-select:none}
+    .tk-c.on{color:#2ecc71;font-weight:800}
+    .tk-need{width:130px}
+    .tk-need input{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 6px;font-size:12px;box-sizing:border-box}
+    .tk-notes-wrap{max-width:900px;margin-top:16px}
+    .tk-sec-label{font-weight:800;color:var(--accent);font-size:11.5px;letter-spacing:.08em;margin-bottom:6px}
+    .tk-notes{width:100%;min-height:90px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:10px;padding:10px;font-size:13px;font-family:inherit;box-sizing:border-box}
     /* Liquor portals launcher */
     .liq-wrap{padding:26px;max-width:1100px;margin:0 auto}
     .liq-head{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:20px}
@@ -1766,6 +1791,195 @@ function liqHTML(){const list=liqLoad();
     </div>
     <div class="liq-tip">💡 Tip: the Liquor Inventory sheet's Supplier column tells you which portal carries each item.</div>
   </div>`}
+// ── TRUCK PACKING — master packing template per event ───────────────────────────
+// Digitized straight from the binder: Standard / Premium / Beer&Wine bar sheets at
+// 80/120/160/200/240 guests (values verbatim, incl. quirks), plus equipment rules
+// derived from the Crawford 7/25 sheet. Pick guests+package → the sheet fills
+// itself; every quantity has an override box; Ordered / On Truck / Still Needed
+// columns mirror the paper binder. Per-event state syncs across devices.
+const TK_TIERS=[80,120,160,200,240];
+const TK_BARS={
+ std:[
+  ['Absolut',5,7,8,10,14],['Beefeater Gin',2,2,3,4,5],['Dewars Scotch',2,3,4,6,6],
+  ['Jack Daniels',3,5,6,6,8],['Bacardi Rum',3,4,5,6,8],['Jose Cuervo Gold',2,1,2,2,2],
+  ['Seagrams 7',2,2,4,3,3],['Christian Bros Brandy',1,1,2,2,2],['Amaretto',1,2,2,2,2],
+  ['Chardonnay',8,12,12,24,24],['Pinot Grigio',8,12,12,24,24],['White Zinfandel',4,6,6,12,12],
+  ['Cabernet',8,2,12,24,24],['Pinot Noir',8,12,12,24,24],['Prosecco',8,12,12,16,16],
+  ['Sweet Vermouth',1,1,1,2,2],['Dry Vermouth',1,1,1,2,2],
+  ['Miller Lite',3,4,4,8,10],['Seasonal Selection',1,1,1,3,3],['Sam Adams',1,1,1,3,4],['Stella',3,4,4,7,9],
+  ['Non-Alcoholic','6 btls','6 btls','6 btls','6 btls','6 btls'],
+  ['Lemons',2,4,4,8,9],['Limes',2,4,4,8,9],['Cherries',1,1,1,2,2],['Olives',1,1,1,2,2],
+  ['Grenadine',1,1,1,2,2],['Lime Juice','','','','',''],['Sweet & Sour','','','','',''],['Bloody Mary','','','','','']],
+ prem:[
+  ['Absolut',3,5,6,8,10],['Grey Goose',3,5,6,8,10],['Tanqueray',2,3,3,4,5],
+  ['Dewars Scotch',2,3,3,4,6],['Glenlivet Scotch',2,3,3,4,6],['Christian Bros Brandy',2,2,2,2,2],
+  ['Crown Royal',2,3,3,4,5],['Jack Daniels',3,5,6,6,8],['Captain Morgan',3,4,5,5,6],
+  ['Bacardi Rum',3,4,5,6,6],['Jose Cuervo Gold',1,1,2,2,2],
+  ['Baileys',1,1,2,2,3],['Kahlua',1,1,2,2,3],['Frangelico',1,1,1,2,2],['Disaronno Amaretto',1,1,1,2,2],
+  ['Prosecco',8,12,12,16,16],['Sweet Vermouth',1,1,1,2,2],['Dry Vermouth',1,1,1,2,2],
+  ['Chardonnay',8,12,16,24,24],['Pinot Grigio',8,12,16,24,24],['White Zinfandel',4,6,10,12,12],
+  ['Cabernet',8,12,16,24,24],['Pinot Noir',8,12,16,24,24],
+  ['Miller Lite',3,4,6,8,10],['Seasonal Selection',1,1,2,2,3],['Sam Adams',1,1,2,4,3],['Stella',3,4,6,8,10],
+  ['Non-Alcoholic','6 btls','6 btls','6 btls','6 btls','6 btls'],
+  ['Lemons',2,4,5,8,9],['Limes',2,4,5,8,9],['Cherries',1,1,1,2,2],['Olives',1,1,1,2,2],
+  ['Grenadine',1,1,1,2,2],['Lime Juice',1,1,1,'',''],['Sweet & Sour',1,2,'','',''],['Bloody Mary',1,2,'','','']],
+ bw:[
+  ['Miller Lite',4,4,5,5,9],['Seasonal Selection',2,2,3,4,4],['Sam Adams',2,3,3,4,4],['Stella',2,1,2,2,2],
+  ['Non-Alcoholic','6 btls','6 btls','6 btls','6 btls','6 btls'],
+  ['Chardonnay',12,18,24,30,36],['Pinot Grigio',12,18,24,30,36],['White Zinfandel',6,12,12,24,34],
+  ['Cabernet',12,18,24,30,36],['Pinot Noir',12,18,24,30,36],
+  ['Lemons',1,1,1,1,1],['Limes',1,'','','',''],['Cherries',1,'','','',''],['Grenadine',1,'','','','']]
+};
+// Equipment defaults: ratios anchored to the Crawford 7/25 sheet (~50 guests).
+// c = per-guest multiplier · f = flat count. Everything is overridable on screen.
+const TK_EQUIP=[
+ ['App plates',{c:1}],['B&B plates',{c:2}],['Dinner plates',{c:1,plus:10}],['Salad plates',{c:1}],
+ ['Forks',{c:2}],['Knives',{c:1}],['Spoons',{c:2}],
+ ['Water glasses',{c:1}],['Wine glasses',{c:1}],['Highball glasses',{c:1.5}],
+ ['Champagne glasses',{c:1,toast:true}],
+ ['Cloth napkins w/ trays',{c:0.5}],['Bar napkins',{c:20}],['Small black forks/picks',{c:4}],
+ ['Bread baskets (our bread)',{c:0.125}],['Water carafes',{c:0.125}],['Salt & pepper sets',{c:0.2}],
+ ['Chafers',{f:6}],['4-hr sternos',{f:12}],['6-hr sternos (coffee)',{f:3}],
+ ['Large serving trays',{f:4}],['Silver trays',{f:4}],['Small trays (apps/cleanup)',{f:2}],
+ ['Jack stands',{f:4}],['Rolling racks',{f:2}],['Bus tubs (clean-up)',{f:4}],['Mirrored bus covers',{f:4}],
+ ['Coolers of ice (water & bar)',{f:2}],['Ice scoops',{f:4}],['Wine openers',{f:4}],
+ ['Family style tongs',{f:20}],['Family style spoons',{f:20}],['Little tongs for butter',{f:5}],
+ ['Coffee (1 reg · 1 decaf)',{f:2}],['Coffee urns w/ sternos',{f:2}],
+ ['52x114 tablecloths',{f:2}],['52x52 white linens',{f:4}],['Angelis linen bag',{f:1}],
+ ['Rags/towels',{f:10}],['Garbage liners (roll)',{f:1}],['Plastic roll to cover tables',{f:1}],
+ ['Half pans w/ lids',{f:6}],['Large black carts',{f:3}],['Squeeze bottles for dressing',{f:3}],
+ ['Ground pepper mill',{f:1}],['Lighters',{f:2}],['Dish soap',{f:1}],['Scrub pads',{f:1}],
+ ['Mesh baskets',{f:1}],['Cake knife & spatula',{f:1}]
+];
+const TK_MIXERS=[
+ ['Coke (cases)',{cs:40}],['Diet Coke (cases)',{cs:70}],['Sprite (cases)',{cs:80}],['Bottled water (cases)',{cs:25}],
+ ['Orange juice (case)',{f:1}],['Grapefruit juice (case)',{f:1}],['Cranberry juice (case)',{f:1}],
+ ['Pineapple juice',{f:1}],['Soda water',{f:1}],['Tonic water',{f:1}],
+ ['Sweet & sour mix',{cs:20}],['Bloody Mary mix',{f:2}],['Lime juice',{f:2}]
+];
+let tk={data:null,evId:null,timer:null};
+function tkKey(){return 'ct_truck_ev_sched-'+wed.evId}
+function tkBlank(){return {guests:100,pkg:'std',toast:true,checks:{},ov:{},notes:'',at:0}}
+function tkLoad(){
+  if(tk.data&&tk.evId===wed.evId)return tk.data;
+  tk.evId=wed.evId;
+  try{const r=JSON.parse(localStorage.getItem(tkKey())||'null');tk.data=(r&&r.v)||tkBlank()}catch(e){tk.data=tkBlank()}
+  return tk.data}
+function tkStore(){const d=tkLoad();d.at=Date.now();
+  try{localStorage.setItem(tkKey(),JSON.stringify({v:d,at:d.at}))}catch(e){}
+  clearTimeout(tk.timer);
+  tk.timer=setTimeout(()=>{if(typeof kvPush==='function')kvPush(tkKey(),d,d.at)},1200)}
+async function tkPull(){try{
+  const remote=await kvGet(tkKey());
+  let localAt=0;try{localAt=(JSON.parse(localStorage.getItem(tkKey())||'{}').at)||0}catch(e){}
+  if(remote&&remote.v&&(remote.at||0)>localAt){tk.data=remote.v;tk.evId=wed.evId;
+    try{localStorage.setItem(tkKey(),JSON.stringify({v:remote.v,at:remote.at}))}catch(e){}
+    if(activeTab===WED&&wed.pane==='truck')renderViewport()}
+}catch(e){}}
+function tkTierIdx(g){for(let i=0;i<TK_TIERS.length;i++)if(g<=TK_TIERS[i])return i;return TK_TIERS.length-1}
+function tkBarQty(row,g){
+  const i=tkTierIdx(g);let q=row[1+i];
+  if(g>240&&typeof q==='number')q=Math.ceil(q*g/240);
+  return q}
+function tkEquipQty(rule,g,d){
+  if(rule.toast&&!d.toast)return 0;
+  if(rule.cs)return Math.ceil(g/rule.cs);
+  let q=rule.f!=null?rule.f:Math.ceil((rule.c||0)*g);
+  if(rule.plus)q+=rule.plus;
+  return q}
+function tkItems(){
+  const d=tkLoad();const g=Math.max(1,+d.guests||1);
+  const out=[];
+  (TK_BARS[d.pkg]||TK_BARS.std).forEach(row=>out.push({sec:'BAR — '+(d.pkg==='std'?'Standard':d.pkg==='prem'?'Premium':'Beer & Wine'),key:'bar:'+row[0],label:row[0],auto:tkBarQty(row,g)}));
+  TK_MIXERS.forEach(([label,rule])=>out.push({sec:'MIXERS & SODA',key:'mix:'+label,label,auto:tkEquipQty(rule,g,d)}));
+  TK_EQUIP.forEach(([label,rule])=>out.push({sec:'EQUIPMENT & SMALLWARES',key:'eq:'+label,label,auto:tkEquipQty(rule,g,d)}));
+  return out}
+function tkSet(field,val){const d=tkLoad();
+  if(field==='guests')d.guests=Math.max(1,parseInt(val)||1);
+  else if(field==='pkg')d.pkg=val;
+  else if(field==='toast')d.toast=!!val;
+  else if(field==='notes')d.notes=val;
+  tkStore();if(field!=='notes')renderViewport()}
+function tkOv(key,val){const d=tkLoad();
+  const t=String(val).trim();
+  if(t==='')delete d.ov[key];else d.ov[key]=t;
+  tkStore()}
+function tkChk(key,col){const d=tkLoad();
+  d.checks[key]=d.checks[key]||{};
+  d.checks[key][col]=d.checks[key][col]==='Y'?'':'Y';
+  tkStore();renderViewport()}
+function tkNeed(key,val){const d=tkLoad();
+  d.checks[key]=d.checks[key]||{};d.checks[key].need=val;tkStore()}
+function tkResetChecks(){if(!confirm('Clear all the Ordered / On Truck checkmarks for this event?'))return;
+  const d=tkLoad();d.checks={};tkStore();renderViewport()}
+function tkRowHTML(it,d){
+  const ov=d.ov[it.key];const q=(ov!=null&&ov!=='')?ov:it.auto;
+  const ch=d.checks[it.key]||{};
+  return `<tr>
+    <td class="tk-qty"><input class="tk-ov ${ov!=null?'tk-oved':''}" value="${esc(String(q))}" onchange="tkOv('${esc(it.key)}',this.value===String(${JSON.stringify(String(it.auto))})?'':this.value)" title="Auto: ${esc(String(it.auto))} — type to override"></td>
+    <td class="tk-item">${esc(it.label)}</td>
+    <td class="tk-c ${ch.ordered==='Y'?'on':''}" onclick="tkChk('${esc(it.key)}','ordered')">${ch.ordered==='Y'?'✔':''}</td>
+    <td class="tk-c ${ch.truck==='Y'?'on':''}" onclick="tkChk('${esc(it.key)}','truck')">${ch.truck==='Y'?'✔':''}</td>
+    <td class="tk-need"><input value="${esc(ch.need||'')}" onchange="tkNeed('${esc(it.key)}',this.value)"></td>
+  </tr>`}
+function truckHTML(fe){
+  const d=tkLoad();const items=tkItems();
+  let lastSec='',body='';
+  items.forEach(it=>{
+    if(it.sec!==lastSec){lastSec=it.sec;
+      body+=`<tr class="tk-sec"><td colspan="5">${esc(it.sec)}</td></tr>`}
+    body+=tkRowHTML(it,d)});
+  const tier=TK_TIERS[tkTierIdx(Math.max(1,+d.guests||1))];
+  return `<div class="tk-wrap">
+    <div class="tk-head">
+      <span class="tk-title">🚚 Truck Packing — ${esc(wedName(fe))}</span>
+      <label>Guests <input type="number" min="1" class="tk-in" value="${esc(String(d.guests))}" onchange="tkSet('guests',this.value)"></label>
+      <label>Bar
+        <select class="tk-in" onchange="tkSet('pkg',this.value)">
+          <option value="bw" ${d.pkg==='bw'?'selected':''}>Beer &amp; Wine</option>
+          <option value="std" ${d.pkg==='std'?'selected':''}>Standard</option>
+          <option value="prem" ${d.pkg==='prem'?'selected':''}>Premium</option>
+        </select></label>
+      <label class="tk-tog"><input type="checkbox" ${d.toast?'checked':''} onchange="tkSet('toast',this.checked)"> Champagne toast</label>
+      <span class="tk-tier">using the ${tier}-guest sheet${(+d.guests>240)?' (scaled up)':''}</span>
+      <span style="flex:1"></span>
+      <button class="wed-btn" onclick="tkPrint()">🖨 Print</button>
+      <button class="wed-btn" onclick="tkResetChecks()">↺ Clear checks</button>
+    </div>
+    <div class="tk-scroll">
+      <table class="tk-table">
+        <thead><tr><th>Qty</th><th>Item</th><th>Ordered</th><th>On Truck</th><th>Still needed</th></tr></thead>
+        <tbody>${body}</tbody>
+      </table>
+      <div class="tk-notes-wrap"><div class="tk-sec-label">CHANGES OR SPECIAL REQUESTS</div>
+      <textarea class="tk-notes" oninput="tkSet('notes',this.value)" placeholder="Anything special for this event…">${esc(d.notes||'')}</textarea></div>
+    </div>
+  </div>`}
+function tkPrint(){
+  const fe=wedFeedEvent(wed.evId);const d=tkLoad();const items=tkItems();
+  let lastSec='',rows='';
+  items.forEach(it=>{
+    const ov=d.ov[it.key];const q=(ov!=null&&ov!=='')?ov:it.auto;
+    const ch=d.checks[it.key]||{};
+    if(!q&&q!==0)return rows+=(it.sec!==lastSec?((lastSec=it.sec),`<tr><td colspan="5" class="sec">${it.sec}</td></tr>`):'')+
+      `<tr><td></td><td>${it.label}</td><td>${ch.ordered||''}</td><td>${ch.truck||''}</td><td>${ch.need||''}</td></tr>`;
+    if(it.sec!==lastSec){lastSec=it.sec;rows+=`<tr><td colspan="5" class="sec">${it.sec}</td></tr>`}
+    rows+=`<tr><td class="q">${q}</td><td>${it.label}</td><td>${ch.ordered||''}</td><td>${ch.truck||''}</td><td>${ch.need||''}</td></tr>`});
+  const w=window.open('','_blank');
+  w.document.write(`<html><head><title>Truck Packing — ${fe?fe.label:''}</title><style>
+    body{font-family:-apple-system,Helvetica,sans-serif;color:#000;font-size:11px;margin:24px}
+    h1{font-size:16px;margin:0 0 2px}.meta{font-size:11px;margin-bottom:10px}
+    table{width:100%;border-collapse:collapse}td,th{border:1px solid #000;padding:3px 6px;text-align:left}
+    th{background:#eee}.sec{font-weight:800;background:#f2f2f2;letter-spacing:.5px}
+    .q{font-weight:700;text-align:right;width:40px}
+    .notes{margin-top:12px;border:1px solid #000;min-height:60px;padding:6px}</style></head><body>
+    <h1>Truck Packing — ${fe?fe.label:''}</h1>
+    <div class="meta">${fe?fe.date:''} · ${d.guests} guests · ${d.pkg==='std'?'Standard':d.pkg==='prem'?'Premium':'Beer & Wine'} bar${d.toast?' · champagne toast':''}</div>
+    <table><tr><th style="width:40px">Qty</th><th>Item</th><th style="width:60px">Ordered</th><th style="width:60px">On Truck</th><th style="width:110px">Still needed</th></tr>${rows}</table>
+    <div class="notes"><b>Changes or special requests:</b><br>${(d.notes||'').replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div>
+    </body></html>`);
+  w.document.close();setTimeout(()=>{try{w.print()}catch(e){}},400)}
+function wedShowTruck(){wedFlush();wed.pane='truck';wed.sel=null;renderViewport();tkPull()}
 const WED_FEED='https://restaurant-scheduler-hh5e.onrender.com/api/banquet-feed';
 const WED_W=1000,WED_H=700;
 let wed={data:null,cur:null,sel:null,scale:1,saveTimer:null,view:'list',evId:null,pane:'tpl',feed:null,feedErr:null,loading:false};
@@ -2194,6 +2408,7 @@ function wedEventHTML(){const fe=wedFeedEvent(wed.evId);if(!fe){wed.view='list';
         <button class="wed-side-btn ${wed.pane==='tpl'?'active':''}" onclick="wedShowTpl()">📋 <span>Wedding Template<span class="sub">this event's copy · autosaves</span></span></button>
         <button class="wed-side-btn ${wed.pane==='catering'?'active':''}" onclick="wedShowCatering()">🍽 <span>Catering Template<span class="sub">this event's copy · autosaves</span></span></button>
         <button class="wed-side-btn ${wed.pane==='docs'?'active':''}" onclick="wedShowDocs()">📝 <span>Docs<span class="sub">this event's documents &amp; files</span></span></button>
+        <button class="wed-side-btn ${wed.pane==='truck'?'active':''}" onclick="wedShowTruck()">🚚 <span>Truck Packing<span class="sub">auto packing list by guests &amp; bar</span></span></button>
         <button class="wed-side-btn ${wed.pane==='mail'?'active':''}" onclick="wedShowMail()">📧 <span>Customer Emails<span class="sub">${wedCustMail(fe)?esc(wedCustMail(fe)):'link the customer’s email'}</span></span></button>
         <button class="wed-side-btn ${wed.pane==='sched'?'active':''}" onclick="wedShowSched()">📅 <span>Day Schedule<span class="sub">who's working ${esc(wedPrettyDate(fe.date))}</span></span></button>
       </div>
@@ -2203,6 +2418,8 @@ function wedEventHTML(){const fe=wedFeedEvent(wed.evId);if(!fe){wed.view='list';
         ?`<div class="wed-main"><iframe src="https://order.angeliscatering.com/catering-notes.html?event=sched-${fe.id}&name=${encodeURIComponent(fe.label)}" allow="storage-access fullscreen"></iframe></div>`
         :wed.pane==='docs'
         ?`<div class="wed-main wed-main-col">${(docsSetNS('ct_docs_ev_sched-'+fe.id),docsHTML())}</div>`
+        :wed.pane==='truck'
+        ?`<div class="wed-main wed-main-col">${truckHTML(fe)}</div>`
         :wed.pane==='mail'
         ?wedMailPaneHTML(fe)
         :wed.pane==='sched'
