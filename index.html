@@ -1115,7 +1115,7 @@ async function mailLoadUnseen(acctId){
       if(activeTab===MAIL)renderViewport()}
   }catch(e){}}
 if(!window._mailLabTick)window._mailLabTick=setInterval(()=>{if(activeTab===MAIL&&mailx.acct)mailLoadUnseen(mailx.acct)},60000);
-function switchMailFolder(f){if(f===mailx.folder)return;mailx.folder=f;mailx.limit=50;mailx.selUid=null;mailx.selMsg=null;mailx.composing=false;mailx.composeNew=false;mailx.search='';mailx.searchResults=null;mailx.searching=false;mailx.error=null;renderViewport();loadMailList();}
+function switchMailFolder(f){if(f===mailx.folder&&!mailx.smart)return;mailx.smart=null;mailx.smartRes=null;mailx.folder=f;mailx.limit=50;mailx.selUid=null;mailx.selMsg=null;mailx.composing=false;mailx.composeNew=false;mailx.search='';mailx.searchResults=null;mailx.searching=false;mailx.error=null;renderViewport();loadMailList();}
 function mailKey(){return localStorage.getItem('ct_mail_key')||''}
 function setMailKey(){const k=prompt('Paste the Email access key (MAIL_TOKEN value from Render):');if(k&&k.trim()){localStorage.setItem('ct_mail_key',k.trim());mailx.accts=null;mailx.error=null;loadMailAccounts();}}
 async function mailFetch(path,opts){const sep=path.includes('?')?'&':'?';const r=await fetch(MAIL_BASE+path+sep+'key='+encodeURIComponent(mailKey()),opts);if(r.status===401)throw new Error('unauth');return r;}
@@ -1158,7 +1158,7 @@ async function loadMailList(force){
   catch(e){mailx.loadingList=false;mailx.error=e.message==='unauth'?'Access key rejected':'Could not reach that inbox — '+String(e.message||e);}
   if(activeTab===MAIL)renderViewport();
 }
-function switchMailAcct(id){if(id===mailx.acct)return;mailx.acct=id;mailx.folder='inbox';mailx.limit=50;mailx.selUid=null;mailx.selMsg=null;mailx.composing=false;mailx.composeNew=false;mailx.search='';mailx.searchResults=null;mailx.searching=false;mailx.error=null;renderViewport();loadMailList();}
+function switchMailAcct(id){if(id===mailx.acct&&!mailx.smart)return;mailx.smart=null;mailx.smartRes=null;mailx.acct=id;mailx.folder='inbox';mailx.limit=50;mailx.selUid=null;mailx.selMsg=null;mailx.composing=false;mailx.composeNew=false;mailx.search='';mailx.searchResults=null;mailx.searching=false;mailx.error=null;renderViewport();loadMailList();}
 function mailLoadMore(){mailx.limit=Math.min(300,(mailx.limit||50)+50);loadMailList(true);}
 let mailThreadCache={}; // acct|folder|uid -> thread, for the session — reopening an email is instant
 // Pre-download the top unread messages (peek=1 → stays unread) so tapping a NEW email is instant.
@@ -1443,6 +1443,30 @@ function mailHTML(){
   const detail=mailx.composeNew?mailComposeNewHTML():mailx.selMsg?mailDetailHTML():mailx.loadingMsg?'<div class="gmail-loading">Loading email…</div>':'<div class="gmail-empty-detail">Select an email to read</div>';
   return `<div class="mail-wrap"><div class="gmail-mailbox"><div class="gmail-2pane"><div class="gmail-list-pane">${actionbar}${subtabs}<div id="mail-list-region" class="mail-list-region">${mailListHTML(true)}</div></div><div class="gmail-detail-pane">${detail}</div></div></div></div>`;
 }
+// ── Smart folders: Weddings / Catering — keyword matches across ALL accounts, newest first ──
+const MAIL_SMART={wedding:{label:'💍 Weddings',q:'wedding'},catering:{label:'🍱 Catering',q:'catering'}};
+function mailShowSmart(k){if(mailx.smart===k){mailClearSmart();return}mailx.smart=k;mailx.selUid=null;mailx.selMsg=null;mailx.selThread=null;mailx.composing=false;mailx.composeNew=false;renderViewport();mailSmartLoad(k);}
+function mailClearSmart(){mailx.smart=null;mailx.smartRes=null;renderViewport();}
+async function mailSmartLoad(k){
+  const cfg=MAIL_SMART[k];if(!cfg)return;
+  mailx.smartRes={k,loading:true,rows:[],err:null};renderMailListRegion();
+  let accts=Array.isArray(mailx.accts)?mailx.accts:(mailSnapGet&&mailSnapGet('accounts'))||[];
+  if(!accts.length){try{const r=await mailFetch('/mail/accounts');const d=await r.json();accts=d.accounts||[]}catch(e){}}
+  const res=await Promise.all(accts.map(a=>
+    mailFetch('/mail/search?acct='+encodeURIComponent(a.id)+'&q='+encodeURIComponent(cfg.q))
+      .then(r=>r.json()).then(d=>(d.messages||[]).map(m=>({...m,acctId:a.id,acctLabel:a.label}))).catch(()=>[])));
+  if(!mailx.smartRes||mailx.smartRes.k!==k)return;
+  const rows=res.flat().sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,60);
+  mailx.smartRes={k,loading:false,rows,err:null};
+  renderMailListRegion();}
+function mailSmartOpen(acctId,uid){
+  if(mailx.acct!==acctId){mailx.acct=acctId;}
+  openMailMsg(uid,'inbox');}
+function mailSmartRowHTML(m,forTwoPane){
+  return `<div class="gmail-row ${m.unread?'unread':''} ${forTwoPane&&mailx.selUid===m.uid?'selected':''}" onclick="mailSmartOpen('${m.acctId}','${m.uid}')">
+    <div class="gmail-row-top"><div class="gmail-row-sender">${m.unread?'<span class="unread-badge">New</span>':''}${esc(m.from||m.fromAddr||'(unknown)')}</div>
+    <div class="gmail-row-time"><span style="font-size:10px;color:var(--accent);font-weight:800;margin-right:6px">${esc(m.acctLabel||'')}</span>${mailTime(m.date)}</div></div>
+    <div class="gmail-row-subject">${esc(m.subject)}</div></div>`;}
 function mailListHTML(forTwoPane){
   // Search view — server-side results across the whole mailbox, replaces the folder list while active.
   if(mailx.search&&(mailx.searching||mailx.searchResults!==null)){
@@ -1457,7 +1481,17 @@ function mailListHTML(forTwoPane){
   const list=(mailx.folder==='trash')?list0:mailGroupList(list0);
   const F=[['inbox','📥 Inbox'],['sent','📤 Sent'],['starred','⭐ Starred'],['trash','🗑 Trash'],...mailLabelChips()];
   const tabs=`<div class="gmail-folders">${F.map(([id,label])=>`<button class="gmail-fld${mailx.folder===id?' active':''}" data-f="${esc(id)}" onclick="switchMailFolder(this.dataset.f)">${esc(label)}</button>`).join('')}</div>`;
-  const bar=(extra='')=>`<div class="gmail-toolbar">${tabs}<button class="gmail-refresh" onclick="loadMailList(true)" title="Refresh">⟳</button></div>${extra}`;
+  const smartRow=`<div class="gmail-folders" style="flex:none;padding:0 10px 7px;gap:4px">${Object.entries(MAIL_SMART).map(([k,c])=>`<button class="gmail-fld${mailx.smart===k?' active':''}" style="border-color:${mailx.smart===k?'var(--accent)':'rgba(255,179,0,.35)'}" onclick="mailShowSmart('${k}')">${c.label}</button>`).join('')}<span style="font-size:10px;color:var(--text-muted);align-self:center;margin-left:2px">all inboxes</span></div>`;
+  const bar=(extra='')=>`<div class="gmail-toolbar">${tabs}<button class="gmail-refresh" onclick="${mailx.smart?'mailSmartLoad(mailx.smart)':'loadMailList(true)'}" title="Refresh">⟳</button></div>${smartRow}${extra}`;
+  if(mailx.smart){
+    const sr=mailx.smartRes;
+    const cfg=MAIL_SMART[mailx.smart];
+    let body;
+    if(!sr||sr.loading)body='<div class="gmail-loading">Searching every inbox for '+esc(cfg.q)+'…</div>';
+    else if(!sr.rows.length)body='<div class="gmail-empty">No '+esc(cfg.q)+' emails found.</div>';
+    else body=`<div style="padding:8px 16px 2px;font-size:11px;font-weight:800;color:var(--accent);text-transform:uppercase;letter-spacing:.08em">${cfg.label} · ${sr.rows.length} across all inboxes</div>`+`<div class="gmail-list-tab">${sr.rows.map(m=>mailSmartRowHTML(m,forTwoPane)).join('')}</div>`;
+    return bar(body);
+  }
   const emptyMsg=mailx.folder==='starred'?'No starred emails.':mailx.folder==='trash'?'Trash is empty.':'No emails in this inbox.';
   if(mailx.loadingList&&!list)return bar('<div class="gmail-loading">Loading…</div>');
   if(mailx.error&&!list)return bar(`<div class="gmail-empty">${esc(mailx.error)}</div>`);
