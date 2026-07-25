@@ -2052,11 +2052,11 @@ function tkKey(){return 'ct_truck_ev_sched-'+wed.evId}
 function tkMaster(){try{const r=JSON.parse(localStorage.getItem('ct_truck_master')||'null');return (r&&r.v)||null}catch(e){return null}}
 function tkBlank(){const m=tkMaster()||{};
   return {guests:m.guests||100,pkg:m.pkg||'std',toast:m.toast!==undefined?m.toast:true,
-    checks:{},ov:{},renames:{...(m.renames||{})},hidden:{...(m.hidden||{})},
+    checks:{},ov:{...(m.ov||{})},renames:{...(m.renames||{})},hidden:{...(m.hidden||{})},
     custom:(m.custom||[]).map(c=>({...c})),order:JSON.parse(JSON.stringify(m.order||{})),notes:'',at:0}}
 function tkSaveMaster(){const d=tkLoad();
-  if(!confirm('Make THIS sheet the starting template for every NEW event?\n(Carries the item names, removed items, guest count, and bar choice — not the checkmarks.)'))return;
-  const m={guests:d.guests,pkg:d.pkg,toast:d.toast,renames:{...(d.renames||{})},hidden:{...(d.hidden||{})},
+  if(!confirm('Make THIS sheet the starting template for every NEW event?\n\nCarries: quantities, item names, added items, removed items, row order, guest count and bar choice.\nNever carries: the Ordered / On Truck checkmarks.'))return;
+  const m={guests:d.guests,pkg:d.pkg,toast:d.toast,renames:{...(d.renames||{})},hidden:{...(d.hidden||{})},ov:{...(d.ov||{})},
     custom:(d.custom||[]).map(c=>{const eff=(d.ov||{})['cu:'+c.id];return {...c,qty:(eff!=null&&eff!=='')?(+eff||0):(c.qty||0)}}),
     order:JSON.parse(JSON.stringify(d.order||{}))};
   const at=Date.now();
@@ -2136,8 +2136,8 @@ function tkRemoveCustom(key){const d=tkLoad();
   d.custom=(d.custom||[]).filter(c=>'cu:'+c.id!==key);
   delete (d.ov||{})[key];delete (d.checks||{})[key];delete (d.renames||{})[key];
   tkStore();tkRerender()}
-function tkRename(key,val){const d=tkLoad();d.renames=d.renames||{};
-  const t=String(val).trim();
+function tkRename(key,val){if(!key)return;const d=tkLoad();d.renames=d.renames||{};
+  const t=String(val==null?'':val).trim();
   if(t==='')delete d.renames[key];else d.renames[key]=t;
   tkStore();tkRerender()}
 function tkHide(key){const d=tkLoad();d.hidden=d.hidden||{};d.hidden[key]=1;tkStore();tkRerender()}
@@ -2167,15 +2167,26 @@ function tkRowHTML(it,d){
   const qd=(q===0||q==='0')?'':q;
   const ch=d.checks[it.key]||{};
   const renamed=!!(d.renames||{})[it.key];
-  return `<tr data-key="${esc(it.key)}" data-sec="${esc(it.sec)}">
+  return `<tr data-key="${esc(it.key)}" data-sec="${esc(it.sec)}" data-auto="${esc(String(it.auto))}" data-custom="${it.custom?'1':''}">
     <td class="tk-drag" onpointerdown="tkDragStart(event)" title="Drag to reorder">≡</td>
-    <td class="tk-qty"><input class="tk-ov ${ov!=null?'tk-oved':''}" value="${esc(String(qd))}" onfocus="this.select()" onchange="tkOv('${esc(it.key)}',this.value===String(${JSON.stringify(String(it.auto))})?'':this.value)" title="Auto: ${esc(String(it.auto))} — type to override"></td>
-    <td class="tk-item"><input class="tk-name ${renamed?'tk-renamed':''}" value="${esc(it.disp)}" onchange="tkRename('${esc(it.key)}',this.value===${JSON.stringify('')}?'':this.value)" title="Tap to edit the item name${renamed?' (edited — clear to restore: '+esc(it.label)+')':''}"></td>
-    <td class="tk-c ${ch.ordered==='Y'?'on':''}" onclick="tkChk('${esc(it.key)}','ordered')">${ch.ordered==='Y'?'✔':''}</td>
-    <td class="tk-c ${ch.truck==='Y'?'on':''}" onclick="tkChk('${esc(it.key)}','truck')">${ch.truck==='Y'?'✔':''}</td>
-    <td class="tk-need"><input value="${esc(ch.need||'')}" onchange="tkNeed('${esc(it.key)}',this.value)"></td>
-    <td class="tk-x"><button onclick="${it.custom?`tkRemoveCustom('${esc(it.key)}')`:`tkHide('${esc(it.key)}')`}" title="${it.custom?'Delete this custom item':'Remove from this event\'s list'}">✕</button></td>
+    <td class="tk-qty"><input class="tk-ov ${ov!=null?'tk-oved':''}" value="${esc(String(qd))}" onfocus="this.select()" onchange="tkOvRow(this)" title="Auto: ${esc(String(it.auto))} — type to override"></td>
+    <td class="tk-item"><input class="tk-name ${renamed?'tk-renamed':''}" value="${esc(it.disp)}" onchange="tkRenameRow(this)" title="Tap to edit the item name"></td>
+    <td class="tk-c ${ch.ordered==='Y'?'on':''}" onclick="tkChkRow(this,'ordered')">${ch.ordered==='Y'?'✔':''}</td>
+    <td class="tk-c ${ch.truck==='Y'?'on':''}" onclick="tkChkRow(this,'truck')">${ch.truck==='Y'?'✔':''}</td>
+    <td class="tk-need"><input value="${esc(ch.need||'')}" onchange="tkNeedRow(this)"></td>
+    <td class="tk-x"><button onclick="tkXRow(this)" title="Remove this item">✕</button></td>
   </tr>`}
+// DOM-driven handlers: the row carries its own key, so nothing depends on
+// interpolating item names (quotes in names used to break the whole handler).
+function tkRowKey(el){const tr=el.closest('tr');return tr?tr.dataset.key:null}
+function tkOvRow(el){const tr=el.closest('tr');if(!tr)return;
+  const v=String(el.value).trim();
+  tkOv(tr.dataset.key, v===String(tr.dataset.auto)?'':v)}
+function tkRenameRow(el){const k=tkRowKey(el);if(k)tkRename(k,el.value)}
+function tkChkRow(el,col){const k=tkRowKey(el);if(k)tkChk(k,col)}
+function tkNeedRow(el){const k=tkRowKey(el);if(k)tkNeed(k,el.value)}
+function tkXRow(el){const tr=el.closest('tr');if(!tr)return;
+  if(tr.dataset.custom)tkRemoveCustom(tr.dataset.key);else tkHide(tr.dataset.key)}
 let tkDragCtx=null;
 function tkDragStart(e){
   e.preventDefault();
@@ -2219,7 +2230,7 @@ function truckHTML(fe){
   let lastSec='',body='';
   items.forEach(it=>{
     if(it.sec!==lastSec){lastSec=it.sec;
-      body+=`<tr class="tk-sec" onclick="tkToggleSec('${esc(it.sec)}')"><td colspan="7"><span class="tk-caret">${coll[it.sec]?'▸':'▾'}</span> ${esc(it.sec)}<button class="tk-add" onclick="event.stopPropagation();tkAddItem('${esc(it.sec)}')" title="Add an item to this category">＋ add item</button></td></tr>`}
+      body+=`<tr class="tk-sec" data-sechead="${esc(it.sec)}" onclick="tkToggleSec(this.dataset.sechead)"><td colspan="7"><span class="tk-caret">${coll[it.sec]?'▸':'▾'}</span> ${esc(it.sec)}<button class="tk-add" onclick="event.stopPropagation();tkAddItem(this.closest('tr').dataset.sechead)" title="Add an item to this category">＋ add item</button></td></tr>`}
     if(!coll[it.sec])body+=tkRowHTML(it,d)});
   const tier=TK_TIERS[tkTierIdx(Math.max(1,+d.guests||1))];
   return `<div class="tk-wrap">
