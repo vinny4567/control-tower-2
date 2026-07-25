@@ -387,7 +387,10 @@
     .tk-head label{display:flex;align-items:center;gap:6px;color:var(--text-dim)}
     .tk-in{background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 8px;font-size:13px;width:auto}
     .tk-head input[type=number]{width:70px}
-    .tk-tog{font-size:12px}
+    .tk-mods{display:flex;gap:8px;flex-wrap:wrap}
+    .tk-tog{font-size:12.5px;border:1px solid var(--border);border-radius:999px;padding:5px 11px;color:var(--text-muted);cursor:pointer}
+    .tk-tog.on{border-color:var(--accent);color:var(--accent)}
+    .tk-tog input{accent-color:var(--accent);margin:0}
     .tk-tier{font-size:11px;color:var(--text-muted)}
     .tk-scroll{flex:1;overflow-y:auto;padding:14px}
     .tk-table{width:100%;border-collapse:collapse;font-size:16px;max-width:1050px}
@@ -1952,34 +1955,34 @@ const TK_EQUIP=[
  ['GLASSES','Water glasses',{c:1}],
  ['GLASSES','Wine glasses',{c:1}],
  ['GLASSES','Highball glasses',{c:1.5}],
- ['GLASSES','Champagne glasses',{c:1,toast:true}],
+ ['GLASSES','Champagne glasses',{c:1},'toast'],
  ['GLASSES','Coffee mugs',{f:0}],
  ['GLASSES','Wine glass racks',{f:6}],
- ['GLASSES','Champagne glass racks',{f:0}],
+ ['GLASSES','Champagne glass racks',{f:0},'toast'],
  ['GLASSES','Plastic cups (wine)',{f:0}],
  ['GLASSES','Plastic highball cups',{f:0}],
  ['SILVERWARE','Forks',{c:2}],
  ['SILVERWARE','Knives',{c:1}],
  ['SILVERWARE','Spoons',{c:2}],
  ['SILVERWARE','Small black forks/picks',{c:4}],
- ['LINENS & NAPKINS','Cloth napkins w/ trays',{c:0.5}],
- ['LINENS & NAPKINS','Bar napkins',{c:20}],
- ['LINENS & NAPKINS','132" round white (guest tables)',{c:0.125}],
- ['LINENS & NAPKINS','132" round white (highboys)',{f:8}],
- ['LINENS & NAPKINS','120" round (ceremony highboy, straight down)',{f:1}],
- ['LINENS & NAPKINS','108" round (library)',{f:2}],
- ['LINENS & NAPKINS','90" round white (cake table)',{f:1}],
- ['LINENS & NAPKINS','90x132" white (sweetheart & water table)',{f:2}],
- ['LINENS & NAPKINS','90x132" black (buffet)',{f:2}],
- ['LINENS & NAPKINS','90x156" white (dining room)',{f:2}],
- ['LINENS & NAPKINS','90x156" black (buffet & front bar)',{f:6}],
- ['LINENS & NAPKINS','90x156" (DJ · bar · atrium · coffee)',{f:6}],
- ['LINENS & NAPKINS','52x114 tablecloths',{f:2}],
- ['LINENS & NAPKINS','52x52 white linens',{f:4}],
- ['LINENS & NAPKINS','Chair ties (color in note)',{f:8}],
- ['LINENS & NAPKINS','White cloth napkin roll-ups',{f:0}],
- ['LINENS & NAPKINS','Satin chair covers',{f:0}],
- ['LINENS & NAPKINS','Angelis linen bag',{f:1}],
+ ['LINENS & NAPKINS','Cloth napkins w/ trays',{c:0.5},'linens'],
+ ['LINENS & NAPKINS','Bar napkins',{c:20},'linens'],
+ ['LINENS & NAPKINS','132" round white (guest tables)',{c:0.125},'linens'],
+ ['LINENS & NAPKINS','132" round white (highboys)',{f:8},'linens'],
+ ['LINENS & NAPKINS','120" round (ceremony highboy, straight down)',{f:1},'linens'],
+ ['LINENS & NAPKINS','108" round (library)',{f:2},'linens'],
+ ['LINENS & NAPKINS','90" round white (cake table)',{f:1},'linens'],
+ ['LINENS & NAPKINS','90x132" white (sweetheart & water table)',{f:2},'linens'],
+ ['LINENS & NAPKINS','90x132" black (buffet)',{f:2},'linens'],
+ ['LINENS & NAPKINS','90x156" white (dining room)',{f:2},'linens'],
+ ['LINENS & NAPKINS','90x156" black (buffet & front bar)',{f:6},'linens'],
+ ['LINENS & NAPKINS','90x156" (DJ · bar · atrium · coffee)',{f:6},'linens'],
+ ['LINENS & NAPKINS','52x114 tablecloths',{f:2},'linens'],
+ ['LINENS & NAPKINS','52x52 white linens',{f:4},'linens'],
+ ['LINENS & NAPKINS','Chair ties (color in note)',{f:8},'linens'],
+ ['LINENS & NAPKINS','White cloth napkin roll-ups',{f:0},'linens'],
+ ['LINENS & NAPKINS','Satin chair covers',{f:0},'linens'],
+ ['LINENS & NAPKINS','Angelis linen bag',{f:1},'linens'],
  ['SERVING & CHAFING','Chafers',{f:6}],
  ['SERVING & CHAFING','4-hr sternos',{f:12}],
  ['SERVING & CHAFING','6-hr sternos (coffee)',{f:3}],
@@ -2009,16 +2012,19 @@ const TK_EQUIP=[
  ['SERVING & CHAFING','Cups crushed red pepper',{f:0}],
  ['SERVING & CHAFING','Lemon slices (chef ticket)',{f:0}],
  ['SERVING & CHAFING','Butter (wedding · on tickets)',{f:1}],
- ['COFFEE','Coffee (1 reg · 1 decaf)',{f:2}],
- ['COFFEE','Coffee urns w/ sternos',{f:2}],
- ['COFFEE','Coffee makers',{f:0}],
- ['COFFEE','Cream dispenser & sugar',{f:1}],
- ['COFFEE','Regular/decaf signs + hot water',{f:1}],
- ['COFFEE','Tea setup',{f:0}],
+ ['COFFEE','Coffee (1 reg · 1 decaf)',{f:2},'coffee'],
+ ['COFFEE','Coffee urns w/ sternos',{f:2},'coffee'],
+ ['COFFEE','Coffee makers',{f:0},'coffee'],
+ ['COFFEE','Cream dispenser & sugar',{f:1},'coffee'],
+ ['COFFEE','Regular/decaf signs + hot water',{f:1},'coffee'],
+ ['COFFEE','Tea setup',{f:0},'coffee'],
+ ['COFFEE','Coffee mugs (service)',{f:0},'coffee'],
  ['BAR EQUIPMENT','Coolers of ice (water & bar)',{f:2}],
  ['BAR EQUIPMENT','Ice scoops',{f:4}],
  ['BAR EQUIPMENT','Wine openers',{f:4}],
- ['BAR EQUIPMENT','Ice scoops (lemon ice)',{f:2}],
+ ['BAR EQUIPMENT','Ice scoops (lemon ice)',{f:2},'lemonice'],
+ ['BAR EQUIPMENT','Lemon ice tubs',{f:2},'lemonice'],
+ ['BAR EQUIPMENT','Lemon ice cups',{c:1},'lemonice'],
  ['BAR EQUIPMENT','Cooler w/ soda & water (staff)',{f:1}],
  ['CARTS & TRANSPORT','Rolling racks',{f:2}],
  ['CARTS & TRANSPORT','Large black carts',{f:3}],
@@ -2052,11 +2058,11 @@ function tkKey(){return 'ct_truck_ev_sched-'+wed.evId}
 function tkMaster(){try{const r=JSON.parse(localStorage.getItem('ct_truck_master')||'null');return (r&&r.v)||null}catch(e){return null}}
 function tkBlank(){const m=tkMaster()||{};
   return {guests:m.guests||100,pkg:m.pkg||'std',toast:m.toast!==undefined?m.toast:true,
-    checks:{},ov:{...(m.ov||{})},renames:{...(m.renames||{})},hidden:{...(m.hidden||{})},
+    checks:{},ov:{...(m.ov||{})},mods:{...(m.mods||{})},renames:{...(m.renames||{})},hidden:{...(m.hidden||{})},
     custom:(m.custom||[]).map(c=>({...c})),order:JSON.parse(JSON.stringify(m.order||{})),notes:'',at:0}}
 function tkSaveMaster(){const d=tkLoad();
   if(!confirm('Make THIS sheet the starting template for every NEW event?\n\nCarries: quantities, item names, added items, removed items, row order, guest count and bar choice.\nNever carries: the Ordered / On Truck checkmarks.'))return;
-  const m={guests:d.guests,pkg:d.pkg,toast:d.toast,renames:{...(d.renames||{})},hidden:{...(d.hidden||{})},ov:{...(d.ov||{})},
+  const m={guests:d.guests,pkg:d.pkg,toast:d.toast,renames:{...(d.renames||{})},hidden:{...(d.hidden||{})},ov:{...(d.ov||{})},mods:{...(d.mods||{})},
     custom:(d.custom||[]).map(c=>{const eff=(d.ov||{})['cu:'+c.id];return {...c,qty:(eff!=null&&eff!=='')?(+eff||0):(c.qty||0)}}),
     order:JSON.parse(JSON.stringify(d.order||{}))};
   const at=Date.now();
@@ -2090,8 +2096,15 @@ function tkBarQty(row,g){
   const i=tkTierIdx(g);let q=row[1+i];
   if(g>240&&typeof q==='number')q=Math.ceil(q*g/240);
   return q}
+const TK_MODS=[['coffee','☕ Coffee'],['linens','🧺 Linens'],['lemonice','🍋 Lemon ice'],['toast','🥂 Champagne toast']];
+function tkModOn(d,k){const m=d.mods||{};
+  if(m[k]!==undefined)return !!m[k];
+  if(k==='toast')return d.toast!==false;   // carry the old toast flag
+  return true}
+function tkSetMod(k,on){const d=tkLoad();d.mods=d.mods||{};d.mods[k]=!!on;
+  if(k==='toast')d.toast=!!on;
+  tkStore();tkRerender()}
 function tkEquipQty(rule,g,d){
-  if(rule.toast&&!d.toast)return 0;
   if(rule.cs)return Math.ceil(g/rule.cs);
   let q=rule.f!=null?rule.f:Math.ceil((rule.c||0)*g);
   if(rule.plus)q+=rule.plus;
@@ -2110,7 +2123,9 @@ function tkItems(){
   (TK_BARS[d.pkg]||TK_BARS.std).forEach(row=>{
     out.push({sec:'🍸 '+row[6]+' — '+pkgName,key:'bar:'+row[0],label:row[0],auto:tkBarQty(row,g)})});
   TK_MIXERS.forEach(([label,rule])=>out.push({sec:'🥤 MIXERS & SODA',key:'mix:'+label,label,auto:tkEquipQty(rule,g,d)}));
-  TK_EQUIP.forEach(([cat,label,rule])=>out.push({sec:'📦 '+cat,key:'eq:'+label,label,auto:tkEquipQty(rule,g,d)}));
+  TK_EQUIP.forEach(([cat,label,rule,mod])=>{
+    if(mod&&!tkModOn(d,mod))return;   // module switched off — item hidden everywhere
+    out.push({sec:'📦 '+cat,key:'eq:'+label,label,auto:tkEquipQty(rule,g,d)})});
   // Custom (＋-added) items: appended at the end of their section; if their section
   // isn't on this sheet right now (e.g. bar package changed), they get their own block.
   const customs=d.custom||[];
@@ -2243,7 +2258,7 @@ function truckHTML(fe){
           <option value="std" ${d.pkg==='std'?'selected':''}>Standard</option>
           <option value="prem" ${d.pkg==='prem'?'selected':''}>Premium</option>
         </select></label>
-      <label class="tk-tog"><input type="checkbox" ${d.toast?'checked':''} onchange="tkSet('toast',this.checked)"> Champagne toast</label>
+      <span class="tk-mods">${TK_MODS.map(([k,lbl])=>`<label class="tk-tog ${tkModOn(d,k)?'on':''}"><input type="checkbox" ${tkModOn(d,k)?'checked':''} onchange="tkSetMod('${k}',this.checked)"> ${lbl}</label>`).join('')}</span>
       <span class="tk-tier">using the ${tier}-guest sheet${(+d.guests>240)?' (scaled up)':''}</span>
       <span style="flex:1"></span>
       <button class="wed-btn" onclick="tkToggleGroup('drinks')">🍸 Liquor</button>
