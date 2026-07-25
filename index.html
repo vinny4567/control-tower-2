@@ -2512,7 +2512,48 @@ function wedMailPaneHTML(fe){
     </div>
     <div id="wed-mail-list" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch">${wedMailListHTML()}</div></div>`;}
 function wedShowCatering(){wedFlush();wed.pane='catering';wed.sel=null;renderViewport()}
-function wedShowDocs(){docsFlush();wedFlush();wed.pane='docs';wed.sel=null;renderViewport();docsPullSync()}
+// Default "Event Sheet" — Tony's proposal-letter template (from Template.pdf), pre-filled with the
+// event's name/date, auto-created once per event. Deterministic id ⇒ both screens share ONE copy.
+function wedEventSheetHTML(fe){
+  const line='<span style="color:#8a8577">__________________________</span>';
+  const sec=t=>'<h2 style="text-align:center;letter-spacing:1px">~~ '+t+' ~~</h2>';
+  const price=label=>'<p><b>'+label+':</b>&nbsp; $ '+line+' Per Adult &nbsp;·&nbsp; Labor $ '+line+' &nbsp;·&nbsp; Tax $ '+line+' &nbsp;·&nbsp; <b>Total: $ '+line+'</b></p>';
+  return '<div style="text-align:center"><b>Angeli’s Catering</b><br>1478 East Chicago Ave, Naperville, IL 60540<br>Phone 630-420-1122</div>'
+  +'<p><b>Date:</b> '+line+'</p>'
+  +'<p><b>To:</b> '+esc(wedName(fe))+'<br><b>From:</b> Angeli’s Catering<br><b>Re:</b> Proposal for '+line+' — '+esc(wedDow(fe.date))+' '+esc(wedPrettyDate(fe.date))+'<br><b>Venue:</b> '+line+'</p>'
+  +'<h1 style="text-align:center">Your Reception</h1>'
+  +sec('Appetizers')+'<p style="text-align:center">~ '+line+' ~ &nbsp;&nbsp; ~ '+line+' ~<br>~ '+line+' ~ &nbsp;&nbsp; ~ '+line+' ~</p>'
+  +'<p style="text-align:center">~ Special Salad (Plated) ~<br>( Bleu Cheese on the Side on Tables in Boats )<br>~ Lemon Ice For All ~</p>'
+  +sec('Entrées — Served Family Style')
+  +'<p><b>'+line+':</b> '+line+'</p><p><b>'+line+':</b> '+line+'</p><p><b>'+line+':</b> '+line+'</p>'
+  +'<p><b>Sides:</b> '+line+' &nbsp;·&nbsp; '+line+'</p>'
+  +sec('Pricing')
+  +price('Chicken / Main Entrée')+price('Vegetarian Meals')+price('Kids Meals')+price('Vendor Meals')
+  +'<p><b>Guest Count:</b> Adults '+line+' &nbsp; Kids '+line+' &nbsp; Vendors '+line+'</p>'
+  +sec('Late Night Options')
+  +'<p>~ '+line+' — $ '+line+'<br>~ '+line+' — $ '+line+'</p>'
+  +'<p><b>Bar:</b> '+line+'</p>'
+  +sec('On Each Table')
+  +'<p style="text-align:center">~ Baskets of Bread Rolls &amp; Butter (Variety) — Our Bread ~<br>~ Lemon Slices in Water Glasses ~ &nbsp; ~ Olive Oil on Tables ~<br>~ Salt &amp; Pepper ~ &nbsp; ~ Parmesan on Tables ~<br>~ Carafes of Water on Each Table ~</p>'
+  +sec('Dessert')+'<p style="text-align:center">'+line+'<br>~ Coffee &amp; Hot Tea Station After Dinner ~</p>'
+  +'<p><b>Notes:</b></p><p>'+line+'</p><p>'+line+'</p>'
+  +'<p style="margin-top:24px">Sincerely,<br><b>Tony Angeli</b><br>Angeli’s Catering · Cell 630-669-5015</p>';
+}
+function wedSeedEventDoc(fe){
+  const ns='ct_docs_ev_sched-'+fe.id;
+  if(docsNS!==ns)docsSetNS(ns);
+  const docs=loadDocsData();
+  const id='evsheet-'+fe.id;
+  if(docs.some(d=>d.id===id))return false;
+  try{if(docsDelMap()[id])return false;}catch(e){} // deliberately deleted — don't resurrect
+  docs.unshift({id,title:'📋 Event Sheet',html:wedEventSheetHTML(fe),updated:Date.now()});
+  docsState.current=id;saveDocsData();
+  return true;
+}
+function wedShowDocs(){docsFlush();wedFlush();wed.pane='docs';wed.sel=null;
+  const fe=wedFeedEvent(wed.evId);
+  if(fe){try{if(wedSeedEventDoc(fe))console.log('event sheet seeded')}catch(e){}}
+  renderViewport();docsPullSync()}
 function wedOpenLayout(id){wed.cur=id;wedLoad().cur=id;wed.sel=null;wed.view='plan';renderViewport()}
 // Back from the plan editor: a schedule-linked layout returns to its event hub; anything else to the list.
 function wedBack(){wedFlush();const cur=wedCur();wed.sel=null;
