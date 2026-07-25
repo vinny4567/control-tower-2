@@ -397,10 +397,14 @@
     .tk-qty{width:74px}
     .tk-ov{width:70px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px;font-size:16px;font-weight:800;text-align:right}
     .tk-ov.tk-oved{border-color:var(--accent);color:var(--accent)}
-    .tk-item{color:var(--text);font-size:16px;font-weight:600;white-space:nowrap}
-    .tk-note{min-width:150px}
-    .tk-note input{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:6px;padding:8px;font-size:14px;box-sizing:border-box}
-    .tk-note input:focus{color:var(--text);border-color:var(--accent)}
+    .tk-item{min-width:230px}
+    .tk-name{width:100%;background:transparent;border:1px solid transparent;color:var(--text);font-size:16px;font-weight:600;border-radius:6px;padding:6px 8px;box-sizing:border-box;font-family:inherit}
+    .tk-name:hover{border-color:var(--border)}
+    .tk-name:focus{background:var(--surface2);border-color:var(--accent);outline:none}
+    .tk-name.tk-renamed{color:var(--accent)}
+    .tk-x{width:44px;text-align:center}
+    .tk-x button{background:none;border:1px solid transparent;color:#e5484d;font-size:16px;cursor:pointer;border-radius:6px;padding:4px 9px}
+    .tk-x button:hover{border-color:#e5484d}
     .tk-c{width:70px;text-align:center;cursor:pointer;color:var(--text-muted);font-size:18px;user-select:none}
     .tk-c.on{color:#2ecc71;font-weight:800}
     .tk-need{width:130px}
@@ -2032,12 +2036,21 @@ function tkEquipQty(rule,g,d){
 function tkItems(){
   const d=tkLoad();const g=Math.max(1,+d.guests||1);
   const out=[];
+  const finish=list=>list.filter(it=>!(d.hidden||{})[it.key]).map(it=>({...it,disp:(d.renames||{})[it.key]||it.label}));
   const pkgName=d.pkg==='std'?'STANDARD BAR':d.pkg==='prem'?'PREMIUM BAR':'BEER & WINE BAR';
   (TK_BARS[d.pkg]||TK_BARS.std).forEach(row=>{
     out.push({sec:'🍸 '+row[6]+' — '+pkgName,key:'bar:'+row[0],label:row[0],auto:tkBarQty(row,g)})});
   TK_MIXERS.forEach(([label,rule])=>out.push({sec:'🥤 MIXERS & SODA',key:'mix:'+label,label,auto:tkEquipQty(rule,g,d)}));
   TK_EQUIP.forEach(([cat,label,rule])=>out.push({sec:'📦 '+cat,key:'eq:'+label,label,auto:tkEquipQty(rule,g,d)}));
-  return out}
+  return finish(out)}
+function tkRename(key,val){const d=tkLoad();d.renames=d.renames||{};
+  const t=String(val).trim();
+  if(t==='')delete d.renames[key];else d.renames[key]=t;
+  tkStore();renderViewport()}
+function tkHide(key){const d=tkLoad();d.hidden=d.hidden||{};d.hidden[key]=1;tkStore();renderViewport()}
+function tkRestoreHidden(){const d=tkLoad();const n=Object.keys(d.hidden||{}).length;
+  if(!n)return;if(!confirm('Bring back the '+n+' removed item'+(n===1?'':'s')+'?'))return;
+  d.hidden={};tkStore();renderViewport()}
 function tkSet(field,val){const d=tkLoad();
   if(field==='guests')d.guests=Math.max(1,parseInt(val)||1);
   else if(field==='pkg')d.pkg=val;
@@ -2056,19 +2069,17 @@ function tkNeed(key,val){const d=tkLoad();
   d.checks[key]=d.checks[key]||{};d.checks[key].need=val;tkStore()}
 function tkResetChecks(){if(!confirm('Clear all the Ordered / On Truck checkmarks for this event?'))return;
   const d=tkLoad();d.checks={};tkStore();renderViewport()}
-function tkNote(key,val){const d=tkLoad();d.itemNotes=d.itemNotes||{};
-  const t=String(val).trim();if(t==='')delete d.itemNotes[key];else d.itemNotes[key]=t;tkStore()}
 function tkRowHTML(it,d){
   const ov=d.ov[it.key];const q=(ov!=null&&ov!=='')?ov:it.auto;
   const ch=d.checks[it.key]||{};
-  const note=(d.itemNotes||{})[it.key]||'';
+  const renamed=!!(d.renames||{})[it.key];
   return `<tr>
     <td class="tk-qty"><input class="tk-ov ${ov!=null?'tk-oved':''}" value="${esc(String(q))}" onchange="tkOv('${esc(it.key)}',this.value===String(${JSON.stringify(String(it.auto))})?'':this.value)" title="Auto: ${esc(String(it.auto))} — type to override"></td>
-    <td class="tk-item">${esc(it.label)}</td>
-    <td class="tk-note"><input value="${esc(note)}" placeholder="note…" onchange="tkNote('${esc(it.key)}',this.value)"></td>
+    <td class="tk-item"><input class="tk-name ${renamed?'tk-renamed':''}" value="${esc(it.disp)}" onchange="tkRename('${esc(it.key)}',this.value===${JSON.stringify('')}?'':this.value)" title="Tap to edit the item name${renamed?' (edited — clear to restore: '+esc(it.label)+')':''}"></td>
     <td class="tk-c ${ch.ordered==='Y'?'on':''}" onclick="tkChk('${esc(it.key)}','ordered')">${ch.ordered==='Y'?'✔':''}</td>
     <td class="tk-c ${ch.truck==='Y'?'on':''}" onclick="tkChk('${esc(it.key)}','truck')">${ch.truck==='Y'?'✔':''}</td>
     <td class="tk-need"><input value="${esc(ch.need||'')}" onchange="tkNeed('${esc(it.key)}',this.value)"></td>
+    <td class="tk-x"><button onclick="tkHide('${esc(it.key)}')" title="Remove from this event's list">✕</button></td>
   </tr>`}
 function truckHTML(fe){
   const d=tkLoad();const items=tkItems();
@@ -2093,10 +2104,11 @@ function truckHTML(fe){
       <span style="flex:1"></span>
       <button class="wed-btn" onclick="tkPrint()">🖨 Print</button>
       <button class="wed-btn" onclick="tkResetChecks()">↺ Clear checks</button>
+      ${Object.keys(d.hidden||{}).length?`<button class="wed-btn" onclick="tkRestoreHidden()">♻ Removed (${Object.keys(d.hidden||{}).length})</button>`:''}
     </div>
     <div class="tk-scroll">
       <table class="tk-table">
-        <thead><tr><th>Qty</th><th>Item</th><th>Notes</th><th>Ordered</th><th>On Truck</th><th>Still needed</th></tr></thead>
+        <thead><tr><th>Qty</th><th>Item</th><th>Ordered</th><th>On Truck</th><th>Still needed</th><th></th></tr></thead>
         <tbody>${body}</tbody>
       </table>
       <div class="tk-notes-wrap"><div class="tk-sec-label">CHANGES OR SPECIAL REQUESTS</div>
@@ -2110,10 +2122,9 @@ function tkPrint(){
     const ov=d.ov[it.key];const q=(ov!=null&&ov!=='')?ov:it.auto;
     const ch=d.checks[it.key]||{};
     if(!q&&q!==0)return rows+=(it.sec!==lastSec?((lastSec=it.sec),`<tr><td colspan="5" class="sec">${it.sec}</td></tr>`):'')+
-      `<tr><td></td><td>${it.label}</td><td>${ch.ordered||''}</td><td>${ch.truck||''}</td><td>${ch.need||''}</td></tr>`;
+      `<tr><td></td><td>${it.disp||it.label}</td><td>${ch.ordered||''}</td><td>${ch.truck||''}</td><td>${ch.need||''}</td></tr>`;
     if(it.sec!==lastSec){lastSec=it.sec;rows+=`<tr><td colspan="5" class="sec">${it.sec}</td></tr>`}
-    const nt=(d.itemNotes||{})[it.key]||'';
-    rows+=`<tr><td class="q">${q}</td><td>${it.label}${nt?' — <i>'+nt.replace(/</g,'&lt;')+'</i>':''}</td><td>${ch.ordered||''}</td><td>${ch.truck||''}</td><td>${ch.need||''}</td></tr>`});
+    rows+=`<tr><td class="q">${q}</td><td>${it.disp||it.label}</td><td>${ch.ordered||''}</td><td>${ch.truck||''}</td><td>${ch.need||''}</td></tr>`});
   const w=window.open('','_blank');
   w.document.write(`<html><head><title>Truck Packing — ${fe?fe.label:''}</title><style>
     body{font-family:-apple-system,Helvetica,sans-serif;color:#000;font-size:11px;margin:24px}
