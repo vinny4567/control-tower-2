@@ -2168,7 +2168,7 @@ function tkRowHTML(it,d){
   const renamed=!!(d.renames||{})[it.key];
   return `<tr data-key="${esc(it.key)}" data-sec="${esc(it.sec)}">
     <td class="tk-drag" onpointerdown="tkDragStart(event)" title="Drag to reorder">≡</td>
-    <td class="tk-qty"><input class="tk-ov ${ov!=null?'tk-oved':''}" value="${esc(String(q))}" onchange="tkOv('${esc(it.key)}',this.value===String(${JSON.stringify(String(it.auto))})?'':this.value)" title="Auto: ${esc(String(it.auto))} — type to override"></td>
+    <td class="tk-qty"><input class="tk-ov ${ov!=null?'tk-oved':''}" value="${esc(String(q))}" onfocus="this.select()" onchange="tkOv('${esc(it.key)}',this.value===String(${JSON.stringify(String(it.auto))})?'':this.value)" title="Auto: ${esc(String(it.auto))} — type to override"></td>
     <td class="tk-item"><input class="tk-name ${renamed?'tk-renamed':''}" value="${esc(it.disp)}" onchange="tkRename('${esc(it.key)}',this.value===${JSON.stringify('')}?'':this.value)" title="Tap to edit the item name${renamed?' (edited — clear to restore: '+esc(it.label)+')':''}"></td>
     <td class="tk-c ${ch.ordered==='Y'?'on':''}" onclick="tkChk('${esc(it.key)}','ordered')">${ch.ordered==='Y'?'✔':''}</td>
     <td class="tk-c ${ch.truck==='Y'?'on':''}" onclick="tkChk('${esc(it.key)}','truck')">${ch.truck==='Y'?'✔':''}</td>
@@ -2224,7 +2224,7 @@ function truckHTML(fe){
   return `<div class="tk-wrap">
     <div class="tk-head">
       <span class="tk-title">🚚 Truck Packing — ${esc(wedName(fe))}</span>
-      <label>Guests <input type="number" min="1" class="tk-in" value="${esc(String(d.guests))}" onchange="tkSet('guests',this.value)"></label>
+      <label>Guests <input type="number" min="1" class="tk-in" value="${esc(String(d.guests))}" onfocus="this.select()" onchange="tkSet('guests',this.value)"></label>
       <label>Bar
         <select class="tk-in" onchange="tkSet('pkg',this.value)">
           <option value="bw" ${d.pkg==='bw'?'selected':''}>Beer &amp; Wine</option>
