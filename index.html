@@ -2677,7 +2677,7 @@ function shSel(id,field,opts,ph){const cur=wedSheetGet(id,field);
 function shTxt(id,field,ph){return `<input class="sh-in" type="text" placeholder="${esc(ph||'')}" value="${esc(wedSheetGet(id,field))}" oninput="wedSheetSet(${id},'${field}',this.value)">`}
 function shNum(id,field,ph,onCalc){return `<input class="sh-in sh-num" type="number" step="0.01" placeholder="${esc(ph||'')}" value="${esc(wedSheetGet(id,field))}" oninput="wedSheetSet(${id},'${field}',this.value);${onCalc?`wedSheetCalcRow(${id},'${field}')`:''}">`}
 function shPriceRow(id,label,key){
-  return `<div class="sh-row"><label>${esc(label)}</label><div class="sh-money">${shNum(id,key,'per person',true)}<span id="sh-calc-${key}" class="sh-calc"></span></div></div>`}
+  return `<div class="sh-row"><label>${esc(label)}</label><div class="sh-money">${shNum(id,key,'$',true)}<span id="sh-calc-${key}" class="sh-calc"></span></div></div>`}
 function wedSheetPaneHTML(fe){
   const id=fe.id;
   const sec=t=>`<div class="sh-sec">${esc(t)}</div>`;
@@ -2687,16 +2687,17 @@ function wedSheetPaneHTML(fe){
       <span style="font-weight:800;font-size:14px">📋 Event Sheet</span>
       <span style="font-size:11px;color:var(--text-muted)">saves + syncs as you pick</span>
       <span style="flex:1"></span>
-      <button class="wed-btn" onclick="wedSheetPrint()">🖨 Print / Save PDF</button>
+      <button class="wed-btn amber" onclick="wedChefPrint()">👨‍🍳 Print Chef Ticket</button>
+      <button class="wed-btn" onclick="wedSheetPrint()">🖨 Proposal</button>
       <button class="wed-btn" onclick="wedSheetWord()">⬇ Word</button>
     </div>
     <div class="sh-wrap">
       ${sec('Proposal')}
-      ${row('Date of proposal',shTxt(id,'pdate','e.g. '+wedPrettyDate(new Date().toISOString().slice(0,10))))}
-      ${row('To (client)',shTxt(id,'to',wedName(fe)))}
-      ${row('Occasion',shTxt(id,'occasion','Wedding Reception'))}
+      ${row('Date of proposal',shTxt(id,'pdate',''))}
+      ${row('To (client)',shTxt(id,'to',''))}
+      ${row('Occasion',shTxt(id,'occasion',''))}
       ${row('Event date',`<input class="sh-in" type="text" value="${esc(wedDow(fe.date)+' '+wedPrettyDate(fe.date))}" disabled>`)}
-      ${row('Venue',shTxt(id,'venue','Crawford Banquet Hall, Naperville'))}
+      ${row('Venue',shTxt(id,'venue',''))}
       ${row('Service style',shSel(id,'service',SH_SERVICE,'style'))}
       ${sec('Appetizers')}
       ${row('Appetizer 1',shSel(id,'app1',SH_APPS,'appetizer'))}
@@ -2704,8 +2705,8 @@ function wedSheetPaneHTML(fe){
       ${row('Appetizer 3',shSel(id,'app3',SH_APPS,'appetizer'))}
       ${row('Appetizer 4',shSel(id,'app4',SH_APPS,'appetizer'))}
       ${row('Salad',shSel(id,'salad',SH_SALADS,'salad'))}
-      ${row('Salad notes',shTxt(id,'saladNote','Bleu cheese on the side in boats'))}
-      ${row('Palate cleanser',shTxt(id,'cleanser','Lemon Ice For All'))}
+      ${row('Salad notes',shTxt(id,'saladNote',''))}
+      ${row('Palate cleanser',shTxt(id,'cleanser',''))}
       ${sec('Entrées')}
       ${row('Chicken',shSel(id,'chicken',SH_CHICKEN,'style'))}
       ${row('Second entrée',shSel(id,'protein',SH_PROTEIN,'entrée'))}
@@ -2719,23 +2720,102 @@ function wedSheetPaneHTML(fe){
       ${shPriceRow(id,'Kids meal','pKids')}
       ${shPriceRow(id,'Vendor meal','pVendor')}
       ${sec('Guest count')}
-      ${row('Adults',shNum(id,'nAdults','0'))}
-      ${row('Kids',shNum(id,'nKids','0'))}
-      ${row('Vendors',shNum(id,'nVendors','0'))}
+      ${row('Adults',shNum(id,'nAdults',''))}
+      ${row('Kids',shNum(id,'nKids',''))}
+      ${row('Vendors',shNum(id,'nVendors',''))}
       ${sec('Late night, bar & dessert')}
       ${row('Late night 1',shSel(id,'late1',SH_LATE,'option'))}
-      ${row('Late night 1 price',shTxt(id,'late1p','$ 4 per hot dog + $75 cart'))}
+      ${row('Late night 1 price',shTxt(id,'late1p',''))}
       ${row('Late night 2',shSel(id,'late2',SH_LATE,'option'))}
       ${row('Late night 2 price',shTxt(id,'late2p',''))}
       ${row('Bar',shSel(id,'bar',SH_BAR,'bar'))}
       ${row('Dessert',shSel(id,'dessert',SH_DESSERT,'dessert'))}
-      ${row('Coffee station',shTxt(id,'coffee','Coffee & Hot Tea Station After Dinner'))}
-      ${sec('Notes')}
+      ${row('Coffee station',shTxt(id,'coffee',''))}
+      ${sec('Chef ticket — prep list')}
+      ${row('Leave time',shTxt(id,'leave',''))}
+      <div class="sh-row"><label>Prep lines</label><div style="flex:1;min-width:0">
+        <textarea class="sh-in" rows="14" style="width:100%;font-family:ui-monospace,Menlo,monospace;font-size:13px;line-height:1.5" placeholder="Tap “Build from menu” to generate, then edit freely." oninput="wedSheetSet(${id},'chefLines',this.value)">${esc(wedSheetGet(id,'chefLines'))}</textarea>
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button class="wed-btn amber" onclick="wedChefRebuild()">⚙ Build from menu + guest count</button><span style="font-size:11.5px;color:var(--text-muted);align-self:center">quantities scale off the guest count · edit any line</span></div>
+      </div></div>
+      <div class="sh-row"><label>Chef notes</label><textarea class="sh-in" rows="3" oninput="wedSheetSet(${id},'chefNotes',this.value)">${esc(wedSheetGet(id,'chefNotes'))}</textarea></div>
+      ${sec('Proposal notes')}
       <div class="sh-row"><label>Notes</label><textarea class="sh-in" rows="4" oninput="wedSheetSet(${id},'notes',this.value)">${esc(wedSheetGet(id,'notes'))}</textarea></div>
       <div style="height:40px"></div>
     </div>
   </div>`}
 // ── The printed letter: Tony's format, filled from the picks ──
+
+// ═══ CHEF TICKET — the kitchen prep sheet (format + ratios from Tony's handwritten ticket) ═══
+// Quantities scale off the guest count; every line stays editable in the form.
+function shNum2(v){const n=parseFloat(v);return isFinite(n)?n:0}
+function shRound(n,step){step=step||1;return Math.max(step,Math.round(n/step)*step)}
+function shGuests(id){const a=shNum2(wedSheetGet(id,'nAdults')),k=shNum2(wedSheetGet(id,'nKids')),v=shNum2(wedSheetGet(id,'nVendors'));return a+k+v||0}
+function wedChefBuild(fe){
+  const id=fe.id,g=f=>wedSheetGet(id,f);
+  const G=shGuests(id);
+  if(!G)return '';
+  const L=[];const push=(...x)=>L.push(x.filter(Boolean).join('   * '));
+  // Appetizers — ~1.33 pieces per guest, rounded to 10 (Tony: 150 guests → 200 P)
+  const apps=[g('app1'),g('app2'),g('app3'),g('app4')].filter(Boolean);
+  if(apps.length){apps.forEach(a=>push(shRound(G*1.33,10)+' P '+a));L.push('')}
+  // Salad + its garnishes
+  if(g('salad')){
+    push(g('salad')+' for '+G+' Guests',shRound(G/75,1)+' Gallons Dressing');
+    push(G+' Strawberries',(G*2)+' Apple Slices',(G*2)+' Pear Slices');
+    push(shRound(G/150,1)+' Jugs Walnuts',shRound(G/12.5,1)+' Bleu Cheese Boats Ready To Go');
+    L.push('');
+  }
+  // Lemon ice + citrus
+  if(/lemon ice/i.test(g('cleanser')||'')){
+    push(shRound(G/75,1)+' Full Containers of Lemon Ice',G+' Mint Sprigs');
+    push(G+' Lemon Slices for Lemon Ice');
+    L.push('');
+  }
+  // Entrées — chicken split, sauces in full pans
+  const adults=shNum2(g('nAdults'))||G;
+  if(g('chicken')){
+    push(adults+' P of Chicken '+g('chicken'),shRound(adults/25,1)+' Quarts '+g('chicken')+' Sauce in Metal Full Pans');
+    if(/piccata/i.test(g('chicken')))push(shRound(adults/2,5)+' Lemon Slices for Garnish for Piccata Entrees');
+    push('Small Black To Go with Capers Appetizer Size');
+    L.push('');
+  }
+  if(g('protein')){push(adults+' P '+g('protein')+' — Set Ups in Full Pans');push(shRound(adults/20,1)+' Quarts Sauce Please Label');L.push('')}
+  // Pasta — 1 full + 1 half pan per 150
+  if(g('sauce')||g('pasta')){
+    const dish=[g('sauce'),g('pasta')].filter(Boolean).join(' ');
+    push(shRound(G/150,1)+' Full Pan '+dish,'1 Half Pan '+dish);L.push('');
+  }
+  // Sides
+  [g('side1'),g('side2')].filter(Boolean).forEach(sd=>{
+    if(/potato/i.test(sd))push(shRound(G*6.67,50).toLocaleString()+' '+sd+' Seasoned and baked in Full Pans');
+    else if(/broccoli|asparagus|green bean|vegetable/i.test(sd))push(shRound(G*0.147,1)+' lbs ( Full Bus Tub ) '+sd+'  Send Uncooked will cook on site.');
+    else push(shRound(G/25,1)+' Full Pans '+sd);
+  });
+  if(g('side1')||g('side2')){push(shRound(G/50,1)+' Quarts Garlic Olive Oil Salt Pepper');L.push('')}
+  // Bread & table
+  push(shRound(G*0.113,1)+' Dozen Assorted Dinner Rolls');
+  push(shRound(G*1.67,10)+' Wedding Butter Pats',shRound(G/37.5,1)+' Quarts Creamer');
+  return L.map(x=>x?('*  '+x):'').join('\n');
+}
+function wedChefRebuild(){const fe=wedFeedEvent(wed.evId);if(!fe)return;
+  const G=shGuests(fe.id);
+  if(!G){alert('Enter the guest count first — the prep quantities scale off it.');return}
+  if(wedSheetGet(fe.id,'chefLines')&&!confirm('Rebuild the prep list from the menu picks? Your edits to the lines will be replaced.'))return;
+  wedSheetSet(fe.id,'chefLines',wedChefBuild(fe));renderViewport();}
+function wedChefTicket(fe){
+  const id=fe.id,g=f=>wedSheetGet(id,f);
+  const lines=(g('chefLines')||wedChefBuild(fe)||'').split('\n');
+  const body=lines.map(l=>l.trim()?`<p style="margin:.18em 0">${esc(l)}</p>`:'<div style="height:.6em"></div>').join('');
+  return `<div style="font-family:Georgia,'Times New Roman',serif">
+    <table style="width:100%;border:none"><tr>
+      <td style="text-align:left;font-weight:bold;font-size:13.5pt">${esc(wedDow(fe.date))} ${esc(wedPrettyDate(fe.date))}</td>
+      <td style="text-align:center;font-weight:bold;font-size:13.5pt">${g('leave')?'Leave Time '+esc(g('leave')):''}</td>
+      <td style="text-align:right;font-weight:bold;font-size:13.5pt">Chef</td>
+    </tr></table>
+    <div style="font-size:11.5pt;margin-bottom:1.1em">${esc(g('venue')||'')}${g('to')||wedName(fe)?'  '+esc(g('to')||wedName(fe)):''}</div>
+    ${body}
+    ${g('chefNotes')?`<div style="margin-top:1.2em"><b>Notes:</b><br>${esc(g('chefNotes')).replace(/\n/g,'<br>')}</div>`:''}
+  </div>`}
 function wedSheetLetter(fe){
   const id=fe.id,g=f=>wedSheetGet(id,f);
   const apps=[g('app1'),g('app2'),g('app3'),g('app4')].filter(Boolean);
@@ -2770,6 +2850,11 @@ function wedSheetLetter(fe){
   <p style="text-align:center">${esc(g('dessert')||'Not Included in Quote')}${g('coffee')?'<br>~ '+esc(g('coffee'))+' ~':''}</p>
   ${g('notes')?`<p><b>Notes:</b><br>${esc(g('notes')).replace(/\n/g,'<br>')}</p>`:''}
   <p style="margin-top:22px">Sincerely,<br><b>Tony Angeli</b><br>Angeli’s Catering &nbsp; Cell Phone 630-669-5015</p>`}
+function wedChefPrint(){const fe=wedFeedEvent(wed.evId);if(!fe)return;
+  const f=document.createElement('iframe');f.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0';document.body.appendChild(f);
+  const w=f.contentWindow,doc=w.document;doc.open();
+  doc.write('<!doctype html><html><head><meta charset="utf-8"><title>Chef Ticket — '+esc(wedName(fe))+'</title><style>@page{margin:.75in}body{font-family:Georgia,\'Times New Roman\',serif;font-size:13pt;line-height:1.45;color:#000}p{margin:.18em 0}</style></head><body>'+wedChefTicket(fe)+'</body></html>');
+  doc.close();w.focus();setTimeout(()=>{try{w.print()}catch(e){}setTimeout(()=>f.remove(),1500)},300)}
 function wedSheetPrint(){const fe=wedFeedEvent(wed.evId);if(!fe)return;
   const f=document.createElement('iframe');f.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0';document.body.appendChild(f);
   const w=f.contentWindow,doc=w.document;doc.open();
