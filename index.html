@@ -328,7 +328,6 @@
     .layout-btn.active,.dc-badge,.co-badge,.unread-badge,.mail-acct.active,.url-bar .u-save,.gmail-action-btn:not(.secondary):not(.danger){color:#140f02 !important;font-weight:800}
     /* Amber, monospaced, glowing brandmark */
     .brand{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-weight:700;text-transform:uppercase;letter-spacing:2px;font-size:13.5px;color:var(--accent);text-shadow:0 0 12px rgba(255,179,0,.5)}
-    .brand span:first-child{font-size:18px;filter:drop-shadow(0 0 7px rgba(255,179,0,.55))}
     body.light .brand{color:var(--text);text-shadow:none}
     /* Header + tab rail read like a console: amber underglow */
     #app-header{border-bottom:1px solid rgba(255,179,0,.45);box-shadow:0 0 22px rgba(255,179,0,.10),0 2px 12px rgba(0,0,0,.6)}
@@ -515,7 +514,7 @@
 </head>
 <body>
 <header id="app-header">
-  <div class="brand"><span>🦇</span><span>The Watch Tower</span><div class="live-dot"></div></div>
+  <div class="brand"><span>The Watch Tower</span><div class="live-dot"></div></div>
   <div class="tab-list" id="tab-list"></div>
   <div class="header-right">
     <button class="icon-btn" onclick="reloadActive()" title="Reload">⟳</button>
