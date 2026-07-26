@@ -2753,6 +2753,7 @@ function wedSheetPaneHTML(fe){
         <input class="sh-in sh-num" style="flex:0 0 88px;max-width:88px" type="number" placeholder="kids" value="${esc(wedSheetGet(id,'nKids'))}" oninput="wedSheetSet(${id},'nKids',this.value);wedGuestPaint()">
         <input class="sh-in sh-num" style="flex:0 0 96px;max-width:96px" type="number" placeholder="vendors" value="${esc(wedSheetGet(id,'nVendors'))}" oninput="wedSheetSet(${id},'nVendors',this.value);wedGuestPaint()">
         <span id="sh-gtotal" class="sh-calc" style="font-weight:800;color:var(--accent)"></span></div></div>
+      ${row('Bar',shSel(id,'bar',SH_BAR,'bar'))}
       ${sec('Appetizers')}
       ${row('Appetizer 1',shSel(id,'app1',SH_APPS,'appetizer'))}
       ${row('Appetizer 2',shSel(id,'app2',SH_APPS,'appetizer'))}
@@ -2776,14 +2777,12 @@ function wedSheetPaneHTML(fe){
       ${shPriceRow(id,'Vegetarian','pVeg')}
       ${shPriceRow(id,'Kids meal','pKids')}
       ${shPriceRow(id,'Vendor meal','pVendor')}
-      ${sec('Late night, bar & dessert')}
+      ${sec('Late night & dessert')}
       ${row('Late night 1',shSel(id,'late1',SH_LATE,'option'))}
       ${row('Late night 1 price',shTxt(id,'late1p',''))}
       ${row('Late night 2',shSel(id,'late2',SH_LATE,'option'))}
       ${row('Late night 2 price',shTxt(id,'late2p',''))}
-      ${row('Bar',shSel(id,'bar',SH_BAR,'bar'))}
       ${row('Dessert',shSel(id,'dessert',SH_DESSERT,'dessert'))}
-      ${row('Coffee station',shTxt(id,'coffee',''))}
       ${sec('Recap / final invoice — totals calculate as you type')}
       ${row('Recap date',shTxt(id,'rcDate',''))}
       ${[1,2,3,4,5].map(i=>`<div class="sh-row"><label>Line ${i}</label><div class="sh-money">
@@ -2847,7 +2846,6 @@ function wedChefTicket(fe){
   const late=[g('late1'),g('late2')].filter(Boolean);
   if(late.length){late.forEach(x=>star(esc(x)));gap()}
   if(g('dessert')&&!/not included/i.test(g('dessert')))star(esc(g('dessert')));
-  if(g('coffee'))star(esc(g('coffee')));
   return '<div style="font-family:Georgia,serif">'
    +'<table style="width:100%;border:none"><tr>'
    +'<td style="text-align:left;font-weight:bold;font-size:13.5pt">'+esc(wedDow(fe.date))+' '+esc(wedPrettyDate(fe.date))+'</td>'
@@ -2956,7 +2954,7 @@ function wedSheetLetter(fe){
   <h3 style="text-align:center">~~ The Following Items will be on Each Table ~~</h3>
   <p style="text-align:center">~ Baskets of Bread Rolls and Butter (Variety) — Our Bread ~<br>~ Lemon Slices in Water Glasses ~ &nbsp; ~ Olive Oil on Tables ~<br>~ Salt and Pepper on Each Table ~ &nbsp; ~ Parmesan on Tables ~<br>~ Carafes of Water on Each Table ~</p>
   <h3 style="text-align:center">~~ Dessert ~~</h3>
-  <p style="text-align:center">${esc(g('dessert')||'Not Included in Quote')}${g('coffee')?'<br>~ '+esc(g('coffee'))+' ~':''}</p>
+  <p style="text-align:center">${esc(g('dessert')||'Not Included in Quote')}</p>
   ${g('notes')?`<p><b>Notes:</b><br>${esc(g('notes')).replace(/\n/g,'<br>')}</p>`:''}
   <p style="margin-top:22px">Sincerely,<br><b>Tony Angeli</b><br>Angeli’s Catering &nbsp; Cell Phone 630-669-5015</p>`}
 function wedChefPrint(){const fe=wedFeedEvent(wed.evId);if(!fe)return;
