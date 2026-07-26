@@ -3136,12 +3136,12 @@ function wedEventHTML(){const fe=wedFeedEvent(wed.evId);if(!fe){wed.view='list';
     <div class="wed-event">
       <div class="wed-side">
         <span class="wed-side-hint">Event tools</span>
+        <button class="wed-side-btn ${wed.pane==='sheet'?'active':''}" onclick="wedSheetShow()">📋 <span>Event Sheet<span class="sub">chef ticket only</span></span></button>
+        <button class="wed-side-btn ${wed.pane==='truck'?'active':''}" onclick="wedShowTruck()">🚚 <span>Truck Packing<span class="sub">auto packing list by guests &amp; bar</span></span></button>
         <button class="wed-side-btn ${wed.pane==='plan'?'active':''}" onclick="wedOpenSchedLayout()">📐 <span>Floor Plan<span class="sub">${lay?'saved layout ✓':'start from room template'}</span></span></button>
         <button class="wed-side-btn ${wed.pane==='tpl'?'active':''}" onclick="wedShowTpl()">📋 <span>Wedding Template<span class="sub">this event's copy · autosaves</span></span></button>
         <button class="wed-side-btn ${wed.pane==='catering'?'active':''}" onclick="wedShowCatering()">🍽 <span>Catering Template<span class="sub">this event's copy · autosaves</span></span></button>
         <button class="wed-side-btn ${wed.pane==='docs'?'active':''}" onclick="wedShowDocs()">📝 <span>Docs<span class="sub">this event's documents &amp; files</span></span></button>
-        <button class="wed-side-btn ${wed.pane==='truck'?'active':''}" onclick="wedShowTruck()">🚚 <span>Truck Packing<span class="sub">auto packing list by guests &amp; bar</span></span></button>
-        <button class="wed-side-btn ${wed.pane==='sheet'?'active':''}" onclick="wedSheetShow()">📋 <span>Event Sheet<span class="sub">chef ticket only</span></span></button>
         <button class="wed-side-btn ${wed.pane==='mail'?'active':''}" onclick="wedShowMail()">📧 <span>Customer Emails<span class="sub">${wedCustMail(fe)?esc(wedCustMail(fe)):'link the customer’s email'}</span></span></button>
         <button class="wed-side-btn ${wed.pane==='sched'?'active':''}" onclick="wedShowSched()">📅 <span>Day Schedule<span class="sub">who's working ${esc(wedPrettyDate(fe.date))}</span></span></button>
       </div>
