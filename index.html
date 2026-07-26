@@ -262,6 +262,9 @@
     .mail-att-btn{background:transparent;border:1px solid var(--border);color:var(--text-dim);border-radius:14px;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit}
     .mail-att-btn:hover{border-color:var(--accent);color:var(--text)}
     .gmail-compose.dragover,#mail-new-form.dragover,.docs-editor.dragover{outline:2px dashed var(--accent);outline-offset:-6px}
+    #wed-pdf-veil{display:none;position:absolute;inset:0;z-index:40;background:rgba(8,9,12,.86);border:3px dashed var(--accent);border-radius:12px;
+      align-items:center;justify-content:center;text-align:center;color:var(--accent);font-size:19px;font-weight:800;letter-spacing:.4px;padding:20px}
+    #wed-stage-wrap.pdf-over #wed-pdf-veil{display:flex}
     .mail-compose-btn:hover{filter:brightness(1.08)}
     @media(max-width:600px){.mail-compose-btn{padding:9px 11px}}
     /* User chip in toolbar */
@@ -2763,8 +2766,11 @@ function shLemonCount(id){
 // tables on this event's floor plan, overridable); Plated → 1 per plated dish.
 function shPiccataTables(id){try{const lay=wedLayoutForSched(id);
   return lay&&lay.items?lay.items.filter(i=>i.type==='round').length:0}catch(e){return 0}}
-function shAllTables(id){try{const lay=wedLayoutForSched(id);
-  return lay&&lay.items?lay.items.filter(i=>i.type==='round'||i.type==='rect').length:0}catch(e){return 0}}
+// Every table on the floor plan — rounds plus the rectangles that are tables
+// (sweetheart, vendor). Bars, cake/gift tables and buffets aren't seats, so they don't count.
+const SH_NOT_A_TABLE=/\b(bar|cake|gift|buffet|station|carv|escort|place\s*card|seating\s*chart|guest\s*book|dance|door|entrance|exit|stage|dj)\b/i;
+function shAllTables(id){try{const lay=wedLayoutForSched(id);if(!lay||!lay.items)return 0;
+  return lay.items.filter(i=>(i.type==='round'||i.type==='rect')&&!SH_NOT_A_TABLE.test(i.label||'')).length}catch(e){return 0}}
 // #11 rolls: <dozen per table> × tables on the floor plan (incl. sweetheart + vendor tables)
 function shRollsDozen(id){const per=parseFloat(wedSheetGet(id,'rollsPerTable'));const t=shAllTables(id);
   return (per>0&&t)?Math.ceil(per*t):0}
@@ -2800,15 +2806,19 @@ function shIsAutoSaladNote(t){t=String(t||'').trim();
   return !t||/^(#|\d+) Strawberries, (#|\d+) Apple \/ Pear Slices, (#|\d+) Jug Walnuts, (#|\d+) Bleu Cheese Boats$/.test(t)}
 // Chicken prep note — sauce quarts, capers (piccata only) and bus-tub setups.
 // Quantities are placeholders until Vinny gives the ratios (see the pending list).
+const SH_CAPER_LG_MIN=null;   // guests at/above which the capers container is Large — Vinny owes this number
+function shCaperSize(id){const g=shGuests(id);
+  if(!SH_CAPER_LG_MIN||!g)return 'Small / Large';
+  return g>=SH_CAPER_LG_MIN?'Large':'Small'}
 function shChickenPrep(id){
   const c=wedSheetGet(id,'chicken')||'';
   const bits=['# Quarts Sauce'];
-  if(/piccata/i.test(c))bits.push('Small / Large Container of Capers');
+  if(/piccata/i.test(c))bits.push(shCaperSize(id)+' Container of Capers');
   bits.push('# Setups in Bus Tub');
   return bits.join(', ')}
 function shIsAutoChickenNote(t){t=String(t||'').trim();
-  return !t||/^(#|\d+) Quarts Sauce(, Small \/ Large Container of Capers)?, (#|\d+) Setups in Bus Tub$/.test(t)}
-function shMintPrep(id){const g=shGuests(id);return g?((g+5)+' Mint Sprigs'):'# Mint Sprigs'}
+  return !t||/^(#|\d+) Quarts Sauce(, (Small \/ Large|Small|Large) Container of Capers)?, (#|\d+) Setups in Bus Tub$/.test(t)}
+function shMintPrep(id){const g=shGuests(id);return g?(g+' Mint Sprigs'):'# Mint Sprigs'}   // 1 per guest
 function shIsAutoMint(t){t=String(t||'').trim();return !t||/^(#|\d+) Mint Sprigs$/.test(t)}
 // Writes a computed value into a field + its on-screen box, unless the user typed their own.
 function shAutoField(id,field,value,isAuto){
@@ -2846,7 +2856,6 @@ function wedSheetSet(id,field,val){
       if(f==='liSlices'){const n=shLemonCount(id);if(n)fill=n+' Lemon Slices';}
       if(f==='liMint')fill=shMintPrep(id);
       if(f==='liGarnish'){const n=shGarnishCount(id);if(n)fill=n+' Lemon Garnish for Piccata';}
-      if(f==='liMint'){const n=shGuests(id);if(n)fill=n+' Mint Sprigs';}
       const auto=cur===tpl||/^\d+ Mint Sprigs$/.test(cur)||/^\d+ Lemon Slices$/.test(cur)||/^\d+ Lemon Garnish for Piccata$/.test(cur)||cur==='# Lemon Slices'||cur==='# Lemon Slices for Lemon Ice'||cur==='# Lemon Slices for Water Glasses'||cur==='# Lemon Slices for Garnish for Entrees';
       if(on&&!cur)m2[k][f]={v:fill,at:Date.now()};                // prefill (computed where we can)
       else if(!on&&auto)m2[k][f]={v:'',at:Date.now()};            // untouched auto value — clear
@@ -2854,19 +2863,6 @@ function wedSheetSet(id,field,val){
     wedSheetPersist(m2);
   }
   // keep the piccata garnish line in step (only while it's still an auto value)
-  if(field==='nAdults'||field==='nKids'||field==='nVendors'){
-    if(wedSheetGet(id,'lemonIce')){
-      const cur=String(wedSheetGet(id,'liMint')||'').trim();
-      if(!cur||cur==='# Mint Sprigs'||/^\d+ Mint Sprigs$/.test(cur)){
-        const n=shGuests(id);
-        const m4=wedSheetLoad();m4[k]={...(m4[k]||{})};
-        m4[k].liMint={v:n?(n+' Mint Sprigs'):'# Mint Sprigs',at:Date.now()};
-        wedSheetPersist(m4);
-        const mi=document.querySelector('.sh-in[data-sid="'+id+'"][data-f="liMint"]');
-        if(mi)mi.value=m4[k].liMint.v;
-      }
-    }
-  }
   if(field==='chicken'||field==='service'||field==='piccataBowls'||field==='nAdults'){
     if(wedSheetGet(id,'lemonIce')){
       const cur=String(wedSheetGet(id,'liGarnish')||'').trim();
@@ -2885,6 +2881,7 @@ function wedSheetSet(id,field,val){
   if(field==='nAdults'||field==='nKids'||field==='nVendors'){
     shSaladNoteSync(id);
     if(wedSheetGet(id,'lemonIce'))shAutoField(id,'liMint',shMintPrep(id),shIsAutoMint);
+    if(wedSheetGet(id,'chicken'))shAutoField(id,'chickenNote',shChickenPrep(id),shIsAutoChickenNote);
   }
   kvGet('ct_wed_sheet').then(r=>{const merged=wedSheetMerge(wedSheetLoad(),(r&&r.v)||{});wedSheetPersist(merged);kvPush('ct_wed_sheet',merged,Date.now())})
     .catch(()=>kvPush('ct_wed_sheet',wedSheetLoad(),Date.now()));
@@ -3232,6 +3229,102 @@ function wedDeleteEvent(){const ev=wedCur();if(!ev)return;
   if(wed.view==='event'){wed.pane='tpl';renderViewport()}else wedBack()}
 function wedSaveTemplate(){const ev=wedCur();if(!ev)return;if(!confirm('Make this layout the starting template for every new event?'))return;
   wedLoad().template={items:JSON.parse(JSON.stringify(ev.items)),at:Date.now()};wedStore()}
+// ── floor-plan PDF import ─────────────────────────────────────────────
+// Guests send their venue's seating chart as a PDF. Table numbers sit at the
+// middle of each table, so the text layer's coordinates ARE the layout: read
+// every text item, keep the ones that look like furniture, and rebuild them
+// on our canvas at the same relative positions.
+let wedPdfLib=null;
+async function wedPdfjs(){if(wedPdfLib)return wedPdfLib;
+  const base='https://cdn.jsdelivr.net/npm/pdfjs-dist@4.6.82/build/';
+  const m=await import(base+'pdf.min.mjs');
+  try{m.GlobalWorkerOptions.workerSrc=base+'pdf.worker.min.mjs'}catch(e){}
+  wedPdfLib=m;return m}
+function wedPdfDragOver(e){if(!(e.dataTransfer&&Array.from(e.dataTransfer.types||[]).includes('Files')))return;
+  e.preventDefault();document.getElementById('wed-stage-wrap').classList.add('pdf-over');
+  const v=document.getElementById('wed-pdf-veil');if(v)v.textContent='Drop the floor plan to build the layout';}
+function wedPdfDragLeave(e){const w=document.getElementById('wed-stage-wrap');
+  if(e.relatedTarget&&w&&w.contains(e.relatedTarget))return;   // moving between children isn't a leave
+  if(w)w.classList.remove('pdf-over')}
+function wedPdfDrop(e){e.preventDefault();const w=document.getElementById('wed-stage-wrap');if(w)w.classList.remove('pdf-over');
+  const f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0];if(f)wedPdfImport(f)}
+function wedPdfPick(){const i=document.createElement('input');i.type='file';i.accept='application/pdf,.pdf';
+  i.onchange=()=>{if(i.files&&i.files[0])wedPdfImport(i.files[0])};i.click()}
+function wedPdfBusy(msg){const w=document.getElementById('wed-stage-wrap'),v=document.getElementById('wed-pdf-veil');
+  if(!w||!v)return;if(msg===null){w.classList.remove('pdf-over');return}
+  v.textContent=msg;w.classList.add('pdf-over')}
+
+// What each label on a plan becomes on our canvas.
+function wedPdfClassify(t){
+  const s=t.trim();
+  if(/^\d{1,2}$/.test(s)&&+s>=1&&+s<=60)                       return {type:'round',label:s};
+  if(/^(t|table)\s*\.?\s*#?\s*(\d{1,2})$/i.test(s))            return {type:'round',label:s.replace(/[^\d]/g,'')};
+  if(/sweet\s*heart|sweetheart|head\s*table|bride|groom/i.test(s)) return {type:'rect',label:'SWEETHEART'};
+  if(/vendor|dj\b|photograph|band\b/i.test(s))                 return {type:'rect',label:'VENDOR'};
+  if(/dance/i.test(s))                                         return {type:'dance',label:'DANCE FLOOR'};
+  if(/\bbar\b/i.test(s))                                       return {type:'rect',label:'BAR'};
+  if(/cake/i.test(s))                                          return {type:'rect',label:'CAKE'};
+  if(/gift/i.test(s))                                          return {type:'rect',label:'GIFTS'};
+  if(/buffet|station|carv/i.test(s))                           return {type:'rect',label:s.toUpperCase().slice(0,16)};
+  if(/escort|place\s*card|seating\s*chart|guest\s*book/i.test(s)) return {type:'rect',label:s.toUpperCase().slice(0,16)};
+  if(/entrance|\bdoor\b|exit\b/i.test(s))                      return {type:'door',label:'DOOR'};
+  return null}
+
+async function wedPdfImport(file){
+  const ev=wedCur();if(!ev)return;
+  if(!/pdf$/i.test(file.name||'')&&file.type!=='application/pdf'){alert('That’s not a PDF — send me the floor plan as a PDF and drop it here.');return}
+  try{
+    wedPdfBusy('Reading '+file.name+'…');
+    const pdfjs=await wedPdfjs();
+    const buf=await file.arrayBuffer();
+    const doc=await pdfjs.getDocument({data:buf}).promise;
+    const found=[];
+    const pages=Math.min(doc.numPages,3);
+    for(let pn=1;pn<=pages;pn++){
+      const page=await doc.getPage(pn);
+      const vp=page.getViewport({scale:1});
+      const tc=await page.getTextContent();
+      const hits=[];
+      tc.items.forEach(it=>{
+        const str=(it.str||'').trim();if(!str)return;
+        const cls=wedPdfClassify(str);if(!cls)return;
+        const tr=it.transform||[1,0,0,1,0,0];
+        const w=it.width||0,h=it.height||10;
+        hits.push({...cls,x:tr[4]+w/2,y:vp.height-tr[5]+h/2});   // PDF y is bottom-up
+      });
+      if(hits.length){found.push({page:pn,w:vp.width,h:vp.height,hits});}
+    }
+    wedPdfBusy(null);
+    if(!found.length){
+      alert('No tables found in that PDF.\n\nIt’s most likely a scan or a picture of the plan — there’s no text for me to read. Ask them for the PDF the venue’s software made (or a version where you can select the table numbers with your cursor), and I’ll build it.');
+      return}
+    // Best page = the one with the most furniture on it.
+    const best=found.sort((a,b)=>b.hits.length-a.hits.length)[0];
+    // Same label twice within a hair of each other = one table drawn twice.
+    const keep=[];
+    best.hits.forEach(h=>{if(!keep.some(k=>k.label===h.label&&Math.abs(k.x-h.x)<14&&Math.abs(k.y-h.y)<14))keep.push(h)});
+    const rounds=keep.filter(h=>h.type==='round').length;
+    const other=keep.length-rounds;
+    if(!confirm('Found '+rounds+' numbered table'+(rounds===1?'':'s')+
+      (other?' and '+other+' other piece'+(other===1?'':'s'):'')+' on page '+best.page+' of '+file.name+'.\n\n'+
+      'Build this layout? Everything currently on this floor plan gets replaced.'))return;
+    // Fit the plan's own bounding box onto our canvas.
+    const PAD=70;
+    const xs=keep.map(h=>h.x),ys=keep.map(h=>h.y);
+    const x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);
+    const sc=Math.min((WED_W-PAD*2)/Math.max(x1-x0,1),(WED_H-PAD*2)/Math.max(y1-y0,1));
+    const offX=(WED_W-(x1-x0)*sc)/2-x0*sc, offY=(WED_H-(y1-y0)*sc)/2-y0*sc;
+    const size={round:{w:76,h:76},rect:{w:130,h:56},dance:{w:260,h:195},door:{w:130,h:34}};
+    ev.items=keep.map(h=>({id:wedNewId(),type:h.type,label:h.label,
+      x:Math.round(Math.max(20,Math.min(WED_W-20,h.x*sc+offX))),
+      y:Math.round(Math.max(20,Math.min(WED_H-20,h.y*sc+offY))),
+      ...size[h.type]}));
+    wed.sel=null;wedTouch();
+    setTimeout(()=>{try{wedRollsPaint()}catch(e){}},50);   // rolls count off the new table count
+  }catch(err){
+    wedPdfBusy(null);
+    alert('Couldn’t read that PDF.\n\n'+(err&&err.message||err));
+  }}
 // ── canvas ──
 function wedAdd(type){const ev=wedCur();if(!ev)return;
   const base={round:{w:76,h:76,label:String(ev.items.filter(i=>i.type==='round').length+1)},
@@ -3330,11 +3423,12 @@ function wedPlanChrome(embedded){const ev=wedCur();if(!ev)return '';
       </select>
       <button class="wed-btn" onclick="wedRenameVenue()" title="Rename this venue">✎ Rename</button>
       <button class="wed-btn" onclick="wedSaveVenue()">💾 Save</button>
+      <button class="wed-btn" onclick="wedPdfPick()" title="Drop or pick the floor plan the guest sent — the tables get built for you">📄 Import PDF</button>
       <button class="wed-btn" onclick="wedPrint()">🖨 Print</button>
       <button class="wed-btn danger" onclick="wedClearAll()">🧹 Clear all</button>
       <span class="wed-count" id="wed-count"></span>
     </div>
-    <div id="wed-stage-wrap"><div id="wed-stage"></div></div>
+    <div id="wed-stage-wrap" ondragover="wedPdfDragOver(event)" ondragleave="wedPdfDragLeave(event)" ondrop="wedPdfDrop(event)"><div id="wed-stage"></div><div id="wed-pdf-veil"></div></div>
     <div class="wed-tools">
       <span class="hint">ADD</span>
       <button class="wed-btn" onclick="wedAdd('round')">⚪ Table</button>
