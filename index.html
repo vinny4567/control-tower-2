@@ -2671,6 +2671,21 @@ function shLemonCount(id){
   if(!water)water=g;
   return g?water+g:0}
 const SH_SPECIAL_SALAD_NOTE='# Strawberries, # Apple / Pear Slices, # Jug Walnuts, # Bleu Cheese Boats';
+// Keeps the salad note in step with the salad choice — runs on change AND every time
+// the sheet paints, so a salad picked before this existed still gets its prep line.
+function shSaladNoteSync(id,val){
+  const salad=(val!==undefined&&val!==null)?val:wedSheetGet(id,'salad');
+  const cur=wedSheetGet(id,'saladNote');
+  const special=/special/i.test(salad||'');
+  let next=null;
+  if(special&&!cur)next=SH_SPECIAL_SALAD_NOTE;
+  else if(!special&&cur===SH_SPECIAL_SALAD_NOTE)next='';
+  if(next===null)return false;
+  const m=wedSheetLoad();const k='sched-'+id;m[k]={...(m[k]||{})};m[k].saladNote={v:next,at:Date.now()};
+  wedSheetPersist(m);
+  const inp=document.querySelector(`.sh-in[data-sid="${id}"][data-f="saladNote"]`);
+  if(inp&&document.activeElement!==inp)inp.value=next;
+  return true}
 function wedSheetSet(id,field,val){
   const m=wedSheetLoad();const k='sched-'+id;m[k]={...(m[k]||{})};m[k][field]={v:val,at:Date.now()};
   wedSheetPersist(m);
@@ -2687,19 +2702,7 @@ function wedSheetSet(id,field,val){
     });
     wedSheetPersist(m2);
   }
-  if(field==='salad'){
-    const cur=wedSheetGet(id,'saladNote');
-    const special=/special/i.test(val||'');
-    let next=null;
-    if(special&&!cur)next=SH_SPECIAL_SALAD_NOTE;               // prefill (amounts to come)
-    else if(!special&&cur===SH_SPECIAL_SALAD_NOTE)next='';     // untouched template — clear it
-    if(next!==null){
-      const m2=wedSheetLoad();m2[k]={...(m2[k]||{})};m2[k].saladNote={v:next,at:Date.now()};
-      wedSheetPersist(m2);
-      const inp=document.querySelector(`.sh-in[data-sid="${id}"][data-f="saladNote"]`);
-      if(inp)inp.value=next;
-    }
-  }
+  if(field==='salad')shSaladNoteSync(id,val);
   kvGet('ct_wed_sheet').then(r=>{const merged=wedSheetMerge(wedSheetLoad(),(r&&r.v)||{});wedSheetPersist(merged);kvPush('ct_wed_sheet',merged,Date.now())})
     .catch(()=>kvPush('ct_wed_sheet',wedSheetLoad(),Date.now()));
 }
@@ -3168,7 +3171,7 @@ function wedFit(){const wrap=document.getElementById('wed-stage-wrap'),st=docume
   wed.scale=s;
   st.style.transform=`translate(-50%,-50%) scale(${s})`}
 function wedInit(){
-  if(wed.view==='event'&&wed.pane==='sheet'){setTimeout(()=>{try{const fe=wedFeedEvent(wed.evId);if(fe){wedRecapPaint();wedGuestPaint();['pAdult','pVeg','pKids','pVendor'].forEach(k=>wedSheetCalcRow(fe.id,k))}}catch(e){}},20);return}
+  if(wed.view==='event'&&wed.pane==='sheet'){setTimeout(()=>{try{const fe=wedFeedEvent(wed.evId);if(fe){shSaladNoteSync(fe.id);wedRecapPaint();wedGuestPaint();['pAdult','pVeg','pKids','pVendor'].forEach(k=>wedSheetCalcRow(fe.id,k))}}catch(e){}},20);return}
   if(wed.view==='list'){if(!wed.feed&&!wed.loading)wedFetchFeed();return}
   const st=document.getElementById('wed-stage');if(!st)return;
   wedFit();wedPaint();
