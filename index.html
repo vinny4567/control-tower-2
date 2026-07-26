@@ -2722,7 +2722,7 @@ const SH_LEMON_LINES=[
   ['liContainers','# Full Containers of Lemon Ice'],
   ['liMint','# Mint Sprigs'],
   ['liSlices','Lemon Slices'],
-  ['liGarnish','# Lemon Slices for Garnish for Entrees'],
+  ['liGarnish','# Lemon Garnish for Piccata'],
 ];
 // Combined lemon slices (lemon ice + water glasses) = water glasses + guests.
 // Water glasses come from this event's Truck sheet (override-aware; auto = 1/guest).
@@ -2736,6 +2736,16 @@ function shLemonCount(id){
   }catch(e){}
   if(!water)water=g;
   return g?water+g:0}
+// Lemon garnish is PICCATA ONLY. Family style → 1 per bowl of piccata (bowls default to the round
+// tables on this event's floor plan, overridable); Plated → 1 per plated dish.
+function shPiccataTables(id){try{const lay=wedLayoutForSched(id);
+  return lay&&lay.items?lay.items.filter(i=>i.type==='round').length:0}catch(e){return 0}}
+function shGarnishCount(id){
+  if(!/piccata/i.test(wedSheetGet(id,'chicken')||''))return 0;
+  const svc=wedSheetGet(id,'service')||'';
+  if(/plated/i.test(svc))return shNum2(wedSheetGet(id,'nAdults'))||shGuests(id)||0;
+  if(/family/i.test(svc)){const ov=shNum2(wedSheetGet(id,'piccataBowls'));return ov||shPiccataTables(id)||0}
+  return 0}
 const SH_SPECIAL_SALAD_NOTE='# Strawberries, # Apple / Pear Slices, # Jug Walnuts, # Bleu Cheese Boats';
 // Keeps the salad note in step with the salad choice — runs on change AND every time
 // the sheet paints, so a salad picked before this existed still gets its prep line.
@@ -2762,11 +2772,26 @@ function wedSheetSet(id,field,val){
       const cur=String((m2[k][f]||{}).v||'').trim();
       let fill=tpl;
       if(f==='liSlices'){const n=shLemonCount(id);if(n)fill=n+' Lemon Slices';}
-      const auto=cur===tpl||/^\d+ Lemon Slices$/.test(cur)||cur==='# Lemon Slices'||cur==='# Lemon Slices for Lemon Ice'||cur==='# Lemon Slices for Water Glasses';
+      if(f==='liGarnish'){const n=shGarnishCount(id);if(n)fill=n+' Lemon Garnish for Piccata';}
+      const auto=cur===tpl||/^\d+ Lemon Slices$/.test(cur)||/^\d+ Lemon Garnish for Piccata$/.test(cur)||cur==='# Lemon Slices'||cur==='# Lemon Slices for Lemon Ice'||cur==='# Lemon Slices for Water Glasses'||cur==='# Lemon Slices for Garnish for Entrees';
       if(on&&!cur)m2[k][f]={v:fill,at:Date.now()};                // prefill (computed where we can)
       else if(!on&&auto)m2[k][f]={v:'',at:Date.now()};            // untouched auto value — clear
     });
     wedSheetPersist(m2);
+  }
+  // keep the piccata garnish line in step (only while it's still an auto value)
+  if(field==='chicken'||field==='service'||field==='piccataBowls'||field==='nAdults'){
+    if(wedSheetGet(id,'lemonIce')){
+      const cur=String(wedSheetGet(id,'liGarnish')||'').trim();
+      if(!cur||cur==='# Lemon Garnish for Piccata'||/^\d+ Lemon Garnish for Piccata$/.test(cur)){
+        const n=shGarnishCount(id);
+        const m3=wedSheetLoad();m3[k]={...(m3[k]||{})};
+        m3[k].liGarnish={v:n?(n+' Lemon Garnish for Piccata'):'# Lemon Garnish for Piccata',at:Date.now()};
+        wedSheetPersist(m3);
+        const gi=document.querySelector('.sh-in[data-sid="'+id+'"][data-f="liGarnish"]');
+        if(gi)gi.value=m3[k].liGarnish.v;
+      }
+    }
   }
   if(field==='salad')shSaladNoteSync(id,val);
   kvGet('ct_wed_sheet').then(r=>{const merged=wedSheetMerge(wedSheetLoad(),(r&&r.v)||{});wedSheetPersist(merged);kvPush('ct_wed_sheet',merged,Date.now())})
@@ -2843,7 +2868,7 @@ function wedSheetPaneHTML(fe){
       ${row('Side 2 sauce',shSel(id,'side2Sauce',SH_SAUCES,'sauce'))}
       <div class="sh-row"><label>Lemon ice</label><div class="sh-money">
         <label class="sh-toggle"><input type="checkbox" ${wedSheetGet(id,'lemonIce')?'checked':''} onchange="wedSheetSet(${id},'lemonIce',this.checked?'1':'');renderViewport()"><span>Serving lemon ice</span></label></div></div>
-      ${wedSheetGet(id,'lemonIce')?`${sec('Lemon ice')}`+SH_LEMON_LINES.map(([f,tpl])=>`<div class="sh-row"><label>${esc(tpl.replace(/^# /,''))}</label><input class="sh-in" type="text" data-sid="${id}" data-f="${f}" value="${esc(wedSheetGet(id,f))}" oninput="wedSheetSet(${id},'${f}',this.value)"></div>`).join(''):''}
+      ${wedSheetGet(id,'lemonIce')?`${sec('Lemon ice')}`+SH_LEMON_LINES.filter(([f])=>f!=='liGarnish'||/piccata/i.test(wedSheetGet(id,'chicken')||'')).map(([f,tpl])=>`<div class="sh-row"><label>${esc(tpl.replace(/^# /,''))}</label><input class="sh-in" type="text" data-sid="${id}" data-f="${f}" value="${esc(wedSheetGet(id,f))}" oninput="wedSheetSet(${id},'${f}',this.value)"></div>`).join('')+(/piccata/i.test(wedSheetGet(id,'chicken')||'')&&/family/i.test(wedSheetGet(id,'service')||'')?`<div class="sh-row"><label>Piccata bowls</label><div class="sh-money"><input class="sh-in sh-num" type="number" placeholder="${shPiccataTables(id)||'bowls'}" value="${esc(wedSheetGet(id,'piccataBowls'))}" oninput="wedSheetSet(${id},'piccataBowls',this.value)"><span class="sh-calc">${shPiccataTables(id)?'floor plan has '+shPiccataTables(id)+' round tables — 1 garnish per bowl':'set the bowl count (1 garnish each)'}</span></div></div>`:''):''}
       ${sec('Pricing — labor 20% + tax 7.75% calculate automatically')}
       ${shPriceRow(id,'Adult entrée','pAdult')}
       ${shPriceRow(id,'Vegetarian','pVeg')}
