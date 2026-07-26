@@ -2654,7 +2654,7 @@ function wedSheetGet(id,field){const e=wedSheetLoad()['sched-'+id];const f=e&&e[
 const SH_LEMON_LINES=[
   ['liContainers','# Full Containers of Lemon Ice'],
   ['liMint','# Mint Sprigs'],
-  ['liSlices','# Lemon Slices'],
+  ['liSlices','Lemon Slices'],
   ['liGarnish','# Lemon Slices for Garnish for Entrees'],
 ];
 // Combined lemon slices (lemon ice + water glasses) = water glasses + guests.
@@ -2680,7 +2680,7 @@ function wedSheetSet(id,field,val){
       const cur=(m2[k][f]||{}).v||'';
       let fill=tpl;
       if(f==='liSlices'){const n=shLemonCount(id);if(n)fill=n+' Lemon Slices';}
-      const auto=cur===tpl||/^\d+ Lemon Slices$/.test(cur)||cur==='# Lemon Slices for Lemon Ice'||cur==='# Lemon Slices for Water Glasses';
+      const auto=cur===tpl||/^\d+ Lemon Slices$/.test(cur)||cur==='# Lemon Slices'||cur==='# Lemon Slices for Lemon Ice'||cur==='# Lemon Slices for Water Glasses';
       if(on&&!cur)m2[k][f]={v:fill,at:Date.now()};                // prefill (computed where we can)
       else if(!on&&auto)m2[k][f]={v:'',at:Date.now()};            // untouched auto value — clear
     });
