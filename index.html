@@ -2139,7 +2139,7 @@ function tkItems(){
   const pkgName=d.pkg==='std'?'STANDARD BAR':d.pkg==='prem'?'PREMIUM BAR':'BEER & WINE BAR';
   (TK_BARS[d.pkg]||TK_BARS.std).forEach(row=>{
     out.push({sec:'🍸 '+row[6]+' — '+pkgName,key:'bar:'+row[0],label:row[0],auto:tkBarQty(row,g)})});
-  TK_MIXERS.forEach(([label,rule])=>out.push({sec:'🥤 MIXERS & SODA',key:'mix:'+label,label,auto:tkEquipQty(rule,g,d)}));
+  TK_MIXERS.forEach(([label,rule])=>out.push({sec:'🥤 MIXERS & SODA (cases)',key:'mix:'+label,label,auto:tkEquipQty(rule,g,d)}));
   TK_EQUIP.forEach(([cat,label,rule,mod])=>{
     if(mod&&!tkModOn(d,mod))return;   // module switched off — item hidden everywhere
     out.push({sec:'📦 '+cat,key:'eq:'+label,label,auto:tkEquipQty(rule,g,d)})});
