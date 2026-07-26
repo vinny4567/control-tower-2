@@ -2634,10 +2634,12 @@ const SH_SAUCE=['','Marinara','Vodka Cream','Primavera','Pesto Cream','Bolognese
 const SH_PASTA=['','Bowtie','Rigatoni','Mostaccioli','Rotini'];
 const SH_PROTEIN=['','Filet (8 oz)'];
 const SH_SAUCES=['','Garlic & Oil','Lemon Salt & Pepper','Garlic Butter'];
-const SH_SIDES=['','Red Skinned Mashed Potatoes','Steamed Asparagus','Broccoli','Roasted Vegetables','Sweet Corn','Italian Potato Salad','Baked Beans','Cole Slaw','Pasta Salad','Roasted Vegetable Orzo Feta Salad','Green Beans','Watermelon','Fresh Fruit Salad'];
+const SH_SIDES=['','Red Skinned Mashed Potatoes','Steamed Asparagus','Broccoli','Roasted Vegetables'];
 const SH_LATE=['','Vienna All Beef Hot Dogs w/ Cart','Mini Chicken Parmesan Sandwiches','Pizza'];
 const SH_DESSERT=['','Not Included in Quote','Mini Tiramisu','Mini Cannolis','Mini Brownies','Mini Carrot Cake','Assorted Cookies','Assorted Italian Pastries','Mini New York Cheesecake','Assorted Mini Pastries'];
-const SH_BAR=['','Provided through the venue','Soda, Juice & Water Package — $6.95 pp','Beer, Wine & Soda — $17.95 pp','Standard Liquor Bar — $24.95 pp','Premium Liquor Bar — $29.95 pp','Bar Mixer Package — $2.00 pp','Bar Glassware — $3.00 pp'];
+const SH_BAR=['','Provided through the venue','Soda, Juice & Water Package — $6.95 pp','Beer, Wine & Soda — $17.95 pp','Standard Liquor Bar — $24.95 pp','Premium Liquor Bar — $29.95 pp'];
+// Bar add-ons priced per guest — they live in the recap so they bill as their own lines.
+const SH_BAR_ADDONS=[['rcMixer','Bar Mixer Package',2.00],['rcGlass','Bar Glassware',3.00]];
 const SH_SERVICE=['','Family Style','Plated','Buffet','Stations'];
 const SH_LABOR=0.20, SH_TAX=0.0775; // matches the template's math exactly (20% labor, 7.75% Naperville)
 
@@ -2796,6 +2798,11 @@ function wedSheetPaneHTML(fe){
         <span style="color:var(--text-muted)">@</span>
         <input class="sh-in sh-num" style="flex:0 0 104px;max-width:104px" type="number" step="0.01" placeholder="rate" value="${esc(wedSheetGet(id,'rc'+i+'r'))}" oninput="wedSheetSet(${id},'rc${i}r',this.value);wedRecapPaint()">
         <span id="rc-t${i}" class="sh-calc" style="min-width:96px;font-weight:700;color:var(--accent)"></span></div></div>`).join('')}
+      ${SH_BAR_ADDONS.map(([f,lbl,rate])=>`<div class="sh-row"><label>${lbl}</label><div class="sh-money">
+        <input class="sh-in sh-num" style="flex:0 0 78px;max-width:78px" type="number" placeholder="qty" value="${esc(wedSheetGet(id,f+'N'))}" oninput="wedSheetSet(${id},'${f}N',this.value);wedRecapPaint()">
+        <span style="color:var(--text-muted)">@</span>
+        <input class="sh-in sh-num" style="flex:0 0 104px;max-width:104px" type="number" step="0.01" placeholder="${rate.toFixed(2)}" value="${esc(wedSheetGet(id,f+'R'))}" oninput="wedSheetSet(${id},'${f}R',this.value);wedRecapPaint()">
+        <span id="rc-t${f}" class="sh-calc" style="min-width:96px;font-weight:700;color:var(--accent)"></span></div></div>`).join('')}
       <div class="sh-row"><label>Vendors</label><div class="sh-money">
         <input class="sh-in sh-num" style="flex:0 0 78px;max-width:78px" type="number" placeholder="qty" value="${esc(wedSheetGet(id,'rcVendN'))}" oninput="wedSheetSet(${id},'rcVendN',this.value);wedRecapPaint()">
         <span style="color:var(--text-muted)">@</span>
@@ -2877,12 +2884,17 @@ function shRecapTotals(id){
   const lines=shRecapLines(id);
   const vN=shNum2(wedSheetGet(id,'rcVendN')), vR=shNum2(wedSheetGet(id,'rcVendR'));
   const vend=vN*vR;
-  const balance=lines.reduce((a,b)=>a+b.total,0)+vend;
+  const addons=SH_BAR_ADDONS.map(([f,lbl,rate])=>{
+    const n=shNum2(wedSheetGet(id,f+'N'));
+    const r=wedSheetGet(id,f+'R')!==''?shNum2(wedSheetGet(id,f+'R')):rate;
+    return {f,lbl,n,r,total:n*r}});
+  const addonTotal=addons.reduce((a,b)=>a+b.total,0);
+  const balance=lines.reduce((a,b)=>a+b.total,0)+vend+addonTotal;
   const gratPct=shNum2(wedSheetGet(id,'rcGratPct'));
   const gratAmt=wedSheetGet(id,'rcGrat')!==''?shNum2(wedSheetGet(id,'rcGrat')):(gratPct?balance*gratPct/100:0);
   const subtotal=balance+gratAmt;
   const dep=shNum2(wedSheetGet(id,'rcDep'));
-  return {lines,vN,vR,vend,balance,grat:gratAmt,subtotal,dep,due:subtotal-dep}}
+  return {lines,vN,vR,vend,addons,addonTotal,balance,grat:gratAmt,subtotal,dep,due:subtotal-dep}}
 function shM(n){return '$ '+(Math.round(n*100)/100).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}
 function wedGuestPaint(){const fe=wedFeedEvent(wed.evId);if(!fe)return;
   const el=document.getElementById('sh-gtotal');if(!el)return;
@@ -2894,6 +2906,7 @@ function wedRecapPaint(){const id=(wedFeedEvent(wed.evId)||{}).id;if(!id)return;
   t.lines.forEach((l,i)=>set('rc-t'+(i+1),shM(l.total)));
   for(let i=t.lines.length;i<5;i++)set('rc-t'+(i+1),'');
   set('rc-tv',t.vend?shM(t.vend):'');
+  (t.addons||[]).forEach(a=>set('rc-t'+a.f,a.total?shM(a.total):''));
   set('rc-balance',shM(t.balance));set('rc-grat',shM(t.grat));
   set('rc-subtotal',shM(t.subtotal));set('rc-due',shM(t.due));}
 function wedRecapFill(){const fe=wedFeedEvent(wed.evId);if(!fe)return;const id=fe.id;
