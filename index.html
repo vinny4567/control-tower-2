@@ -2663,7 +2663,7 @@ async function wedSheetPull(){try{
   if(JSON.stringify(merged)!==JSON.stringify((remote&&remote.v)||{}))kvPush('ct_wed_sheet',merged,Date.now());
   if(changed&&activeTab===WED&&wed.pane==='sheet'&&!uiTyping())renderViewport();
 }catch(e){}}
-function wedSheetShow(){wedFlush();wed.pane='sheet';wed.sel=null;renderViewport();wedSheetPull();}
+function wedSheetShow(){wedFlush();wed.pane='sheet';wed.sel=null;renderViewport();wedSheetPull();setTimeout(()=>{try{wedRecapPaint();['pAdult','pVeg','pKids','pVendor'].forEach(k=>wedSheetCalcRow((wedFeedEvent(wed.evId)||{}).id,k))}catch(e){}},60);}
 // price row: per-person → labor 20% → tax 7.75% → total (auto, live)
 function shMoney(n){return isFinite(n)?('$ '+n.toFixed(2)):''}
 function shCalc(pp){const p=parseFloat(pp)||0;if(!p)return null;const l=p*SH_LABOR,t=(p+l)*SH_TAX;return {p,l,t,total:p+l+t}}
@@ -2689,6 +2689,7 @@ function wedSheetPaneHTML(fe){
       <span style="flex:1"></span>
       <button class="wed-btn amber" onclick="wedChefPrint()">👨‍🍳 Print Chef Ticket</button>
       <button class="wed-btn" onclick="wedSheetPrint()">🖨 Proposal</button>
+      <button class="wed-btn" onclick="wedRecapPrint()">🧾 Recap</button>
       <button class="wed-btn" onclick="wedSheetWord()">⬇ Word</button>
     </div>
     <div class="sh-wrap">
@@ -2738,6 +2739,30 @@ function wedSheetPaneHTML(fe){
         <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><button class="wed-btn amber" onclick="wedChefRebuild()">⚙ Build from menu + guest count</button><span style="font-size:11.5px;color:var(--text-muted);align-self:center">quantities scale off the guest count · edit any line</span></div>
       </div></div>
       <div class="sh-row"><label>Chef notes</label><textarea class="sh-in" rows="3" oninput="wedSheetSet(${id},'chefNotes',this.value)">${esc(wedSheetGet(id,'chefNotes'))}</textarea></div>
+      ${sec('Recap / final invoice — totals calculate as you type')}
+      ${row('Recap date',shTxt(id,'rcDate',''))}
+      ${[1,2,3,4,5].map(i=>`<div class="sh-row"><label>Line ${i}</label><div class="sh-money">
+        <input class="sh-in sh-num" style="flex:0 0 78px;max-width:78px" type="number" placeholder="qty" value="${esc(wedSheetGet(id,'rc'+i+'n'))}" oninput="wedSheetSet(${id},'rc${i}n',this.value);wedRecapPaint()">
+        <input class="sh-in" type="text" placeholder="item" value="${esc(wedSheetGet(id,'rc'+i+'d'))}" oninput="wedSheetSet(${id},'rc${i}d',this.value)">
+        <span style="color:var(--text-muted)">@</span>
+        <input class="sh-in sh-num" style="flex:0 0 104px;max-width:104px" type="number" step="0.01" placeholder="rate" value="${esc(wedSheetGet(id,'rc'+i+'r'))}" oninput="wedSheetSet(${id},'rc${i}r',this.value);wedRecapPaint()">
+        <span id="rc-t${i}" class="sh-calc" style="min-width:96px;font-weight:700;color:var(--accent)"></span></div></div>`).join('')}
+      <div class="sh-row"><label>Vendors</label><div class="sh-money">
+        <input class="sh-in sh-num" style="flex:0 0 78px;max-width:78px" type="number" placeholder="qty" value="${esc(wedSheetGet(id,'rcVendN'))}" oninput="wedSheetSet(${id},'rcVendN',this.value);wedRecapPaint()">
+        <span style="color:var(--text-muted)">@</span>
+        <input class="sh-in sh-num" style="flex:0 0 104px;max-width:104px" type="number" step="0.01" placeholder="rate" value="${esc(wedSheetGet(id,'rcVendR'))}" oninput="wedSheetSet(${id},'rcVendR',this.value);wedRecapPaint()">
+        <span id="rc-tv" class="sh-calc" style="min-width:96px;font-weight:700;color:var(--accent)"></span></div></div>
+      <div class="sh-row"><label>Balance due</label><div class="sh-money"><span id="rc-balance" style="font-weight:800;font-size:15px">$ 0.00</span></div></div>
+      <div class="sh-row"><label>Staff gratuity</label><div class="sh-money">
+        <input class="sh-in sh-num" style="flex:0 0 104px;max-width:104px" type="number" step="0.01" placeholder="amount" value="${esc(wedSheetGet(id,'rcGrat'))}" oninput="wedSheetSet(${id},'rcGrat',this.value);wedRecapPaint()">
+        <span style="color:var(--text-muted)">or</span>
+        <input class="sh-in sh-num" style="flex:0 0 78px;max-width:78px" type="number" step="0.1" placeholder="%" value="${esc(wedSheetGet(id,'rcGratPct'))}" oninput="wedSheetSet(${id},'rcGratPct',this.value);wedRecapPaint()">
+        <span id="rc-grat" class="sh-calc" style="font-weight:700;color:var(--accent)"></span></div></div>
+      <div class="sh-row"><label>Subtotal</label><div class="sh-money"><span id="rc-subtotal" style="font-weight:700">$ 0.00</span></div></div>
+      ${row('Deposit received',`<input class="sh-in sh-num" type="number" step="0.01" value="${esc(wedSheetGet(id,'rcDep'))}" oninput="wedSheetSet(${id},'rcDep',this.value);wedRecapPaint()">`)}
+      <div class="sh-row"><label>Balance due</label><div class="sh-money"><span id="rc-due" style="font-weight:800;font-size:17px;color:var(--accent)">$ 0.00</span></div></div>
+      <div class="sh-row"><label>Recap notes</label><textarea class="sh-in" rows="2" oninput="wedSheetSet(${id},'rcNotes',this.value)">${esc(wedSheetGet(id,'rcNotes'))}</textarea></div>
+      <div class="sh-row"><label></label><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="wed-btn" onclick="wedRecapFill()">⚙ Fill items from menu</button><button class="wed-btn amber" onclick="wedRecapPrint()">🧾 Print Recap</button></div></div>
       ${sec('Proposal notes')}
       <div class="sh-row"><label>Notes</label><textarea class="sh-in" rows="4" oninput="wedSheetSet(${id},'notes',this.value)">${esc(wedSheetGet(id,'notes'))}</textarea></div>
       <div style="height:40px"></div>
@@ -2816,6 +2841,68 @@ function wedChefTicket(fe){
     ${body}
     ${g('chefNotes')?`<div style="margin-top:1.2em"><b>Notes:</b><br>${esc(g('chefNotes')).replace(/\n/g,'<br>')}</div>`:''}
   </div>`}
+
+// ═══ RECAP / FINAL INVOICE — the closing bill (format from Tony's recap sheet) ═══
+// Line totals, balance, gratuity and the final balance all calculate; rates + gratuity stay editable.
+function shRecapLines(id){
+  const out=[];
+  for(let i=1;i<=5;i++){
+    const n=shNum2(wedSheetGet(id,'rc'+i+'n')), d=(wedSheetGet(id,'rc'+i+'d')||'').trim(), r=shNum2(wedSheetGet(id,'rc'+i+'r'));
+    if(n&&d)out.push({n,d,r,total:n*r});
+  }
+  return out}
+function shRecapTotals(id){
+  const lines=shRecapLines(id);
+  const vN=shNum2(wedSheetGet(id,'rcVendN')), vR=shNum2(wedSheetGet(id,'rcVendR'));
+  const vend=vN*vR;
+  const balance=lines.reduce((a,b)=>a+b.total,0)+vend;
+  const gratPct=shNum2(wedSheetGet(id,'rcGratPct'));
+  const gratAmt=wedSheetGet(id,'rcGrat')!==''?shNum2(wedSheetGet(id,'rcGrat')):(gratPct?balance*gratPct/100:0);
+  const subtotal=balance+gratAmt;
+  const dep=shNum2(wedSheetGet(id,'rcDep'));
+  return {lines,vN,vR,vend,balance,grat:gratAmt,subtotal,dep,due:subtotal-dep}}
+function shM(n){return '$ '+(Math.round(n*100)/100).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}
+function wedRecapPaint(){const id=(wedFeedEvent(wed.evId)||{}).id;if(!id)return;
+  const t=shRecapTotals(id);
+  const set=(el,v)=>{const e=document.getElementById(el);if(e)e.textContent=v};
+  t.lines.forEach((l,i)=>set('rc-t'+(i+1),shM(l.total)));
+  for(let i=t.lines.length;i<5;i++)set('rc-t'+(i+1),'');
+  set('rc-tv',t.vend?shM(t.vend):'');
+  set('rc-balance',shM(t.balance));set('rc-grat',shM(t.grat));
+  set('rc-subtotal',shM(t.subtotal));set('rc-due',shM(t.due));}
+function wedRecapFill(){const fe=wedFeedEvent(wed.evId);if(!fe)return;const id=fe.id;
+  // seed the line descriptions from the menu picks + counts (rates stay yours to set)
+  const picks=[wedSheetGet(id,'chicken')?'Chicken '+wedSheetGet(id,'chicken'):'',wedSheetGet(id,'protein'),
+    [wedSheetGet(id,'sauce'),wedSheetGet(id,'pasta')].filter(Boolean).join(' ')].filter(Boolean);
+  picks.forEach((p,i)=>{if(!wedSheetGet(id,'rc'+(i+1)+'d'))wedSheetSet(id,'rc'+(i+1)+'d',p)});
+  if(!wedSheetGet(id,'rcVendN')&&wedSheetGet(id,'nVendors'))wedSheetSet(id,'rcVendN',wedSheetGet(id,'nVendors'));
+  renderViewport();}
+function wedRecapDoc(fe){
+  const id=fe.id,g=f=>wedSheetGet(id,f),t=shRecapTotals(id);
+  const row=(l,r)=>`<tr><td style="padding:3px 0">${l}</td><td style="padding:3px 0;text-align:right;white-space:nowrap">${r}</td></tr>`;
+  return `<div style="font-family:Georgia,'Times New Roman',serif;font-size:12.5pt;line-height:1.5">
+  <p>${esc(g('rcDate')||'')}</p>
+  <p>To: ${esc(g('to')||wedName(fe))}<br>Re: Recap ${esc(wedDow(fe.date))} ${esc(wedPrettyDate(fe.date))}<br>From: Tony Angeli</p>
+  <p style="margin-top:1.1em">Numbers of Guest</p>
+  <table style="width:100%;border-collapse:collapse;margin:.4em 0 0 1.2em">
+    ${t.lines.map(l=>row(`${l.n} ${esc(l.d)} &nbsp; @ &nbsp; ${shM(l.r)}`,shM(l.total))).join('')}
+    ${t.vend?row(`${t.vN} Vendors &nbsp; @ &nbsp; ${shM(t.vR)}`,shM(t.vend)):''}
+  </table>
+  <table style="width:100%;border-collapse:collapse;margin-top:1.1em">
+    ${row('*&nbsp; Balance Due:','<b>'+shM(t.balance)+'</b>')}
+    ${t.grat?row('*&nbsp; Minimum Staff Gratuity',shM(t.grat)):''}
+    ${row('*&nbsp; Subtotal:',shM(t.subtotal))}
+    ${t.dep?row('*&nbsp; Less Deposit Received',shM(t.dep)):''}
+    ${row('*&nbsp; <b>Balance Due:</b>','<b>'+shM(t.due)+'</b>')}
+  </table>
+  ${g('rcNotes')?`<p style="margin-top:1em">${esc(g('rcNotes')).replace(/\n/g,'<br>')}</p>`:''}
+  <p style="margin-top:1.4em">Thank You,</p>
+  <p>Tony Angeli &amp; Staff &nbsp; 630-669-5015</p></div>`}
+function wedRecapPrint(){const fe=wedFeedEvent(wed.evId);if(!fe)return;
+  const f=document.createElement('iframe');f.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0';document.body.appendChild(f);
+  const w=f.contentWindow,doc=w.document;doc.open();
+  doc.write('<!doctype html><html><head><meta charset="utf-8"><title>Recap — '+esc(wedName(fe))+'</title><style>@page{margin:1in}body{font-family:Georgia,serif}</style></head><body>'+wedRecapDoc(fe)+'</body></html>');
+  doc.close();w.focus();setTimeout(()=>{try{w.print()}catch(e){}setTimeout(()=>f.remove(),1500)},300)}
 function wedSheetLetter(fe){
   const id=fe.id,g=f=>wedSheetGet(id,f);
   const apps=[g('app1'),g('app2'),g('app3'),g('app4')].filter(Boolean);
@@ -3051,9 +3138,14 @@ function wedEventHTML(){const fe=wedFeedEvent(wed.evId);if(!fe){wed.view='list';
   </div>`}
 function wedHTML(){wedLoad();return wed.view==='plan'?wedPlanHTML():wed.view==='event'?wedEventHTML():wedListHTML()}
 function wedFit(){const wrap=document.getElementById('wed-stage-wrap'),st=document.getElementById('wed-stage');if(!wrap||!st)return;
-  const s=Math.min((wrap.clientWidth-20)/WED_W,(wrap.clientHeight-20)/WED_H);wed.scale=s;
+  // Guard: measuring before the pane has laid out can yield 0/negative dimensions → a negative
+  // scale flips the stage inside-out. Clamp, and re-fit on the next frame when that happens.
+  let s=Math.min((wrap.clientWidth-20)/WED_W,(wrap.clientHeight-20)/WED_H);
+  if(!isFinite(s)||s<=0.05){s=Math.max(s,0.05);requestAnimationFrame(()=>{const w2=document.getElementById('wed-stage-wrap');if(w2&&w2.clientHeight>40)wedFit()})}
+  wed.scale=s;
   st.style.transform=`translate(-50%,-50%) scale(${s})`}
 function wedInit(){
+  if(wed.view==='event'&&wed.pane==='sheet'){setTimeout(()=>{try{const fe=wedFeedEvent(wed.evId);if(fe){wedRecapPaint();['pAdult','pVeg','pKids','pVendor'].forEach(k=>wedSheetCalcRow(fe.id,k))}}catch(e){}},20);return}
   if(wed.view==='list'){if(!wed.feed&&!wed.loading)wedFetchFeed();return}
   const st=document.getElementById('wed-stage');if(!st)return;
   wedFit();wedPaint();
