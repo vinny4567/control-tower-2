@@ -2675,7 +2675,7 @@ const SH_SPECIAL_SALAD_NOTE='# Strawberries, # Apple / Pear Slices, # Jug Walnut
 // the sheet paints, so a salad picked before this existed still gets its prep line.
 function shSaladNoteSync(id,val){
   const salad=(val!==undefined&&val!==null)?val:wedSheetGet(id,'salad');
-  const cur=wedSheetGet(id,'saladNote');
+  const cur=String(wedSheetGet(id,'saladNote')||'').trim();   // whitespace counts as empty
   const special=/special/i.test(salad||'');
   let next=null;
   if(special&&!cur)next=SH_SPECIAL_SALAD_NOTE;
@@ -2693,7 +2693,7 @@ function wedSheetSet(id,field,val){
     const on=!!val;
     const m2=wedSheetLoad();m2[k]={...(m2[k]||{})};
     SH_LEMON_LINES.forEach(([f,tpl])=>{
-      const cur=(m2[k][f]||{}).v||'';
+      const cur=String((m2[k][f]||{}).v||'').trim();
       let fill=tpl;
       if(f==='liSlices'){const n=shLemonCount(id);if(n)fill=n+' Lemon Slices';}
       const auto=cur===tpl||/^\d+ Lemon Slices$/.test(cur)||cur==='# Lemon Slices'||cur==='# Lemon Slices for Lemon Ice'||cur==='# Lemon Slices for Water Glasses';
