@@ -2896,7 +2896,7 @@ function wedSheetPaneHTML(fe){
       ${row('Side 2 sauce',shSel(id,'side2Sauce',SH_SAUCES,'sauce'))}
       <div class="sh-row"><label>Lemon ice</label><div class="sh-money">
         <label class="sh-toggle"><input type="checkbox" ${wedSheetGet(id,'lemonIce')?'checked':''} onchange="wedSheetSet(${id},'lemonIce',this.checked?'1':'');renderViewport()"><span>Serving lemon ice</span></label></div></div>
-      ${wedSheetGet(id,'lemonIce')?`${sec('Lemon ice')}`+SH_LEMON_LINES.filter(([f])=>f!=='liGarnish').map(([f,tpl])=>`<div class="sh-row"><label>${esc(tpl.replace(/^# /,''))}</label><input class="sh-in" type="text" data-sid="${id}" data-f="${f}" value="${esc(wedSheetGet(id,f))}" oninput="wedSheetSet(${id},'${f}',this.value)"></div>`).join('')):''}
+      ${wedSheetGet(id,'lemonIce')?`${sec('Lemon ice')}`+SH_LEMON_LINES.filter(([f])=>f!=='liGarnish').map(([f,tpl])=>`<div class="sh-row"><label>${esc(tpl.replace(/^# /,''))}</label><input class="sh-in" type="text" data-sid="${id}" data-f="${f}" value="${esc(wedSheetGet(id,f))}" oninput="wedSheetSet(${id},'${f}',this.value)"></div>`).join(''):''}
       ${sec('Pricing — labor 20% + tax 7.75% calculate automatically')}
       ${shPriceRow(id,'Adult entrée','pAdult')}
       ${shPriceRow(id,'Vegetarian','pVeg')}
