@@ -2787,7 +2787,6 @@ function wedSheetPaneHTML(fe){
       ${row('Late night 2 price',shTxt(id,'late2p',''))}
       ${row('Dessert',shSel(id,'dessert',SH_DESSERT,'dessert'))}
       ${sec('Recap / final invoice — totals calculate as you type')}
-      ${row('Recap date',shTxt(id,'rcDate',''))}
       ${[1,2,3,4,5].map(i=>`<div class="sh-row"><label>Line ${i}</label><div class="sh-money">
         <input class="sh-in sh-num" style="flex:0 0 78px;max-width:78px" type="number" placeholder="qty" value="${esc(wedSheetGet(id,'rc'+i+'n'))}" oninput="wedSheetSet(${id},'rc${i}n',this.value);wedRecapPaint()">
         <input class="sh-in" type="text" placeholder="item" value="${esc(wedSheetGet(id,'rc'+i+'d'))}" oninput="wedSheetSet(${id},'rc${i}d',this.value)">
@@ -2905,7 +2904,7 @@ function wedRecapDoc(fe){
   const id=fe.id,g=f=>wedSheetGet(id,f),t=shRecapTotals(id);
   const row=(l,r)=>`<tr><td style="padding:3px 0">${l}</td><td style="padding:3px 0;text-align:right;white-space:nowrap">${r}</td></tr>`;
   return `<div style="font-family:Georgia,'Times New Roman',serif;font-size:12.5pt;line-height:1.5">
-  <p>${esc(g('rcDate')||'')}</p>
+  <p>${esc(g('pdate')||new Date().toLocaleDateString('en-US'))}</p>
   <p>To: ${esc(g('to')||wedName(fe))}<br>Re: Recap ${esc(wedDow(fe.date))} ${esc(wedPrettyDate(fe.date))}<br>From: Tony Angeli</p>
   <p style="margin-top:1.1em">Numbers of Guest</p>
   <table style="width:100%;border-collapse:collapse;margin:.4em 0 0 1.2em">
