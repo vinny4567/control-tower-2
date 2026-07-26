@@ -2633,7 +2633,8 @@ const SH_CHICKEN=['','Piccata','Marsala','Limone','Vesuvio','Margherita','Arment
 const SH_SAUCE=['','Marinara','Vodka Cream','Primavera','Pesto Cream','Bolognese','Alfredo','Pasta & Peas','Baked Mostaccioli'];
 const SH_PASTA=['','Bowtie','Rigatoni','Mostaccioli','Rotini'];
 const SH_PROTEIN=['','Filet (8 oz)'];
-const SH_SIDES=['','Red Skinned Mashed Potatoes','Steamed Asparagus','Roasted Vegetables','Sweet Corn','Italian Potato Salad','Baked Beans','Cole Slaw','Pasta Salad','Roasted Vegetable Orzo Feta Salad','Green Beans','Watermelon','Fresh Fruit Salad'];
+const SH_SAUCES=['','Garlic & Oil','Lemon Salt & Pepper','Garlic Butter'];
+const SH_SIDES=['','Red Skinned Mashed Potatoes','Steamed Asparagus','Broccoli','Roasted Vegetables','Sweet Corn','Italian Potato Salad','Baked Beans','Cole Slaw','Pasta Salad','Roasted Vegetable Orzo Feta Salad','Green Beans','Watermelon','Fresh Fruit Salad'];
 const SH_LATE=['','Vienna All Beef Hot Dogs w/ Cart','Mini Chicken Parmesan Sandwiches','Pizza'];
 const SH_DESSERT=['','Not Included in Quote','Mini Tiramisu','Mini Cannolis','Mini Brownies','Mini Carrot Cake','Assorted Cookies','Assorted Italian Pastries','Mini New York Cheesecake','Assorted Mini Pastries'];
 const SH_BAR=['','Provided through the venue','Soda, Juice & Water Package — $6.95 pp','Beer, Wine & Soda — $17.95 pp','Standard Liquor Bar — $24.95 pp','Premium Liquor Bar — $29.95 pp','Bar Mixer Package — $2.00 pp','Bar Glassware — $3.00 pp'];
@@ -2768,7 +2769,9 @@ function wedSheetPaneHTML(fe){
       ${row('Pasta sauce',shSel(id,'sauce',SH_SAUCE,'sauce'))}
       ${row('Pasta type',shSel(id,'pasta',SH_PASTA,'pasta'))}
       ${row('Side 1',shSel(id,'side1',SH_SIDES,'side'))}
+      ${row('Side 1 sauce',shSel(id,'side1Sauce',SH_SAUCES,'sauce'))}
       ${row('Side 2',shSel(id,'side2',SH_SIDES,'side'))}
+      ${row('Side 2 sauce',shSel(id,'side2Sauce',SH_SAUCES,'sauce'))}
       <div class="sh-row"><label>Lemon ice</label><div class="sh-money">
         <label class="sh-toggle"><input type="checkbox" ${wedSheetGet(id,'lemonIce')?'checked':''} onchange="wedSheetSet(${id},'lemonIce',this.checked?'1':'');renderViewport()"><span>Serving lemon ice</span></label></div></div>
       ${wedSheetGet(id,'lemonIce')?`${sec('Lemon ice')}`+SH_LEMON_LINES.map(([f,tpl])=>`<div class="sh-row"><label>${esc(tpl.replace(/^# /,''))}</label><input class="sh-in" type="text" data-sid="${id}" data-f="${f}" value="${esc(wedSheetGet(id,f))}" oninput="wedSheetSet(${id},'${f}',this.value)"></div>`).join(''):''}
@@ -2841,7 +2844,8 @@ function wedChefTicket(fe){
   const pasta=[g('sauce'),g('pasta')].filter(Boolean).join(' ');
   if(pasta)ent.push(pasta);
   if(ent.length){ent.forEach(e=>star(esc(e)));gap()}
-  const sides=[g('side1'),g('side2')].filter(Boolean);
+  const sideTxt=(n)=>{const v=g('side'+n);if(!v)return '';const sc=g('side'+n+'Sauce');return v+(sc?' · '+sc:'')};
+  const sides=[sideTxt(1),sideTxt(2)].filter(Boolean);
   if(sides.length){sides.forEach(x=>star(esc(x)));gap()}
   const late=[g('late1'),g('late2')].filter(Boolean);
   if(late.length){late.forEach(x=>star(esc(x)));gap()}
@@ -2943,7 +2947,7 @@ function wedSheetLetter(fe){
   ${g('chicken')?`<p><b>Chicken ${esc(g('chicken'))}</b></p>`:''}
   ${g('protein')?`<p><b>${esc(g('protein'))}</b></p>`:''}
   ${(g('sauce')||g('pasta'))?`<p><b>${esc([g('sauce'),g('pasta')].filter(Boolean).join(' — '))}</b></p>`:''}
-  ${(g('side1')||g('side2'))?`<p><b>${esc([g('side1'),g('side2')].filter(Boolean).join(' &nbsp;·&nbsp; '))}</b></p>`:''}
+  ${(g('side1')||g('side2'))?`<p><b>${esc([[g('side1'),g('side1Sauce')].filter(Boolean).join(' · '),[g('side2'),g('side2Sauce')].filter(Boolean).join(' · ')].filter(Boolean).join(' &nbsp;·&nbsp; '))}</b></p>`:''}
   ${priceLine('Entrée','pAdult')}
   ${priceLine('Vegetarian Meals','pVeg')}
   ${priceLine('Kids Meals','pKids')}
