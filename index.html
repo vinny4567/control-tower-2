@@ -2649,9 +2649,23 @@ function wedSheetMerge(a,b){const out={};const keys=new Set([...Object.keys(a||{
     out[k]=f;});
   return out}
 function wedSheetGet(id,field){const e=wedSheetLoad()['sched-'+id];const f=e&&e[field];return (f&&f.v)||''}
+const SH_SPECIAL_SALAD_NOTE='# Strawberries, # Apple / Pear Slices, # Jug Walnuts, # Bleu Cheese Boats';
 function wedSheetSet(id,field,val){
   const m=wedSheetLoad();const k='sched-'+id;m[k]={...(m[k]||{})};m[k][field]={v:val,at:Date.now()};
   wedSheetPersist(m);
+  if(field==='salad'){
+    const cur=wedSheetGet(id,'saladNote');
+    const special=/special/i.test(val||'');
+    let next=null;
+    if(special&&!cur)next=SH_SPECIAL_SALAD_NOTE;               // prefill (amounts to come)
+    else if(!special&&cur===SH_SPECIAL_SALAD_NOTE)next='';     // untouched template — clear it
+    if(next!==null){
+      const m2=wedSheetLoad();m2[k]={...(m2[k]||{})};m2[k].saladNote={v:next,at:Date.now()};
+      wedSheetPersist(m2);
+      const inp=document.querySelector(`.sh-in[data-sid="${id}"][data-f="saladNote"]`);
+      if(inp)inp.value=next;
+    }
+  }
   kvGet('ct_wed_sheet').then(r=>{const merged=wedSheetMerge(wedSheetLoad(),(r&&r.v)||{});wedSheetPersist(merged);kvPush('ct_wed_sheet',merged,Date.now())})
     .catch(()=>kvPush('ct_wed_sheet',wedSheetLoad(),Date.now()));
 }
@@ -2674,7 +2688,7 @@ function wedSheetCalcRow(id,key){
 }
 function shSel(id,field,opts,ph){const cur=wedSheetGet(id,field);
   return `<select class="sh-in" onchange="wedSheetSet(${id},'${field}',this.value)">`+opts.map(o=>`<option value="${esc(o)}"${o===cur?' selected':''}>${esc(o||('— '+(ph||'choose')+' —'))}</option>`).join('')+`</select>`}
-function shTxt(id,field,ph){return `<input class="sh-in" type="text" placeholder="${esc(ph||'')}" value="${esc(wedSheetGet(id,field))}" oninput="wedSheetSet(${id},'${field}',this.value)">`}
+function shTxt(id,field,ph){return `<input class="sh-in" type="text" data-sid="${id}" data-f="${field}" placeholder="${esc(ph||'')}" value="${esc(wedSheetGet(id,field))}" oninput="wedSheetSet(${id},'${field}',this.value)">`}
 function shNum(id,field,ph,onCalc){return `<input class="sh-in sh-num" type="number" step="0.01" placeholder="${esc(ph||'')}" value="${esc(wedSheetGet(id,field))}" oninput="wedSheetSet(${id},'${field}',this.value);${onCalc?`wedSheetCalcRow(${id},'${field}')`:''}">`}
 function shPriceRow(id,label,key){
   return `<div class="sh-row"><label>${esc(label)}</label><div class="sh-money">${shNum(id,key,'$',true)}<span id="sh-calc-${key}" class="sh-calc"></span></div></div>`}
@@ -2698,6 +2712,7 @@ function wedSheetPaneHTML(fe){
       ${row('To (client)',shTxt(id,'to',''))}
       ${row('Occasion',shTxt(id,'occasion',''))}
       ${row('Event date',`<input class="sh-in" type="text" value="${esc(wedDow(fe.date)+' '+wedPrettyDate(fe.date))}" disabled>`)}
+      ${row('Leave time',shTxt(id,'leave',''))}
       ${row('Venue',shTxt(id,'venue',''))}
       ${row('Service style',shSel(id,'service',SH_SERVICE,'style'))}
       <div class="sh-row"><label>Guest count</label><div class="sh-money">
@@ -2733,9 +2748,6 @@ function wedSheetPaneHTML(fe){
       ${row('Bar',shSel(id,'bar',SH_BAR,'bar'))}
       ${row('Dessert',shSel(id,'dessert',SH_DESSERT,'dessert'))}
       ${row('Coffee station',shTxt(id,'coffee',''))}
-      ${sec('Chef ticket')}
-      ${row('Leave time',shTxt(id,'leave',''))}
-      <div class="sh-row"><label>Chef notes</label><textarea class="sh-in" rows="3" oninput="wedSheetSet(${id},'chefNotes',this.value)">${esc(wedSheetGet(id,'chefNotes'))}</textarea></div>
       ${sec('Recap / final invoice — totals calculate as you type')}
       ${row('Recap date',shTxt(id,'rcDate',''))}
       ${[1,2,3,4,5].map(i=>`<div class="sh-row"><label>Line ${i}</label><div class="sh-money">
