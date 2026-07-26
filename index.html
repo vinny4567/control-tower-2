@@ -562,7 +562,8 @@
         🔄 Reload App (clear cache &amp; refresh)
       </button>
       <div style="font-size:11px;color:var(--text-muted);margin-top:6px;line-height:1.5;text-align:center">
-        Use this if The Watch Tower looks outdated or seems stuck on old data.
+        Use this if The Watch Tower looks outdated or seems stuck on old data.<br>
+        <span id="build-stamp" style="opacity:.75"></span>
       </div>
     </div>
     <div class="modal-foot">
@@ -4281,7 +4282,7 @@ function urlKey(e,id){if(e.key==='Enter')urlSave(id);if(e.key==='Escape')urlCanc
 function urlSave(id){const inp=document.getElementById(`ui-${id}`);if(!inp)return;const p=cfg.panels.find(x=>x.id===id);if(p){p.url=inp.value.trim();saveCfg()}editing=null;refreshBody(id)}
 function urlCancel(id){editing=null;refreshBody(id)}
 let draft=[];
-function openSettings(){draft=cfg.panels.map(p=>({...p}));renderEditList();renderGmailStatus();document.getElementById('overlay').classList.add('open')}
+function openSettings(){draft=cfg.panels.map(p=>({...p}));renderEditList();renderGmailStatus();stampBuild();document.getElementById('overlay').classList.add('open')}
 function renderGmailStatus(){
   const el=document.getElementById('gmail-status');if(!el)return;
   if(gmailValid()){
@@ -4291,6 +4292,9 @@ function renderGmailStatus(){
   }
 }
 function gmailSignOutConfirm(){if(confirm('Sign out of Gmail? The dashboard will stop showing your real emails until you sign in again.')){gmailSignOut();renderGmailStatus()}}
+function stampBuild(){const el=document.getElementById('build-stamp');if(!el)return;
+  const d=new Date(document.lastModified);
+  el.textContent=isNaN(d)?'':('This copy: '+d.toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}));}
 async function reloadAppHard(){
   try{
     // Unregister any service workers so they stop serving cached responses
