@@ -3243,13 +3243,20 @@ async function wedPdfjs(){if(wedPdfLib)return wedPdfLib;
   wedPdfLib=m;return m}
 function wedPdfDragOver(e){if(!(e.dataTransfer&&Array.from(e.dataTransfer.types||[]).includes('Files')))return;
   e.preventDefault();document.getElementById('wed-stage-wrap').classList.add('pdf-over');
-  const v=document.getElementById('wed-pdf-veil');if(v)v.textContent='Drop the floor plan to build the layout';}
+  const v=document.getElementById('wed-pdf-veil');if(v)v.textContent='Drop the floor plan — PDF, screenshot or photo';}
 function wedPdfDragLeave(e){const w=document.getElementById('wed-stage-wrap');
   if(e.relatedTarget&&w&&w.contains(e.relatedTarget))return;   // moving between children isn't a leave
   if(w)w.classList.remove('pdf-over')}
+// ⌘V — paste a screenshot straight onto the plan
+function wedPdfPaste(e){
+  if(!(activeTab===WED&&wed.pane==='plan'&&wedCur()))return;
+  const items=(e.clipboardData&&e.clipboardData.items)||[];
+  for(const it of items){if(it.type&&it.type.startsWith('image/')){const f=it.getAsFile();
+    if(f){e.preventDefault();wedPdfImport(f);return}}}}
+document.addEventListener('paste',wedPdfPaste);
 function wedPdfDrop(e){e.preventDefault();const w=document.getElementById('wed-stage-wrap');if(w)w.classList.remove('pdf-over');
   const f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0];if(f)wedPdfImport(f)}
-function wedPdfPick(){const i=document.createElement('input');i.type='file';i.accept='application/pdf,.pdf';
+function wedPdfPick(){const i=document.createElement('input');i.type='file';i.accept='application/pdf,.pdf,image/*';
   i.onchange=()=>{if(i.files&&i.files[0])wedPdfImport(i.files[0])};i.click()}
 function wedPdfBusy(msg){const w=document.getElementById('wed-stage-wrap'),v=document.getElementById('wed-pdf-veil');
   if(!w||!v)return;if(msg===null){w.classList.remove('pdf-over');return}
@@ -3328,67 +3335,152 @@ function wedPdfRingRadius(tables,seatPts){
   const ds=seatPts.map(s=>Math.min(...tables.map(t=>Math.hypot(t.x-s.x,t.y-s.y)))).sort((a,b)=>a-b);
   return ds[Math.floor(ds.length/2)]||0}
 
+// Any picture becomes one downscaled JPEG: big enough to read the table
+// numbers, small enough to send.
+async function wedPdfShrink(src,maxEdge){
+  const bmp=await createImageBitmap(src,{imageOrientation:'from-image'}).catch(()=>createImageBitmap(src));
+  const sc=Math.min(1,maxEdge/Math.max(bmp.width,bmp.height));
+  const c=document.createElement('canvas');c.width=Math.round(bmp.width*sc);c.height=Math.round(bmp.height*sc);
+  c.getContext('2d').drawImage(bmp,0,0,c.width,c.height);
+  bmp.close&&bmp.close();
+  return c.toDataURL('image/jpeg',0.88).split(',')[1]}
+
+// Base64 for the raw file, in chunks so a big PDF doesn't blow the stack.
+function wedPdfB64(buf){const b=new Uint8Array(buf);let out='';
+  for(let i=0;i<b.length;i+=0x8000)out+=String.fromCharCode.apply(null,b.subarray(i,i+0x8000));
+  return btoa(out)}
+
+// Hand the picture to Claude on our own backend (same access key as the Email tab).
+async function wedPdfVision(body){
+  if(!mailKey())throw new Error('nokey');
+  const r=await fetch(MAIL_BASE+'/plan/read?key='+encodeURIComponent(mailKey()),
+    {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(r.status===401)throw new Error('nokey');
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(j.error||('server said '+r.status));
+  return j}
+
+const WED_FIXTURE={sweetheart:{type:'rect',label:'SWEETHEART'},vendor:{type:'rect',label:'VENDOR'},
+  dance:{type:'dance',label:'DANCE FLOOR'},bar:{type:'rect',label:'BAR'},cake:{type:'rect',label:'CAKE'},
+  gifts:{type:'rect',label:'GIFTS'},dj:{type:'rect',label:'DJ'},door:{type:'door',label:'DOOR'}};
+
+// Lay marks out on our canvas: fit their own bounding box, keep the shape of the room.
+// `ringR` (when the PDF drew the seats) makes the circles life-size; otherwise the
+// gap between tables decides how big they can be.
+function wedPdfPlace(ev,marks,ringR){
+  const PAD=70;
+  const xs=marks.map(m=>m.x),ys=marks.map(m=>m.y);
+  const x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);
+  const sc=Math.min((WED_W-PAD*2)/Math.max(x1-x0,1),(WED_H-PAD*2)/Math.max(y1-y0,1));
+  const offX=(WED_W-(x1-x0)*sc)/2-x0*sc, offY=(WED_H-(y1-y0)*sc)/2-y0*sc;
+  const pt=m=>({x:Math.round(Math.max(20,Math.min(WED_W-20,m.x*sc+offX))),
+                y:Math.round(Math.max(20,Math.min(WED_H-20,m.y*sc+offY)))});
+  let round=76;
+  if(ringR>0)round=Math.round(Math.max(50,Math.min(150,ringR*sc*2)));
+  else{
+    const ts=marks.filter(m=>m.type==='round').map(pt);
+    if(ts.length>1){
+      const nn=ts.map(a=>Math.min(...ts.filter(b=>b!==a).map(b=>Math.hypot(a.x-b.x,a.y-b.y)))).sort((a,b)=>a-b);
+      round=Math.round(Math.max(50,Math.min(150,nn[Math.floor(nn.length/2)]*0.62)));
+    }
+  }
+  const size={round:{w:round,h:round},rect:{w:130,h:56},dance:{w:260,h:195},door:{w:130,h:34}};
+  ev.items=marks.map(m=>({id:wedNewId(),type:m.type,label:m.label,...pt(m),...size[m.type]}));
+  wed.sel=null;wedTouch();
+  setTimeout(()=>{try{wedRollsPaint()}catch(e){}},50);}
+
+// The one confirmation Vinny sees. The table count feeds his roll order, so it
+// leads with the count and he can always say no.
+function wedPdfConfirm(head,marks,seats,note){
+  const tables=marks.filter(m=>m.type==='round');
+  const nums=tables.map(t=>parseInt(t.label,10)).filter(n=>!isNaN(n)).sort((a,b)=>a-b);
+  const missing=[];if(nums.length)for(let i=1;i<=nums[nums.length-1];i++)if(!nums.includes(i))missing.push(i);
+  const other=[...new Set(marks.filter(m=>m.type!=='round').map(m=>m.label))];
+  return confirm(head+'\n\n'+
+    '• '+tables.length+' table'+(tables.length===1?'':'s')+
+      (nums.length===tables.length&&nums.length?', numbered '+nums[0]+'–'+nums[nums.length-1]:'')+
+      (missing.length&&missing.length<6?'  (no '+missing.join(', ')+')':'')+'\n'+
+    (seats?'• '+seats+' seats drawn around them\n':'')+
+    (other.length?'• '+other.length+' other piece'+(other.length===1?'':'s')+': '+other.join(', ')+'\n':'')+
+    (note?'\n'+note+'\n':'')+
+    '\nBuild this layout? Everything currently on this floor plan gets replaced.')}
+
 async function wedPdfImport(file){
   const ev=wedCur();if(!ev)return;
-  if(!/pdf$/i.test(file.name||'')&&file.type!=='application/pdf'){alert('That’s not a PDF — send me the floor plan as a PDF and drop it here.');return}
+  const isPdf=/pdf$/i.test(file.name||'')||file.type==='application/pdf';
+  const isImg=(file.type||'').startsWith('image/')||/\.(png|jpe?g|gif|webp|heic|heif)$/i.test(file.name||'');
+  if(!isPdf&&!isImg){alert('I can read a floor plan from a PDF, a screenshot or a photo — that file is neither.');return}
   try{
-    wedPdfBusy('Reading '+file.name+'…');
-    const pdfjs=await wedPdfjs();
-    const doc=await pdfjs.getDocument({data:await file.arrayBuffer()}).promise;
-    const pages=Math.min(doc.numPages,60);
-    let best=null;
-    for(let pn=1;pn<=pages;pn++){
-      if(pn%5===0)wedPdfBusy('Reading '+file.name+'… page '+pn+' of '+pages);
-      const page=await doc.getPage(pn);
-      const vp=page.getViewport({scale:1});
-      const tc=await page.getTextContent();
-      const raw=[];
-      tc.items.forEach(it=>{
-        const str=(it.str||'').trim();if(!str)return;
-        const tr=it.transform||[1,0,0,1,0,0];
-        const size=it.height||Math.hypot(tr[2],tr[3])||10;
-        raw.push({str,size,x:tr[4]+(it.width||0)/2,y:vp.height-tr[5]+size/2});   // PDF y is bottom-up
-      });
-      const got=wedPdfReadPage(raw);
-      got.page=pn;got.raw=raw;
-      if(!best||got.score>best.score)best=got;
+    let picture=null,pictureFrom='';
+    if(isPdf){
+      wedPdfBusy('Reading '+file.name+'…');
+      const pdfjs=await wedPdfjs();
+      const doc=await pdfjs.getDocument({data:await file.arrayBuffer()}).promise;
+      const pages=Math.min(doc.numPages,60);
+      let best=null,busiest={pn:1,n:-1};
+      for(let pn=1;pn<=pages;pn++){
+        if(pn%5===0)wedPdfBusy('Reading '+file.name+'… page '+pn+' of '+pages);
+        const page=await doc.getPage(pn);
+        const vp=page.getViewport({scale:1});
+        const tc=await page.getTextContent();
+        const raw=[];
+        tc.items.forEach(it=>{
+          const str=(it.str||'').trim();if(!str)return;
+          const tr=it.transform||[1,0,0,1,0,0];
+          const size=it.height||Math.hypot(tr[2],tr[3])||10;
+          raw.push({str,size,x:tr[4]+(it.width||0)/2,y:vp.height-tr[5]+size/2});   // PDF y is bottom-up
+        });
+        if(raw.length>busiest.n)busiest={pn,n:raw.length};
+        const got=wedPdfReadPage(raw);
+        got.page=pn;got.raw=raw;
+        if(!best||got.score>best.score)best=got;
+      }
+      if(best&&best.tables.length){
+        // the text was readable — no need to look at the picture at all
+        const marks=best.tables.map(t=>({type:'round',label:t.cls.label,x:t.x,y:t.y}))
+          .concat(best.furniture.filter((f,n)=>!best.furniture.some((o,m)=>m<n&&o.cls.label===f.cls.label&&Math.abs(o.x-f.x)<14&&Math.abs(o.y-f.y)<14))
+            .map(f=>({type:f.cls.type,label:f.cls.label,x:f.x,y:f.y})));
+        const seatPts=best.raw.filter(r=>/^\d{1,2}$/.test(r.str)&&!best.tables.some(t=>t.x===r.x&&t.y===r.y));
+        wedPdfBusy(null);
+        if(!wedPdfConfirm('Page '+best.page+' of '+file.name+':',marks,best.seats,''))return;
+        wedPdfPlace(ev,marks,wedPdfRingRadius(best.tables,seatPts));
+        return;
+      }
+      // no text worth reading → it's a scan or a screenshot saved as a PDF
+      if(doc.numPages>8){
+        alert('That PDF is a picture — there’s no text in it for me to read — and it’s '+doc.numPages+' pages long.\n\nOpen it to the page with the floor plan on it, take a screenshot (⇧⌘4), and drop that in instead.');
+        wedPdfBusy(null);return}
+      wedPdfBusy('That PDF is a picture — reading it that way instead…');
+      picture={pdf:wedPdfB64(await file.arrayBuffer())};
+      pictureFrom=file.name;
+    }else{
+      wedPdfBusy('Looking at '+file.name+'…');
+      try{picture={image:await wedPdfShrink(file,1400),media_type:'image/jpeg'}}
+      catch(e){alert('This computer can’t open '+(file.name||'that picture')+'.\n\nIf it came off an iPhone it’s probably a HEIC photo — open it in Preview and File ▸ Export as JPEG, or just take a screenshot of it, and drop that in.');wedPdfBusy(null);return}
+      pictureFrom=file.name;
     }
+    wedPdfBusy('Reading the plan… this takes a few seconds');
+    let out;
+    try{out=await wedPdfVision(picture)}
+    catch(err){
+      wedPdfBusy(null);
+      if(String(err.message)==='nokey'){alert('To read a picture I have to send it to our own server, which needs the access key.\n\nOpen the Email tab and enter the access key once — then come back and drop this in again.');return}
+      if(/credit balance|billing|quota/i.test(err.message)){alert('Our Claude account is out of credits, so it can’t read the picture.\n\nAdd credits at console.anthropic.com ▸ Plans & Billing and drop this in again. (The Jarvis staff chatbot needs those credits too.)');return}
+      if(/rate.?limit|overloaded|529|429/i.test(err.message)){alert('Claude is busy right now. Give it a minute and drop the plan in again.');return}
+      alert('Couldn’t read that plan.\n\n'+err.message+'\n\nIf the server was asleep, give it a few seconds and drop it in again.');return}
     wedPdfBusy(null);
-    if(!best||!best.tables.length){
-      alert('No tables found in that PDF.\n\nIt’s most likely a scan or a picture of the plan — there’s no text for me to read. Ask them for the PDF the venue’s software made (or a version where you can select the table numbers with your cursor), and I’ll build it.');
-      return}
-    const keep=best.tables.concat(best.furniture.filter(f=>
-      !best.furniture.some(o=>o!==f&&o.cls.label===f.cls.label&&Math.abs(o.x-f.x)<14&&Math.abs(o.y-f.y)<14&&best.furniture.indexOf(o)<best.furniture.indexOf(f))));
-    const nums=best.tables.map(t=>t.num).sort((a,b)=>a-b);
-    const missing=[];for(let i=1;i<=Math.max(...nums);i++)if(!nums.includes(i))missing.push(i);
-    const other=keep.length-best.tables.length;
-    if(!confirm('Page '+best.page+' of '+file.name+':\n\n'+
-      '• '+best.tables.length+' tables, numbered '+nums[0]+'–'+nums[nums.length-1]+
-      (missing.length?'  (no '+missing.join(', ')+')':'')+'\n'+
-      (best.seats?'• '+best.seats+' seats drawn around them\n':'')+
-      (other?'• '+other+' other piece'+(other===1?'':'s')+': '+[...new Set(keep.slice(best.tables.length).map(f=>f.cls.label))].join(', ')+'\n':'')+
-      '\nBuild this layout? Everything currently on this floor plan gets replaced.'))return;
-    // Fit the plan's own bounding box onto our canvas.
-    const PAD=70;
-    const xs=keep.map(h=>h.x),ys=keep.map(h=>h.y);
-    const x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);
-    const sc=Math.min((WED_W-PAD*2)/Math.max(x1-x0,1),(WED_H-PAD*2)/Math.max(y1-y0,1));
-    const offX=(WED_W-(x1-x0)*sc)/2-x0*sc, offY=(WED_H-(y1-y0)*sc)/2-y0*sc;
-    // life-size circles when the export drew the seats
-    const seatPts=best.raw.filter(r=>/^\d{1,2}$/.test(r.str)&&!best.tables.some(t=>t.x===r.x&&t.y===r.y));
-    const rr=wedPdfRingRadius(best.tables,seatPts)*sc;
-    const round=rr>10?Math.round(Math.max(50,Math.min(150,rr*2))):76;
-    const size={round:{w:round,h:round},rect:{w:130,h:56},dance:{w:260,h:195},door:{w:130,h:34}};
-    ev.items=keep.map(h=>{const type=h.cls?h.cls.type:'round',label=h.cls?h.cls.label:h.str;
-      return {id:wedNewId(),type,label,
-        x:Math.round(Math.max(20,Math.min(WED_W-20,h.x*sc+offX))),
-        y:Math.round(Math.max(20,Math.min(WED_H-20,h.y*sc+offY))),
-        ...size[type]}});
-    wed.sel=null;wedTouch();
-    setTimeout(()=>{try{wedRollsPaint()}catch(e){}},50);
+    const marks=(out.tables||[]).filter(t=>t&&isFinite(t.x)&&isFinite(t.y))
+      .map(t=>({type:t.shape==='rect'?'rect':'round',label:String(t.label||'').slice(0,16),x:+t.x,y:+t.y}))
+      .concat((out.fixtures||[]).filter(f=>f&&isFinite(f.x)&&isFinite(f.y)).map(f=>{
+        const k=WED_FIXTURE[f.kind]||{type:'rect',label:String(f.label||'').toUpperCase().slice(0,16)};
+        return {type:k.type,label:k.label,x:+f.x,y:+f.y}}));
+    if(!marks.length){alert('I looked at '+pictureFrom+' but couldn’t make out any tables.\n\nIf the picture is small or blurry, a bigger screenshot usually does it.');return}
+    const seats=(out.tables||[]).reduce((n,t)=>n+(+t.seats||0),0);
+    if(!wedPdfConfirm('Read from '+pictureFrom+':',marks,seats,out.notes||''))return;
+    wedPdfPlace(ev,marks,0);
   }catch(err){
     wedPdfBusy(null);
-    alert('Couldn’t read that PDF.\n\n'+(err&&err.message||err));
+    alert('Couldn’t read that plan.\n\n'+(err&&err.message||err));
   }}
 // ── canvas ──
 function wedAdd(type){const ev=wedCur();if(!ev)return;
@@ -3488,7 +3580,7 @@ function wedPlanChrome(embedded){const ev=wedCur();if(!ev)return '';
       </select>
       <button class="wed-btn" onclick="wedRenameVenue()" title="Rename this venue">✎ Rename</button>
       <button class="wed-btn" onclick="wedSaveVenue()">💾 Save</button>
-      <button class="wed-btn" onclick="wedPdfPick()" title="Drop or pick the floor plan the guest sent — the tables get built for you">📄 Import PDF</button>
+      <button class="wed-btn" onclick="wedPdfPick()" title="Drop the floor plan the guest sent — a PDF, a screenshot or a photo — and the tables get built for you">📄 Import plan</button>
       <button class="wed-btn" onclick="wedPrint()">🖨 Print</button>
       <button class="wed-btn danger" onclick="wedClearAll()">🧹 Clear all</button>
       <span class="wed-count" id="wed-count"></span>
