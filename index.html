@@ -2955,7 +2955,12 @@ function wedSheetLetter(fe){
   <p><b>Re:</b> Proposal for ${esc(g('occasion')||'Event')} — ${esc(wedDow(fe.date))} ${esc(wedPrettyDate(fe.date))}</p>
   ${line('Venue:',esc(g('venue')||''))}
   <h2 style="text-align:center">Your Reception</h2>
-  ${apps.length?`<h3 style="text-align:center">~~ Appetizers ~~</h3><p style="text-align:center">${apps.map(a=>'~ '+esc(a)+' ~').join(' &nbsp;&nbsp; ')}</p>`:''}
+  ${apps.length?`<h3 style="text-align:center">~~ Appetizers ~~</h3>
+  <table style="width:100%;border-collapse:collapse;margin:.3em 0 1em"><tbody>${
+    [0,2].map(i=>apps[i]!==undefined?`<tr>
+      <td style="width:50%;text-align:center;padding:.45em 0;border:0">~ ${esc(apps[i])} ~</td>
+      <td style="width:50%;text-align:center;padding:.45em 0;border:0">${apps[i+1]?'~ '+esc(apps[i+1])+' ~':''}</td>
+    </tr>`:'').join('')}</tbody></table>`:''}
   ${g('salad')?`<p style="text-align:center">~ ${esc(g('salad'))}${g('service')==='Plated'?' (Plated)':''} ~${g('saladNote')?'<br>( '+esc(g('saladNote'))+' )':''}</p>`:''}
   ${g('lemonIce')?`<p style="text-align:center">~ Lemon Ice For All ~</p>`:''}
   <h3 style="text-align:center">~~ Entrées ~~${g('service')?`<br><span style="font-size:.8em">~~ Entrée to be Served ${esc(g('service'))} ~~</span>`:''}</h3>
