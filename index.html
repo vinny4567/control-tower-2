@@ -382,6 +382,14 @@
     .docs-empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:14px;text-align:center;padding:30px;line-height:1.6}
     @media(max-width:720px){.docs-side{width:140px}.docs-editor{padding:26px 20px}.docs-toolbar{gap:3px}}
     .gmail-thread-count{display:inline-block;background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:9px;padding:0 7px;font-size:10.5px;margin-left:6px;vertical-align:1px}
+    .mail-attach{border-top:1px solid var(--border);padding:10px 14px 12px;background:var(--surface)}
+    .mail-attach-hd{font-size:11px;color:var(--text-muted);letter-spacing:.05em;margin-bottom:7px}
+    .mail-attach-row{display:flex;flex-wrap:wrap;gap:8px}
+    .mail-attach-chip{display:flex;align-items:center;gap:8px;max-width:260px;background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:7px 11px;text-decoration:none;color:var(--text);font-size:12.5px}
+    .mail-attach-chip:hover{border-color:var(--accent);color:var(--accent)}
+    .mail-attach-chip .ic{font-size:15px;flex:none}
+    .mail-attach-chip .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .mail-attach-chip .sz{color:var(--text-muted);flex:none;font-size:11px}
     /* Truck packing tool */
     .tk-wrap{display:flex;flex-direction:column;height:100%;overflow:hidden}
     .tk-head{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:10px 14px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0;font-size:13px}
@@ -1540,6 +1548,21 @@ function mailListHTML(forTwoPane){
   const more=(((typeof list0!=='undefined'?list0:list)||[]).length>=lim&&lim<300)?`<div style="padding:14px;text-align:center"><button class="gmail-action-btn secondary" onclick="mailLoadMore()">${mailx.loadingList?'Loading…':'Load older messages'}</button></div>`:'';
   return bar(`<div class="gmail-list-tab">${rows}${more}</div>`);
 }
+// Attachment strip under a message — Email tab + wedding hub, all four accounts.
+function mailAttachHTML(mm,acctId,folder){
+  const list=(mm&&mm.attachments)||[];
+  if(!list.length)return '';
+  const acct=acctId||mm.acctId||mailx.acct;
+  const fld=folder||mailx.folder||'inbox';
+  const kb=n=>!n?'':(n<1024?n+' B':n<1048576?Math.round(n/1024)+' KB':(n/1048576).toFixed(1)+' MB');
+  const icon=t=>/pdf/i.test(t)?'📄':/image/i.test(t)?'🖼':/word|doc/i.test(t)?'📝':/sheet|excel|csv/i.test(t)?'📊':'📎';
+  return `<div class="mail-attach"><div class="mail-attach-hd">${list.length} attachment${list.length>1?'s':''}</div>
+    <div class="mail-attach-row">${list.map(a=>{
+      const url=MAIL_BASE+'/mail/attachment?acct='+encodeURIComponent(acct)+'&uid='+encodeURIComponent(mm.uid)+'&folder='+encodeURIComponent(fld)+'&idx='+a.idx+'&key='+encodeURIComponent(mailKey());
+      return `<a class="mail-attach-chip" href="${url}" target="_blank" rel="noopener" title="${esc(a.filename)}">
+        <span class="ic">${icon(a.contentType)}</span>
+        <span class="nm">${esc(a.filename)}</span>
+        <span class="sz">${kb(a.size)}</span></a>`}).join('')}</div></div>`}
 function mailDetailHTML(){
   const th=mailx.selThread;const target=mailx.selMsg;if(!th&&!target)return '';
   const msgs=(th&&th.messages&&th.messages.length)?th.messages:(target?[target]:[]);
@@ -1553,7 +1576,7 @@ function mailDetailHTML(){
     const heightScript=`<script>(function(){function r(){try{var max=0,b=document.body;if(b){var w=document.createTreeWalker(b,NodeFilter.SHOW_TEXT,null,false),n;while(n=w.nextNode()){if(!(n.nodeValue||'').trim())continue;var rg=document.createRange();rg.selectNodeContents(n);var bo=rg.getBoundingClientRect().bottom;if(bo>max)max=bo;}var ig=b.getElementsByTagName('img');for(var k=0;k<ig.length;k++){var bb=ig[k].getBoundingClientRect().bottom;if(bb>max)max=bb;}}var sc=Math.max(document.documentElement.scrollHeight,b?b.scrollHeight:0);var h=max>0?Math.min(sc,Math.ceil(max)+14):sc;parent.postMessage({_ct:'h',id:'${id}',h:h},'*')}catch(e){try{parent.postMessage({_ct:'h',id:'${id}',h:Math.max(document.documentElement.scrollHeight,document.body?document.body.scrollHeight:0)+24},'*')}catch(_){}}}r();window.addEventListener('load',r);setTimeout(r,150);setTimeout(r,800);setTimeout(r,2500);var imgs=document.querySelectorAll('img');for(var i=0;i<imgs.length;i++){if(!imgs[i].complete){imgs[i].addEventListener('load',r);imgs[i].addEventListener('error',r)}}})();<\/script>`;
     const bodyAttr=(bodyHtml+heightScript+MAIL_LINK_SCRIPT).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const who=mm.fromSelf?'You':esc(mm.from||'(unknown)');
-    return `<div class="gmail-msg ${mm.fromSelf?'sent':''}"><div class="gmail-msg-head"><div class="gmail-msg-from-line"><span class="gmail-msg-from">${who}</span><span class="gmail-msg-date">${esc(mailFullDate(mm.date))}</span></div>${mm.fromSelf?'':`<div class="gmail-msg-fromfull">${esc(mm.fromAddr||'')}</div>`}</div><div class="gmail-msg-body"><iframe data-msg-id="${id}" srcdoc="${bodyAttr}" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"></iframe></div></div>`;
+    return `<div class="gmail-msg ${mm.fromSelf?'sent':''}"><div class="gmail-msg-head"><div class="gmail-msg-from-line"><span class="gmail-msg-from">${who}</span><span class="gmail-msg-date">${esc(mailFullDate(mm.date))}</span></div>${mm.fromSelf?'':`<div class="gmail-msg-fromfull">${esc(mm.fromAddr||'')}</div>`}</div><div class="gmail-msg-body"><iframe data-msg-id="${id}" srcdoc="${bodyAttr}" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"></iframe></div>${mailAttachHTML(mm,mm.acctId)}</div>`;
   }).join('');
   return `<div class="gmail-detail"><div class="gmail-detail-scroll"><div class="gmail-thread">${subjectBar}${blocks}</div></div>${compose}</div>`;
 }
@@ -2621,7 +2644,7 @@ function wedThreadHTML(){
     const hs=`<script>(function(){function r(){try{var h=Math.max(document.documentElement.scrollHeight,document.body?document.body.scrollHeight:0)+24;parent.postMessage({_ct:'h',id:'${id}',h:h},'*')}catch(e){}}r();window.addEventListener('load',r);setTimeout(r,150);setTimeout(r,800);})();<\/script>`;
     const bodyAttr=(bodyHtml+hs+MAIL_LINK_SCRIPT).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const who=mm.fromSelf?'You':esc(mm.from||'(unknown)');
-    return `<div class="gmail-msg ${mm.fromSelf?'sent':''}"><div class="gmail-msg-head"><div class="gmail-msg-from-line"><span class="gmail-msg-from">${who}</span><span class="gmail-msg-date">${esc(mailFullDate(mm.date))}</span></div>${mm.fromSelf?'':`<div class="gmail-msg-fromfull">${esc(mm.fromAddr||'')}</div>`}</div><div class="gmail-msg-body"><iframe data-msg-id="${id}" srcdoc="${bodyAttr}" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"></iframe></div></div>`;
+    return `<div class="gmail-msg ${mm.fromSelf?'sent':''}"><div class="gmail-msg-head"><div class="gmail-msg-from-line"><span class="gmail-msg-from">${who}</span><span class="gmail-msg-date">${esc(mailFullDate(mm.date))}</span></div>${mm.fromSelf?'':`<div class="gmail-msg-fromfull">${esc(mm.fromAddr||'')}</div>`}</div><div class="gmail-msg-body"><iframe data-msg-id="${id}" srcdoc="${bodyAttr}" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"></iframe></div>${mailAttachHTML(mm,mm.acctId)}</div>`;
   }).join('');
   return `<div class="gmail-thread" style="padding:16px 18px 24px">`+
     `<div class="gmail-thread-subject"><span class="subj-text">${esc((v.thread&&v.thread.subject)||'')}</span></div>`+
