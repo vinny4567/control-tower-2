@@ -2740,6 +2740,11 @@ function shLemonCount(id){
 // tables on this event's floor plan, overridable); Plated → 1 per plated dish.
 function shPiccataTables(id){try{const lay=wedLayoutForSched(id);
   return lay&&lay.items?lay.items.filter(i=>i.type==='round').length:0}catch(e){return 0}}
+function shAllTables(id){try{const lay=wedLayoutForSched(id);
+  return lay&&lay.items?lay.items.filter(i=>i.type==='round'||i.type==='rect').length:0}catch(e){return 0}}
+// #11 rolls: <dozen per table> × tables on the floor plan (incl. sweetheart + vendor tables)
+function shRollsDozen(id){const per=parseFloat(wedSheetGet(id,'rollsPerTable'));const t=shAllTables(id);
+  return (per>0&&t)?Math.ceil(per*t):0}
 function shGarnishCount(id){
   if(!/piccata/i.test(wedSheetGet(id,'chicken')||''))return 0;
   const svc=wedSheetGet(id,'service')||'';
@@ -2818,13 +2823,27 @@ function wedSheetSet(id,field,val){
       if(f==='liSlices'){const n=shLemonCount(id);if(n)fill=n+' Lemon Slices';}
       if(f==='liMint')fill=shMintPrep(id);
       if(f==='liGarnish'){const n=shGarnishCount(id);if(n)fill=n+' Lemon Garnish for Piccata';}
-      const auto=cur===tpl||/^\d+ Lemon Slices$/.test(cur)||/^\d+ Lemon Garnish for Piccata$/.test(cur)||cur==='# Lemon Slices'||cur==='# Lemon Slices for Lemon Ice'||cur==='# Lemon Slices for Water Glasses'||cur==='# Lemon Slices for Garnish for Entrees';
+      if(f==='liMint'){const n=shGuests(id);if(n)fill=n+' Mint Sprigs';}
+      const auto=cur===tpl||/^\d+ Mint Sprigs$/.test(cur)||/^\d+ Lemon Slices$/.test(cur)||/^\d+ Lemon Garnish for Piccata$/.test(cur)||cur==='# Lemon Slices'||cur==='# Lemon Slices for Lemon Ice'||cur==='# Lemon Slices for Water Glasses'||cur==='# Lemon Slices for Garnish for Entrees';
       if(on&&!cur)m2[k][f]={v:fill,at:Date.now()};                // prefill (computed where we can)
       else if(!on&&auto)m2[k][f]={v:'',at:Date.now()};            // untouched auto value — clear
     });
     wedSheetPersist(m2);
   }
   // keep the piccata garnish line in step (only while it's still an auto value)
+  if(field==='nAdults'||field==='nKids'||field==='nVendors'){
+    if(wedSheetGet(id,'lemonIce')){
+      const cur=String(wedSheetGet(id,'liMint')||'').trim();
+      if(!cur||cur==='# Mint Sprigs'||/^\d+ Mint Sprigs$/.test(cur)){
+        const n=shGuests(id);
+        const m4=wedSheetLoad();m4[k]={...(m4[k]||{})};
+        m4[k].liMint={v:n?(n+' Mint Sprigs'):'# Mint Sprigs',at:Date.now()};
+        wedSheetPersist(m4);
+        const mi=document.querySelector('.sh-in[data-sid="'+id+'"][data-f="liMint"]');
+        if(mi)mi.value=m4[k].liMint.v;
+      }
+    }
+  }
   if(field==='chicken'||field==='service'||field==='piccataBowls'||field==='nAdults'){
     if(wedSheetGet(id,'lemonIce')){
       const cur=String(wedSheetGet(id,'liGarnish')||'').trim();
@@ -2855,7 +2874,7 @@ async function wedSheetPull(){try{
   if(JSON.stringify(merged)!==JSON.stringify((remote&&remote.v)||{}))kvPush('ct_wed_sheet',merged,Date.now());
   if(changed&&activeTab===WED&&wed.pane==='sheet'&&!uiTyping())renderViewport();
 }catch(e){}}
-function wedSheetShow(){wedFlush();wed.pane='sheet';wed.sel=null;renderViewport();wedSheetPull();setTimeout(()=>{try{wedRecapPaint();wedGuestPaint();['pAdult','pVeg','pKids','pVendor'].forEach(k=>wedSheetCalcRow((wedFeedEvent(wed.evId)||{}).id,k))}catch(e){}},60);}
+function wedSheetShow(){wedFlush();wed.pane='sheet';wed.sel=null;renderViewport();wedSheetPull();setTimeout(()=>{try{wedRecapPaint();wedGuestPaint();wedRollsPaint();['pAdult','pVeg','pKids','pVendor'].forEach(k=>wedSheetCalcRow((wedFeedEvent(wed.evId)||{}).id,k))}catch(e){}},60);}
 // price row: per-person → labor 20% → tax 7.75% → total (auto, live)
 function shMoney(n){return isFinite(n)?('$ '+n.toFixed(2)):''}
 function shCalc(pp){const p=parseFloat(pp)||0;if(!p)return null;const l=p*SH_LABOR,t=(p+l)*SH_TAX;return {p,l,t,total:p+l+t}}
@@ -2919,6 +2938,9 @@ function wedSheetPaneHTML(fe){
       ${row('Side 1',shSel(id,'side1',SH_SIDES,'side'))}
       ${row('Side 1 sauce',shSel(id,'side1Sauce',SH_SAUCES,'sauce'))}
       ${row('Side 2',shSel(id,'side2',SH_SIDES,'side'))}
+      <div class="sh-row"><label>Dinner rolls</label><div class="sh-money">
+        <input class="sh-in sh-num" type="number" step="0.25" placeholder="dozen / table" value="${esc(wedSheetGet(id,'rollsPerTable'))}" oninput="wedSheetSet(${id},'rollsPerTable',this.value);wedRollsPaint()">
+        <span id="sh-rolls" class="sh-calc"></span></div></div>
       ${row('Side 2 sauce',shSel(id,'side2Sauce',SH_SAUCES,'sauce'))}
       <div class="sh-row"><label>Lemon ice</label><div class="sh-money">
         <label class="sh-toggle"><input type="checkbox" ${wedSheetGet(id,'lemonIce')?'checked':''} onchange="wedSheetSet(${id},'lemonIce',this.checked?'1':'');renderViewport()"><span>Serving lemon ice</span></label></div></div>
@@ -3000,12 +3022,15 @@ function wedChefTicket(fe){
   if(g('protein'))ent.push(g('protein'));
   const pasta=[g('sauce'),g('pasta')].filter(Boolean).join(' ');
   if(pasta)ent.push(pasta);
-  if(ent.length){ent.forEach(e=>star(esc(e)));gap()}
+  if(ent.length){const G2=shGuests(id);
+    ent.forEach((e,i)=>star((i===0&&G2?G2+' P ':'')+esc(e)));   // #8 chicken: 1 per guest
+    gap()}
   const sideTxt=(n)=>{const v=g('side'+n);if(!v)return '';const sc=g('side'+n+'Sauce');return v+(sc?' · '+sc:'')};
   const sides=[sideTxt(1),sideTxt(2)].filter(Boolean);
   if(sides.length){sides.forEach(x=>star(esc(x)));gap()}
   const late=[g('late1'),g('late2')].filter(Boolean);
   if(late.length){late.forEach(x=>star(esc(x)));gap()}
+  {const rd=shRollsDozen(id);if(rd){star(rd+' Dozen Assorted Dinner Rolls');gap()}}   // #11
   if(g('dessert')&&!/not included/i.test(g('dessert')))star(esc(g('dessert')));
   return '<div style="font-family:Georgia,serif">'
    +'<table style="width:100%;border:none"><tr>'
@@ -3044,6 +3069,10 @@ function shRecapTotals(id){
   const dep=shNum2(wedSheetGet(id,'rcDep'));
   return {lines,vN,vR,vend,addons,addonTotal,balance,grat:gratAmt,subtotal,dep,due:subtotal-dep}}
 function shM(n){return '$ '+(Math.round(n*100)/100).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}
+function wedRollsPaint(){const fe=wedFeedEvent(wed.evId);if(!fe)return;
+  const el=document.getElementById('sh-rolls');if(!el)return;
+  const t=shAllTables(fe.id),d=shRollsDozen(fe.id);
+  el.textContent=t?(d?d+' dozen · '+t+' tables on the floor plan':t+' tables on the floor plan — set dozen per table'):'add tables to the floor plan first';}
 function wedGuestPaint(){const fe=wedFeedEvent(wed.evId);if(!fe)return;
   const el=document.getElementById('sh-gtotal');if(!el)return;
   const t=shGuests(fe.id);
@@ -3345,7 +3374,7 @@ function wedFit(){const wrap=document.getElementById('wed-stage-wrap'),st=docume
   wed.scale=s;
   st.style.transform=`translate(-50%,-50%) scale(${s})`}
 function wedInit(){
-  if(wed.view==='event'&&wed.pane==='sheet'){setTimeout(()=>{try{const fe=wedFeedEvent(wed.evId);if(fe){shSaladNoteSync(fe.id);if(wedSheetGet(fe.id,'chicken'))shAutoField(fe.id,'chickenNote',shChickenPrep(fe.id),shIsAutoChickenNote);if(wedSheetGet(fe.id,'lemonIce'))shAutoField(fe.id,'liMint',shMintPrep(fe.id),shIsAutoMint);wedRecapPaint();wedGuestPaint();['pAdult','pVeg','pKids','pVendor'].forEach(k=>wedSheetCalcRow(fe.id,k))}}catch(e){}},20);return}
+  if(wed.view==='event'&&wed.pane==='sheet'){setTimeout(()=>{try{const fe=wedFeedEvent(wed.evId);if(fe){shSaladNoteSync(fe.id);if(wedSheetGet(fe.id,'chicken'))shAutoField(fe.id,'chickenNote',shChickenPrep(fe.id),shIsAutoChickenNote);if(wedSheetGet(fe.id,'lemonIce'))shAutoField(fe.id,'liMint',shMintPrep(fe.id),shIsAutoMint);wedRecapPaint();wedGuestPaint();wedRollsPaint();['pAdult','pVeg','pKids','pVendor'].forEach(k=>wedSheetCalcRow(fe.id,k))}}catch(e){}},20);return}
   if(wed.view==='list'){if(!wed.feed&&!wed.loading)wedFetchFeed();return}
   const st=document.getElementById('wed-stage');if(!st)return;
   wedFit();wedPaint();
