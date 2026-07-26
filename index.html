@@ -489,6 +489,8 @@
     .sh-in:disabled{opacity:.65}
     .sh-num{max-width:130px;flex:0 0 130px}
     .sh-money{flex:1;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+    .sh-toggle{display:inline-flex;align-items:center;gap:9px;cursor:pointer;font-size:14px;color:var(--text)}
+    .sh-toggle input{width:20px;height:20px;accent-color:var(--accent);cursor:pointer}
     .sh-calc{font-size:12.5px;color:var(--text-dim)}
     @media(max-width:760px){.sh-row{flex-direction:column;align-items:stretch;gap:4px}.sh-row label{flex:none}.sh-num{max-width:none;flex:1}}
     /* event list */
@@ -2649,10 +2651,27 @@ function wedSheetMerge(a,b){const out={};const keys=new Set([...Object.keys(a||{
     out[k]=f;});
   return out}
 function wedSheetGet(id,field){const e=wedSheetLoad()['sched-'+id];const f=e&&e[field];return (f&&f.v)||''}
+const SH_LEMON_LINES=[
+  ['liContainers','# Full Containers of Lemon Ice'],
+  ['liMint','# Mint Sprigs'],
+  ['liSlices','# Lemon Slices for Lemon Ice'],
+  ['liGarnish','# Lemon Slices for Garnish for Entrees'],
+  ['liWater','# Lemon Slices for Water Glasses'],
+];
 const SH_SPECIAL_SALAD_NOTE='# Strawberries, # Apple / Pear Slices, # Jug Walnuts, # Bleu Cheese Boats';
 function wedSheetSet(id,field,val){
   const m=wedSheetLoad();const k='sched-'+id;m[k]={...(m[k]||{})};m[k][field]={v:val,at:Date.now()};
   wedSheetPersist(m);
+  if(field==='lemonIce'){
+    const on=!!val;
+    const m2=wedSheetLoad();m2[k]={...(m2[k]||{})};
+    SH_LEMON_LINES.forEach(([f,tpl])=>{
+      const cur=(m2[k][f]||{}).v||'';
+      if(on&&!cur)m2[k][f]={v:tpl,at:Date.now()};                 // prefill (amounts to come)
+      else if(!on&&cur===tpl)m2[k][f]={v:'',at:Date.now()};       // untouched template — clear
+    });
+    wedSheetPersist(m2);
+  }
   if(field==='salad'){
     const cur=wedSheetGet(id,'saladNote');
     const special=/special/i.test(val||'');
@@ -2727,7 +2746,7 @@ function wedSheetPaneHTML(fe){
       ${row('Appetizer 4',shSel(id,'app4',SH_APPS,'appetizer'))}
       ${row('Salad',shSel(id,'salad',SH_SALADS,'salad'))}
       ${row('Salad notes',shTxt(id,'saladNote',''))}
-      ${row('Palate cleanser',shTxt(id,'cleanser',''))}
+
       ${sec('Entrées')}
       ${row('Chicken',shSel(id,'chicken',SH_CHICKEN,'style'))}
       ${row('Second entrée',shSel(id,'protein',SH_PROTEIN,'entrée'))}
@@ -2735,6 +2754,9 @@ function wedSheetPaneHTML(fe){
       ${row('Pasta type',shSel(id,'pasta',SH_PASTA,'pasta'))}
       ${row('Side 1',shSel(id,'side1',SH_SIDES,'side'))}
       ${row('Side 2',shSel(id,'side2',SH_SIDES,'side'))}
+      <div class="sh-row"><label>Lemon ice</label><div class="sh-money">
+        <label class="sh-toggle"><input type="checkbox" ${wedSheetGet(id,'lemonIce')?'checked':''} onchange="wedSheetSet(${id},'lemonIce',this.checked?'1':'');renderViewport()"><span>Serving lemon ice</span></label></div></div>
+      ${wedSheetGet(id,'lemonIce')?`${sec('Lemon ice')}`+SH_LEMON_LINES.map(([f,tpl])=>`<div class="sh-row"><label>${esc(tpl.replace(/^# /,''))}</label><input class="sh-in" type="text" data-sid="${id}" data-f="${f}" value="${esc(wedSheetGet(id,f))}" oninput="wedSheetSet(${id},'${f}',this.value)"></div>`).join(''):''}
       ${sec('Pricing — labor 20% + tax 7.75% calculate automatically')}
       ${shPriceRow(id,'Adult entrée','pAdult')}
       ${shPriceRow(id,'Vegetarian','pVeg')}
@@ -2794,7 +2816,12 @@ function wedChefTicket(fe){
   const apps=[g('app1'),g('app2'),g('app3'),g('app4')].filter(Boolean);
   if(apps.length){apps.forEach(a=>star(esc(a)));gap()}
   if(g('salad')){star(esc(g('salad'))+(G?' for '+G+' Guests':''));if(g('saladNote'))star(esc(g('saladNote')));gap()}
-  if(g('cleanser')){star(esc(g('cleanser')));gap()}
+  if(g('lemonIce')){
+    const li=[g('liContainers'),g('liMint')].filter(Boolean);
+    if(li.length)star(li.map(esc).join('   *  '));
+    [g('liSlices'),g('liGarnish'),g('liWater')].filter(Boolean).forEach(x=>star(esc(x)));
+    if(li.length||g('liSlices')||g('liGarnish')||g('liWater'))gap();
+  }
   const ent=[];
   if(g('chicken'))ent.push('Chicken '+g('chicken'));
   if(g('protein'))ent.push(g('protein'));
@@ -2899,7 +2926,7 @@ function wedSheetLetter(fe){
   <h2 style="text-align:center">Your Reception</h2>
   ${apps.length?`<h3 style="text-align:center">~~ Appetizers ~~</h3><p style="text-align:center">${apps.map(a=>'~ '+esc(a)+' ~').join(' &nbsp;&nbsp; ')}</p>`:''}
   ${g('salad')?`<p style="text-align:center">~ ${esc(g('salad'))}${g('service')==='Plated'?' (Plated)':''} ~${g('saladNote')?'<br>( '+esc(g('saladNote'))+' )':''}</p>`:''}
-  ${g('cleanser')?`<p style="text-align:center">~ ${esc(g('cleanser'))} ~</p>`:''}
+  ${g('lemonIce')?`<p style="text-align:center">~ Lemon Ice For All ~</p>`:''}
   <h3 style="text-align:center">~~ Entrées ~~${g('service')?`<br><span style="font-size:.8em">~~ Entrée to be Served ${esc(g('service'))} ~~</span>`:''}</h3>
   ${g('chicken')?`<p><b>Chicken ${esc(g('chicken'))}</b></p>`:''}
   ${g('protein')?`<p><b>${esc(g('protein'))}</b></p>`:''}
