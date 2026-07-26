@@ -3255,21 +3255,78 @@ function wedPdfBusy(msg){const w=document.getElementById('wed-stage-wrap'),v=doc
   if(!w||!v)return;if(msg===null){w.classList.remove('pdf-over');return}
   v.textContent=msg;w.classList.add('pdf-over')}
 
-// What each label on a plan becomes on our canvas.
+// What each label on a plan becomes on our canvas. Captions and sentences are
+// not furniture — a real label is a word or two ("Sweetheart Table", "XTRA").
 function wedPdfClassify(t){
   const s=t.trim();
-  if(/^\d{1,2}$/.test(s)&&+s>=1&&+s<=60)                       return {type:'round',label:s};
-  if(/^(t|table)\s*\.?\s*#?\s*(\d{1,2})$/i.test(s))            return {type:'round',label:s.replace(/[^\d]/g,'')};
+  if(s.split(/\s+/).length>3)                                  return null;   // "Extra Vendor meals - Not seated with guests" is a caption
+  if(/^\d{1,2}$/.test(s)&&+s>=1&&+s<=60)                       return {type:'round',label:s,num:+s};
+  if(/^(t|table)\s*\.?\s*#?\s*(\d{1,2})$/i.test(s))            return {type:'round',label:s.replace(/[^\d]/g,''),num:+s.replace(/[^\d]/g,'')};
   if(/sweet\s*heart|sweetheart|head\s*table|bride|groom/i.test(s)) return {type:'rect',label:'SWEETHEART'};
-  if(/vendor|dj\b|photograph|band\b/i.test(s))                 return {type:'rect',label:'VENDOR'};
+  if(/^xtra$|extra\s*table|vendor|\bdj\b|photograph|\bband\b/i.test(s)) return {type:'rect',label:'VENDOR'};
   if(/dance/i.test(s))                                         return {type:'dance',label:'DANCE FLOOR'};
   if(/\bbar\b/i.test(s))                                       return {type:'rect',label:'BAR'};
   if(/cake/i.test(s))                                          return {type:'rect',label:'CAKE'};
   if(/gift/i.test(s))                                          return {type:'rect',label:'GIFTS'};
   if(/buffet|station|carv/i.test(s))                           return {type:'rect',label:s.toUpperCase().slice(0,16)};
-  if(/escort|place\s*card|seating\s*chart|guest\s*book/i.test(s)) return {type:'rect',label:s.toUpperCase().slice(0,16)};
+  if(/escort|place\s*card|guest\s*book/i.test(s))               return {type:'rect',label:s.toUpperCase().slice(0,16)};
   if(/entrance|\bdoor\b|exit\b/i.test(s))                      return {type:'door',label:'DOOR'};
   return null}
+
+// Some exports letter-space their numbers, so "10" arrives as "1" then "0".
+// Stitch neighbours back together before anything else looks at them.
+function wedPdfStitch(raw){
+  const out=[],used=new Set();
+  raw.forEach((a,i)=>{
+    if(used.has(i))return;
+    if(!/^\d$/.test(a.str)){out.push(a);return}
+    const j=raw.findIndex((b,k)=>k>i&&!used.has(k)&&/^\d$/.test(b.str)&&
+      Math.abs(b.y-a.y)<a.size*0.4&&b.x-a.x>0&&b.x-a.x<a.size*1.1);
+    if(j>-1){used.add(j);out.push({...a,str:a.str+raw[j].str,x:(a.x+raw[j].x)/2})}
+    else out.push(a);
+  });
+  return out}
+
+// Venue software draws the TABLE number bigger than the seat numbers ringed
+// around it, so group the numbers by text size and judge each group.
+function wedPdfSizeGroups(nums){
+  const gs=[];
+  nums.slice().sort((a,b)=>b.size-a.size).forEach(n=>{
+    const g=gs.find(g=>Math.abs(g.size-n.size)/Math.max(g.size,n.size)<0.18);
+    if(g)g.items.push(n); else gs.push({size:n.size,items:[n]});
+  });
+  return gs}
+
+// Tables are numbered once each and run 1,2,3…; seats repeat 1-10 at every
+// table. That difference is what tells them apart.
+function wedPdfGroupScore(g){
+  const vals=g.items.map(x=>x.num),uniq=new Set(vals);
+  if(uniq.size<2)return -99;
+  const run=[...uniq].filter(v=>v<=uniq.size+2).length;          // how much of 1..N is there
+  return uniq.size+run-(vals.length-uniq.size)*2}
+
+// Read one page and decide what is actually on it.
+function wedPdfReadPage(raw){
+  const marks=wedPdfStitch(raw).map(r=>({...r,cls:wedPdfClassify(r.str)})).filter(r=>r.cls);
+  const nums=marks.filter(r=>r.cls.type==='round').map(r=>({...r,num:r.cls.num}));
+  const furniture=marks.filter(r=>r.cls.type!=='round');
+  if(nums.length<2)return {tables:[],furniture,seats:0,score:furniture.length?1:0};
+  const groups=wedPdfSizeGroups(nums).map(g=>({...g,score:wedPdfGroupScore(g)}))
+    .sort((a,b)=>b.score-a.score);
+  const best=groups[0];
+  if(best.score<2)return {tables:[],furniture,seats:0,score:0};
+  // one table per number — if a number is drawn twice, keep the first
+  const tables=[],seen=new Set();
+  best.items.forEach(t=>{if(!seen.has(t.num)){seen.add(t.num);tables.push(t)}});
+  const seats=groups.slice(1).reduce((n,g)=>n+g.items.length,0);
+  return {tables,furniture,seats,score:best.score+furniture.length+Math.min(seats,60)/10}}
+
+// Seats sit on the rim of their table, so their distance from the number in
+// the middle is the table's radius — use it so the circles come out life-size.
+function wedPdfRingRadius(tables,seatPts){
+  if(!seatPts.length||!tables.length)return 0;
+  const ds=seatPts.map(s=>Math.min(...tables.map(t=>Math.hypot(t.x-s.x,t.y-s.y)))).sort((a,b)=>a-b);
+  return ds[Math.floor(ds.length/2)]||0}
 
 async function wedPdfImport(file){
   const ev=wedCur();if(!ev)return;
@@ -3277,51 +3334,58 @@ async function wedPdfImport(file){
   try{
     wedPdfBusy('Reading '+file.name+'…');
     const pdfjs=await wedPdfjs();
-    const buf=await file.arrayBuffer();
-    const doc=await pdfjs.getDocument({data:buf}).promise;
-    const found=[];
-    const pages=Math.min(doc.numPages,3);
+    const doc=await pdfjs.getDocument({data:await file.arrayBuffer()}).promise;
+    const pages=Math.min(doc.numPages,60);
+    let best=null;
     for(let pn=1;pn<=pages;pn++){
+      if(pn%5===0)wedPdfBusy('Reading '+file.name+'… page '+pn+' of '+pages);
       const page=await doc.getPage(pn);
       const vp=page.getViewport({scale:1});
       const tc=await page.getTextContent();
-      const hits=[];
+      const raw=[];
       tc.items.forEach(it=>{
         const str=(it.str||'').trim();if(!str)return;
-        const cls=wedPdfClassify(str);if(!cls)return;
         const tr=it.transform||[1,0,0,1,0,0];
-        const w=it.width||0,h=it.height||10;
-        hits.push({...cls,x:tr[4]+w/2,y:vp.height-tr[5]+h/2});   // PDF y is bottom-up
+        const size=it.height||Math.hypot(tr[2],tr[3])||10;
+        raw.push({str,size,x:tr[4]+(it.width||0)/2,y:vp.height-tr[5]+size/2});   // PDF y is bottom-up
       });
-      if(hits.length){found.push({page:pn,w:vp.width,h:vp.height,hits});}
+      const got=wedPdfReadPage(raw);
+      got.page=pn;got.raw=raw;
+      if(!best||got.score>best.score)best=got;
     }
     wedPdfBusy(null);
-    if(!found.length){
+    if(!best||!best.tables.length){
       alert('No tables found in that PDF.\n\nIt’s most likely a scan or a picture of the plan — there’s no text for me to read. Ask them for the PDF the venue’s software made (or a version where you can select the table numbers with your cursor), and I’ll build it.');
       return}
-    // Best page = the one with the most furniture on it.
-    const best=found.sort((a,b)=>b.hits.length-a.hits.length)[0];
-    // Same label twice within a hair of each other = one table drawn twice.
-    const keep=[];
-    best.hits.forEach(h=>{if(!keep.some(k=>k.label===h.label&&Math.abs(k.x-h.x)<14&&Math.abs(k.y-h.y)<14))keep.push(h)});
-    const rounds=keep.filter(h=>h.type==='round').length;
-    const other=keep.length-rounds;
-    if(!confirm('Found '+rounds+' numbered table'+(rounds===1?'':'s')+
-      (other?' and '+other+' other piece'+(other===1?'':'s'):'')+' on page '+best.page+' of '+file.name+'.\n\n'+
-      'Build this layout? Everything currently on this floor plan gets replaced.'))return;
+    const keep=best.tables.concat(best.furniture.filter(f=>
+      !best.furniture.some(o=>o!==f&&o.cls.label===f.cls.label&&Math.abs(o.x-f.x)<14&&Math.abs(o.y-f.y)<14&&best.furniture.indexOf(o)<best.furniture.indexOf(f))));
+    const nums=best.tables.map(t=>t.num).sort((a,b)=>a-b);
+    const missing=[];for(let i=1;i<=Math.max(...nums);i++)if(!nums.includes(i))missing.push(i);
+    const other=keep.length-best.tables.length;
+    if(!confirm('Page '+best.page+' of '+file.name+':\n\n'+
+      '• '+best.tables.length+' tables, numbered '+nums[0]+'–'+nums[nums.length-1]+
+      (missing.length?'  (no '+missing.join(', ')+')':'')+'\n'+
+      (best.seats?'• '+best.seats+' seats drawn around them\n':'')+
+      (other?'• '+other+' other piece'+(other===1?'':'s')+': '+[...new Set(keep.slice(best.tables.length).map(f=>f.cls.label))].join(', ')+'\n':'')+
+      '\nBuild this layout? Everything currently on this floor plan gets replaced.'))return;
     // Fit the plan's own bounding box onto our canvas.
     const PAD=70;
     const xs=keep.map(h=>h.x),ys=keep.map(h=>h.y);
     const x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);
     const sc=Math.min((WED_W-PAD*2)/Math.max(x1-x0,1),(WED_H-PAD*2)/Math.max(y1-y0,1));
     const offX=(WED_W-(x1-x0)*sc)/2-x0*sc, offY=(WED_H-(y1-y0)*sc)/2-y0*sc;
-    const size={round:{w:76,h:76},rect:{w:130,h:56},dance:{w:260,h:195},door:{w:130,h:34}};
-    ev.items=keep.map(h=>({id:wedNewId(),type:h.type,label:h.label,
-      x:Math.round(Math.max(20,Math.min(WED_W-20,h.x*sc+offX))),
-      y:Math.round(Math.max(20,Math.min(WED_H-20,h.y*sc+offY))),
-      ...size[h.type]}));
+    // life-size circles when the export drew the seats
+    const seatPts=best.raw.filter(r=>/^\d{1,2}$/.test(r.str)&&!best.tables.some(t=>t.x===r.x&&t.y===r.y));
+    const rr=wedPdfRingRadius(best.tables,seatPts)*sc;
+    const round=rr>10?Math.round(Math.max(50,Math.min(150,rr*2))):76;
+    const size={round:{w:round,h:round},rect:{w:130,h:56},dance:{w:260,h:195},door:{w:130,h:34}};
+    ev.items=keep.map(h=>{const type=h.cls?h.cls.type:'round',label=h.cls?h.cls.label:h.str;
+      return {id:wedNewId(),type,label,
+        x:Math.round(Math.max(20,Math.min(WED_W-20,h.x*sc+offX))),
+        y:Math.round(Math.max(20,Math.min(WED_H-20,h.y*sc+offY))),
+        ...size[type]}});
     wed.sel=null;wedTouch();
-    setTimeout(()=>{try{wedRollsPaint()}catch(e){}},50);   // rolls count off the new table count
+    setTimeout(()=>{try{wedRollsPaint()}catch(e){}},50);
   }catch(err){
     wedPdfBusy(null);
     alert('Couldn’t read that PDF.\n\n'+(err&&err.message||err));
