@@ -2886,6 +2886,7 @@ function wedSheetPaneHTML(fe){
 
       ${sec('Entrées')}
       ${row('Chicken',shSel(id,'chicken',SH_CHICKEN,'style'))}
+      ${/piccata/i.test(wedSheetGet(id,'chicken')||'')?`<div class="sh-row"><label>Lemon Garnish for Piccata</label><input class="sh-in" type="text" data-sid="${id}" data-f="liGarnish" value="${esc(wedSheetGet(id,'liGarnish'))}" oninput="wedSheetSet(${id},'liGarnish',this.value)"></div>`+(/family/i.test(wedSheetGet(id,'service')||'')?`<div class="sh-row"><label>Piccata bowls</label><div class="sh-money"><input class="sh-in sh-num" type="number" placeholder="${shPiccataTables(id)||'bowls'}" value="${esc(wedSheetGet(id,'piccataBowls'))}" oninput="wedSheetSet(${id},'piccataBowls',this.value)"><span class="sh-calc">${shPiccataTables(id)?'floor plan has '+shPiccataTables(id)+' round tables — 1 garnish per bowl':'set the bowl count (1 garnish each)'}</span></div></div>`:''):''}
       ${row('Second entrée',shSel(id,'protein',SH_PROTEIN,'entrée'))}
       ${row('Pasta sauce',shSel(id,'sauce',SH_SAUCE,'sauce'))}
       ${row('Pasta type',shSel(id,'pasta',SH_PASTA,'pasta'))}
@@ -2895,7 +2896,7 @@ function wedSheetPaneHTML(fe){
       ${row('Side 2 sauce',shSel(id,'side2Sauce',SH_SAUCES,'sauce'))}
       <div class="sh-row"><label>Lemon ice</label><div class="sh-money">
         <label class="sh-toggle"><input type="checkbox" ${wedSheetGet(id,'lemonIce')?'checked':''} onchange="wedSheetSet(${id},'lemonIce',this.checked?'1':'');renderViewport()"><span>Serving lemon ice</span></label></div></div>
-      ${wedSheetGet(id,'lemonIce')?`${sec('Lemon ice')}`+SH_LEMON_LINES.filter(([f])=>f!=='liGarnish'||/piccata/i.test(wedSheetGet(id,'chicken')||'')).map(([f,tpl])=>`<div class="sh-row"><label>${esc(tpl.replace(/^# /,''))}</label><input class="sh-in" type="text" data-sid="${id}" data-f="${f}" value="${esc(wedSheetGet(id,f))}" oninput="wedSheetSet(${id},'${f}',this.value)"></div>`).join('')+(/piccata/i.test(wedSheetGet(id,'chicken')||'')&&/family/i.test(wedSheetGet(id,'service')||'')?`<div class="sh-row"><label>Piccata bowls</label><div class="sh-money"><input class="sh-in sh-num" type="number" placeholder="${shPiccataTables(id)||'bowls'}" value="${esc(wedSheetGet(id,'piccataBowls'))}" oninput="wedSheetSet(${id},'piccataBowls',this.value)"><span class="sh-calc">${shPiccataTables(id)?'floor plan has '+shPiccataTables(id)+' round tables — 1 garnish per bowl':'set the bowl count (1 garnish each)'}</span></div></div>`:''):''}
+      ${wedSheetGet(id,'lemonIce')?`${sec('Lemon ice')}`+SH_LEMON_LINES.filter(([f])=>f!=='liGarnish').map(([f,tpl])=>`<div class="sh-row"><label>${esc(tpl.replace(/^# /,''))}</label><input class="sh-in" type="text" data-sid="${id}" data-f="${f}" value="${esc(wedSheetGet(id,f))}" oninput="wedSheetSet(${id},'${f}',this.value)"></div>`).join('')):''}
       ${sec('Pricing — labor 20% + tax 7.75% calculate automatically')}
       ${shPriceRow(id,'Adult entrée','pAdult')}
       ${shPriceRow(id,'Vegetarian','pVeg')}
