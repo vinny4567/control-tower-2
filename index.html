@@ -2746,6 +2746,18 @@ function shGarnishCount(id){
   if(/plated/i.test(svc))return shNum2(wedSheetGet(id,'nAdults'))||shGuests(id)||0;
   if(/family/i.test(svc)){const ov=shNum2(wedSheetGet(id,'piccataBowls'));return ov||shPiccataTables(id)||0}
   return 0}
+// Running list of formulas still owed — shown at the bottom of the Event Sheet so
+// nothing gets forgotten. Cross one off by giving me the rule; I delete the line.
+const SH_PENDING=[
+  'Bleu cheese boats for the special salad — how many per guest / per table?',
+  'Walnut jugs at 200+ guests (under 200 = 1 jug, that part is done)',
+  'Quarts of sauce for the chicken entrée — per guest or per pan?',
+  'Capers container size — when small vs large?',
+  'Setups in bus tub — how many, and which sauces need them (saltimbocca…)?',
+  'Full containers of lemon ice — per guest?',
+  'Piccata garnish for plated service — 1 per plate, or a different count?',
+  'Truck equipment ratios to sanity-check against a real event (plates, forks, chafers…)'
+];
 const SH_SPECIAL_SALAD_NOTE='# Strawberries, # Apple / Pear Slices, # Jug Walnuts, # Bleu Cheese Boats';
 // Special-salad prep, computed off the TOTAL head count (adults + kids + vendors):
 //   strawberries and apple/pear slices = guests + 5
@@ -2758,6 +2770,16 @@ function shSaladPrep(id){
   return `${n} Strawberries, ${n} Apple / Pear Slices, ${g<200?'1':'#'} Jug Walnuts, # Bleu Cheese Boats`}
 function shIsAutoSaladNote(t){t=String(t||'').trim();
   return !t||/^(#|\d+) Strawberries, (#|\d+) Apple \/ Pear Slices, (#|\d+) Jug Walnuts, (#|\d+) Bleu Cheese Boats$/.test(t)}
+// Chicken prep note — sauce quarts, capers (piccata only) and bus-tub setups.
+// Quantities are placeholders until Vinny gives the ratios (see the pending list).
+function shChickenPrep(id){
+  const c=wedSheetGet(id,'chicken')||'';
+  const bits=['# Quarts Sauce'];
+  if(/piccata/i.test(c))bits.push('Small / Large Container of Capers');
+  bits.push('# Setups in Bus Tub');
+  return bits.join(', ')}
+function shIsAutoChickenNote(t){t=String(t||'').trim();
+  return !t||/^(#|\d+) Quarts Sauce(, Small \/ Large Container of Capers)?, (#|\d+) Setups in Bus Tub$/.test(t)}
 function shMintPrep(id){const g=shGuests(id);return g?((g+5)+' Mint Sprigs'):'# Mint Sprigs'}
 function shIsAutoMint(t){t=String(t||'').trim();return !t||/^(#|\d+) Mint Sprigs$/.test(t)}
 // Writes a computed value into a field + its on-screen box, unless the user typed their own.
@@ -2817,6 +2839,7 @@ function wedSheetSet(id,field,val){
     }
   }
   if(field==='salad')shSaladNoteSync(id,val);
+  if(field==='chicken')shAutoField(id,'chickenNote',val?shChickenPrep(id):'',shIsAutoChickenNote);
   if(field==='nAdults'||field==='nKids'||field==='nVendors'){
     shSaladNoteSync(id);
     if(wedSheetGet(id,'lemonIce'))shAutoField(id,'liMint',shMintPrep(id),shIsAutoMint);
@@ -2885,7 +2908,10 @@ function wedSheetPaneHTML(fe){
       ${row('Salad notes',shTxt(id,'saladNote',''))}
 
       ${sec('Entrées')}
-      ${row('Chicken',shSel(id,'chicken',SH_CHICKEN,'style'))}
+      <div class="sh-row"><label>Chicken</label><div class="sh-money">
+        <span style="flex:0 0 300px;max-width:300px">${shSel(id,'chicken',SH_CHICKEN,'style')}</span>
+        <input class="sh-in" style="flex:1;min-width:260px" type="text" data-sid="${id}" data-f="chickenNote" placeholder="sauce quarts · capers · bus tub setups" value="${esc(wedSheetGet(id,'chickenNote'))}" oninput="wedSheetSet(${id},'chickenNote',this.value)">
+      </div></div>
       ${/piccata/i.test(wedSheetGet(id,'chicken')||'')?`<div class="sh-row"><label>Lemon Garnish for Piccata</label><input class="sh-in" type="text" data-sid="${id}" data-f="liGarnish" value="${esc(wedSheetGet(id,'liGarnish'))}" oninput="wedSheetSet(${id},'liGarnish',this.value)"></div>`+(/family/i.test(wedSheetGet(id,'service')||'')?`<div class="sh-row"><label>Piccata bowls</label><div class="sh-money"><input class="sh-in sh-num" type="number" placeholder="${shPiccataTables(id)||'bowls'}" value="${esc(wedSheetGet(id,'piccataBowls'))}" oninput="wedSheetSet(${id},'piccataBowls',this.value)"><span class="sh-calc">${shPiccataTables(id)?'floor plan has '+shPiccataTables(id)+' round tables — 1 garnish per bowl':'set the bowl count (1 garnish each)'}</span></div></div>`:''):''}
       ${row('Second entrée',shSel(id,'protein',SH_PROTEIN,'entrée'))}
       ${row('Pasta sauce',shSel(id,'sauce',SH_SAUCE,'sauce'))}
@@ -2936,6 +2962,11 @@ function wedSheetPaneHTML(fe){
       <div class="sh-row"><label>Balance due</label><div class="sh-money"><span id="rc-due" style="font-weight:800;font-size:17px;color:var(--accent)">$ 0.00</span></div></div>
       <div class="sh-row"><label>Recap notes</label><textarea class="sh-in" rows="2" oninput="wedSheetSet(${id},'rcNotes',this.value)">${esc(wedSheetGet(id,'rcNotes'))}</textarea></div>
       <div class="sh-row"><label></label><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="wed-btn" onclick="wedRecapFill()">⚙ Fill items from menu</button><button class="wed-btn amber" onclick="wedRecapPrint()">🧾 Print Recap</button></div></div>
+      ${sec('⏳ Calculations still needed from Vinny')}
+      <div class="sh-row"><div style="flex:1;font-size:13px;color:var(--text-dim);line-height:1.9">
+        ${SH_PENDING.map(t=>`• ${esc(t)}`).join('<br>')}
+        <div style="margin-top:8px;font-size:11.5px;color:var(--text-muted)">Everything above computes already. Tell me any of these rules and the # turns into a real number.</div>
+      </div></div>
       ${sec('Proposal notes')}
       <div class="sh-row"><label>Notes</label><textarea class="sh-in" rows="4" oninput="wedSheetSet(${id},'notes',this.value)">${esc(wedSheetGet(id,'notes'))}</textarea></div>
       <div style="height:40px"></div>
@@ -2965,7 +2996,7 @@ function wedChefTicket(fe){
     if(li.length||g('liSlices')||g('liGarnish')||g('liWater'))gap();
   }
   const ent=[];
-  if(g('chicken'))ent.push('Chicken '+g('chicken'));
+  if(g('chicken')){ent.push('Chicken '+g('chicken'));if(g('chickenNote'))ent.push(g('chickenNote'));}
   if(g('protein'))ent.push(g('protein'));
   const pasta=[g('sauce'),g('pasta')].filter(Boolean).join(' ');
   if(pasta)ent.push(pasta);
@@ -3314,7 +3345,7 @@ function wedFit(){const wrap=document.getElementById('wed-stage-wrap'),st=docume
   wed.scale=s;
   st.style.transform=`translate(-50%,-50%) scale(${s})`}
 function wedInit(){
-  if(wed.view==='event'&&wed.pane==='sheet'){setTimeout(()=>{try{const fe=wedFeedEvent(wed.evId);if(fe){shSaladNoteSync(fe.id);if(wedSheetGet(fe.id,'lemonIce'))shAutoField(fe.id,'liMint',shMintPrep(fe.id),shIsAutoMint);wedRecapPaint();wedGuestPaint();['pAdult','pVeg','pKids','pVendor'].forEach(k=>wedSheetCalcRow(fe.id,k))}}catch(e){}},20);return}
+  if(wed.view==='event'&&wed.pane==='sheet'){setTimeout(()=>{try{const fe=wedFeedEvent(wed.evId);if(fe){shSaladNoteSync(fe.id);if(wedSheetGet(fe.id,'chicken'))shAutoField(fe.id,'chickenNote',shChickenPrep(fe.id),shIsAutoChickenNote);if(wedSheetGet(fe.id,'lemonIce'))shAutoField(fe.id,'liMint',shMintPrep(fe.id),shIsAutoMint);wedRecapPaint();wedGuestPaint();['pAdult','pVeg','pKids','pVendor'].forEach(k=>wedSheetCalcRow(fe.id,k))}}catch(e){}},20);return}
   if(wed.view==='list'){if(!wed.feed&&!wed.loading)wedFetchFeed();return}
   const st=document.getElementById('wed-stage');if(!st)return;
   wedFit();wedPaint();
