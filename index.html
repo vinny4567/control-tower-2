@@ -2393,7 +2393,7 @@ function wedDow(ymd){try{return new Date(ymd+'T00:00:00').toLocaleDateString([],
 function wedLayoutForSched(id){return wedLoad().events.find(e=>e.sched===id)||null}
 function wedFeedEvent(id){const feed=wed.feed||wedFeedCache();return ((feed&&feed.events)||[]).find(e=>e.id===id)||null}
 // Clicking an event opens its HUB (sidebar: floor plan, wedding template) — the layout no longer auto-opens.
-function wedOpenSched(id){if(!wedFeedEvent(id))return;wed.evId=id;wed.view="event";wed.pane="tpl";wed.mailView=null;wed.mailRes=null;wed.schedRes=null;renderViewport()}
+function wedOpenSched(id){if(!wedFeedEvent(id))return;wed.evId=id;wed.view="event";wed.pane="sheet";wed.mailView=null;wed.mailRes=null;wed.schedRes=null;renderViewport();wedSheetPull()}
 // Sidebar Floor Plan button — find-or-create the layout, then show the editor IN the hub's main pane
 // (the Event-tools sidebar stays visible).
 function wedOpenSchedLayout(){const fe=wedFeedEvent(wed.evId);if(!fe)return;
@@ -3510,7 +3510,7 @@ function agTap(id){
   id=String(id);
   if(id.startsWith('sched-')){const sid=Number(id.slice(6));
     if(!wed.feed&&ag.feed)wed.feed=ag.feed;
-    if(wedFeedEvent(sid)){switchTab(WED);wed.evId=sid;wed.view='event';wed.pane='tpl';renderViewport()}
+    if(wedFeedEvent(sid)){switchTab(WED);wed.evId=sid;wed.view='event';wed.pane='sheet';renderViewport();wedSheetPull()}
     return}
   agOpen[id]=!agOpen[id];agendaRerender();
 }
