@@ -1476,8 +1476,33 @@ async function mailSendReply(){
   setReplyStatus('Sending…','info');
   try{
     await mailSend(acct,{to,subject:subj,text,inReplyTo:m.messageId,references:m.messageId,attach:mailx.attach||[]});
+    const sentCopy={uid:'sent-'+Date.now(),from:acct.email,fromAddr:acct.email,to,subject:subj,
+      date:new Date().toISOString(),text,html:null,fromSelf:true,justSent:true};
     mailx.attach=[];mailx.draft="";mailx.draftTo=null;
-    setReplyStatus('Sent ✓','success');setTimeout(()=>{mailx.composing=false;mailx.sendStatus=null;if(mailx.selUid)openMailMsg(mailx.selUid,mailx.folder);else if(activeTab===MAIL)renderViewport();},1600);
+    // Show the reply in the conversation NOW: Gmail needs a few seconds to index a
+    // sent message, and the session cache would otherwise repaint the pre-reply thread.
+    const ck=mailx.acct+'|'+mailx.folder+'|'+mailx.selUid;
+    const th=mailx.selThread;
+    if(th&&Array.isArray(th.messages)){th.messages=[...th.messages,sentCopy];mailThreadCache[ck]=th;}
+    setReplyStatus('Sent ✓','success');
+    setTimeout(()=>{mailx.composing=false;mailx.sendStatus=null;if(activeTab===MAIL)renderViewport();},1200);
+    // Then reconcile with the server twice — once quickly, once after indexing settles.
+    const uidNow=mailx.selUid, fldNow=mailx.folder, acctNow=mailx.acct;
+    const reconcile=async()=>{
+      try{
+        const r=await mailFetch('/mail/thread?acct='+encodeURIComponent(acctNow)+'&uid='+uidNow+'&folder='+encodeURIComponent(fldNow));
+        const d=await r.json();
+        if(!r.ok||!d||!Array.isArray(d.messages))return;
+        const hasReply=d.messages.some(x=>x.fromSelf&&Math.abs(new Date(x.date)-new Date(sentCopy.date))<15*60*1000);
+        if(!hasReply)return;                       // server hasn't caught up — keep our copy
+        mailThreadCache[acctNow+'|'+fldNow+'|'+uidNow]=d;
+        if(mailx.selUid===uidNow&&mailx.acct===acctNow&&!mailx.composing){
+          mailx.selThread=d;
+          if(activeTab===MAIL)renderViewport();
+        }
+      }catch(e){}
+    };
+    setTimeout(reconcile,4000); setTimeout(reconcile,15000);
   }catch(e){
     if(e.notConnected){setReplyStatus('Not connected for sending yet','error');if(confirm(acct.email+' needs a one-time Google sign-in to send. Open it now?'))gmailConnectAccount(acct.email);return;}
     setReplyStatus((e.noProvider?'':'Send failed: ')+String(e.message||e),'error');
