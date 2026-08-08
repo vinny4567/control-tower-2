@@ -1213,7 +1213,8 @@ async function loadMailList(force){
   if(!mailx.acct)return;const key=mailListKey();
   if(!mailx.lists[key]&&mailx.folder==='inbox'){const snap=mailSnapGet(mailx.acct+'|inbox');if(snap)mailx.lists[key]=snap;}
   const cached=mailx.lists[key];mailx.loadingList=!cached||!!force;if(activeTab===MAIL)renderViewport();
-  try{const r=await mailFetch('/mail/list?acct='+encodeURIComponent(mailx.acct)+'&folder='+encodeURIComponent(mailx.folder)+'&limit='+(mailx.limit||50)+(force?'&fresh=1':''));const d=await r.json();if(!r.ok)throw new Error(d.detail||d.error||'mailbox error');mailx.lists[key]=d.messages||[];if(mailx.folder==='inbox'&&(mailx.limit||50)<=50)mailSnapPut(mailx.acct+'|inbox',d.messages||[]);mailx.loadingList=false;mailx.error=null;if(mailx.folder==="inbox")mailPrecacheTop(mailx.acct,d.messages,3);}
+  try{const r=await mailFetch('/mail/list?acct='+encodeURIComponent(mailx.acct)+'&folder='+encodeURIComponent(mailx.folder)+'&limit='+(mailx.limit||50)+(force?'&fresh=1':''));const d=await r.json();
+    if(d&&d.total!=null){mailx.totals=mailx.totals||{};mailx.totals[mailListKey()]=d.total;}if(!r.ok)throw new Error(d.detail||d.error||'mailbox error');mailx.lists[key]=d.messages||[];if(mailx.folder==='inbox'&&(mailx.limit||50)<=50)mailSnapPut(mailx.acct+'|inbox',d.messages||[]);mailx.loadingList=false;mailx.error=null;if(mailx.folder==="inbox")mailPrecacheTop(mailx.acct,d.messages,3);}
   catch(e){mailx.loadingList=false;mailx.error=e.message==='unauth'?'Access key rejected':'Could not reach that inbox — '+String(e.message||e);}
   if(activeTab===MAIL)renderViewport();
 }
@@ -1586,7 +1587,10 @@ function mailListHTML(forTwoPane){
   if(list&&!list.length)return bar(`<div class="gmail-empty">${emptyMsg}</div>`);
   const rows=(list||[]).map(e=>mailRowHTML(e,forTwoPane)).join('');
   const lim=(mailx.limit||50);
-  const more=(((typeof list0!=='undefined'?list0:list)||[]).length>=lim&&lim<300)?`<div style="padding:14px;text-align:center"><button class="gmail-action-btn secondary" onclick="mailLoadMore()">${mailx.loadingList?'Loading…':'Load older messages'}</button></div>`:'';
+  const loaded=((typeof list0!=='undefined'?list0:list)||[]).length;
+  const mboxTotal=(mailx.totals||{})[mailListKey()];
+  const hasOlder=(mboxTotal!=null)?(loaded<mboxTotal):(loaded>=lim);
+  const more=(hasOlder&&lim<300)?`<div style="padding:14px;text-align:center"><button class="gmail-action-btn secondary" onclick="mailLoadMore()">${mailx.loadingList?'Loading…':'Load older messages'}</button></div>`:'';
   return bar(`<div class="gmail-list-tab">${rows}${more}</div>`);
 }
 // Attachment strip under a message — Email tab + wedding hub, all four accounts.
