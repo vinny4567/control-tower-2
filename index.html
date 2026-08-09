@@ -3911,7 +3911,7 @@ function wedDup(){const ev=wedCur();const it=wedSelItem();if(!ev||!it)return;
 function wedRemove(){const ev=wedCur();if(!ev||!wed.sel)return;ev.items=ev.items.filter(i=>i.id!==wed.sel);wed.sel=null;wedTouch()}
 function wedTouch(){const ev=wedCur();if(ev)ev.updated=Date.now();wedQueueSave();wedPaint();wedBarRefresh()}
 function wedItemHTML(it){const cls={round:'wed-round',rect:'wed-rect',dance:'wed-dance',door:'wed-door',text:'wed-text',box:'wed-box'}[it.type]||'wed-rect';
-  return `<div class="wed-it ${cls} ${wed.sel===it.id?'wed-sel':''} ${it.unsure?'wed-q':''}" data-wid="${it.id}" style="left:${it.x}px;top:${it.y}px;width:${it.w}px;height:${it.h}px;transform:translate(-50%,-50%) rotate(${it.rot||0}deg)"><span class="wed-lbl">${esc(it.label||'')}${(it.type==='round'&&it.seats)?`<span class="wed-seats">${esc(String(it.seats))}</span>`:''}</span>${wed.sel===it.id?(it.type==='round'
+  return `<div class="wed-it ${cls} ${wed.sel===it.id?'wed-sel':''} ${it.unsure?'wed-q':''}" data-wid="${it.id}" style="left:${it.x}px;top:${it.y}px;width:${it.w}px;height:${it.h}px;transform:translate(-50%,-50%) rotate(${it.rot||0}deg)"><span class="wed-lbl">${(it.type==='round'&&it.label)?'#'+esc(it.label):esc(it.label||'')}${(it.type==='round'&&it.seats)?`<span class="wed-seats">${esc(String(it.seats))}</span>`:''}</span>${wed.sel===it.id?(it.type==='round'
       ?`<input class="wed-num" value="${esc(it.seats||'')}" placeholder="gsts" title="Guests seated at this table" onpointerdown="event.stopPropagation()" onfocus="this.select()" onchange="wedNumSet(this)">`
       :'<div class="wed-rot" title="Drag to spin">⟳</div>'):''}</div>`}
 function wedPaint(){const st=document.getElementById('wed-stage');const ev=wedCur();if(!st||!ev)return;
@@ -4083,7 +4083,7 @@ function wedPrint(){const ev=wedCur();if(!ev)return;wedFlush();
       rect:'border:2px solid #000;font-size:9px;',dance:'border:2.5px dashed #000;font-size:11px;letter-spacing:2px;',
       door:'border:1.5px solid #555;color:#555;font-size:8px;letter-spacing:1px;',text:'font-size:11px;',
       box:'border:2px solid #000;font-size:9px;border-radius:6px;letter-spacing:1px;'}[it.type]||'';
-    return `<div style="${base}${look}${style}"><span style="display:inline-block">${esc(it.label||'')}${(it.type==='round'&&it.seats)?'<br><span style="font-size:.9em;font-weight:800">'+esc(String(it.seats))+'</span>':''}</span></div>`}).join('');
+    return `<div style="${base}${look}${style}"><span style="display:inline-block">${(it.type==='round'&&it.label)?'#'+esc(it.label):esc(it.label||'')}${(it.type==='round'&&it.seats)?'<br><span style="font-size:.9em;font-weight:800">'+esc(String(it.seats))+'</span>':''}</span></div>`}).join('');
   doc.open();doc.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(ev.name||'Floor plan')}</title>
     <style>@page{size:landscape;margin:.4in}body{font-family:-apple-system,Helvetica,sans-serif;color:#000}</style></head><body>
     <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
