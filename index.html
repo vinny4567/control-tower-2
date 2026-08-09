@@ -3680,11 +3680,11 @@ function wedTraceAsk(ev,head,n){
 // ── canvas ──
 function wedAdd(type){const ev=wedCur();if(!ev)return;
   const base={round:{w:76,h:76,label:String(ev.items.filter(i=>i.type==='round').length+1)},
-    rect:{w:130,h:56,label:'TABLE'},dance:{w:260,h:195,label:'DANCE FLOOR'},
+    rect:{w:130,h:56,label:''},dance:{w:260,h:195,label:'DANCE FLOOR'},
     door:{w:130,h:34,label:'DOOR'},box:{w:150,h:100,label:''},text:{w:170,h:34,label:''}}[type];
   const it={id:wedNewId(),type,x:WED_W/2,y:WED_H/2,...base};
   ev.items.push(it);ev.updated=Date.now();wed.sel=it.id;wedQueueSave();wedPaint();
-  if(type==='text'||type==='box')wedEditLabel(it.id)}
+  if(type==='text'||type==='box'||type==='rect')wedEditLabel(it.id)}
 // Label editor: a real textbox pops up over the piece. Enter/blur saves, Esc closes.
 // (Inline element handlers — immune to the re-render/closure detachment that broke
 // the contenteditable approach.)
