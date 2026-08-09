@@ -277,6 +277,19 @@
     #wed-bar .wed-btn{flex:none}
     .wed-btn.on{background:var(--accent);border-color:var(--accent);color:#140f02}
     .wed-it.wed-q{border-style:dashed!important;opacity:.85}
+    #wed-mailer{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:20px}
+    #wed-mailer .wm-card{background:var(--panel,#0e1015);border:1px solid var(--accent);border-radius:12px;width:min(540px,100%);max-height:92vh;display:flex;flex-direction:column;box-shadow:0 18px 60px rgba(0,0,0,.7)}
+    #wed-mailer .wm-head{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid var(--border);font-weight:800;font-size:15px;color:var(--accent)}
+    #wed-mailer .wm-body{padding:14px 16px;overflow:auto}
+    #wed-mailer .wm-shot{width:100%;border:1px solid var(--border);border-radius:6px;background:#fff;margin-bottom:12px}
+    #wed-mailer label{display:block;font-size:11px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--text-muted);margin:10px 0 4px}
+    #wed-mailer input,#wed-mailer select,#wed-mailer textarea{width:100%;background:#0a0b0f;border:1px solid var(--border);border-radius:7px;color:var(--text);font-size:13.5px;padding:9px 10px;font-family:inherit}
+    #wed-mailer textarea{resize:vertical;line-height:1.5}
+    #wed-mailer .wm-hint{font-size:11px;color:var(--text-muted);margin-top:5px}
+    #wed-mailer .wm-foot{display:flex;align-items:center;gap:9px;justify-content:flex-end;padding:12px 16px;border-top:1px solid var(--border)}
+    #wed-mailer #wm-status{flex:1;font-size:12px;font-weight:700;color:var(--text-muted)}
+    #wed-mailer #wm-status.bad{color:#e5484d}
+    #wed-mailer #wm-status.good{color:#3fbf5f}
     .mail-compose-btn:hover{filter:brightness(1.08)}
     @media(max-width:600px){.mail-compose-btn{padding:9px 11px}}
     /* User chip in toolbar */
@@ -2649,6 +2662,37 @@ function wedUnlinkMail(){const fe=wedFeedEvent(wed.evId);if(!fe)return;
   wedMetaSet(fe.id,'email','');wed.mailRes=null;wed.mailView=null;renderViewport();}
 function wedShowMail(){wedFlush();wed.pane="mail";wed.sel=null;wed.mailView=null;renderViewport();
   const fe=wedFeedEvent(wed.evId);if(fe&&wedCustMail(fe))wedMailLoad(fe);}
+// Emails about an event aren't only from the client — the venue, the planner and the
+// photographer all write about it. So we search what the event is CALLED and when it is.
+// Measured against the real inboxes before settling on this:
+//   "Danada" alone            → 40 hits, every wedding ever held at that venue. Useless.
+//   "July 10, 2026"           → 22–33 hits, the date turns up in quoted footers. Useless.
+//   "Natalie Danada" (AND)    → 7 hits, all the planner's thread for THIS wedding.
+//   "7-10-2026" / "7/10/26"   → 1 hit each, exactly right.
+// So: never a lone word, always a pair or a numeric date — and see wedTermTooBroad below.
+function wedEventTerms(fe,provider){
+  const stop=/^(the|and|for|with|party|wedding|event|reception|mr|mrs|ms|dr|jr|sr|and|his|her|their)$/i;
+  const words=[...new Set(String(wedName(fe)||'').split(/[^A-Za-z0-9'’&-]+/)
+    .map(w=>w.replace(/^[-'’&]+|[-'’&]+$/g,''))
+    .filter(w=>w.length>2&&!stop.test(w)))].slice(0,3);
+  const terms=[];
+  // Gmail reads a space as AND, so a pair is a real "both of these" search. The AT&T
+  // mailbox only does literal substring, where a pair would never match — dates only there.
+  if(provider==='gmail'){
+    for(let i=0;i<words.length;i++)for(let j=i+1;j<words.length;j++)
+      terms.push({q:words[i]+' '+words[j],why:words[i]+' + '+words[j]});
+  }
+  const d=fe.date?new Date(fe.date+'T12:00:00'):null;
+  if(d&&!isNaN(d)){
+    const m=d.getMonth()+1,day=d.getDate(),y=d.getFullYear();
+    [m+'-'+day+'-'+y,m+'/'+day+'/'+y,m+'/'+day+'/'+String(y).slice(2)]
+      .forEach(q=>terms.push({q,why:'the date'}));
+  }
+  return terms}
+// A search that matches this much of the inbox is matching the venue or a footer, not the
+// event. Drop it rather than bury the client's own emails under other people's weddings.
+function wedTermTooBroad(rows){return rows.length>12}
+
 async function wedMailLoad(fe){
   const addr=wedCustMail(fe);if(!addr)return;
   const key='sched-'+fe.id;
@@ -2656,22 +2700,42 @@ async function wedMailLoad(fe){
   if(!mailKey()){wed.mailRes={key,loading:false,rows:[],err:'Connect the Email tab first (enter the access key there once).'};paintWedMail();return}
   let accts=Array.isArray(mailx.accts)?mailx.accts:(mailSnapGet&&mailSnapGet('accounts'))||[];
   if(!accts.length){try{const r=await mailFetch('/mail/accounts');const d=await r.json();accts=d.accounts||[]}catch(e){}}
-  const results=await Promise.all(accts.map(a=>
-    mailFetch('/mail/search?acct='+encodeURIComponent(a.id)+'&q='+encodeURIComponent(addr))
-      .then(r=>r.json()).then(d=>(d.messages||[]).map(m=>({...m,acctId:a.id,acctLabel:a.label}))).catch(()=>[])));
+  const failed=[],dropped=[];
+  const jobs=[];
+  accts.forEach(a=>{
+    const terms=[{q:addr,why:''}].concat(wedEventTerms(fe,a.provider));
+    terms.forEach(t=>jobs.push(
+      mailFetch('/mail/search?acct='+encodeURIComponent(a.id)+'&q='+encodeURIComponent(t.q))
+        .then(r=>r.json().then(d=>{
+          if(!r.ok)throw new Error(d.detail||d.error||('HTTP '+r.status));
+          const rows=d.messages||[];
+          if(t.why&&wedTermTooBroad(rows)){dropped.push(t.q);return []}   // too broad to be about this event
+          return rows.map(m=>({...m,acctId:a.id,acctLabel:a.label,why:t.why}))}))
+        .catch(e=>{failed.push(a.label);return []})));
+  });
+  const results=await Promise.all(jobs);
   if(!wed.mailRes||wed.mailRes.key!==key)return; // user moved on
-  const rows=results.flat().sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,40);
-  wed.mailRes={key,loading:false,rows,err:null};paintWedMail();}
+  // the same email can match on several terms — keep it once, and prefer "from the client"
+  const byId={};
+  results.flat().forEach(m=>{
+    const k=m.acctId+'|'+m.uid;
+    if(!byId[k]||(byId[k].why&&!m.why))byId[k]=m;});
+  const rows=Object.values(byId).sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,60);
+  wed.mailRes={key,loading:false,rows,err:null,
+    scanned:accts.map(a=>a.label),failed:[...new Set(failed)],dropped:[...new Set(dropped)]};
+  paintWedMail();}
 function paintWedMail(){const el=document.getElementById('wed-mail-list');if(el)el.innerHTML=wedMailListHTML()}
 function wedMailListHTML(){
   const r=wed.mailRes;
-  if(!r||r.loading)return '<div class="gmail-loading">Searching all three inboxes…</div>';
+  if(!r||r.loading)return '<div class="gmail-loading">Searching every inbox — the client’s address and anything about this event…</div>';
   if(r.err)return '<div class="gmail-empty">'+esc(r.err)+'</div>';
-  if(!r.rows.length)return '<div class="gmail-empty">No emails found for this address yet.</div>';
-  return r.rows.map(m=>`<div class="gmail-row" onclick="wedMailOpen('${m.acctId}',${m.uid})">
+  const note=(r.failed&&r.failed.length)
+    ? '<div class="gmail-empty" style="color:#e5484d;font-weight:700">Couldn’t search '+esc(r.failed.join(', '))+' — those may be missing from this list.</div>':'';
+  if(!r.rows.length)return note||'<div class="gmail-empty">Nothing yet from this address, and nothing else about this event.</div>';
+  return note+r.rows.map(m=>`<div class="gmail-row" onclick="wedMailOpen('${m.acctId}',${m.uid})">
     <div class="gmail-row-top"><div class="gmail-row-sender">${m.unread?'<span class="unread-badge">New</span>':''}${esc(m.from||m.fromAddr||'')}</div>
     <div class="gmail-row-time"><span style="font-size:10px;color:var(--accent);font-weight:800;margin-right:6px">${esc(m.acctLabel||'')}</span>${mailTime(m.date)}</div></div>
-    <div class="gmail-row-subject">${esc(m.subject)}</div></div>`).join('');}
+    <div class="gmail-row-subject">${esc(m.subject)}${m.why?'<span style="margin-left:7px;font-size:10px;font-weight:800;color:var(--text-muted);border:1px solid var(--border);border-radius:3px;padding:1px 5px">mentions '+esc(m.why)+'</span>':''}</div></div>`).join('');}
 // Open the conversation RIGHT IN the hub pane (no jump to the Email tab).
 async function wedMailOpen(acctId,uid){
   wed.mailView={loading:true,acctId,uid,thread:null};renderViewport();
@@ -3282,6 +3346,115 @@ function wedDeleteEvent(){const ev=wedCur();if(!ev)return;
   if(wed.view==='event'){wed.pane='tpl';renderViewport()}else wedBack()}
 function wedSaveTemplate(){const ev=wedCur();if(!ev)return;if(!confirm('Make this layout the starting template for every new event?'))return;
   wedLoad().template={items:JSON.parse(JSON.stringify(ev.items)),at:Date.now()};wedStore()}
+// ── emailing the plan ─────────────────────────────────────────────────
+// The picture the client gets: the same black-on-white the kitchen prints, drawn
+// straight from the items so it never depends on the screen or the theme.
+function wedPlanPng(fe,scale){
+  const ev=wedCur();if(!ev)return null;
+  const S=scale||2, PAD=26, TOP=fe?54:PAD;
+  const c=document.createElement('canvas');
+  c.width=(WED_W+PAD*2)*S; c.height=(WED_H+TOP+PAD)*S;
+  const g=c.getContext('2d');
+  g.scale(S,S);
+  g.fillStyle='#fff';g.fillRect(0,0,c.width,c.height);
+  if(fe){
+    g.fillStyle='#111';g.textAlign='center';g.textBaseline='middle';
+    g.font='700 22px Georgia, serif';
+    g.fillText(wedName(fe),(WED_W+PAD*2)/2,26);
+    g.font='400 13px Georgia, serif';
+    g.fillStyle='#666';
+    const sub=[wedPrettyDate(fe.date),fe.time||''].filter(Boolean).join('  ·  ');
+    if(sub)g.fillText(sub,(WED_W+PAD*2)/2,45);
+  }
+  g.translate(PAD,TOP);
+  ev.items.forEach(it=>{
+    g.save();
+    g.translate(it.x,it.y);
+    if(it.rot)g.rotate(it.rot*Math.PI/180);
+    g.strokeStyle='#000';g.fillStyle='#000';g.lineWidth=2;
+    g.textAlign='center';g.textBaseline='middle';
+    const w=it.w,h=it.h;
+    if(it.type==='round'){g.beginPath();g.arc(0,0,Math.min(w,h)/2,0,Math.PI*2);g.stroke();g.font='700 15px system-ui'}
+    else if(it.type==='dance'){g.setLineDash([9,7]);g.lineWidth=2.5;g.strokeRect(-w/2,-h/2,w,h);g.setLineDash([]);g.font='700 12px system-ui'}
+    else if(it.type==='door'){g.strokeStyle='#666';g.fillStyle='#666';g.lineWidth=1.5;g.strokeRect(-w/2,-h/2,w,h);g.font='700 9px system-ui'}
+    else if(it.type==='text'){g.font='600 13px system-ui'}
+    else if(it.type==='box'){g.strokeRect(-w/2,-h/2,w,h);g.font='700 10px system-ui'}
+    else{g.strokeRect(-w/2,-h/2,w,h);g.font='700 10px system-ui'}
+    if(it.label){
+      if(it.rot)g.rotate(-it.rot*Math.PI/180);
+      String(it.label).split(/\s*\n\s*/).slice(0,2).forEach((line,i,all)=>
+        g.fillText(line,0,(i-(all.length-1)/2)*13));
+    }
+    g.restore();
+  });
+  const url=c.toDataURL('image/png');
+  return {url,b64:url.split(',')[1],w:c.width,h:c.height}}
+
+// Which inbox have we actually been writing to them from? Ask the emails we just found.
+function wedPlanFromAcct(){
+  const rows=(wed.mailRes&&wed.mailRes.rows)||[];
+  const withClient=rows.filter(m=>!m.why);            // matched the client's own address
+  const pick=(withClient[0]||rows[0]||{}).acctId;
+  const accts=mailAccounts();
+  return accts.find(a=>a.id===pick)||accts.find(a=>/cater/i.test(a.label))||accts[0]||null}
+function mailAccounts(){
+  return (Array.isArray(mailx.accts)?mailx.accts:(mailSnapGet&&mailSnapGet('accounts'))||[])||[]}
+
+function wedEmailPlan(){
+  const ev=wedCur(),fe=wedFeedEvent(wed.evId);
+  if(!ev)return;
+  if(!ev.items.length){alert('There’s nothing on this floor plan yet.');return}
+  if(!mailKey()){alert('Open the Email tab and enter the access key once — then you can send from here.');return}
+  const accts=mailAccounts();
+  if(!accts.length){alert('Still loading your inboxes — give it a second and press it again.');return}
+  const shot=wedPlanPng(fe,2);
+  const from=wedPlanFromAcct();
+  const to=fe?wedCustMail(fe):'';
+  const name=fe?wedName(fe):(ev.name||'your event');
+  const when=fe?wedPrettyDate(fe.date):'';
+  const kb=Math.round(shot.b64.length*0.75/1024);
+  const body=document.createElement('div');
+  body.id='wed-mailer';
+  body.innerHTML=`<div class="wm-card">
+    <div class="wm-head">📧 Email this floor plan<button class="icon-btn" onclick="wedMailerClose()">✕</button></div>
+    <div class="wm-body">
+      <img class="wm-shot" src="${shot.url}" alt="floor plan">
+      <label>To</label><input id="wm-to" type="email" value="${esc(to)}" placeholder="client@email.com" autocomplete="off">
+      <label>From</label><select id="wm-from">${accts.map(a=>`<option value="${a.id}"${from&&a.id===from.id?' selected':''}>${esc(a.label)} — ${esc(a.email)}</option>`).join('')}</select>
+      <div class="wm-hint">${from&&(wed.mailRes&&(wed.mailRes.rows||[]).length)?'You’ve been emailing them from '+esc(from.label)+'.':'Pick the inbox you’ve been using with them.'}</div>
+      <label>Subject</label><input id="wm-subj" type="text" value="${esc('Floor plan — '+name+(when?' · '+when:''))}">
+      <label>Message</label><textarea id="wm-text" rows="5">${esc('Hi,\n\nHere’s the floor plan for '+name+(when?' on '+when:'')+'. Take a look and let us know if you’d like anything moved.\n\nThank you,\nAngeli’s Restaurant & Catering\n630-420-1370')}</textarea>
+      <div class="wm-hint">Attaches as a PNG, about ${kb} KB.</div>
+    </div>
+    <div class="wm-foot"><span id="wm-status"></span>
+      <button class="wed-btn" onclick="wedMailerClose()">Cancel</button>
+      <button class="wed-btn amber" id="wm-send" onclick="wedMailerSend()">Send</button></div>
+  </div>`;
+  body.onclick=e=>{if(e.target===body)wedMailerClose()};
+  document.body.appendChild(body);
+  wed._shot=shot;
+  setTimeout(()=>{const t=document.getElementById('wm-to');if(t&&!t.value)t.focus()},60)}
+function wedMailerClose(){const el=document.getElementById('wed-mailer');if(el)el.remove();wed._shot=null}
+async function wedMailerSend(){
+  const to=(document.getElementById('wm-to')||{}).value||'';
+  const acctId=(document.getElementById('wm-from')||{}).value;
+  const subject=(document.getElementById('wm-subj')||{}).value||'Floor plan';
+  const text=(document.getElementById('wm-text')||{}).value||'';
+  const st=document.getElementById('wm-status'),btn=document.getElementById('wm-send');
+  const acct=mailAccounts().find(a=>a.id===acctId);
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to.trim())){if(st){st.textContent='That email address doesn’t look right.';st.className='bad'}return}
+  if(!acct||!wed._shot){if(st){st.textContent='Something’s missing — close this and try again.';st.className='bad'}return}
+  btn.disabled=true;if(st){st.textContent='Sending…';st.className=''}
+  try{
+    await mailSend(acct,{to:to.trim(),subject,text,
+      attach:[{name:'floor-plan.png',type:'image/png',b64:wed._shot.b64}]});
+    if(st){st.textContent='Sent to '+to.trim();st.className='good'}
+    setTimeout(wedMailerClose,1400);
+  }catch(e){
+    btn.disabled=false;
+    if(st){st.textContent='Didn’t send: '+String(e.message||e).slice(0,120);st.className='bad'}
+  }}
+
 // ── the traced picture ────────────────────────────────────────────────
 // The plan the guest sent, sitting under the tables at the same scale. It is what
 // makes a wrong reading obvious — and it works with no key, no server and no
@@ -3788,6 +3961,7 @@ function wedPlanChrome(embedded){const ev=wedCur();if(!ev)return '';
       <button class="wed-btn${wedTrace.url&&wedTrace.on?' on':''}" id="wed-btn-trace" style="${wedTrace.url?'':'display:none'}" onclick="wedTraceCycle()" ondblclick="wedTraceClear()" title="Fade the imported picture — double-click to take it off">🖼 Picture</button>
       <button class="wed-btn${wedTrace.tap?' on':''}" id="wed-btn-tap" onclick="wedTapToggle()" title="Tap the canvas to drop tables — they number themselves">👆 Tap tables</button>
       <button class="wed-btn" onclick="wedPrint()">🖨 Print</button>
+      <button class="wed-btn" onclick="wedEmailPlan()" title="Email this floor plan to the client">📧 Email plan</button>
       <button class="wed-btn danger" onclick="wedClearAll()">🧹 Clear all</button>
       <span class="wed-count" id="wed-count"></span>
     </div>
