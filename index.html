@@ -492,6 +492,8 @@
     .wed-it{position:absolute;display:flex;align-items:center;justify-content:center;transform:translate(-50%,-50%);font-weight:800;cursor:grab;user-select:none;-webkit-user-select:none;text-align:center;line-height:1.1;letter-spacing:.5px}
     .wed-num{position:absolute;top:-42px;left:50%;transform:translate(-50%,0);width:52px;height:30px;border-radius:8px;background:#0a0b0f;border:2px solid var(--accent);color:var(--accent);font-size:15px;font-weight:800;text-align:center;font-family:inherit;padding:0;touch-action:auto}
     .wed-num:focus{outline:none;box-shadow:0 0 0 3px rgba(255,179,0,.25)}
+    .wed-num::placeholder{color:rgba(255,179,0,.45);font-size:12px}
+    .wed-seats{display:block;font-size:11px;font-weight:700;opacity:.85;line-height:1;margin-top:1px}
     .wed-num::after{content:''}
     .wed-rot{position:absolute;top:-40px;left:50%;transform:translate(-50%,0);width:28px;height:28px;border-radius:50%;background:var(--accent);color:#0a0b0f;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;cursor:grab;touch-action:none;box-shadow:0 2px 8px rgba(0,0,0,.5)}
     .wed-rot::after{content:'';position:absolute;top:100%;left:50%;width:2px;height:12px;background:var(--accent);transform:translateX(-50%)}
@@ -3335,9 +3337,13 @@ function wedNewEvent(){const d=wedLoad();
   ev.items.forEach(i=>i.id=wedNewId());
   d.events.unshift(ev);wed.cur=ev.id;d.cur=ev.id;wed.sel=null;wed.view='plan';wedStore();renderViewport();
   setTimeout(()=>{const n=document.getElementById('wed-name');if(n){n.focus();n.select()}},60)}
+// The box above a selected round table sets how many GUESTS sit there.
+// The number inside the circle stays the table number (it.label).
 function wedNumSet(el){const w=el.closest('.wed-it');if(!w)return;
   const ev=wedCur();const it=ev&&ev.items.find(i=>i.id===w.dataset.wid);if(!it)return;
-  it.label=String(el.value||'').trim();wedTouch()}
+  const v=String(el.value||'').trim();
+  if(v==='')delete it.seats; else it.seats=v;
+  wedTouch()}
 function wedRename(v){const ev=wedCur();if(!ev)return;ev.name=v;ev.updated=Date.now();wedQueueSave()}
 function wedDeleteEvent(){const ev=wedCur();if(!ev)return;
   if(!confirm('Delete the floor plan "'+(ev.name||'this layout')+'"?'+(ev.sched?' (The event stays in the schedule app — only this layout is removed.)':'')))return;
@@ -3905,8 +3911,8 @@ function wedDup(){const ev=wedCur();const it=wedSelItem();if(!ev||!it)return;
 function wedRemove(){const ev=wedCur();if(!ev||!wed.sel)return;ev.items=ev.items.filter(i=>i.id!==wed.sel);wed.sel=null;wedTouch()}
 function wedTouch(){const ev=wedCur();if(ev)ev.updated=Date.now();wedQueueSave();wedPaint();wedBarRefresh()}
 function wedItemHTML(it){const cls={round:'wed-round',rect:'wed-rect',dance:'wed-dance',door:'wed-door',text:'wed-text',box:'wed-box'}[it.type]||'wed-rect';
-  return `<div class="wed-it ${cls} ${wed.sel===it.id?'wed-sel':''} ${it.unsure?'wed-q':''}" data-wid="${it.id}" style="left:${it.x}px;top:${it.y}px;width:${it.w}px;height:${it.h}px;transform:translate(-50%,-50%) rotate(${it.rot||0}deg)"><span class="wed-lbl" style="transform:rotate(${-(it.rot||0)}deg)">${esc(it.label||'')}</span>${wed.sel===it.id?(it.type==='round'
-      ?`<input class="wed-num" value="${esc(it.label||'')}" title="Type this table's number" onpointerdown="event.stopPropagation()" onfocus="this.select()" onchange="wedNumSet(this)">`
+  return `<div class="wed-it ${cls} ${wed.sel===it.id?'wed-sel':''} ${it.unsure?'wed-q':''}" data-wid="${it.id}" style="left:${it.x}px;top:${it.y}px;width:${it.w}px;height:${it.h}px;transform:translate(-50%,-50%) rotate(${it.rot||0}deg)"><span class="wed-lbl" style="transform:rotate(${-(it.rot||0)}deg)">${esc(it.label||'')}${(it.type==='round'&&it.seats)?`<span class="wed-seats">${esc(String(it.seats))}</span>`:''}</span>${wed.sel===it.id?(it.type==='round'
+      ?`<input class="wed-num" value="${esc(it.seats||'')}" placeholder="gsts" title="Guests seated at this table" onpointerdown="event.stopPropagation()" onfocus="this.select()" onchange="wedNumSet(this)">`
       :'<div class="wed-rot" title="Drag to spin">⟳</div>'):''}</div>`}
 function wedPaint(){const st=document.getElementById('wed-stage');const ev=wedCur();if(!st||!ev)return;
   st.innerHTML=wedTraceHTML()+ev.items.map(wedItemHTML).join('');
@@ -4077,7 +4083,7 @@ function wedPrint(){const ev=wedCur();if(!ev)return;wedFlush();
       rect:'border:2px solid #000;font-size:9px;',dance:'border:2.5px dashed #000;font-size:11px;letter-spacing:2px;',
       door:'border:1.5px solid #555;color:#555;font-size:8px;letter-spacing:1px;',text:'font-size:11px;',
       box:'border:2px solid #000;font-size:9px;border-radius:6px;letter-spacing:1px;'}[it.type]||'';
-    return `<div style="${base}${look}${style}"><span style="display:inline-block;transform:rotate(${-(it.rot||0)}deg)">${esc(it.label||'')}</span></div>`}).join('');
+    return `<div style="${base}${look}${style}"><span style="display:inline-block;transform:rotate(${-(it.rot||0)}deg)">${esc(it.label||'')}${(it.type==='round'&&it.seats)?'<br><span style="font-size:.72em;font-weight:600">'+esc(String(it.seats))+'</span>':''}</span></div>`}).join('');
   doc.open();doc.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(ev.name||'Floor plan')}</title>
     <style>@page{size:landscape;margin:.4in}body{font-family:-apple-system,Helvetica,sans-serif;color:#000}</style></head><body>
     <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
