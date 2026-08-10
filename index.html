@@ -1847,7 +1847,14 @@ function wedMergeRemote(remote){
   if(!remote||!remote.v)return false;
   const R=remote.v,L=wedLoad();
   const before=JSON.stringify({e:L.events,t:L.template,d:L.del,v:L.vtpls,n:L.venues});
-  if((R.venuesAt||0)>(L.venuesAt||0)&&Array.isArray(R.venues)&&R.venues.length){L.venues=R.venues;L.venuesAt=R.venuesAt}
+  if(Array.isArray(R.venues)&&R.venues.length){
+    // Union, not last-writer-wins: if Vinny adds a room on the Mac while his dad adds
+    // one on the iPad, whichever synced second used to erase the other's.
+    const have=new Set((L.venues||[]).map(x=>String(x).toLowerCase()));
+    const add=R.venues.filter(x=>!have.has(String(x).toLowerCase()));
+    if(add.length){L.venues=(L.venues||[]).concat(add);L.venuesAt=Math.max(L.venuesAt||0,R.venuesAt||0)}
+    else if((R.venuesAt||0)>(L.venuesAt||0))L.venuesAt=R.venuesAt;
+  }
   const vt={...(L.vtpls||{})};Object.entries(R.vtpls||{}).forEach(([k,v])=>{if(!vt[k]||(v.at||0)>(vt[k].at||0))vt[k]=v});L.vtpls=vt;
   const del={...(L.del||{})};Object.entries(R.del||{}).forEach(([id,ts])=>{if(!del[id]||ts>del[id])del[id]=ts});
   const byId={};
@@ -2518,6 +2525,33 @@ function wedRenameVenue(){const v=wedVenueSel();if(!v){alert('Pick the venue to 
   list[list.indexOf(v)]=nn;d.venuesAt=Date.now();
   if(d.vtpls&&d.vtpls[v]){d.vtpls[nn]={...d.vtpls[v],at:Date.now()};delete d.vtpls[v]}
   wed.venueSel=nn;wedStore();renderViewport()}
+// Add a room. Each venue can have as many as it needs — name them so they read
+// at a glance ("Danada Main Room", "Danada Terrace", "Crawford Ballroom").
+function wedAddVenue(){
+  const nn=(prompt('Name this room — the venue first reads best, e.g. “Danada Main Room”:','')||'').trim();
+  if(!nn)return;
+  const d=wedLoad(),list=wedVenueList();
+  if(list.some(v=>v.toLowerCase()===nn.toLowerCase())){alert('There is already a room called “'+nn+'”.');return}
+  const ev=wedCur();
+  if(ev&&ev.items.length&&!confirm('“'+nn+'” starts as an empty grid, so what’s on this canvas now gets cleared.\n\nArrange the room, then press 💾 Save to keep it as this room’s floor plan. (Undo is right there if you clear it by mistake.)'))return;
+  list.push(nn);d.venuesAt=Date.now();
+  wed.venueSel=nn;
+  if(ev){
+    wedTraceSnap();                    // ↩ Undo import puts the old plan back
+    ev.items=[];ev.updated=Date.now();wed.sel=null;
+  }
+  wedStore();renderViewport();
+  setTimeout(()=>wedBar('<span class="t"><b>“'+esc(nn)+'”</b> — an empty grid. Lay the room out, then press <b>💾 Save</b> and every event set to this room starts from it.</span>'+
+    (wedTrace.undo?'<button class="wed-btn" onclick="wedTraceUndo()">↩ Undo</button>':'')+
+    '<button class="wed-btn" onclick="wedBarClose()">OK</button>'),60)}
+// Remove a room he added by mistake — otherwise a typo would sit in the list forever.
+function wedDeleteVenue(){
+  const v=wedVenueSel();if(!v){alert('Pick the room to remove in the dropdown first.');return}
+  const d=wedLoad(),list=wedVenueList();
+  if(!confirm('Remove the room “'+v+'” and its saved floor plan?\n\nFloor plans already built on events keep what they have — only the room template goes.'))return;
+  list.splice(list.indexOf(v),1);d.venuesAt=Date.now();
+  if(d.vtpls&&d.vtpls[v])delete d.vtpls[v];
+  wed.venueSel='';wedStore();renderViewport()}
 function wedVenueItems(v){const d=wedLoad();const t=(d.vtpls||{})[v];
   return (t&&t.items)?t.items:[]}
 function wedVenueSel(){const el=document.getElementById('wed-venue');const v=el?el.value:'';wed.venueSel=v;return v}
@@ -4166,10 +4200,12 @@ function wedPlanChrome(embedded){const ev=wedCur();if(!ev)return '';
       ${ev.sched?'<span style="font-size:11px;color:var(--text-muted);white-space:nowrap">linked to schedule</span>':''}
       ${ev.tpl?'<span style="font-size:11px;color:var(--accent);white-space:nowrap">this is your room template — press “Save as template” when done</span>':''}
       <select id="wed-venue" onchange="wedVenuePicked(this)">
-        <option value="">📐 Venue…</option>
+        <option value="">📐 Venue / room…</option>
         ${wedVenueList().map(v=>`<option${wed.venueSel===v?' selected':''}>${esc(v)}</option>`).join('')}
       </select>
-      <button class="wed-btn" onclick="wedRenameVenue()" title="Rename this venue">✎ Rename</button>
+      <button class="wed-btn" onclick="wedAddVenue()" title="Add a room for this venue — starts as an empty grid you lay out and save">➕ New room</button>
+      <button class="wed-btn" onclick="wedRenameVenue()" title="Rename this room">✎ Rename</button>
+      <button class="wed-btn" onclick="wedDeleteVenue()" title="Remove this room and its saved floor plan">🗑</button>
       <button class="wed-btn" onclick="wedSaveVenue()">💾 Save</button>
       <button class="wed-btn" onclick="wedPdfPick()" title="Drop the floor plan the guest sent — a PDF, a screenshot or a photo — and the tables get built for you">📄 Import plan</button>
       <button class="wed-btn${wedTrace.url&&wedTrace.on?' on':''}" id="wed-btn-trace" style="${wedTrace.url?'':'display:none'}" onclick="wedTraceCycle()" ondblclick="wedTraceClear()" title="Fade the imported picture — double-click to take it off">🖼 Picture</button>
