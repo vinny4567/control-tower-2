@@ -516,6 +516,8 @@
     .wed-it{position:absolute;display:flex;align-items:center;justify-content:center;transform:translate(-50%,-50%);font-weight:800;cursor:grab;user-select:none;-webkit-user-select:none;text-align:center;line-height:1.1;letter-spacing:.5px}
     .wed-num{position:absolute;top:-42px;left:50%;transform:translate(-50%,0);width:52px;height:30px;border-radius:8px;background:#0a0b0f;border:2px solid var(--accent);color:var(--accent);font-size:15px;font-weight:800;text-align:center;font-family:inherit;padding:0;touch-action:auto}
     .wed-num:focus{outline:none;box-shadow:0 0 0 3px rgba(255,179,0,.25)}
+    .wed-it.wed-both .wed-num{left:calc(50% - 34px)}
+    .wed-it.wed-both .wed-rot{left:calc(50% + 34px)}
     .wed-num::placeholder{color:rgba(255,179,0,.45);font-size:12px}
     .wed-seats{display:block;font-size:17px;font-weight:800;opacity:1;line-height:1;margin-top:2px}
     .wed-num::after{content:''}
@@ -3587,6 +3589,8 @@ function wedNewEvent(){const d=wedLoad();
 function wedNumSet(el){const w=el.closest('.wed-it');if(!w)return;
   const ev=wedCur();const it=ev&&ev.items.find(i=>i.id===w.dataset.wid);if(!it)return;
   const v=String(el.value||'').trim();
+  const m=WED_LBLNUM.exec(String(it.label||''));
+  if(m)it.label=m[1];                       // count no longer lives in the label
   if(v==='')delete it.seats; else it.seats=v;
   wedTouch()}
 function wedRename(v){const ev=wedCur();if(!ev)return;ev.name=v;ev.updated=Date.now();wedQueueSave()}
@@ -3745,7 +3749,7 @@ function wedTraceIsPale(canvas){
 function wedTraceSet(shot){
   const ev=wedCur();if(!ev)return;
   wedTrace.lay=ev.id;wedTrace.url=shot.url;wedTrace.w=shot.w;wedTrace.h=shot.h;
-  wedTrace.inv=!!shot.pale;wedTrace.on=true;wedTrace.op=.34;wedTrace.tap=true;
+  wedTrace.inv=!!shot.pale;wedTrace.on=true;wedTrace.op=.34;wedTrace.tap='round';
   wedTraceStore();wedPaint();wedChrome()}
 function wedTraceCycle(){
   if(!wedTrace.url)return;
@@ -3758,15 +3762,21 @@ function wedTraceClear(){
   if(!wedTrace.url)return;
   if(!confirm('Take the picture off this floor plan? The tables stay.'))return;
   wedTrace.url=null;wedTrace.tap=false;wedTraceStore();wedPaint();wedChrome();wedBarClose()}
-function wedTapToggle(){wedTrace.tap=!wedTrace.tap;wedPaint();wedChrome()}
-// Tapping bare canvas drops the next table — they number themselves.
+function wedTapMode(){return wedTrace.tap?(wedTrace.tap==='circ'?'circ':'round'):false}
+// Off → numbered tables → blank tables → off. The button says which one it's dropping.
+function wedTapToggle(){wedTrace.tap=wedTrace.tap?(wedTapMode()==='round'?'circ':false):'round';
+  wedPaint();wedChrome()}
+const WED_TAP_LBL={round:'👆 Tap #tables',circ:'👆 Tap blanks'};
+// Tapping bare canvas drops the next table — numbered ones number themselves,
+// blank ones stay blank.
 function wedTapAdd(x,y){
   const ev=wedCur();if(!ev)return;
+  const type=wedTapMode()||'round';
   const used=new Set(ev.items.filter(i=>i.type==='round').map(i=>parseInt(i.label,10)).filter(n=>!isNaN(n)));
   let n=1;while(used.has(n))n++;
-  const r=ev.items.find(i=>i.type==='round');
+  const r=ev.items.find(i=>i.type===type)||ev.items.find(i=>i.type==='round'||i.type==='circ');
   const d=r?r.w:76;
-  ev.items.push({id:wedNewId(),type:'round',x:Math.round(x),y:Math.round(y),w:d,h:d,label:String(n)});
+  ev.items.push({id:wedNewId(),type,x:Math.round(x),y:Math.round(y),w:d,h:d,label:type==='circ'?'':String(n)});
   ev.updated=Date.now();wed.sel=null;wedQueueSave();wedPaint();wedBarRefresh();
   setTimeout(()=>{try{wedRollsPaint()}catch(e){}},30)}
 // ── the review bar ────────────────────────────────────────────────────
@@ -3816,7 +3826,8 @@ function wedTraceUndo(){const ev=wedCur();if(!ev||!wedTrace.undo)return;
 function wedChrome(){const b=document.querySelector('#wed-root .wed-bar');if(!b)return;
   const t=document.getElementById('wed-btn-trace'),tp=document.getElementById('wed-btn-tap');
   if(t){t.style.display=wedTrace.url?'':'none';t.classList.toggle('on',!!(wedTrace.url&&wedTrace.on))}
-  if(tp)tp.classList.toggle('on',!!wedTrace.tap)}
+  if(tp){tp.classList.toggle('on',!!wedTrace.tap);
+    tp.textContent=WED_TAP_LBL[wedTapMode()]||'👆 Tap tables'}}
 
 // ── floor-plan PDF import ─────────────────────────────────────────────
 // Guests send their venue's seating chart as a PDF. Table numbers sit at the
@@ -4173,11 +4184,28 @@ function wedRemove(){const ev=wedCur();const ids=wedSelIds();if(!ev||!ids.length
   if(ids.length>2&&!confirm('Delete '+ids.length+' pieces off this floor plan?'))return;
   ev.items=ev.items.filter(i=>!ids.includes(i.id));wedSelSet([]);wedTouch()}
 function wedTouch(){const ev=wedCur();if(ev)ev.updated=Date.now();wedQueueSave();wedPaint();wedBarRefresh()}
+// Pieces people sit at. A dance floor or a door never gets a head count.
+const WED_SEATABLE=['round','circ','rect'];
+// Older tables carry their head count as a second line of the label ("12\n10") —
+// imports wrote them that way before there was a seats field. Read either, so a plan
+// built the old way still counts, and normalise it the moment he edits the number.
+const WED_LBLNUM=/^([\s\S]*?)\n\s*(\d{1,3})\s*$/;
+function wedSeatsOf(it){
+  if(it.seats!==undefined&&it.seats!=='')return it.seats;
+  const m=WED_LBLNUM.exec(String(it.label||''));
+  return m?m[2]:'';}
+function wedLabelOf(it){
+  const m=WED_LBLNUM.exec(String(it.label||''));
+  return m?m[1]:(it.label||'');}
 function wedItemHTML(it){const cls={round:'wed-round',circ:'wed-round wed-circ',rect:'wed-rect',dance:'wed-dance',door:'wed-door',text:'wed-text',box:'wed-box'}[it.type]||'wed-rect';
   const ids=wedSelIds(),alone=ids.length===1;
-  return `<div class="wed-it ${cls} ${ids.includes(it.id)?'wed-sel':''} ${it.unsure?'wed-q':''}" data-wid="${it.id}" style="left:${it.x}px;top:${it.y}px;width:${it.w}px;height:${it.h}px;transform:translate(-50%,-50%) rotate(${it.rot||0}deg)"><span class="wed-lbl">${(it.type==='round'&&it.label)?'#'+esc(it.label):esc(it.label||'')}${(it.type==='round'&&it.seats)?`<span class="wed-seats">${esc(String(it.seats))}</span>`:''}</span>${(alone&&wed.sel===it.id)?(it.type==='round'
-      ?`<input class="wed-num" value="${esc(it.seats||'')}" placeholder="gsts" title="Guests seated at this table" onpointerdown="event.stopPropagation()" onfocus="this.select()" onchange="wedNumSet(this)">`
-      :'<div class="wed-rot" title="Drag to spin">⟳</div>'):''}</div>`}
+  const seatable=WED_SEATABLE.includes(it.type);
+  const spins=it.type!=='round'&&it.type!=='circ';
+  const both=seatable&&spins;
+  const lbl=wedLabelOf(it),seats=seatable?wedSeatsOf(it):'';
+  return `<div class="wed-it ${cls} ${ids.includes(it.id)?'wed-sel':''} ${it.unsure?'wed-q':''} ${both?'wed-both':''}" data-wid="${it.id}" style="left:${it.x}px;top:${it.y}px;width:${it.w}px;height:${it.h}px;transform:translate(-50%,-50%) rotate(${it.rot||0}deg)"><span class="wed-lbl">${(it.type==='round'&&lbl)?'#'+esc(lbl):esc(lbl||'')}${seats?`<span class="wed-seats">${esc(String(seats))}</span>`:''}</span>${(alone&&wed.sel===it.id)?(
+      (seatable?`<input class="wed-num" value="${esc(seats||'')}" placeholder="gsts" title="Guests seated at this table" onpointerdown="event.stopPropagation()" onfocus="this.select()" onchange="wedNumSet(this)">`:'')+
+      (spins?'<div class="wed-rot" title="Drag to spin">⟳</div>':'')):''}</div>`}
 function wedToolsSync(){const n=wedSelIds().length;
   const h=document.getElementById('wed-selhint');if(h)h.textContent=n>1?n+' SELECTED':'SELECTED';
   const r=document.getElementById('wed-rm');if(r)r.textContent=n>1?'✕ Remove '+n:'✕ Remove';
@@ -4185,7 +4213,10 @@ function wedToolsSync(){const n=wedSelIds().length;
 function wedPaint(){const st=document.getElementById('wed-stage');const ev=wedCur();if(!st||!ev)return;
   st.innerHTML=wedTraceHTML()+ev.items.map(wedItemHTML).join('');wedToolsSync();
   st.classList.toggle('tapping',!!wedTrace.tap);
-  const c=document.getElementById('wed-count');if(c){const r=ev.items.filter(i=>i.type==='round').length;c.textContent=r+' round table'+(r===1?'':'s')}}
+  const c=document.getElementById('wed-count');
+  if(c){const r=ev.items.filter(i=>i.type==='round'||i.type==='circ').length;
+    const g=ev.items.reduce((n,i)=>n+(WED_SEATABLE.includes(i.type)?(parseInt(wedSeatsOf(i),10)||0):0),0);
+    c.textContent=r+' round table'+(r===1?'':'s')+(g?'  ·  '+g+' guests':'')}}
 // ── views ──
 function wedListHTML(){const d=wedLoad();const feed=wed.feed||wedFeedCache();const today=(feed&&feed.today)||new Date().toISOString().slice(0,10);
   // Weddings tab shows weddings/events only — Day Parties stay on the schedule app + dashboard
@@ -4231,11 +4262,10 @@ function wedPlanChrome(embedded){const ev=wedCur();if(!ev)return '';
       </select>
       <button class="wed-btn" onclick="wedAddVenue()" title="Add a room for this venue — starts as an empty grid you lay out and save">➕ New room</button>
       <button class="wed-btn" onclick="wedRenameVenue()" title="Rename this room">✎ Rename</button>
-      <button class="wed-btn" onclick="wedDeleteVenue()" title="Remove this room and its saved floor plan">🗑</button>
       <button class="wed-btn" onclick="wedSaveVenue()">💾 Save</button>
       <button class="wed-btn" onclick="wedPdfPick()" title="Drop the floor plan the guest sent — a PDF, a screenshot or a photo — and the tables get built for you">📄 Import plan</button>
       <button class="wed-btn${wedTrace.url&&wedTrace.on?' on':''}" id="wed-btn-trace" style="${wedTrace.url?'':'display:none'}" onclick="wedTraceCycle()" ondblclick="wedTraceClear()" title="Fade the imported picture — double-click to take it off">🖼 Picture</button>
-      <button class="wed-btn${wedTrace.tap?' on':''}" id="wed-btn-tap" onclick="wedTapToggle()" title="Tap the canvas to drop tables — they number themselves">👆 Tap tables</button>
+      <button class="wed-btn${wedTrace.tap?' on':''}" id="wed-btn-tap" onclick="wedTapToggle()" title="Tap the canvas to drop tables. Press once for numbered tables, again for blank ones, again to stop.">${WED_TAP_LBL[wedTapMode()]||'👆 Tap tables'}</button>
       <button class="wed-btn" onclick="wedPrint()">🖨 Print</button>
       <button class="wed-btn" onclick="wedEmailPlan()" title="Email this floor plan to the client">📧 Email plan</button>
       <button class="wed-btn danger" onclick="wedClearAll()">🧹 Clear all</button>
