@@ -2627,29 +2627,31 @@ function tipCalc(){
   // runners ride with the bussers unless Vinny splits them out later
   people.forEach(p=>{if(p.role==='runner')p.role='busser'});
   const total=+d.total||0;
+  // Anyone Vinny types an amount for is paid off the TOP — their money leaves the
+  // pot first, then the percentages are figured on whatever is left over.
+  const isManual=p=>d.adj[p.name]!=null&&d.adj[p.name]!=='';
+  const manualCents=people.filter(isManual).reduce((a,p)=>a+Math.round((+d.adj[p.name]||0)*100),0);
+  const potCents=Math.max(0,Math.round(total*100)-manualCents);
+  const pot=potCents/100;
   const byRole={server:[],busser:[],bar:[],setup:[]};
-  people.forEach(p=>byRole[p.role]?byRole[p.role].push(p):null);
-  const pct={busser:+d.busser||0,bar:+d.bar||0};
-  const busserPool=byRole.busser.length?tipFloor(total*pct.busser/100):0;
-  const barPool=byRole.bar.length?tipFloor(total*pct.bar/100):0;
-  const serverPool=tipFloor(total-busserPool-barPool);
+  people.filter(p=>!isManual(p)).forEach(p=>{if(byRole[p.role])byRole[p.role].push(p)});
+  const busserPool=byRole.busser.length?tipFloor(pot*(+d.busser||0)/100):0;
+  const barPool=byRole.bar.length?tipFloor(pot*(+d.bar||0)/100):0;
+  const serverPool=byRole.server.length?tipFloor(pot-busserPool-barPool):0;
   const pools={server:serverPool,busser:busserPool,bar:barPool,setup:0};
   const out=[];
-  ['server','busser','bar','setup'].forEach(role=>{
-    const list=byRole[role]||[];if(!list.length)return;
-    const pool=pools[role];
+  people.forEach(p=>{
+    if(isManual(p)){out.push({...p,pool:0,auto:0,tip:+d.adj[p.name]||0,manual:true});return}
+    const list=byRole[p.role]||[];const pool=pools[p.role]||0;
     const hoursSum=list.reduce((a,b)=>a+b.hours,0);
-    list.forEach(p=>{
-      let amt=0;
-      if(pool>0){
-        amt=(d.mode==='hours'&&hoursSum>0)?tipFloor(pool*(p.hours/hoursSum)):tipFloor(pool/list.length);
-      }
-      const manual=d.adj[p.name];
-      out.push({...p,pool,auto:amt,tip:(manual!=null&&manual!=='')?(+manual||0):amt,manual:manual!=null&&manual!==''});
-    });
+    let amt=0;
+    if(pool>0&&list.length){
+      amt=(d.mode==='hours'&&hoursSum>0)?tipFloor(pool*(p.hours/hoursSum)):tipFloor(pool/list.length);
+    }
+    out.push({...p,pool,auto:amt,tip:amt,manual:false});
   });
-  const paid=tipFloor(out.reduce((a,b)=>a+b.tip,0));
-  return {people:out,pools,total,paid,left:tipFloor(total-paid)}}
+  const paidCents=out.reduce((a,b)=>a+Math.round(b.tip*100),0);
+  return {people:out,pools,total,pot,manual:manualCents/100,paid:paidCents/100,left:(Math.round(total*100)-paidCents)/100}}
 function tipMoney(n){return '$'+(Math.round((+n||0)*100)/100).toFixed(2)}
 function tipHTML(){
   const d=tipLoad();const c=tipCalc();
@@ -2658,7 +2660,7 @@ function tipHTML(){
   const group=r=>c.people.filter(p=>p.role===r);
   const secHTML=(role,label)=>{
     const list=group(role);if(!list.length)return '';
-    const hrs=list.reduce((a,b)=>a+b.hours,0);
+    const hrs=list.filter(p=>!p.manual).reduce((a,b)=>a+b.hours,0);
     return `<div class="tip-sec">${label}<span>${tipMoney(c.pools[role])} pool · ${hrs.toFixed(2)} hrs</span></div>
       <table class="ts-table"><tbody>${list.map(p=>`<tr>
         <td class="ts-name">${esc(p.name)}</td>
@@ -2677,7 +2679,7 @@ function tipHTML(){
       <button class="wed-btn" onclick="tipPrint()">🖨 Print</button>
     </div>
     ${secHTML('server','SERVERS')}${secHTML('busser','BUSSERS &amp; RUNNERS')}${secHTML('bar','BAR')}${d.incSetup?secHTML('setup','SETUP'):''}
-    <div class="tip-total-row">Paid out <b>${tipMoney(c.paid)}</b> of ${tipMoney(c.total)}${Math.abs(c.left)>=0.01?` · <span style="color:var(--accent)">${tipMoney(c.left)} left over (rounding)</span>`:''}</div>
+    <div class="tip-total-row">Paid out <b>${tipMoney(c.paid)}</b> of ${tipMoney(c.total)}${c.manual>0?` · ${tipMoney(c.manual)} paid off the top, ${tipMoney(c.pot)} split by percentage`:''}${Math.abs(c.left)>=0.01?` · <span style="color:var(--accent)">${tipMoney(c.left)} left over (rounding)</span>`:''}</div>
   </div>`}
 function tipPrint(){
   const fe=wedFeedEvent(wed.evId);const c=tipCalc();const d=tipLoad();
@@ -2685,7 +2687,7 @@ function tipPrint(){
   const sec=(role,label)=>{const list=c.people.filter(p=>p.role===role);if(!list.length)return '';
     return `<table><tr><th colspan="3" class="sec">${label} — pool ${tipMoney(c.pools[role])}</th></tr>
       <tr><th>Name</th><th>Hours</th><th class="r">Tip</th></tr>
-      ${list.map(p=>`<tr><td>${esc(p.name)}</td><td>${p.hours.toFixed(2)}</td><td class="r">${tipMoney(p.tip)}</td></tr>`).join('')}</table>`};
+      ${list.map(p=>`<tr><td>${esc(p.name)}${p.manual?' (set amount)':''}</td><td>${p.hours.toFixed(2)}</td><td class="r">${tipMoney(p.tip)}</td></tr>`).join('')}</table>`};
   const w=window.open('','_blank');
   w.document.write(`<html><head><title>Tip-Out — ${esc(wedName(fe))}</title><style>
     body{font-family:-apple-system,Helvetica,sans-serif;color:#000;margin:26px;font-size:12px}
@@ -2696,7 +2698,7 @@ function tipPrint(){
     <h1>Tip-Out — ${esc(wedName(fe))}</h1>
     <div class="meta">${esc(wedDow(fe.date))} ${esc(wedPrettyDate(fe.date))} · total tip <b>${tipMoney(c.total)}</b> · split ${d.mode==='hours'?'by hours':'evenly'} (bussers ${esc(String(d.busser))}%, bar ${esc(String(d.bar))}%)</div>
     ${sec('server','SERVERS')}${sec('busser','BUSSERS & RUNNERS')}${sec('bar','BAR')}${d.incSetup?sec('setup','SETUP'):''}
-    <p><b>Paid out ${tipMoney(c.paid)}</b> of ${tipMoney(c.total)}${Math.abs(c.left)>=0.01?` — ${tipMoney(c.left)} left over (rounding)`:''}</p>
+    <p><b>Paid out ${tipMoney(c.paid)}</b> of ${tipMoney(c.total)}${c.manual>0?` — ${tipMoney(c.manual)} paid off the top, ${tipMoney(c.pot)} split by percentage`:''}${Math.abs(c.left)>=0.01?` — ${tipMoney(c.left)} left over (rounding)`:''}</p>
     </body></html>`);
   w.document.close();setTimeout(()=>{try{w.print()}catch(e){}},400)}
 const WED_TS_FEED='https://restaurant-scheduler-hh5e.onrender.com/api/timesheet-feed';
