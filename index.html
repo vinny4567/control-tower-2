@@ -2610,6 +2610,7 @@ function tipSet(f,v){const d=tipLoad();
   else if(f==='incSetup')d.incSetup=!!v;
   else d[f]=String(v).replace(/[^0-9.]/g,'');
   tipStore();paintWedTs()}
+function tipAdjEl(el){tipAdj(el.dataset.name||'',el.value)}
 function tipAdj(name,v){const d=tipLoad();const t=String(v).replace(/[^0-9.]/g,'');
   if(t==='')delete d.adj[name];else d.adj[name]=t;
   tipStore();paintWedTs()}
@@ -2665,7 +2666,7 @@ function tipHTML(){
       <table class="ts-table"><tbody>${list.map(p=>`<tr>
         <td class="ts-name">${esc(p.name)}</td>
         <td class="ts-time">${p.hours.toFixed(2)} hrs</td>
-        <td class="tip-amt"><input class="tip-in" value="${esc(d.adj[p.name]!=null?d.adj[p.name]:'')}" placeholder="${p.auto.toFixed(2)}" onfocus="this.select()" onchange="tipAdj(${JSON.stringify(p.name)},this.value)"></td>
+        <td class="tip-amt"><input class="tip-in" value="${esc(d.adj[p.name]!=null?d.adj[p.name]:'')}" placeholder="${p.auto.toFixed(2)}" onfocus="this.select()" data-name="${esc(p.name)}" onchange="tipAdjEl(this)"></td>
         <td class="ts-hrs">${tipMoney(p.tip)}</td></tr>`).join('')}</tbody></table>`};
   return `<div class="tip-wrap">
     <div class="tip-head">
