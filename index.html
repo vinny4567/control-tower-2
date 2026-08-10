@@ -523,6 +523,7 @@
     .wed-rot::after{content:'';position:absolute;top:100%;left:50%;width:2px;height:12px;background:var(--accent);transform:translateX(-50%)}
     .wed-it:active{cursor:grabbing}
     .wed-round{border:2.5px solid var(--accent);border-radius:50%;background:rgba(255,179,0,.10);color:var(--accent);font-size:20px}
+    .wed-circ{font-size:15px;letter-spacing:0}
     .wed-rect{border:2.5px solid var(--accent2);background:rgba(34,211,238,.08);color:var(--accent2);font-size:18px;font-weight:800;border-radius:4px;padding:2px 6px}
     .wed-dance{border:3px dashed var(--accent);background:rgba(255,179,0,.05);color:var(--accent);font-size:15px;border-radius:4px;letter-spacing:2px}
     .wed-door{background:var(--surface2);border:1.5px solid var(--text-muted);color:var(--text-muted);font-size:10px;border-radius:3px;letter-spacing:1.5px}
@@ -3624,7 +3625,7 @@ function wedPlanPng(fe,scale){
     g.strokeStyle='#000';g.fillStyle='#000';g.lineWidth=2;
     g.textAlign='center';g.textBaseline='middle';
     const w=it.w,h=it.h;
-    if(it.type==='round'){g.beginPath();g.arc(0,0,Math.min(w,h)/2,0,Math.PI*2);g.stroke();g.font='700 15px system-ui'}
+    if(it.type==='round'||it.type==='circ'){g.beginPath();g.arc(0,0,Math.min(w,h)/2,0,Math.PI*2);g.stroke();g.font='700 15px system-ui'}
     else if(it.type==='dance'){g.setLineDash([9,7]);g.lineWidth=2.5;g.strokeRect(-w/2,-h/2,w,h);g.setLineDash([]);g.font='700 12px system-ui'}
     else if(it.type==='door'){g.strokeStyle='#666';g.fillStyle='#666';g.lineWidth=1.5;g.strokeRect(-w/2,-h/2,w,h);g.font='700 9px system-ui'}
     else if(it.type==='text'){g.font='600 13px system-ui'}
@@ -4109,16 +4110,17 @@ function wedTraceAsk(ev,head,n){
 // ── canvas ──
 function wedAdd(type){const ev=wedCur();if(!ev)return;
   const base={round:{w:76,h:76,label:String(ev.items.filter(i=>i.type==='round').length+1)},
+    circ:{w:76,h:76,label:''},
     rect:{w:130,h:56,label:''},dance:{w:260,h:195,label:'DANCE FLOOR'},
     door:{w:130,h:34,label:'DOOR'},box:{w:150,h:100,label:''},text:{w:170,h:34,label:''}}[type];
   const it={id:wedNewId(),type,x:WED_W/2,y:WED_H/2,...base};
-  ev.items.push(it);ev.updated=Date.now();wed.sel=it.id;wedQueueSave();wedPaint();
+  ev.items.push(it);ev.updated=Date.now();wedSelSet([it.id]);wedQueueSave();wedPaint();
   if(type==='text'||type==='box'||type==='rect')wedEditLabel(it.id)}
 // Label editor: a real textbox pops up over the piece. Enter/blur saves, Esc closes.
 // (Inline element handlers — immune to the re-render/closure detachment that broke
 // the contenteditable approach.)
 function wedEditLabel(id){const ev=wedCur();const it=ev&&ev.items.find(x=>x.id===id);if(!it)return;
-  wed.sel=id;wedPaint();
+  wedSelSet([id]);wedPaint();
   const wrap=document.getElementById('wed-stage-wrap'),stg=document.getElementById('wed-stage');if(!wrap||!stg)return;
   const old=document.getElementById('wed-edit');if(old){old.onblur=null;old.remove()}
   const el=stg.querySelector(`[data-wid="${id}"]`);
@@ -4144,22 +4146,44 @@ function wedEditCancel(){const inp=document.getElementById('wed-edit');if(!inp)r
   const ev=wedCur();const it=ev&&ev.items.find(x=>x.id===id);
   if(ev&&it&&it.type==='text'&&!it.label){ev.items=ev.items.filter(x=>x.id!==id);wed.sel=null;wedTouch()}else wedPaint()}
 function wedSelItem(){const ev=wedCur();return ev?ev.items.find(i=>i.id===wed.sel):null}
+// Shift-click picks several pieces at once. wed.sel stays the "primary" one (everything
+// that already reads it keeps working); the extras ride along in wed.multi. Invariant:
+// no primary → nothing selected, so every existing `wed.sel=null` clears the group too.
+function wedSelIds(){if(!wed.sel){wed.multi=[];return []}
+  return [wed.sel].concat((wed.multi||[]).filter(id=>id!==wed.sel))}
+function wedSelSet(ids){ids=(ids||[]).filter((v,i,a)=>a.indexOf(v)===i);
+  wed.sel=ids[0]||null;wed.multi=ids.slice(1)}
+function wedSelToggle(id){const ids=wedSelIds();
+  wedSelSet(ids.includes(id)?ids.filter(x=>x!==id):ids.concat(id))}
 function wedRenameItem(){if(wed.sel)wedEditLabel(wed.sel)}
 function wedRotate(){const it=wedSelItem();if(!it)return;it.rot=((it.rot||0)+45)%360;wedTouch()}
-function wedGrow(f){const it=wedSelItem();if(!it)return;it.w=Math.max(24,Math.min(500,Math.round(it.w*f)));
-  it.h=it.type==='round'?it.w:Math.max(20,Math.min(500,Math.round(it.h*f)));wedTouch()}
-function wedDup(){const ev=wedCur();const it=wedSelItem();if(!ev||!it)return;
-  const c=JSON.parse(JSON.stringify(it));c.id=wedNewId();c.x=Math.min(WED_W-30,c.x+40);c.y=Math.min(WED_H-30,c.y+40);
-  if(c.type==='round')c.label=String(ev.items.filter(i=>i.type==='round').length+1);
-  ev.items.push(c);wed.sel=c.id;wedTouch()}
-function wedRemove(){const ev=wedCur();if(!ev||!wed.sel)return;ev.items=ev.items.filter(i=>i.id!==wed.sel);wed.sel=null;wedTouch()}
+function wedGrow(f){const ids=wedSelIds();const ev=wedCur();if(!ev||!ids.length)return;
+  ids.forEach(id=>{const it=ev.items.find(i=>i.id===id);if(!it)return;
+    it.w=Math.max(24,Math.min(500,Math.round(it.w*f)));
+    it.h=(it.type==='round'||it.type==='circ')?it.w:Math.max(20,Math.min(500,Math.round(it.h*f)))});
+  wedTouch()}
+function wedDup(){const ev=wedCur();const ids=wedSelIds();if(!ev||!ids.length)return;
+  const made=[];
+  ids.forEach(id=>{const it=ev.items.find(i=>i.id===id);if(!it)return;
+    const c=JSON.parse(JSON.stringify(it));c.id=wedNewId();c.x=Math.min(WED_W-30,c.x+40);c.y=Math.min(WED_H-30,c.y+40);
+    if(c.type==='round')c.label=String(ev.items.filter(i=>i.type==='round').length+1);
+    ev.items.push(c);made.push(c.id)});
+  wedSelSet(made);wedTouch()}
+function wedRemove(){const ev=wedCur();const ids=wedSelIds();if(!ev||!ids.length)return;
+  if(ids.length>2&&!confirm('Delete '+ids.length+' pieces off this floor plan?'))return;
+  ev.items=ev.items.filter(i=>!ids.includes(i.id));wedSelSet([]);wedTouch()}
 function wedTouch(){const ev=wedCur();if(ev)ev.updated=Date.now();wedQueueSave();wedPaint();wedBarRefresh()}
-function wedItemHTML(it){const cls={round:'wed-round',rect:'wed-rect',dance:'wed-dance',door:'wed-door',text:'wed-text',box:'wed-box'}[it.type]||'wed-rect';
-  return `<div class="wed-it ${cls} ${wed.sel===it.id?'wed-sel':''} ${it.unsure?'wed-q':''}" data-wid="${it.id}" style="left:${it.x}px;top:${it.y}px;width:${it.w}px;height:${it.h}px;transform:translate(-50%,-50%) rotate(${it.rot||0}deg)"><span class="wed-lbl">${(it.type==='round'&&it.label)?'#'+esc(it.label):esc(it.label||'')}${(it.type==='round'&&it.seats)?`<span class="wed-seats">${esc(String(it.seats))}</span>`:''}</span>${wed.sel===it.id?(it.type==='round'
+function wedItemHTML(it){const cls={round:'wed-round',circ:'wed-round wed-circ',rect:'wed-rect',dance:'wed-dance',door:'wed-door',text:'wed-text',box:'wed-box'}[it.type]||'wed-rect';
+  const ids=wedSelIds(),alone=ids.length===1;
+  return `<div class="wed-it ${cls} ${ids.includes(it.id)?'wed-sel':''} ${it.unsure?'wed-q':''}" data-wid="${it.id}" style="left:${it.x}px;top:${it.y}px;width:${it.w}px;height:${it.h}px;transform:translate(-50%,-50%) rotate(${it.rot||0}deg)"><span class="wed-lbl">${(it.type==='round'&&it.label)?'#'+esc(it.label):esc(it.label||'')}${(it.type==='round'&&it.seats)?`<span class="wed-seats">${esc(String(it.seats))}</span>`:''}</span>${(alone&&wed.sel===it.id)?(it.type==='round'
       ?`<input class="wed-num" value="${esc(it.seats||'')}" placeholder="gsts" title="Guests seated at this table" onpointerdown="event.stopPropagation()" onfocus="this.select()" onchange="wedNumSet(this)">`
       :'<div class="wed-rot" title="Drag to spin">⟳</div>'):''}</div>`}
+function wedToolsSync(){const n=wedSelIds().length;
+  const h=document.getElementById('wed-selhint');if(h)h.textContent=n>1?n+' SELECTED':'SELECTED';
+  const r=document.getElementById('wed-rm');if(r)r.textContent=n>1?'✕ Remove '+n:'✕ Remove';
+  const c=document.getElementById('wed-cp');if(c)c.textContent=n>1?'⧉ Copy '+n:'⧉ Copy'}
 function wedPaint(){const st=document.getElementById('wed-stage');const ev=wedCur();if(!st||!ev)return;
-  st.innerHTML=wedTraceHTML()+ev.items.map(wedItemHTML).join('');
+  st.innerHTML=wedTraceHTML()+ev.items.map(wedItemHTML).join('');wedToolsSync();
   st.classList.toggle('tapping',!!wedTrace.tap);
   const c=document.getElementById('wed-count');if(c){const r=ev.items.filter(i=>i.type==='round').length;c.textContent=r+' round table'+(r===1?'':'s')}}
 // ── views ──
@@ -4220,16 +4244,18 @@ function wedPlanChrome(embedded){const ev=wedCur();if(!ev)return '';
     <div id="wed-stage-wrap" ondragover="wedPdfDragOver(event)" ondragleave="wedPdfDragLeave(event)" ondrop="wedPdfDrop(event)"><div id="wed-stage"></div><div id="wed-pdf-veil"></div></div>
     <div class="wed-tools">
       <span class="hint">ADD</span>
-      <button class="wed-btn" onclick="wedAdd('round')">⚪ Table</button>
+      <button class="wed-btn" onclick="wedAdd('round')" title="Numbered guest table — takes the next table number and holds a guest count">⚪ Table #</button>
+      <button class="wed-btn" onclick="wedAdd('circ')" title="Blank round table — no number, no guest count (cake, gift, sweetheart). Double-click it to type a label">⚪ Table</button>
       <button class="wed-btn" onclick="wedAdd('rect')">▭ Table</button>
       <button class="wed-btn" onclick="wedAdd('dance')">🕺 Dance floor</button>
       <button class="wed-btn" onclick="wedAdd('door')">🚪 Door</button>
       <button class="wed-btn" onclick="wedAdd('text')">🔤 Text</button>
-      <span class="hint" style="margin-left:10px">SELECTED</span>
+      <span class="hint" style="margin-left:10px" id="wed-selhint" title="Hold Shift and click to pick several pieces at once">SELECTED</span>
       <button class="wed-btn" onclick="wedGrow(1.12)">＋ Bigger</button>
       <button class="wed-btn" onclick="wedGrow(0.89)">－ Smaller</button>
-      <button class="wed-btn" onclick="wedDup()">⧉ Copy</button>
-      <button class="wed-btn danger" onclick="wedRemove()">✕ Remove</button>
+      <button class="wed-btn" id="wed-cp" onclick="wedDup()">⧉ Copy</button>
+      <button class="wed-btn danger" id="wed-rm" onclick="wedRemove()">✕ Remove</button>
+      <span class="hint" style="margin-left:6px">⇧ shift-click to pick several</span>
     </div>`}
 function wedPlanHTML(){const ev=wedCur();if(!ev)return wedListHTML();
   return `<div id="wed-root">${wedPlanChrome(false)}</div>`}
@@ -4304,11 +4330,19 @@ function wedInit(){
       if(wedTrace.tap){const r=st.getBoundingClientRect();
         wedTapAdd((e.clientX-r.left)/(wed.scale||1),(e.clientY-r.top)/(wed.scale||1));
         e.preventDefault();return}
-      wed.sel=null;wedPaint();return}
+      if(!e.shiftKey){wedSelSet([]);wedPaint()}
+      return}
     const it=ev.items.find(i=>i.id===el.dataset.wid);if(!it)return;
-    wed.sel=it.id;wedPaint();
+    if(e.shiftKey){wedSelToggle(it.id);wedPaint();e.preventDefault();return}
+    const picked=wedSelIds();
+    // clicking one of several already-picked pieces keeps the group (so it drags together);
+    // clicking anything else picks just that piece
+    wedSelSet(picked.includes(it.id)?[it.id].concat(picked):[it.id]);
+    wedPaint();
     const el2=st.querySelector(`[data-wid="${it.id}"]`);
-    drag={it,el:el2,sx:e.clientX,sy:e.clientY,ox:it.x,oy:it.y,moved:false};
+    const group=wedSelIds().map(id=>{const g=ev.items.find(i=>i.id===id),ge=st.querySelector(`[data-wid="${id}"]`);
+      return (g&&ge)?{it:g,el:ge,ox:g.x,oy:g.y}:null}).filter(Boolean);
+    drag={it,el:el2,sx:e.clientX,sy:e.clientY,ox:it.x,oy:it.y,moved:false,group};
     st.setPointerCapture(e.pointerId);e.preventDefault()});
   st.addEventListener('dblclick',e=>{const el=e.target.closest('.wed-it');if(el)wedEditLabel(el.dataset.wid)});
   st.addEventListener('pointermove',e=>{if(!drag)return;
@@ -4321,11 +4355,12 @@ function wedInit(){
         drag.el.style.transform=`translate(-50%,-50%) rotate(${r}deg)`;
 }
       return}
-    const dx=(e.clientX-drag.sx)/wed.scale,dy=(e.clientY-drag.sy)/wed.scale;
+    let dx=(e.clientX-drag.sx)/wed.scale,dy=(e.clientY-drag.sy)/wed.scale;
     if(Math.abs(dx)>2||Math.abs(dy)>2)drag.moved=true;
-    drag.it.x=Math.max(10,Math.min(WED_W-10,Math.round(drag.ox+dx)));
-    drag.it.y=Math.max(10,Math.min(WED_H-10,Math.round(drag.oy+dy)));
-    drag.el.style.left=drag.it.x+'px';drag.el.style.top=drag.it.y+'px'});
+    const grp=drag.group&&drag.group.length?drag.group:[{it:drag.it,el:drag.el,ox:drag.ox,oy:drag.oy}];
+    grp.forEach(g=>{dx=Math.max(10-g.ox,Math.min(WED_W-10-g.ox,dx));dy=Math.max(10-g.oy,Math.min(WED_H-10-g.oy,dy))});
+    grp.forEach(g=>{g.it.x=Math.round(g.ox+dx);g.it.y=Math.round(g.oy+dy);
+      g.el.style.left=g.it.x+'px';g.el.style.top=g.it.y+'px'})});
   const end=()=>{if(!drag)return;if(drag.moved){const ev=wedCur();if(ev)ev.updated=Date.now();wedQueueSave()}drag=null};
   st.addEventListener('pointerup',end);st.addEventListener('pointercancel',end);
   st.addEventListener('dblclick',e=>{if(e.target.closest('.wed-it'))wedRenameItem()})}
@@ -4335,6 +4370,7 @@ function wedPrint(){const ev=wedCur();if(!ev)return;wedFlush();
   const items=ev.items.map(it=>{const style=`left:${it.x/10}%;top:${it.y/7}%;width:${it.w/10}%;height:${it.h/7}%;transform:translate(-50%,-50%) rotate(${it.rot||0}deg)`;
     const base='position:absolute;display:flex;align-items:center;justify-content:center;font-weight:700;text-align:center;line-height:1.1;';
     const look={round:'border:2px solid #000;border-radius:50%;font-size:13px;',
+      circ:'border:2px solid #000;border-radius:50%;font-size:11px;',
       rect:'border:2px solid #000;font-size:9px;',dance:'border:2.5px dashed #000;font-size:11px;letter-spacing:2px;',
       door:'border:1.5px solid #555;color:#555;font-size:8px;letter-spacing:1px;',text:'font-size:11px;',
       box:'border:2px solid #000;font-size:9px;border-radius:6px;letter-spacing:1px;'}[it.type]||'';
