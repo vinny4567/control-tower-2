@@ -504,7 +504,8 @@
     #wed-root{display:flex;flex-direction:column;height:100%;overflow:hidden}
     .wed-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 12px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0}
     .wed-bar select,.wed-bar input[type=text]{background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-size:14px;min-width:0}
-    #wed-name{flex:1;max-width:280px;font-weight:700}
+    #wed-name{flex:1 1 240px;min-width:210px;max-width:340px;font-weight:700;text-overflow:ellipsis}
+    #wed-venue{min-width:160px}
     .wed-btn{background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:8px 12px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap}
     .wed-btn:active{transform:scale(.96)}
     .wed-btn.amber{border-color:var(--accent);color:var(--accent)}
@@ -576,7 +577,8 @@
     .wed-chev{color:var(--text-muted);font-size:18px;flex-shrink:0}
     .wed-empty{text-align:center;color:var(--text-muted);padding:30px 10px;font-size:13px}
     .wed-feed-err{background:rgba(229,72,77,.12);border:1px solid #e5484d;color:#ff9a9d;border-radius:10px;padding:10px 12px;font-size:12px;margin-bottom:10px}
-    @media (max-width:700px){.wed-bar{padding:6px 8px}.wed-btn{padding:7px 9px;font-size:12px}}
+    @media (max-width:700px){.wed-bar{padding:6px 8px}.wed-btn{padding:7px 9px;font-size:12px}
+      #wed-name{min-width:150px;flex-basis:100%}#wed-venue{min-width:130px}}
   </style>
 </head>
 <body>
@@ -4273,7 +4275,12 @@ function wedFit(){const wrap=document.getElementById('wed-stage-wrap'),st=docume
   // Guard: measuring before the pane has laid out can yield 0/negative dimensions → a negative
   // scale flips the stage inside-out. Clamp, and re-fit on the next frame when that happens.
   let s=Math.min((wrap.clientWidth-20)/WED_W,(wrap.clientHeight-20)/WED_H);
-  if(!isFinite(s)||s<=0.05){s=Math.max(s,0.05);requestAnimationFrame(()=>{const w2=document.getElementById('wed-stage-wrap');if(w2&&w2.clientHeight>40)wedFit()})}
+  if(!isFinite(s)||s<=0.05){s=Math.max(s,0.05);
+    // Retry on a timer, NOT requestAnimationFrame: rAF never fires while the tab is in the
+    // background, so a plan first laid out there used to stay a 5% speck until something
+    // else happened to re-fit it.
+    clearTimeout(wed._fitRetry);
+    wed._fitRetry=setTimeout(()=>{const w2=document.getElementById('wed-stage-wrap');if(w2&&w2.clientHeight>40)wedFit()},120);}
   wed.scale=s;
   st.style.transform=`translate(-50%,-50%) scale(${s})`}
 function wedInit(){
@@ -4282,7 +4289,11 @@ function wedInit(){
   const st=document.getElementById('wed-stage');if(!st)return;
   wedTraceRestore();
   wedFit();wedPaint();wedChrome();
-  if(!wed._resize){wed._resize=true;window.addEventListener('resize',()=>{if(activeTab===WED&&document.getElementById('wed-stage'))wedFit()})}
+  if(!wed._resize){wed._resize=true;
+    const refit=()=>{if(activeTab===WED&&document.getElementById('wed-stage'))wedFit()};
+    window.addEventListener('resize',refit);
+    // coming back to the tab re-measures too — it may have been laid out at zero size
+    document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')refit()});}
   let drag=null;
   st.addEventListener('pointerdown',e=>{if(e.target.id==='wed-edit'||(e.target.classList&&e.target.classList.contains('wed-num')))return;wedEditCommit();const el=e.target.closest('.wed-it');const ev=wedCur();if(!ev)return;
     if(el&&e.target.closest('.wed-rot')){const it=ev.items.find(i=>i.id===el.dataset.wid);if(!it)return;
