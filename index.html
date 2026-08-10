@@ -3091,7 +3091,7 @@ function shPiccataTables(id){try{const lay=wedLayoutForSched(id);
   return lay&&lay.items?lay.items.filter(i=>i.type==='round').length:0}catch(e){return 0}}
 // Every table on the floor plan — rounds plus the rectangles that are tables
 // (sweetheart, vendor). Bars, cake/gift tables and buffets aren't seats, so they don't count.
-const SH_NOT_A_TABLE=/\b(bar|cake|gift|buffet|station|carv|escort|place\s*card|seating\s*chart|guest\s*book|dance|door|entrance|exit|stage|dj)\b/i;
+const SH_NOT_A_TABLE=/\b(bar|cake|gift|coffee|kitchen|buffet|station|carv|escort|place\s*card|seating\s*chart|guest\s*book|dance|door|entrance|exit|stage|dj)\b|^\s*\d+\s*('|ft|foot)\s*$/i;
 function shAllTables(id){try{const lay=wedLayoutForSched(id);if(!lay||!lay.items)return 0;
   return lay.items.filter(i=>(i.type==='round'||i.type==='rect')&&!SH_NOT_A_TABLE.test(i.label||'')).length}catch(e){return 0}}
 // #11 rolls: <dozen per table> × tables on the floor plan (incl. sweetheart + vendor tables)
