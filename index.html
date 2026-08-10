@@ -429,6 +429,18 @@
     .ts-time{width:110px;color:var(--text-dim);font-variant-numeric:tabular-nums}
     .ts-hrs{width:70px;text-align:right;color:var(--accent);font-weight:800;font-variant-numeric:tabular-nums}
     .ts-total{padding:14px 16px;font-size:15px;color:var(--text-dim)}
+    .tip-wrap{border-top:2px solid var(--border);margin-top:10px;padding-bottom:20px}
+    .tip-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 16px;background:var(--surface)}
+    .tip-title{font-weight:800;font-size:15px;color:var(--accent)}
+    .tip-head label{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-dim)}
+    .tip-total{width:110px;background:var(--surface2);border:1px solid var(--accent);color:var(--text);border-radius:8px;padding:8px;font-size:16px;font-weight:800;text-align:right}
+    .tip-pct{width:56px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px;font-size:14px;text-align:right}
+    .tip-sec{display:flex;justify-content:space-between;align-items:center;padding:12px 16px 6px;font-weight:800;font-size:12px;letter-spacing:.08em;color:var(--accent);text-transform:uppercase}
+    .tip-sec span{font-weight:700;font-size:11.5px;color:var(--text-muted);letter-spacing:0;text-transform:none}
+    .tip-amt{width:96px}
+    .tip-in{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px;font-size:13px;text-align:right;box-sizing:border-box}
+    .tip-in:focus{border-color:var(--accent);outline:none}
+    .tip-total-row{padding:14px 16px;font-size:15px;color:var(--text-dim)}
     /* Truck packing tool */
     .tk-wrap{display:flex;flex-direction:column;height:100%;overflow:hidden}
     .tk-head{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:10px 14px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0;font-size:13px}
@@ -2567,9 +2579,129 @@ function wedOpenSchedLayout(){const fe=wedFeedEvent(wed.evId);if(!fe)return;
   wed.cur=lay.id;wedLoad().cur=lay.id;wed.sel=null;wed.pane='plan';renderViewport()}
 function wedShowTpl(){wedFlush();wed.pane='tpl';wed.sel=null;renderViewport()}
 // ── Day Schedule pane: who's working the event's date (scheduler roster API, ?date= supported) ──
+// ── EVENT TIP-OUT ───────────────────────────────────────────────────────────────
+// Same split Vinny uses on the party calculator (servers 70 / bussers 20 / bar 10,
+// a role's share only comes off if that role actually worked), but driven by this
+// event's TIME SHEET. Default split is BY HOURS inside each role since we have them;
+// flip to "even" for an equal cut. Percentages are editable per event.
+const TIP_DEFAULTS={server:70,busser:20,bar:10,mode:'hours',incSetup:false};
+function tipKey(){return 'ct_tips_ev_sched-'+wed.evId}
+function tipLoad(){
+  if(wed.tips&&wed.tipsEv===wed.evId)return wed.tips;
+  wed.tipsEv=wed.evId;
+  try{const r=JSON.parse(localStorage.getItem(tipKey())||'null');wed.tips=(r&&r.v)||{total:'',...TIP_DEFAULTS,adj:{}}}
+  catch(e){wed.tips={total:'',...TIP_DEFAULTS,adj:{}}}
+  if(!wed.tips.adj)wed.tips.adj={};
+  return wed.tips}
+function tipStore(){const d=tipLoad();const at=Date.now();
+  try{localStorage.setItem(tipKey(),JSON.stringify({v:d,at}))}catch(e){}
+  clearTimeout(wed.tipTimer);
+  wed.tipTimer=setTimeout(()=>{if(typeof kvPush==='function')kvPush(tipKey(),d,at)},1200)}
+async function tipPull(){try{
+  const remote=await kvGet(tipKey());
+  let localAt=0;try{localAt=(JSON.parse(localStorage.getItem(tipKey())||'{}').at)||0}catch(e){}
+  if(remote&&remote.v&&(remote.at||0)>localAt){wed.tips=remote.v;wed.tipsEv=wed.evId;
+    try{localStorage.setItem(tipKey(),JSON.stringify({v:remote.v,at:remote.at}))}catch(e){}
+    if(activeTab===WED&&wed.pane==='sched')paintWedTs()}
+}catch(e){}}
+function tipSet(f,v){const d=tipLoad();
+  if(f==='total')d.total=String(v).replace(/[^0-9.]/g,'');
+  else if(f==='mode')d.mode=v;
+  else if(f==='incSetup')d.incSetup=!!v;
+  else d[f]=String(v).replace(/[^0-9.]/g,'');
+  tipStore();paintWedTs()}
+function tipAdj(name,v){const d=tipLoad();const t=String(v).replace(/[^0-9.]/g,'');
+  if(t==='')delete d.adj[name];else d.adj[name]=t;
+  tipStore();paintWedTs()}
+function tipRoleOf(sec){const x=String(sec||'').toLowerCase();
+  if(/bar|tender/.test(x))return 'bar';
+  if(/buss/.test(x))return 'busser';
+  if(/setup|set up/.test(x))return 'setup';
+  if(/runner/.test(x))return 'runner';
+  return 'server'}
+const tipFloor=n=>Math.floor((+n||0)*100)/100;
+function tipCalc(){
+  const d=tipLoad();const rows=(((wed.tsRes||{}).data)||{}).entries||[];
+  const people=rows.map(r=>({name:r.name,section:r.section,hours:+r.hours||0,role:tipRoleOf(r.section)}))
+    .filter(p=>d.incSetup||p.role!=='setup');
+  // runners ride with the bussers unless Vinny splits them out later
+  people.forEach(p=>{if(p.role==='runner')p.role='busser'});
+  const total=+d.total||0;
+  const byRole={server:[],busser:[],bar:[],setup:[]};
+  people.forEach(p=>byRole[p.role]?byRole[p.role].push(p):null);
+  const pct={busser:+d.busser||0,bar:+d.bar||0};
+  const busserPool=byRole.busser.length?tipFloor(total*pct.busser/100):0;
+  const barPool=byRole.bar.length?tipFloor(total*pct.bar/100):0;
+  const serverPool=tipFloor(total-busserPool-barPool);
+  const pools={server:serverPool,busser:busserPool,bar:barPool,setup:0};
+  const out=[];
+  ['server','busser','bar','setup'].forEach(role=>{
+    const list=byRole[role]||[];if(!list.length)return;
+    const pool=pools[role];
+    const hoursSum=list.reduce((a,b)=>a+b.hours,0);
+    list.forEach(p=>{
+      let amt=0;
+      if(pool>0){
+        amt=(d.mode==='hours'&&hoursSum>0)?tipFloor(pool*(p.hours/hoursSum)):tipFloor(pool/list.length);
+      }
+      const manual=d.adj[p.name];
+      out.push({...p,pool,auto:amt,tip:(manual!=null&&manual!=='')?(+manual||0):amt,manual:manual!=null&&manual!==''});
+    });
+  });
+  const paid=tipFloor(out.reduce((a,b)=>a+b.tip,0));
+  return {people:out,pools,total,paid,left:tipFloor(total-paid)}}
+function tipMoney(n){return '$'+(Math.round((+n||0)*100)/100).toFixed(2)}
+function tipHTML(){
+  const d=tipLoad();const c=tipCalc();
+  const rows=(((wed.tsRes||{}).data)||{}).entries||[];
+  if(!rows.length)return '';
+  const group=r=>c.people.filter(p=>p.role===r);
+  const secHTML=(role,label)=>{
+    const list=group(role);if(!list.length)return '';
+    const hrs=list.reduce((a,b)=>a+b.hours,0);
+    return `<div class="tip-sec">${label}<span>${tipMoney(c.pools[role])} pool · ${hrs.toFixed(2)} hrs</span></div>
+      <table class="ts-table"><tbody>${list.map(p=>`<tr>
+        <td class="ts-name">${esc(p.name)}</td>
+        <td class="ts-time">${p.hours.toFixed(2)} hrs</td>
+        <td class="tip-amt"><input class="tip-in" value="${esc(d.adj[p.name]!=null?d.adj[p.name]:'')}" placeholder="${p.auto.toFixed(2)}" onfocus="this.select()" onchange="tipAdj(${JSON.stringify(p.name)},this.value)"></td>
+        <td class="ts-hrs">${tipMoney(p.tip)}</td></tr>`).join('')}</tbody></table>`};
+  return `<div class="tip-wrap">
+    <div class="tip-head">
+      <span class="tip-title">💵 Tip-Out</span>
+      <label>Total tip <input class="tip-total" value="${esc(d.total)}" placeholder="0.00" onfocus="this.select()" onchange="tipSet('total',this.value)"></label>
+      <label>Bussers <input class="tip-pct" value="${esc(String(d.busser))}" onchange="tipSet('busser',this.value)">%</label>
+      <label>Bar <input class="tip-pct" value="${esc(String(d.bar))}" onchange="tipSet('bar',this.value)">%</label>
+      <label class="tk-tog ${d.mode==='hours'?'on':''}"><input type="checkbox" ${d.mode==='hours'?'checked':''} onchange="tipSet('mode',this.checked?'hours':'even')"> split by hours</label>
+      <label class="tk-tog ${d.incSetup?'on':''}"><input type="checkbox" ${d.incSetup?'checked':''} onchange="tipSet('incSetup',this.checked)"> include setup</label>
+      <span style="flex:1"></span>
+      <button class="wed-btn" onclick="tipPrint()">🖨 Print</button>
+    </div>
+    ${secHTML('server','SERVERS')}${secHTML('busser','BUSSERS &amp; RUNNERS')}${secHTML('bar','BAR')}${d.incSetup?secHTML('setup','SETUP'):''}
+    <div class="tip-total-row">Paid out <b>${tipMoney(c.paid)}</b> of ${tipMoney(c.total)}${Math.abs(c.left)>=0.01?` · <span style="color:var(--accent)">${tipMoney(c.left)} left over (rounding)</span>`:''}</div>
+  </div>`}
+function tipPrint(){
+  const fe=wedFeedEvent(wed.evId);const c=tipCalc();const d=tipLoad();
+  if(!fe)return;
+  const sec=(role,label)=>{const list=c.people.filter(p=>p.role===role);if(!list.length)return '';
+    return `<table><tr><th colspan="3" class="sec">${label} — pool ${tipMoney(c.pools[role])}</th></tr>
+      <tr><th>Name</th><th>Hours</th><th class="r">Tip</th></tr>
+      ${list.map(p=>`<tr><td>${esc(p.name)}</td><td>${p.hours.toFixed(2)}</td><td class="r">${tipMoney(p.tip)}</td></tr>`).join('')}</table>`};
+  const w=window.open('','_blank');
+  w.document.write(`<html><head><title>Tip-Out — ${esc(wedName(fe))}</title><style>
+    body{font-family:-apple-system,Helvetica,sans-serif;color:#000;margin:26px;font-size:12px}
+    h1{font-size:17px;margin:0 0 2px}.meta{margin-bottom:12px}
+    table{width:100%;border-collapse:collapse;margin-bottom:14px}
+    th,td{border:1px solid #000;padding:4px 7px;text-align:left}
+    th{background:#eee}.sec{font-weight:800;background:#f2f2f2}.r{text-align:right}</style></head><body>
+    <h1>Tip-Out — ${esc(wedName(fe))}</h1>
+    <div class="meta">${esc(wedDow(fe.date))} ${esc(wedPrettyDate(fe.date))} · total tip <b>${tipMoney(c.total)}</b> · split ${d.mode==='hours'?'by hours':'evenly'} (bussers ${esc(String(d.busser))}%, bar ${esc(String(d.bar))}%)</div>
+    ${sec('server','SERVERS')}${sec('busser','BUSSERS & RUNNERS')}${sec('bar','BAR')}${d.incSetup?sec('setup','SETUP'):''}
+    <p><b>Paid out ${tipMoney(c.paid)}</b> of ${tipMoney(c.total)}${Math.abs(c.left)>=0.01?` — ${tipMoney(c.left)} left over (rounding)`:''}</p>
+    </body></html>`);
+  w.document.close();setTimeout(()=>{try{w.print()}catch(e){}},400)}
 const WED_TS_FEED='https://restaurant-scheduler-hh5e.onrender.com/api/timesheet-feed';
 function wedShowSched(){wedFlush();wed.pane='sched';wed.sel=null;renderViewport();
-  const fe=wedFeedEvent(wed.evId);if(fe)wedTsLoad(fe);}
+  const fe=wedFeedEvent(wed.evId);if(fe){wedTsLoad(fe);tipPull();}}
 // The event's TIME SHEET, straight from the scheduling app (read-only here — the
 // sheet is filled in over there; this is where it lives with the rest of the event).
 async function wedTsLoad(fe){
@@ -2608,7 +2740,8 @@ function wedTsListHTML(){
         <td class="ts-time">${esc(t12(r.inTime))}</td>
         <td class="ts-time">${esc(t12(r.outTime))}</td>
         <td class="ts-hrs">${r.hours?(+r.hours).toFixed(2):''}</td></tr>`).join('')}</tbody></table>`}).join('')}
-  <div class="ts-total">Total <b>${(d.totalHours||0).toFixed?(d.totalHours||0).toFixed(2):d.totalHours} hours</b></div>`}
+  <div class="ts-total">Total <b>${(d.totalHours||0).toFixed?(d.totalHours||0).toFixed(2):d.totalHours} hours</b></div>
+  ${tipHTML()}`}
 function wedTsPrint(){
   const fe=wedFeedEvent(wed.evId);const d=(wed.tsRes||{}).data;if(!fe||!d)return;
   const t12=t=>{if(!t)return '';const m=/^(\d{1,2}):(\d{2})/.exec(t);if(!m)return t;let h=+m[1];const ap=h>=12?'PM':'AM';h=h%12||12;return h+':'+m[2]+' '+ap};
