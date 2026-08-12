@@ -1702,15 +1702,30 @@ function mailStartOrder(m){
   const d=mailParseSubmission(m);
   if(!d.name&&!d.email){alert('I couldn’t read the details out of this one — open the catering form and start it by hand.');return}
   const summary=[d.name,d.date?('event '+(d.raw.dateText||d.date)):'',d.guests?(d.guests+' guests'):'',d.service].filter(Boolean).join(' · ');
-  if(!confirm('Start a catering ticket for:\n\n'+summary+'\n\nThe form opens in a new tab with these filled in — nothing is saved until you save it there.'))return;
+  if(!confirm('Start a catering ticket for:\n\n'+summary+'\n\nThe Catering tab opens with these filled in — nothing is saved until you save it there.'))return;
+  d.ticket='t'+Date.now().toString(36);            // lets the form ignore repeat sends
+  // Straight to the Catering tab — same trick the agenda arrow uses: keep offering the
+  // details until the page (it's a big one) is up and acknowledges them.
+  const panel=(cfg.panels||[]).find(p=>/catering-internal/.test(p.url||''));
+  if(panel&&!panel.launcher){
+    switchTab(panel.id);
+    const t0=Date.now();
+    const timer=setInterval(()=>{
+      const f=document.querySelector('#viewport iframe');
+      if(f&&f.contentWindow){try{f.contentWindow.postMessage({ctNewOrder:d},'https://order.angeliscatering.com')}catch(e){}}
+      if(Date.now()-t0>25000){clearInterval(timer);window.removeEventListener('message',ack)}
+    },900);
+    const ack=e=>{if(e.data&&e.data.ctNewOrderAck){clearInterval(timer);window.removeEventListener('message',ack)}};
+    window.addEventListener('message',ack);
+    return;
+  }
+  // Catering is set to open externally (launcher mode) — fall back to its own tab.
   const w=window.open('https://order.angeliscatering.com/catering-internal.html','_blank');
   if(!w){alert('Your browser blocked the new tab. Allow pop-ups for The Watch Tower and press Start Order again.');return}
-  let sent=false;
-  const send=()=>{if(sent)return;sent=true;
-    try{w.postMessage({ctNewOrder:d},'https://order.angeliscatering.com')}catch(e){}};
-  const onMsg=(e)=>{if(e.origin==='https://order.angeliscatering.com'&&e.data&&e.data.ctReady){send();window.removeEventListener('message',onMsg)}};
+  const onMsg=(e)=>{if(e.origin==='https://order.angeliscatering.com'&&e.data&&e.data.ctReady){
+    try{w.postMessage({ctNewOrder:d},'https://order.angeliscatering.com')}catch(err){}
+    window.removeEventListener('message',onMsg)}};
   window.addEventListener('message',onMsg);
-  // belt and braces: the page may have loaded before we started listening
   [1200,2600,4500,7000].forEach(ms=>setTimeout(()=>{try{w.postMessage({ctNewOrder:d},'https://order.angeliscatering.com')}catch(e){}},ms));
   setTimeout(()=>window.removeEventListener('message',onMsg),9000);}
 function mailStartOrderCurrent(){
