@@ -1579,7 +1579,27 @@ function mailHTML(){
   return `<div class="mail-wrap"><div class="gmail-mailbox"><div class="gmail-2pane"><div class="gmail-list-pane">${actionbar}${subtabs}<div id="mail-list-region" class="mail-list-region">${mailListHTML(true)}</div></div><div class="gmail-detail-pane">${detail}</div></div></div></div>`;
 }
 // ── Smart folders: Weddings / Catering — keyword matches across ALL accounts, newest first ──
-const MAIL_SMART={wedding:{label:'💍 Weddings',q:'wedding'},catering:{label:'🍱 Catering',q:'catering'}};
+const MAIL_SMART={wedding:{label:'💍 Weddings',q:'wedding'},catering:{label:'🍱 Catering',q:'catering'},
+  // Vendor billing across every inbox. Measured first: searching the word "invoice" alone
+  // returns 20 hits in the Catering box with it in NOBODY's subject — those are customers
+  // talking about their own invoice, not a bill. So a hit only counts when the SUBJECT reads
+  // like a bill, or it came from a business address (a real vendor with a vague subject).
+  invoices:{label:'🧾 Invoices',
+    terms:['invoice','statement','past due','amount due','payment due','bill','remittance'],
+    keep:'bills'}};
+// "Final Balance Due" is how Satin Chair bills — 33 of them — so the wording has to be
+// wide. Measured against the real inboxes: 377 emails matched the terms, 274 are bills.
+const MAIL_BILL_SUBJECT=/invoice|statement|past\s*due|amount\s*due|payment\s*due|balance\s*due|amount\s*owed|\bbills?\b|billing|e-?bill|autopay|remit|receipt|account\s*summary|\bpayment\b/i;
+const MAIL_PERSONAL_DOMAINS=/(^|\.)(gmail|yahoo|hotmail|outlook|live|aol|icloud|me|comcast|sbcglobal|att|msn|ymail)\./i;
+const MAIL_NOT_A_BILL=/survey|feedback|newsletter|webinar|unsubscribe|\bpromo|\bsale\b|rewards|tips?\b/i;
+function mailLooksLikeBill(m){
+  const subj=String(m.subject||'');
+  if(MAIL_BILL_SUBJECT.test(subj))return true;
+  // A vague subject from a business address is usually still a bill; a customer talking
+  // about their own invoice is not, and neither is a vendor's satisfaction survey.
+  const dom=String(m.fromAddr||'').split('@')[1]||'';
+  return !!dom&&!MAIL_PERSONAL_DOMAINS.test('.'+dom)&&!MAIL_NOT_A_BILL.test(subj);
+}
 function mailShowSmart(k){if(mailx.smart===k){mailClearSmart();return}mailx.smart=k;mailx.selUid=null;mailx.selMsg=null;mailx.selThread=null;mailx.composing=false;mailx.composeNew=false;renderViewport();mailSmartLoad(k);}
 function mailClearSmart(){mailx.smart=null;mailx.smartRes=null;renderViewport();}
 async function mailSmartLoad(k){
@@ -1587,11 +1607,18 @@ async function mailSmartLoad(k){
   mailx.smartRes={k,loading:true,rows:[],err:null};renderMailListRegion();
   let accts=Array.isArray(mailx.accts)?mailx.accts:(mailSnapGet&&mailSnapGet('accounts'))||[];
   if(!accts.length){try{const r=await mailFetch('/mail/accounts');const d=await r.json();accts=d.accounts||[]}catch(e){}}
-  const res=await Promise.all(accts.map(a=>
-    mailFetch('/mail/search?acct='+encodeURIComponent(a.id)+'&q='+encodeURIComponent(cfg.q))
-      .then(r=>r.json()).then(d=>(d.messages||[]).map(m=>({...m,acctId:a.id,acctLabel:a.label}))).catch(()=>[])));
+  const terms=cfg.terms||[cfg.q];
+  const jobs=[];
+  accts.forEach(a=>terms.forEach(t=>jobs.push(
+    mailFetch('/mail/search?acct='+encodeURIComponent(a.id)+'&q='+encodeURIComponent(t))
+      .then(r=>r.json()).then(d=>(d.messages||[]).map(m=>({...m,acctId:a.id,acctLabel:a.label}))).catch(()=>[]))));
+  const res=await Promise.all(jobs);
   if(!mailx.smartRes||mailx.smartRes.k!==k)return;
-  const rows=mailGroupList(res.flat().sort((a,b)=>new Date(b.date)-new Date(a.date))).slice(0,60);
+  const seen={};
+  res.flat().forEach(m=>{const key=m.acctId+'|'+m.uid;if(!seen[key])seen[key]=m});
+  let all=Object.values(seen);
+  if(cfg.keep==='bills')all=all.filter(mailLooksLikeBill);
+  const rows=mailGroupList(all.sort((a,b)=>new Date(b.date)-new Date(a.date))).slice(0,60);
   mailx.smartRes={k,loading:false,rows,err:null};
   renderMailListRegion();}
 function mailSmartOpen(acctId,uid){
