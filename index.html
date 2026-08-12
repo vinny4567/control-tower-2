@@ -1671,31 +1671,77 @@ function mailPlain(m){
     .replace(/<\/t[dh]>/gi,'\t').replace(/<[^>]+>/g,'')
     .replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>')
     .replace(/&#39;|&rsquo;/g,'’').replace(/&quot;/g,'"')}
+// The website mails these as an HTML table AND a plain-text copy. The text copy is
+// word-wrapped to ~78 columns, which runs the fields together and even splits a label
+// in half ("Date of\nEvent:") — so read the table when there is one, and fall back to
+// the flowed text only when there isn't.
+const MAIL_SUB_LABELS=[['name',/^name$/i],['email',/^e-?mail$/i],['phone',/^(phone|telephone)$/i],
+  ['date',/^date of event$/i],['service',/^checkbox list$/i],
+  ['notes',/^additional food.*$|^requests$/i],['when',/^best time to call$/i]];
+function mailSubRowsFromHtml(html){
+  const out={};
+  const rows=String(html||'').match(/<tr[\s\S]*?<\/tr>/gi)||[];
+  rows.forEach(tr=>{
+    const cells=(tr.match(/<t[dh][\s\S]*?<\/t[dh]>/gi)||[]).map(c=>
+      c.replace(/<br\s*\/?>/gi,'\n').replace(/<[^>]+>/g,'')
+       .replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>')
+       .replace(/&#39;|&rsquo;/g,'’').replace(/&quot;/g,'"').trim());
+    if(cells.length<2)return;
+    const label=cells[0].replace(/\s*:\s*$/,'').replace(/\s+/g,' ').trim();
+    const hit=MAIL_SUB_LABELS.find(([,re])=>re.test(label));
+    if(hit&&!out[hit[0]])out[hit[0]]=cells.slice(1).join(' ').trim();
+  });
+  return out}
+function mailSubRowsFromText(t){
+  // Labels can start anywhere and may be split across a wrap, so allow whitespace inside them.
+  const sp=(w)=>w.split(' ').join('\\s+');
+  const names=['Name','Email','Phone','Date of Event','Checkbox List',
+               'Additional food \\(Ala carte menu\\)\\s*\\/?\\s*Requests','Requests','Best Time to Call'];
+  const NEXT='(?:'+names.map(sp).join('|')+')\\s*:';
+  const out={};
+  const grab=(label,key)=>{
+    const re=new RegExp(sp(label)+'\\s*:\\s*([\\s\\S]*?)(?=\\s*'+NEXT+'|$)','i');
+    const mm=re.exec(t); if(mm&&!out[key])out[key]=mm[1].trim();
+  };
+  grab('Name','name');grab('Email','email');grab('Phone','phone');
+  grab('Date of Event','date');grab('Checkbox List','service');
+  grab('Additional food \\(Ala carte menu\\)\\s*\\/?\\s*Requests','notes');
+  if(!out.notes)grab('Requests','notes');
+  grab('Best Time to Call','when');
+  return out}
+// Whatever the layout did to them, each field ends up as just that field.
+function mailCleanSub(r){
+  const one=(v)=>String(v||'').replace(/\s+/g,' ').trim();
+  const email=(one(r.email).match(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/)||[''])[0];
+  const phone=(one(r.phone).match(/\+?\d?\s*\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/)||[''])[0].trim();
+  // a name is a name — cut it at whatever label ran into it
+  let name=one(r.name).split(/\b(?:e-?mail|phone|date of event|checkbox list|requests|best time)\b\s*:/i)[0];
+  name=name.replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g,'').replace(/\+?\d?\s*\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/g,'')
+           .replace(/\s{2,}/g,' ').replace(/[\s,;:-]+$/,'').trim().slice(0,60);
+  const dtxt=one(r.date);
+  const dm=dtxt.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+  let date='';
+  if(dm){const y=dm[3].length===2?'20'+dm[3]:dm[3];
+    date=y+'-'+String(dm[1]).padStart(2,'0')+'-'+String(dm[2]).padStart(2,'0')}
+  else{const d2=Date.parse(dtxt);if(!isNaN(d2)){const dd=new Date(d2);
+    date=dd.getFullYear()+'-'+String(dd.getMonth()+1).padStart(2,'0')+'-'+String(dd.getDate()).padStart(2,'0')}}
+  const svc=(one(r.service).match(/round\s*trip|delivery|pickup/i)||[''])[0];
+  return {name,email,phone,date,dateText:dtxt,
+    service:svc?svc.charAt(0).toUpperCase()+svc.slice(1).toLowerCase():'',
+    notes:String(r.notes||'').replace(/[ \t]+/g,' ').trim(),
+    when:one(r.when)}}
 function mailParseSubmission(m){
-  const t=mailPlain(m).replace(/\r/g,'');
-  // "Label:" then its value — the value can run onto the next lines until the next label.
-  const grab=(label)=>{
-    // Each label carries its own colon — "Additional food (Ala carte menu) / Requests:"
-    // has text between the name and the colon, so a shared '\\s*:' lookahead misses it
-    // and the previous field swallows the rest of the email.
-    const NEXT='(?=\\n\\s*(?:Name\\s*:|Email\\s*:|Phone\\s*:|Date of Event\\s*:|Checkbox List\\s*:|Additional food[^\\n:]*:|Requests\\s*:|Best Time to Call\\s*:)|$)';
-    const re=new RegExp(label+'[\\t ]*:?[\\t ]*([\\s\\S]*?)'+NEXT,'i');
-    const mm=re.exec(t);
-    return mm?mm[1].replace(/\s+/g,' ').trim():''};
-  const name=grab('Name'),email=grab('Email'),phone=grab('Phone');
-  const date=grab('Date of Event'),service=grab('Checkbox List');
-  const notes=grab('Additional food \\(Ala carte menu\\)\\s*\\/?\\s*(?:\\n)?\\s*Requests')||grab('Requests');
-  const when=grab('Best Time to Call');
-  const g=/(\d{1,4})\s*(?:guest|people|pax|ppl)/i.exec(notes)||/(\d{1,4})\s*(?:guest|people)/i.exec(t);
-  const kids=/(\d{1,3})\s*(?:of them\s*)?(?:are\s*)?(?:children|kids)/i.exec(notes);
-  let iso='';
-  const d=/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/.exec(date);
-  if(d){const y=d[3].length===2?'20'+d[3]:d[3];
-    iso=y+'-'+String(d[1]).padStart(2,'0')+'-'+String(d[2]).padStart(2,'0')}
-  const extra=[notes,when?('Best time to call: '+when):''].filter(Boolean).join('\n\n');
-  return {name,email:email||m.fromAddr||'',phone,date:iso||date,service,
-    guests:g?g[1]:'',kids:kids?kids[1]:'',notes:extra,
-    raw:{dateText:date,serviceText:service}}}
+  let rows=mailSubRowsFromHtml(m&&m.html);
+  const got=(o)=>Object.values(o).filter(Boolean).length;
+  if(got(rows)<3)rows=mailSubRowsFromText(mailPlain(m));
+  const c=mailCleanSub(rows);
+  const hay=[c.notes,mailPlain(m)].join(' ');
+  const g=/(\d{1,4})\s*(?:guest|people|pax|ppl|person)/i.exec(hay);
+  const kids=/(\d{1,3})\s*(?:of them\s*)?(?:are\s*)?(?:children|kids)/i.exec(c.notes);
+  return {name:c.name,email:c.email||(m&&m.fromAddr)||'',phone:c.phone,
+    date:c.date,service:c.service,guests:g?g[1]:'',kids:kids?kids[1]:'',
+    notes:[c.notes,c.when?('Best time to call: '+c.when):''].filter(Boolean).join('\n\n'),
+    raw:{dateText:c.dateText,serviceText:c.service}}}
 // Open the catering form in its own tab and hand the details over by message —
 // none of the customer's details go anywhere near the URL.
 function mailStartOrder(m){
