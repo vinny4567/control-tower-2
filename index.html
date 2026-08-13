@@ -1169,6 +1169,9 @@ const MAIL_BASE='https://jarvis-voicejarvis-voice.onrender.com';
 let mailx={accts:null,acct:null,folder:'inbox',lists:{},selUid:null,selMsg:null,selThread:null,loadingList:false,loadingMsg:false,composing:false,composeNew:false,search:'',searchResults:null,searching:false,sendStatus:null,error:null,attach:[]};
 let mailSearchTimer=null;
 function mailListKey(){return mailx.acct+'|'+mailx.folder;}
+// Never trust the order a mailbox hands back — AT&T once served the SBCGlobal inbox
+// upside-down and the oldest mail sat at the top for weeks. Newest first, by date.
+function mailByDate(rows){return (rows||[]).slice().sort((a,b)=>new Date(b.date||0)-new Date(a.date||0));}
 // Gmail-label inboxes: the backend lists the account's label folders; any label
 // matching catering / wedding gets its own chip next to Inbox — same views he has in Gmail.
 function mailLabelChips(){
@@ -1252,7 +1255,7 @@ async function loadMailAccounts(retry){
 }
 async function mailPrefetch(acctId){
   try{const r=await mailFetch('/mail/list?acct='+encodeURIComponent(acctId)+'&folder=inbox&limit=50');const d=await r.json();
-    if(r.ok&&d.messages){mailx.lists[acctId+'|inbox']=d.messages;mailSnapPut(acctId+'|inbox',d.messages);
+    if(r.ok&&d.messages){d.messages=mailByDate(d.messages);mailx.lists[acctId+'|inbox']=d.messages;mailSnapPut(acctId+'|inbox',d.messages);
       if(activeTab===MAIL)renderMailAccts();mailPrecacheTop(acctId,d.messages,2);}}catch(e){}
 }
 async function loadMailList(force){
@@ -1260,7 +1263,7 @@ async function loadMailList(force){
   if(!mailx.lists[key]&&mailx.folder==='inbox'){const snap=mailSnapGet(mailx.acct+'|inbox');if(snap)mailx.lists[key]=snap;}
   const cached=mailx.lists[key];mailx.loadingList=!cached||!!force;if(activeTab===MAIL)renderViewport();
   try{const r=await mailFetch('/mail/list?acct='+encodeURIComponent(mailx.acct)+'&folder='+encodeURIComponent(mailx.folder)+'&limit='+(mailx.limit||50)+(force?'&fresh=1':''));const d=await r.json();
-    if(d&&d.total!=null){mailx.totals=mailx.totals||{};mailx.totals[mailListKey()]=d.total;}if(!r.ok)throw new Error(d.detail||d.error||'mailbox error');mailx.lists[key]=d.messages||[];if(mailx.folder==='inbox'&&(mailx.limit||50)<=50)mailSnapPut(mailx.acct+'|inbox',d.messages||[]);mailx.loadingList=false;mailx.error=null;if(mailx.folder==="inbox")mailPrecacheTop(mailx.acct,d.messages,3);}
+    if(d&&d.total!=null){mailx.totals=mailx.totals||{};mailx.totals[mailListKey()]=d.total;}if(!r.ok)throw new Error(d.detail||d.error||'mailbox error');d.messages=mailByDate(d.messages);mailx.lists[key]=d.messages;if(mailx.folder==='inbox'&&(mailx.limit||50)<=50)mailSnapPut(mailx.acct+'|inbox',d.messages||[]);mailx.loadingList=false;mailx.error=null;if(mailx.folder==="inbox")mailPrecacheTop(mailx.acct,d.messages,3);}
   catch(e){mailx.loadingList=false;mailx.error=e.message==='unauth'?'Access key rejected':'Could not reach that inbox — '+String(e.message||e);}
   if(activeTab===MAIL)renderViewport();
 }
