@@ -1428,7 +1428,82 @@ function mailAddFiles(files){
 }
 function mailRemoveAtt(i){mailx.attach.splice(i,1);paintMailAtt();}
 function mailAttChipsHTML(){return (mailx.attach||[]).map((a,i)=>`<span class="mail-att-chip">📎 <span class="nm">${esc(a.name)}</span> <em>${fmtSize(a.size)}</em><button title="Remove" onclick="mailRemoveAtt(${i})">✕</button></span>`).join('');}
-function mailAttRowHTML(){return `<div class="mail-att-row"><button class="mail-att-btn" onclick="document.getElementById('mail-att-input').click()">📎 Attach files</button><input id="mail-att-input" type="file" multiple style="display:none" onchange="mailAddFiles(this.files);this.value=''"><span id="mail-att-chips" style="display:contents">${mailAttChipsHTML()}</span></div>`;}
+// ── Jarvis: draft the reply ────────────────────────────────────────────
+// Reads what the customer actually asked — the venue, the date, how many, the style —
+// and writes the reply we'd send anyway. Runs on this machine: no API key, no credits,
+// works when the server is asleep. The box stays empty until the button is pressed.
+const JARVIS_WEDDING_URL='https://angeliscatering.com/weddings/';
+function jarvisFirstName(m){
+  // The display name only — never the address, or "info@venue.org" turns into "Infovenueorg".
+  let disp=String((m&&m.from)||'').replace(/<[^>]*>/g,'').replace(/["']/g,'').trim();
+  if(/@/.test(disp))disp='';
+  if(disp.includes(',')){                       // "Barnes, Chris" is surname first
+    const after=disp.split(',').slice(1).join(' ').trim();
+    if(after)disp=after;
+  }
+  let first=(disp.split(/\s+/)[0]||'').replace(/[^A-Za-z'’-]/g,'');
+  if(!first||first.length<2){
+    // fall back to the sign-off ("Best regards,\nChris Barnes")
+    const sig=/(?:regards|thanks|thank you|sincerely|best)[,!]?\s*\n+\s*([A-Z][a-z]+)/i.exec(mailPlain(m)||'');
+    if(sig)first=sig[1];
+  }
+  if(!first)return '';
+  return first.charAt(0).toUpperCase()+first.slice(1).toLowerCase()}
+function jarvisRead(m){
+  const t=mailPlain(m)+' '+String((m&&m.subject)||'');
+  const wedding=/\bwedding|reception|bride|groom|engaged|rehearsal dinner\b/i.test(t);
+  const g=/(\d{2,4})\s*(?:guest|people|pax|ppl|person)/i.exec(t);
+  const style=/family\s*style/i.test(t)?'family style':(/plated/i.test(t)?'plated':'');
+  const venue=(/\bat\s+((?:The\s+)?[A-Z][A-Za-z''-]+(?:\s+(?:House|Hall|Club|Barn|Manor|Estate|Gardens?|Room))?)/.exec(mailPlain(m))||[])[1]||'';
+  let when='';
+  const d=/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/.exec(t);
+  if(d){const y=d[3].length===2?'20'+d[3]:d[3];
+    const dt=new Date(+y,+d[1]-1,+d[2]);
+    if(!isNaN(dt))when=dt.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}
+  if(!when){const w=/\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s*(\d{4})/i.exec(t);
+    if(w)when=w[1]+' '+w[2]+', '+w[3]}
+  return {wedding,guests:g?g[1]:'',style,venue:venue&&venue.length<30?venue:'',when,
+    name:jarvisFirstName(m)}}
+function jarvisDraft(m){
+  const r=jarvisRead(m);
+  const hi=r.name?('Hi '+r.name+',') : 'Hello,';
+  const sign='\n\nThank you,\nAngeli’s Restaurant & Catering\n630-420-1370';
+  const bits=[r.when?('on '+r.when):'',r.venue?('at '+r.venue):''].filter(Boolean).join(' ');
+  if(r.wedding){
+    const detail=[r.guests?(r.guests+' guests'):'',r.style].filter(Boolean).join(', ');
+    return hi+'\n\nThank you for reaching out about your wedding'+(bits?' '+bits:'')+
+      ' — we would love to be part of your day.\n\n'+
+      'You can see our full wedding menus, packages and what each one includes here:\n'+
+      JARVIS_WEDDING_URL+'\n\n'+
+      (detail?('For '+detail+', that page will give you a good sense of the options and pricing. ')
+             :'That page will give you a good sense of the options and pricing. ')+
+      'Once you have had a look, let us know which package you are leaning toward and we will put together a proposal with exact pricing for your date.\n\n'+
+      'We are happy to answer any questions in the meantime.'+sign;
+  }
+  const detail=[r.guests?(r.guests+' guests'):'',bits].filter(Boolean).join(' ');
+  return hi+'\n\nThank you for reaching out'+(detail?(' about your event '+detail.replace(/^(\d)/,'for $1')):'')+
+    '.\n\nWe would be glad to help. So we can put together the right options and pricing for you, could you confirm:\n\n'+
+    (r.guests?'':'  •  How many guests you are expecting\n')+
+    (r.when?'':'  •  The date of your event\n')+
+    '  •  Whether you would like it delivered or picked up\n'+
+    '  •  Any dietary needs or requests\n\n'+
+    'Once we have those we will send pricing straight over.'+sign;
+}
+function mailJarvis(target,m){
+  if(!m){alert('Open the email you want to answer first.');return}
+  const box=document.getElementById(target);
+  if(!box)return;
+  if(box.value.trim()&&!confirm('Replace what you have written with a fresh draft?'))return;
+  const text=jarvisDraft(m);
+  box.value=text;
+  box.dispatchEvent(new Event('input',{bubbles:true}));
+  box.focus();box.setSelectionRange(0,0);box.scrollTop=0;}
+function mailJarvisReply(){
+  const th=mailx.selThread,t=mailx.selMsg;
+  const msgs=(th&&th.messages&&th.messages.length)?th.messages:(t?[t]:[]);
+  mailJarvis('mail-reply-text',msgs[msgs.length-1]||msgs[0]);}
+
+function mailAttRowHTML(jarvis){return `<div class="mail-att-row"><button class="mail-att-btn" onclick="document.getElementById('mail-att-input').click()">📎 Attach files</button>${jarvis?`<button class="mail-att-btn" style="border-color:var(--accent);color:var(--accent)" onclick="${jarvis}" title="Draft a reply from what they asked for">🤖 Jarvis</button>`:''}<input id="mail-att-input" type="file" multiple style="display:none" onchange="mailAddFiles(this.files);this.value=''"><span id="mail-att-chips" style="display:contents">${mailAttChipsHTML()}</span></div>`;}
 function paintMailAtt(){const el=document.getElementById('mail-att-chips');if(el)el.innerHTML=mailAttChipsHTML();}
 function mailDragOver(e){e.preventDefault();e.currentTarget.classList.add('dragover');}
 function mailDragLeave(e){e.currentTarget.classList.remove('dragover');}
@@ -1838,7 +1913,7 @@ function mailComposeHTML(){
   const inputStyle='background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:6px 10px;color:var(--text);font-size:13px;outline:none;margin-left:4px;flex:1;min-width:0';
   const status=`<span id="mail-reply-status" class="gmail-compose-status ${mailx.sendStatus?mailx.sendStatus.kind:''}">${mailx.sendStatus?esc(mailx.sendStatus.text):''}</span>`;
   // Draft lives in STATE (oninput) and is restored on every render — no repaint can wipe typed text.
-  return `<div class="gmail-compose" ondragover="mailDragOver(event)" ondragleave="mailDragLeave(event)" ondrop="mailDrop(event)"><div class="gmail-compose-to"><div style="display:flex;align-items:center;gap:4px">To:<input id="mail-reply-to" type="email" value="${esc(mailx.draftTo!=null?mailx.draftTo:to)}" oninput="mailx.draftTo=this.value" style="${inputStyle}"></div></div><textarea id="mail-reply-text" placeholder="Type your reply… (drop files here to attach)" oninput="mailx.draft=this.value">${esc(mailx.draft||'')}</textarea>${mailAttRowHTML()}<div class="gmail-compose-bar">${status}<div style="display:flex;gap:8px"><button class="gmail-action-btn secondary" onclick="mailCancelReply()">Cancel</button><button class="gmail-action-btn" onclick="mailSendReply()">Send Reply</button></div></div></div>`;
+  return `<div class="gmail-compose" ondragover="mailDragOver(event)" ondragleave="mailDragLeave(event)" ondrop="mailDrop(event)"><div class="gmail-compose-to"><div style="display:flex;align-items:center;gap:4px">To:<input id="mail-reply-to" type="email" value="${esc(mailx.draftTo!=null?mailx.draftTo:to)}" oninput="mailx.draftTo=this.value" style="${inputStyle}"></div></div><textarea id="mail-reply-text" placeholder="Type your reply… (drop files here to attach)" oninput="mailx.draft=this.value">${esc(mailx.draft||'')}</textarea>${mailAttRowHTML('mailJarvisReply()')}<div class="gmail-compose-bar">${status}<div style="display:flex;gap:8px"><button class="gmail-action-btn secondary" onclick="mailCancelReply()">Cancel</button><button class="gmail-action-btn" onclick="mailSendReply()">Send Reply</button></div></div></div>`;
 }
 // ═══ DOCUMENTS TAB — in-app word processor (replaces Word for quick typing) ═══
 let docsNS='ct_docs';
