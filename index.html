@@ -4838,7 +4838,7 @@ async function tipsPull(auto){
   const ensure=(name,sec)=>{if(!name)return;if(TIP_SECTIONS.some(s=>tipSectionPeople(s).indexOf(name)>=0))return;if(!tipsState.adds[sec])tipsState.adds[sec]=[];tipsState.adds[sec].push(name);};
   Object.keys(byDate).forEach(lb=>{
     const e=byDate[lb];
-    (e.servers||[]).forEach(s=>{const n=tipCanon(s.name);if(n){ensure(n,'Server');put(n,lb,s.tips,false);}});
+    (e.servers||[]).forEach(s=>{const n=tipCanon(s.name);if(n){ensure(n,'Server');put(n,lb,(s.remaining!=null?s.remaining:s.tips),false);}}); // server keeps `remaining` (net after tipping out bar/busser/runner) — matches payroll
     (e.runners||[]).forEach(r=>{const n=tipCanon(r.name);if(n){ensure(n,'Food Runner');put(n,lb,r.tipReceived,true);}});
     (e.bartenders||[]).forEach(b=>{const n=tipCanon(b.name);if(n){ensure(n,'Bartender');put(n,lb,b.tipReceived,true);}}); // received bar tip-out → UPT (own card tips entered by hand)
     if(e.pools&&e.pools.busser)put('Busser Pool',lb,e.pools.busser,true); // pool pays out as UPT
