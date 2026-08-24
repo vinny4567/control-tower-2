@@ -4832,15 +4832,13 @@ function tipsHTML(){
     </tr>`;
   };
   let body='';
-  const exp=tipsState.expanded||{};
   TIP_SECTIONS.forEach(sec=>{
     const people=tipSectionPeople(sec);
-    const tipped=people.filter(tipHasTips),untipped=people.filter(n=>!tipHasTips(n));
+    // Full staff list always shown; people WITH tips float to the top of their section.
+    const ordered=[...people.filter(tipHasTips),...people.filter(n=>!tipHasTips(n))];
     body+=`<tr><td colspan="${days.length+3}" style="position:sticky;left:0;background:var(--surface2);color:var(--accent);font-weight:800;padding:8px 12px;letter-spacing:.5px;border-top:1px solid var(--border)">${TIP_SEC_LABEL[sec].toUpperCase()}</td></tr>`;
-    tipped.forEach(n=>{body+=rowFor(n,false);});
     if(sec==='Busser')body+=rowFor('Busser Pool',true);
-    if(exp[sec])untipped.forEach(n=>{body+=rowFor(n,false);});
-    if(untipped.length)body+=`<tr><td colspan="${days.length+3}" style="position:sticky;left:0;background:var(--surface);padding:4px 12px"><button onclick="tipToggleSection('${sec}')" style="background:transparent;border:none;color:var(--text-dim);font-size:12px;cursor:pointer;font-family:inherit">${exp[sec]?'▾ hide':'▸ show'} ${untipped.length} with no tips yet</button></td></tr>`;
+    ordered.forEach(n=>{body+=rowFor(n,false);});
     body+=`<tr><td colspan="${days.length+3}" style="position:sticky;left:0;background:var(--surface);padding:4px 12px"><input id="tip-add-${sec.replace(/ /g,'_')}" placeholder="+ add ${TIP_SEC_LABEL[sec].toLowerCase().replace(/s$/,'')}…" onkeydown="if(event.key==='Enter')tipAddPerson('${sec}')" style="width:180px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 9px;font-size:12px;font-family:inherit"></td></tr>`;
   });
   const dayHead=days.map(d=>{const wd=d.getDay();const closed=(wd===1);return `<th style="padding:6px 4px;font-size:11px;color:${closed?'var(--text-muted)':'var(--text-dim)'};font-weight:600;border-right:1px solid var(--border);white-space:nowrap">${['Su','M','Tu','W','Th','F','Sa'][wd]}<br>${d.getMonth()+1}/${d.getDate()}</th>`;}).join('');
