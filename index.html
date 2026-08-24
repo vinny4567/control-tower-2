@@ -4747,14 +4747,21 @@ async function tipsFetchRoster(){
   tipsState.roster=g;return g;
 }
 function tipCell(name,label){const p=tipsState.cells[name];return p&&p[label]?p[label]:null;}
-function tipSetCell(name,label,v,upt,wed){
+// A day cell holds up to three components: p=paid $, u=unpaid $, w=wedding $ (w shows "W", counts as unpaid).
+// One day can carry BOTH a paid tip (own/direct party) AND an unpaid tip (tip-out) — e.g. a bartender who
+// worked a day party. Legacy cells were {v,upt,wed}; tipMigrateCells() upgrades them on load.
+function tipSetComp(name,label,comp,v){
   if(!tipsState.cells[name])tipsState.cells[name]={};
-  if(!v||isNaN(v))delete tipsState.cells[name][label];
-  else tipsState.cells[name][label]={v:Math.round(v*100)/100,upt:!!upt||!!wed,wed:!!wed}; // a wedding tip is always UPT
+  const cell=tipsState.cells[name][label]||{};
+  v=Math.round((+v||0)*100)/100;
+  if(v)cell[comp]=v;else delete cell[comp];
+  if(cell.p||cell.u||cell.w)tipsState.cells[name][label]=cell;else delete tipsState.cells[name][label];
 }
-function tipCellDisp(c){return c?(c.wed?(c.v+' W'):(c.upt?'$'+c.v:String(c.v))):'';}
-function tipCellColor(c){return c?(c.wed?'#c4b5fd':(c.upt?'#fbbf24':'var(--text)')):'var(--text)';}
-function tipRowTotals(name){let paid=0,upt=0;const p=tipsState.cells[name]||{};Object.keys(p).forEach(k=>{const c=p[k];if(c.upt)upt+=c.v;else paid+=c.v});return {paid:Math.round(paid*100)/100,upt:Math.round(upt*100)/100};}
+function tipMigrateCells(){let ch=false;const C=tipsState.cells||{};Object.keys(C).forEach(nm=>{const by=C[nm]||{};Object.keys(by).forEach(lb=>{const c=by[lb];if(c&&c.v!==undefined&&c.p===undefined&&c.u===undefined&&c.w===undefined){const nc={};if(c.wed)nc.w=c.v;else if(c.upt)nc.u=c.v;else nc.p=c.v;by[lb]=nc;ch=true;}});});return ch;}
+function tipNum(n){return String(Math.round((+n||0)*100)/100);}
+function tipCellComps(c){const out=[];if(!c)return out;if(c.p)out.push({txt:tipNum(c.p),color:'#34d399'});if(c.u)out.push({txt:'$'+tipNum(c.u),color:'#fbbf24'});if(c.w)out.push({txt:tipNum(c.w)+' W',color:'#c4b5fd'});return out;}
+function tipCompsHTML(c){const comps=tipCellComps(c);const multi=comps.length>1;return comps.map(x=>`<span style="display:block;color:${x.color};font-size:${multi?'10px':'13px'};line-height:1.25;font-weight:${multi?'700':'400'}">${x.txt}</span>`).join('');}
+function tipRowTotals(name){let paid=0,upt=0;const p=tipsState.cells[name]||{};Object.keys(p).forEach(k=>{const c=p[k];paid+=c.p||0;upt+=(c.u||0)+(c.w||0);});return {paid:Math.round(paid*100)/100,upt:Math.round(upt*100)/100};}
 let tipsSaveTimer=null;
 function tipsSaveSoon(){clearTimeout(tipsSaveTimer);tipsSaveTimer=setTimeout(()=>{try{kvPush(tipPeriodKey(),{cells:tipsState.cells,adds:tipsState.adds},Date.now());tipsSetStatus('Saved ✓','var(--text-dim)');}catch(e){tipsSetStatus('⚠ not saved','#f87171');}},600);tipsSetStatus('Saving…','var(--text-dim)');}
 function tipSectionPeople(sec){
@@ -4774,7 +4781,7 @@ async function tipsInit(){
   tipsState.cells=(remote&&remote.v&&remote.v.cells)?remote.v.cells:{};
   tipsState.adds=(remote&&remote.v&&remote.v.adds)?remote.v.adds:{};
   const rm=await kvGet('ct_tips_moves');if(g!==tipsGen)return;tipsState.moves=(rm&&rm.v&&rm.v.moves)?rm.v.moves:{};
-  if(tipCleanAdds())tipsSaveSoon();   // heal stale/duplicate/variant adds left by older pulls
+  let _mig=tipMigrateCells();if(tipCleanAdds())_mig=true;if(_mig)tipsSaveSoon();   // upgrade legacy {v,upt,wed} cells + heal stale adds
   tipsState.loaded=true;tipsState.loading=false;
   if(activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();
   tipsPull(true);   // always pull straight from the tip-out calculator on open
@@ -4784,42 +4791,33 @@ function tipsSetStart(ds){const d=tipParseISO(ds);if(!d)return;tipsState.start=d
 function tipsSetEnd(ds){const d=tipParseISO(ds);if(!d)return;tipsState.end=d;if(tipsState.start>d)tipsState.start=new Date(d.getTime()-13*86400000);tipsReload();}
 function tipsThisPeriod(){const p=tipCurrentPeriod();tipsState.start=p.start;tipsState.end=p.end;tipsReload();}
 
-// Manual entry: type a number, then a Paid / Unpaid popup appears — tap one and
-// it records to that column. (Blur without choosing defaults to Paid so the
-// typed value is never lost.)
-let tipPop={name:null,day:null,inp:null,val:0};
+// Manual entry: click a day cell → a small editor with Paid / Unpaid / Wedding
+// fields opens. Any combination can be set — one day can hold a paid day-party
+// tip AND an unpaid tip-out at the same time.
+let tipEdit={name:null,day:null};
 function tipRefreshRow(name){const t=tipRowTotals(name),id=tipId(name);const pe=document.getElementById('tp-'+id),ue=document.getElementById('tu-'+id);if(pe)pe.textContent=t.paid?tipMoney(t.paid):'';if(ue)ue.textContent=t.upt?tipMoney(t.upt):'';tipsUpdateGrand();}
-function tipEnsurePopup(){
-  let p=document.getElementById('tip-pop');
-  if(!p){p=document.createElement('div');p.id='tip-pop';p.style.cssText='position:fixed;display:none;gap:6px;z-index:99999;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:6px;box-shadow:0 8px 26px rgba(0,0,0,.6)';
-    p.innerHTML='<button onmousedown="event.preventDefault()" onclick="tipCommit(\'paid\')" style="background:#34d399;color:#06281c;border:none;border-radius:7px;padding:9px 16px;font-weight:800;cursor:pointer;font-family:inherit;font-size:14px">Paid</button><button onmousedown="event.preventDefault()" onclick="tipCommit(\'upt\')" style="background:#fbbf24;color:#3a2a00;border:none;border-radius:7px;padding:9px 16px;font-weight:800;cursor:pointer;font-family:inherit;font-size:14px">Unpaid</button><button onmousedown="event.preventDefault()" onclick="tipCommit(\'wed\')" title="Wedding tip — records as Unpaid with a W" style="background:#c4b5fd;color:#2a1a54;border:none;border-radius:7px;padding:9px 16px;font-weight:800;cursor:pointer;font-family:inherit;font-size:14px">Wedding</button>';
-    document.body.appendChild(p);}
-  return p;
+function tipRefreshCell(name,day){const el=document.getElementById('tc-'+tipId(name)+'-'+day.replace('/','_'));if(el)el.innerHTML=tipCompsHTML(tipCell(name,day));}
+function tipHidePopup(){const p=document.getElementById('tip-pop');if(p)p.style.display='none';tipEdit.name=null;}
+function tipCellEditorEl(){let p=document.getElementById('tip-pop');if(!p){p=document.createElement('div');p.id='tip-pop';p.style.cssText='position:fixed;display:none;flex-direction:column;gap:7px;z-index:99999;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px;box-shadow:0 8px 26px rgba(0,0,0,.6);min-width:172px';document.body.appendChild(p);}return p;}
+function tipCellEdit(name,day){
+  tipEdit={name,day};
+  const c=tipCell(name,day)||{};
+  const fld=(lab,comp,color,val)=>`<label style="display:flex;align-items:center;gap:8px;font-size:12px;color:${color};font-weight:800"><span style="width:56px">${lab}</span><input inputmode="decimal" value="${val!=null?val:''}" oninput="tipEditSet('${comp}',this.value)" onkeydown="if(event.key==='Enter')tipHidePopup()" style="width:82px;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:13px;font-family:inherit;text-align:right;outline:none"></label>`;
+  const p=tipCellEditorEl();
+  p.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1px"><b style="font-size:12px">${esc(name)} · ${day}</b><button onmousedown="event.preventDefault()" onclick="tipHidePopup()" style="background:none;border:none;color:var(--text-dim);font-size:17px;cursor:pointer;line-height:1;padding:0 2px">×</button></div>`+fld('Paid','p','#34d399',c.p)+fld('Unpaid','u','#fbbf24',c.u)+fld('Wedding','w','#c4b5fd',c.w);
+  p.style.display='flex';
+  const ev=window.event,el=ev&&ev.currentTarget,r=el?el.getBoundingClientRect():{left:100,bottom:100,width:0},w=190;
+  p.style.left=Math.max(6,Math.min(r.left+r.width/2-w/2,window.innerWidth-w-6))+'px';
+  p.style.top=Math.min(r.bottom+4,window.innerHeight-160)+'px';
+  setTimeout(()=>{const i=p.querySelector('input');if(i){i.focus();i.select();}},0);
 }
-function tipHidePopup(){const p=document.getElementById('tip-pop');if(p)p.style.display='none';}
-function tipCellType(inp){
-  const raw=(inp.value||'').trim();
-  const num=parseFloat(raw.replace(/[^\d.]/g,''));
-  const name=inp.dataset.n,day=inp.dataset.d;
-  if(!num||isNaN(num)||num<=0){tipSetCell(name,day,0,false);inp.value='';inp.style.color='var(--text)';tipRefreshRow(name);tipHidePopup();tipPop.name=null;tipsSaveSoon();return;}
-  tipPop={name,day,inp,val:Math.round(num*100)/100};
-  if(/w\s*$/i.test(raw)){tipCommit('wed');return;}  // typed "200 W" → wedding (UPT) directly
-  const p=tipEnsurePopup(),r=inp.getBoundingClientRect(),w=230;
-  p.style.display='flex';p.style.left=Math.max(6,Math.min(r.left+r.width/2-w/2,window.innerWidth-w-6))+'px';p.style.top=(r.bottom+4)+'px';
+function tipEditSet(comp,val){
+  const name=tipEdit.name,day=tipEdit.day;if(!name)return;
+  const num=parseFloat(String(val).replace(/[^\d.]/g,''));
+  tipSetComp(name,day,comp,isNaN(num)?0:num);
+  tipRefreshCell(name,day);tipRefreshRow(name);tipsSaveSoon();
 }
-function tipCommit(kind){
-  if(kind===false)kind='paid';if(kind===true)kind='upt';
-  const {name,day,val,inp}=tipPop;if(!name)return;
-  const upt=kind!=='paid',wed=kind==='wed';
-  tipSetCell(name,day,val,upt,wed);
-  const c=tipCell(name,day);
-  if(inp){inp.value=tipCellDisp(c);inp.style.color=tipCellColor(c);}
-  tipRefreshRow(name);tipHidePopup();tipsSaveSoon();tipPop.name=null;
-}
-function tipCellBlur(inp){
-  if(tipPop.name===inp.dataset.n&&tipPop.day===inp.dataset.d)tipCommit('paid'); // default Paid, keep the value
-  else tipHidePopup();
-}
+document.addEventListener('mousedown',e=>{const p=document.getElementById('tip-pop');if(p&&p.style.display!=='none'&&!p.contains(e.target)&&!(e.target.closest&&e.target.closest('[data-tipcell]')))tipHidePopup();});
 function tipsUpdateGrand(){let gp=0,gu=0;Object.keys(tipsState.cells).forEach(n=>{const t=tipRowTotals(n);gp+=t.paid;gu+=t.upt;});const p=document.getElementById('tips-grand-paid'),u=document.getElementById('tips-grand-upt');if(p)p.textContent=tipMoney(gp);if(u)u.textContent=tipMoney(gu);}
 
 // Auto-fill this period's cells from the nightly tip-out cloud log. Fills only
@@ -4836,18 +4834,24 @@ async function tipsPull(auto){
   const byDate={};
   log.forEach(e=>{if(!e||!e.date)return;const p=e.date.split('/');if(p.length!==3)return;const lb=parseInt(p[0])+'/'+parseInt(p[1]);if(!inPeriod[lb])return;const cur=byDate[lb];const better=!cur||(!e.draft&&cur.draft)||((!!e.draft===!!cur.draft)&&String(e.savedAt||'')>String(cur.savedAt||''));if(better)byDate[lb]=e;});
   let filled=0;
-  const put=(name,lb,v,upt)=>{if(!v)return;if(tipCell(name,lb))return;tipSetCell(name,lb,v,upt);filled++;};
+  // fill a single component (p=paid, u=unpaid) only if that component is empty — never clobber
+  const putC=(name,lb,comp,v)=>{if(!v)return;const c=tipCell(name,lb);if(c&&c[comp])return;tipSetComp(name,lb,comp,v);filled++;};
   // add to a section only if this person isn't already on the grid in ANY section
   const ensure=(name,sec)=>{if(!name)return;if(TIP_SECTIONS.some(s=>tipSectionPeople(s).indexOf(name)>=0))return;if(!tipsState.adds[sec])tipsState.adds[sec]=[];tipsState.adds[sec].push(name);};
+  const ROLE_SEC={Server:'Server',Bartender:'Bartender',Busser:'Busser',Runner:'Food Runner','Food Runner':'Food Runner'};
   Object.keys(byDate).forEach(lb=>{
     const e=byDate[lb];
-    const directByName={};
-    (e.direct||[]).forEach(x=>{const nm=tipCanon(x.name);if(nm)directByName[nm]=(directByName[nm]||0)+(+x.tips||0);}); // day-party direct tips — the person's OWN tip (Paid)
-    (e.servers||[]).forEach(s=>{const n=tipCanon(s.name);if(n){ensure(n,'Server');const base=(s.remaining!=null?s.remaining:s.tips)||0;put(n,lb,base+(directByName[n]||0),false);delete directByName[n];}}); // server take-home = net remaining + their direct party tip
-    Object.keys(directByName).forEach(nm=>{if(tipEffSection(nm)==='Server'){ensure(nm,'Server');put(nm,lb,directByName[nm],false);delete directByName[nm];}}); // a server who only worked the day party
-    (e.runners||[]).forEach(r=>{const n=tipCanon(r.name);if(n){ensure(n,'Food Runner');put(n,lb,r.tipReceived,true);}});
-    (e.bartenders||[]).forEach(b=>{const n=tipCanon(b.name);if(n){ensure(n,'Bartender');put(n,lb,b.tipReceived,true);}}); // received bar tip-out → UPT (own card tips entered by hand)
-    if(e.pools&&e.pools.busser)put('Busser Pool',lb,e.pools.busser,true); // pool pays out as UPT
+    // day-party DIRECT tips are the person's OWN tip (Paid), for ANY position
+    const direct={};
+    (e.direct||[]).forEach(x=>{const nm=tipCanon(x.name);if(!nm)return;const cur=direct[nm]||{amt:0,role:x.role};cur.amt+=(+x.tips||0);direct[nm]=cur;});
+    // servers: paid = net remaining (after tip-out) + their direct party tip
+    (e.servers||[]).forEach(s=>{const n=tipCanon(s.name);if(n){ensure(n,'Server');const base=(s.remaining!=null?s.remaining:s.tips)||0;const dv=(direct[n]&&direct[n].amt)||0;putC(n,lb,'p',base+dv);delete direct[n];}});
+    // runners + bartenders: received tip-out → Unpaid
+    (e.runners||[]).forEach(r=>{const n=tipCanon(r.name);if(n){ensure(n,'Food Runner');putC(n,lb,'u',r.tipReceived);}});
+    (e.bartenders||[]).forEach(b=>{const n=tipCanon(b.name);if(n){ensure(n,'Bartender');putC(n,lb,'u',b.tipReceived);}});
+    if(e.pools&&e.pools.busser)putC('Busser Pool',lb,'u',e.pools.busser); // busser pool → Unpaid
+    // everyone else with a direct party tip (bartender/busser/runner) → Paid, on their own row
+    Object.keys(direct).forEach(nm=>{const info=direct[nm];if(!info.amt)return;ensure(nm,ROLE_SEC[info.role]||tipBaseSection(nm)||'Weddings');putC(nm,lb,'p',info.amt);});
   });
   tipsState.loaded=true;
   if(filled){if(activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();tipsSaveSoon();}
@@ -4879,8 +4883,8 @@ async function tipsPullWeddings(){
       const n=tipCanon(pe.name);
       if(!n||!pe.amount)return;
       ensureW(n);
-      if(tipCell(n,lb))return; // never clobber a hand edit
-      tipSetCell(n,lb,pe.amount,true,true); // wedding → "W", UPT
+      const c=tipCell(n,lb);if(c&&c.w)return; // don't re-add a wedding tip
+      tipSetComp(n,lb,'w',pe.amount); // wedding → "W", counts as Unpaid
       filled++;
     });
   });
@@ -4891,13 +4895,13 @@ async function tipsPullWeddings(){
 function tipsHTML(){
   if(!tipsState.loaded)return '<div style="padding:48px;text-align:center;color:var(--text-dim)">Loading tips…</div>';
   const days=tipDays(),roster=tipsState.roster||{};
-  const disp=(name,lb)=>tipCellDisp(tipCell(name,lb));
   let gp=0,gu=0;
   const rowFor=(name,isPool)=>{
     const t=tipRowTotals(name);gp+=t.paid;gu+=t.upt;const id=tipId(name);
     const bb='border-bottom:1px solid var(--border)';
-    const tds=days.map(d=>{const lb=tipDayLabel(d);const c=tipCell(name,lb);const col=tipCellColor(c);
-      return `<td style="padding:0;border-right:1px solid var(--border);${bb}"><input class="tip-cell" data-n="${esc(name)}" data-d="${lb}" value="${disp(name,lb)}" oninput="tipCellType(this)" onblur="tipCellBlur(this)" style="width:56px;border:none;background:transparent;color:${col};text-align:right;padding:7px 6px;font-size:13px;font-family:inherit;outline:none"></td>`;}).join('');
+    const en=esc(name).replace(/'/g,"\\'");
+    const tds=days.map(d=>{const lb=tipDayLabel(d);
+      return `<td id="tc-${id}-${lb.replace('/','_')}" data-tipcell onclick="tipCellEdit('${en}','${lb}')" title="Click to edit" style="cursor:pointer;border-right:1px solid var(--border);${bb};text-align:right;padding:5px 7px;min-width:60px;white-space:nowrap;vertical-align:middle">${tipCompsHTML(tipCell(name,lb))}</td>`;}).join('');
     return `<tr style="${isPool?'background:rgba(251,191,36,0.06)':''}">
       <td style="position:sticky;left:0;z-index:1;background:var(--surface);padding:7px 12px;font-weight:${isPool?'800':'600'};white-space:nowrap;border-right:2px solid var(--border);${bb};${isPool?'color:#fbbf24':''}"><span style="display:inline-flex;align-items:center;gap:6px">${esc(name)}${isPool?'':`<select title="Move to another section" onchange="tipMovePerson('${esc(name).replace(/'/g,"\\'")}',this.value)" style="background:transparent;border:none;color:var(--text-muted);font-size:11px;font-family:inherit;cursor:pointer;-webkit-appearance:none;appearance:none;padding:0 2px">${TIP_SECTIONS.map(s=>`<option value="${s}" ${tipEffSection(name)===s?'selected':''} style="color:#000">${TIP_SEC_SHORT[s]}</option>`).join('')}</select>`}</span></td>
       ${tds}
