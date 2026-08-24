@@ -4841,7 +4841,10 @@ async function tipsPull(auto){
   const ensure=(name,sec)=>{if(!name)return;if(TIP_SECTIONS.some(s=>tipSectionPeople(s).indexOf(name)>=0))return;if(!tipsState.adds[sec])tipsState.adds[sec]=[];tipsState.adds[sec].push(name);};
   Object.keys(byDate).forEach(lb=>{
     const e=byDate[lb];
-    (e.servers||[]).forEach(s=>{const n=tipCanon(s.name);if(n){ensure(n,'Server');put(n,lb,(s.remaining!=null?s.remaining:s.tips),false);}}); // server keeps `remaining` (net after tipping out bar/busser/runner) — matches payroll
+    const directByName={};
+    (e.direct||[]).forEach(x=>{const nm=tipCanon(x.name);if(nm)directByName[nm]=(directByName[nm]||0)+(+x.tips||0);}); // day-party direct tips — the person's OWN tip (Paid)
+    (e.servers||[]).forEach(s=>{const n=tipCanon(s.name);if(n){ensure(n,'Server');const base=(s.remaining!=null?s.remaining:s.tips)||0;put(n,lb,base+(directByName[n]||0),false);delete directByName[n];}}); // server take-home = net remaining + their direct party tip
+    Object.keys(directByName).forEach(nm=>{if(tipEffSection(nm)==='Server'){ensure(nm,'Server');put(nm,lb,directByName[nm],false);delete directByName[nm];}}); // a server who only worked the day party
     (e.runners||[]).forEach(r=>{const n=tipCanon(r.name);if(n){ensure(n,'Food Runner');put(n,lb,r.tipReceived,true);}});
     (e.bartenders||[]).forEach(b=>{const n=tipCanon(b.name);if(n){ensure(n,'Bartender');put(n,lb,b.tipReceived,true);}}); // received bar tip-out → UPT (own card tips entered by hand)
     if(e.pools&&e.pools.busser)put('Busser Pool',lb,e.pools.busser,true); // pool pays out as UPT
