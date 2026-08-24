@@ -4678,10 +4678,19 @@ const TIPS_LOG_KEY='tipout-roster-key-vinny-7k9m2x4p';
 const TIPS_ROSTER_URL='https://restaurant-scheduler-hh5e.onrender.com/api/roster/employees';
 const TIP_SECTIONS=['Server','Bartender','Busser','Food Runner','Weddings'];
 const TIP_SEC_LABEL={'Server':'Servers','Bartender':'Bartenders','Busser':'Bussers','Food Runner':'Food Runners','Weddings':'Weddings (event-only)'};
+const TIP_SEC_SHORT={'Server':'Srv','Bartender':'Bar','Busser':'Bus','Food Runner':'Run','Weddings':'Wed'};
+function tipHasTips(name){const t=tipRowTotals(name);return t.paid>0||t.upt>0;}
 // Roster categorized from the Google Sheet tip tabs (Weddings = event-only people
 // from the scheduler/Paychex who aren't restaurant staff). Each person appears once.
-const TIP_ROSTER_DATA={"Server":["Patrick Backes","Connor Batogowski","Katelyn Batogowski","Cody Brickner","Erin Burke","Wendy Campos","Elise Evans","Ava Fangmann","Mike Fornero","Malayna Goldstein","Philip Hurwitz","Emma Jackson","Jared Malek","Kristina Mastrino","Valerie Mitchell","Katia Morfin","Colleen Morgan","Callie Nelson","Trinette Notarangeli","Vincent Notarangeli","Ernest Notarangeli","Angelo Notarangeli","Ashley Penick","Hannah Pierce","Kevork Sevan","Jaden Tareta","Isabel Wilde"],"Bartender":["Jason Benjamin","Haley Cassells","Emma Dawson","Michael Goodwin","Robin Jaramillo","Priscilla Lagace","Nancy Newell","Martin Rife","Gyselle Tavizon","Lisa Weinstein"],"Busser":["Dennis Anderson","Zoe Batogowski","Carter Berning","Cadence Doyle","Samantha Drager","Frank Drager","Addison Feldmann","Liam Finn-Connell","Micah Fiore","Anthony Fornero","Will Harvey","Ryan Hendricks","Jason Hornbaker","Sona Hudakova","Susan Hurwitz","May Jackson","Lauren Jennings","Luke Johnson","Nadja Jovanovic","Samantha Kafka","Quinn Karstens","Kayleigh Knight","Matthew Kralik","Taylor Kunka","Ivie Lindquist","Nora Mabrey","Angel Morales","Isa Polavieja","Adelyn Porter","Kamila Skorupskas","Jackson Trotta","Ryan Walsh","Allison Wolf","Charles Yenter","Michael Zilm"],"Food Runner":["Lexi Allen","Carter Bergholtz","Aidan Burke","Carson Cassell","Griffin Fiore","Drew Mastrino","Drew Murphy","Preston Rose","Gavin Wilde","Sean Young"],"Weddings":["Thomas Antonson","Jared Carlson","Gabriella Chavez","Alicia Corrao","Jen Dosch","Chris Dosch","Sophia Evans","Rebecca Evans","Christy Hatfield","Jillian Hatfield","Gianna Izzo","Stephanie Kulczycki","Lincoln Majersky","Guadalope Martinez","Ethan Nauert","Sarah Nelson","Elizabeth Peterson","Jameson Rosenfeld","Maria S Ruiz","Dimitar Stefanov","Emily Stone","Adam Tietje","Stella Vigil-Murphy","Isaiah Watson","Oakley White","Avery White"]};
-let tipsState={start:null,end:null,cells:{},adds:{},roster:null,loaded:false,loading:false};
+const TIP_ROSTER_DATA={"Server":["Patrick Backes","Connor Batogowski","Katelyn Batogowski","Cody Brickner","Erin Burke","Wendy Campos","Ava Fangmann","Mike Fornero","Malayna Goldstein","Philip Hurwitz","Emma Jackson","Jared Malek","Kristina Mastrino","Valerie Mitchell","Colleen Morgan","Callie Nelson","Trinette Notarangeli","Vincent Notarangeli","Ernest Notarangeli","Angelo Notarangeli","Ashley Penick","Hannah Pierce","Jaden Tareta","Isabel Wilde"],"Bartender":["Jason Benjamin","Haley Cassells","Emma Dawson","Michael Goodwin","Robin Jaramillo","Priscilla Lagace","Nancy Newell","Martin Rife","Gyselle Tavizon"],"Busser":["Dennis Anderson","Zoe Batogowski","Carter Berning","Cadence Doyle","Samantha Drager","Frank Drager","Addison Feldmann","Liam Finn-Connell","Micah Fiore","Will Harvey","Ryan Hendricks","Jason Hornbaker","Sona Hudakova","Susan Hurwitz","May Jackson","Lauren Jennings","Luke Johnson","Nadja Jovanovic","Samantha Kafka","Quinn Karstens","Kayleigh Knight","Matthew Kralik","Taylor Kunka","Ivie Lindquist","Nora Mabrey","Angel Morales","Isa Polavieja","Adelyn Porter","Kamila Skorupskas","Jackson Trotta","Ryan Walsh","Allison Wolf","Charles Yenter","Michael Zilm"],"Food Runner":["Lexi Allen","Carter Bergholtz","Aidan Burke","Carson Cassell","Griffin Fiore","Drew Mastrino","Drew Murphy","Preston Rose","Sean Young"],"Weddings":["Thomas Antonson","Jared Carlson","Gabriella Chavez","Alicia Corrao","Jen Dosch","Chris Dosch","Sophia Evans","Elise Evans","Rebecca Evans","Anthony Fornero","Christy Hatfield","Jillian Hatfield","Gianna Izzo","Stephanie Kulczycki","Lincoln Majersky","Guadalope Martinez","Katia Morfin","Ethan Nauert","Sarah Nelson","Elizabeth Peterson","Jameson Rosenfeld","Maria S Ruiz","Kevork Sevan","Dimitar Stefanov","Emily Stone","Adam Tietje","Stella Vigil-Murphy","Isaiah Watson","Lisa Weinstein","Oakley White","Avery White","Gavin Wilde"]};
+let tipsState={start:null,end:null,cells:{},adds:{},moves:{},expanded:{},roster:null,loaded:false,loading:false};
+function tipToggleSection(sec){if(!tipsState.expanded)tipsState.expanded={};tipsState.expanded[sec]=!tipsState.expanded[sec];document.getElementById('viewport').innerHTML=tipsHTML();}
+// Which section a person really belongs to = a manual move (global, sticks
+// across periods) if set, else where the embedded roster puts them.
+function tipBaseSection(name){for(const s of TIP_SECTIONS){if(((tipsState.roster&&tipsState.roster[s])||[]).indexOf(name)>=0)return s;if(((tipsState.adds&&tipsState.adds[s])||[]).indexOf(name)>=0)return s;}return null;}
+function tipEffSection(name){return (tipsState.moves&&tipsState.moves[name])||tipBaseSection(name);}
+function tipsSaveMoves(){try{kvPush('ct_tips_moves',{moves:tipsState.moves},Date.now());}catch(e){}}
+function tipMovePerson(name,sec){if(!tipsState.moves)tipsState.moves={};if(tipBaseSection(name)===sec)delete tipsState.moves[name];else tipsState.moves[name]=sec;tipsSaveMoves();document.getElementById('viewport').innerHTML=tipsHTML();}
 
 // Default range = the current 14-day pay period (anchor Mar 23 2026, same as the tip-out app).
 function tipCurrentPeriod(){
@@ -4714,7 +4723,12 @@ function tipSetCell(name,label,v,upt){
 function tipRowTotals(name){let paid=0,upt=0;const p=tipsState.cells[name]||{};Object.keys(p).forEach(k=>{const c=p[k];if(c.upt)upt+=c.v;else paid+=c.v});return {paid:Math.round(paid*100)/100,upt:Math.round(upt*100)/100};}
 let tipsSaveTimer=null;
 function tipsSaveSoon(){clearTimeout(tipsSaveTimer);tipsSaveTimer=setTimeout(()=>{try{kvPush(tipPeriodKey(),{cells:tipsState.cells,adds:tipsState.adds},Date.now());tipsSetStatus('Saved ✓','var(--text-dim)');}catch(e){tipsSetStatus('⚠ not saved','#f87171');}},600);tipsSetStatus('Saving…','var(--text-dim)');}
-function tipSectionPeople(sec){const base=(tipsState.roster&&tipsState.roster[sec])||[];const extra=(tipsState.adds&&tipsState.adds[sec])||[];const seen={},out=[];base.concat(extra).forEach(n=>{if(!seen[n]){seen[n]=1;out.push(n);}});return out.sort((a,b)=>a.localeCompare(b));}
+function tipSectionPeople(sec){
+  const all=[],seen={},add=n=>{if(n&&!seen[n]){seen[n]=1;all.push(n);}};
+  Object.keys(tipsState.roster||{}).forEach(s=>((tipsState.roster[s])||[]).forEach(add));
+  Object.keys(tipsState.adds||{}).forEach(s=>((tipsState.adds[s])||[]).forEach(add));
+  return all.filter(n=>tipEffSection(n)===sec).sort((a,b)=>{const la=a.split(' ').pop(),lb=b.split(' ').pop();return la.localeCompare(lb)||a.localeCompare(b);});
+}
 function tipAddPerson(sec){const inp=document.getElementById('tip-add-'+sec.replace(/ /g,'_'));if(!inp)return;const name=(inp.value||'').trim();if(!name)return;if(!tipsState.adds[sec])tipsState.adds[sec]=[];const all=tipSectionPeople(sec);if(all.indexOf(name)<0){tipsState.adds[sec].push(name);tipsSaveSoon();}document.getElementById('viewport').innerHTML=tipsHTML();}
 function tipsSetStatus(s,c){const el=document.getElementById('tips-status');if(el){el.textContent=s;el.style.color=c||'var(--text-dim)';}}
 
@@ -4725,6 +4739,7 @@ async function tipsInit(){
   const remote=await kvGet(tipPeriodKey());
   tipsState.cells=(remote&&remote.v&&remote.v.cells)?remote.v.cells:{};
   tipsState.adds=(remote&&remote.v&&remote.v.adds)?remote.v.adds:{};
+  const rm=await kvGet('ct_tips_moves');tipsState.moves=(rm&&rm.v&&rm.v.moves)?rm.v.moves:{};
   tipsState.loaded=true;tipsState.loading=false;
   if(activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();
   tipsPull(true);   // always pull straight from the tip-out calculator on open
@@ -4803,19 +4818,23 @@ function tipsHTML(){
     const tds=days.map(d=>{const lb=tipDayLabel(d);const c=tipCell(name,lb);const col=c&&c.upt?'#fbbf24':'var(--text)';
       return `<td style="padding:0;border-right:1px solid var(--border);${bb}"><input class="tip-cell" data-n="${esc(name)}" data-d="${lb}" value="${disp(name,lb)}" oninput="tipCellType(this)" onblur="tipCellBlur(this)" style="width:56px;border:none;background:transparent;color:${col};text-align:right;padding:7px 6px;font-size:13px;font-family:inherit;outline:none"></td>`;}).join('');
     return `<tr style="${isPool?'background:rgba(251,191,36,0.06)':''}">
-      <td style="position:sticky;left:0;z-index:1;background:var(--surface);padding:7px 12px;font-weight:${isPool?'800':'600'};white-space:nowrap;border-right:2px solid var(--border);${bb};${isPool?'color:#fbbf24':''}">${esc(name)}</td>
+      <td style="position:sticky;left:0;z-index:1;background:var(--surface);padding:7px 12px;font-weight:${isPool?'800':'600'};white-space:nowrap;border-right:2px solid var(--border);${bb};${isPool?'color:#fbbf24':''}"><span style="display:inline-flex;align-items:center;gap:6px">${esc(name)}${isPool?'':`<select title="Move to another section" onchange="tipMovePerson('${esc(name).replace(/'/g,"\\'")}',this.value)" style="background:transparent;border:none;color:var(--text-muted);font-size:11px;font-family:inherit;cursor:pointer;-webkit-appearance:none;appearance:none;padding:0 2px">${TIP_SECTIONS.map(s=>`<option value="${s}" ${tipEffSection(name)===s?'selected':''} style="color:#000">${TIP_SEC_SHORT[s]}</option>`).join('')}</select>`}</span></td>
       ${tds}
       <td id="tp-${id}" style="padding:7px 12px;text-align:right;font-weight:700;color:#34d399;white-space:nowrap;border-left:2px solid var(--border);${bb}">${t.paid?tipMoney(t.paid):''}</td>
       <td id="tu-${id}" style="padding:7px 12px;text-align:right;font-weight:700;color:#fbbf24;white-space:nowrap;border-left:2px solid var(--border);${bb}">${t.upt?tipMoney(t.upt):''}</td>
     </tr>`;
   };
   let body='';
+  const exp=tipsState.expanded||{};
   TIP_SECTIONS.forEach(sec=>{
     const people=tipSectionPeople(sec);
+    const tipped=people.filter(tipHasTips),untipped=people.filter(n=>!tipHasTips(n));
     body+=`<tr><td colspan="${days.length+3}" style="position:sticky;left:0;background:var(--surface2);color:var(--accent);font-weight:800;padding:8px 12px;letter-spacing:.5px;border-top:1px solid var(--border)">${TIP_SEC_LABEL[sec].toUpperCase()}</td></tr>`;
-    people.forEach(n=>{body+=rowFor(n,false);});
+    tipped.forEach(n=>{body+=rowFor(n,false);});
     if(sec==='Busser')body+=rowFor('Busser Pool',true);
-    body+=`<tr><td colspan="${days.length+3}" style="position:sticky;left:0;background:var(--surface);padding:4px 12px"><input id="tip-add-${sec.replace(/ /g,'_')}" placeholder="+ add ${TIP_SEC_LABEL[sec].toLowerCase().replace(/s$/,'')}…" onkeydown="if(event.key==='Enter')tipAddPerson('${sec}')" style="width:200px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 9px;font-size:12px;font-family:inherit"></td></tr>`;
+    if(exp[sec])untipped.forEach(n=>{body+=rowFor(n,false);});
+    if(untipped.length)body+=`<tr><td colspan="${days.length+3}" style="position:sticky;left:0;background:var(--surface);padding:4px 12px"><button onclick="tipToggleSection('${sec}')" style="background:transparent;border:none;color:var(--text-dim);font-size:12px;cursor:pointer;font-family:inherit">${exp[sec]?'▾ hide':'▸ show'} ${untipped.length} with no tips yet</button></td></tr>`;
+    body+=`<tr><td colspan="${days.length+3}" style="position:sticky;left:0;background:var(--surface);padding:4px 12px"><input id="tip-add-${sec.replace(/ /g,'_')}" placeholder="+ add ${TIP_SEC_LABEL[sec].toLowerCase().replace(/s$/,'')}…" onkeydown="if(event.key==='Enter')tipAddPerson('${sec}')" style="width:180px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 9px;font-size:12px;font-family:inherit"></td></tr>`;
   });
   const dayHead=days.map(d=>{const wd=d.getDay();const closed=(wd===1);return `<th style="padding:6px 4px;font-size:11px;color:${closed?'var(--text-muted)':'var(--text-dim)'};font-weight:600;border-right:1px solid var(--border);white-space:nowrap">${['Su','M','Tu','W','Th','F','Sa'][wd]}<br>${d.getMonth()+1}/${d.getDate()}</th>`;}).join('');
   const di='background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:5px 8px;font-family:inherit;font-size:13px;color-scheme:dark;cursor:pointer';
