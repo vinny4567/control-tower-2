@@ -4874,20 +4874,20 @@ async function tipsPullWeddings(){
   const inPeriod={};tipDays().forEach(d=>inPeriod[tipDayLabel(d)]=true);
   let filled=0;
   const ensureW=(name)=>{if(!name)return;const here=TIP_SECTIONS.some(sec=>tipSectionPeople(sec).indexOf(name)>=0);if(!here){if(!tipsState.adds['Weddings'])tipsState.adds['Weddings']=[];tipsState.adds['Weddings'].push(name);}};
+  // SUM each person's event tips per day first — the scheduler can list one person
+  // more than once (e.g. a name typed two ways), and every share is theirs.
+  const wed={};
   events.forEach(ev=>{
     if(!ev||!ev.date)return;
     const p=ev.date.split('-');if(p.length!==3)return;
     const lb=parseInt(p[1])+'/'+parseInt(p[2]); // YYYY-MM-DD -> M/D
     if(!inPeriod[lb])return;
     (ev.people||[]).forEach(pe=>{
-      const n=tipCanon(pe.name);
-      if(!n||!pe.amount)return;
-      ensureW(n);
-      const c=tipCell(n,lb);if(c&&c.w)return; // don't re-add a wedding tip
-      tipSetComp(n,lb,'w',pe.amount); // wedding → "W", counts as Unpaid
-      filled++;
+      const n=tipCanon(pe.name);if(!n||!pe.amount)return;
+      wed[n]=wed[n]||{};wed[n][lb]=Math.round(((wed[n][lb]||0)+pe.amount)*100)/100;
     });
   });
+  Object.keys(wed).forEach(n=>{Object.keys(wed[n]).forEach(lb=>{ensureW(n);const c=tipCell(n,lb);if(c&&c.w)return;tipSetComp(n,lb,'w',wed[n][lb]);filled++;});});
   if(filled){if(activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();tipsSaveSoon();}
   tipsSetStatus(filled?('Pulled '+filled+' wedding tip'+(filled>1?'s':'')+' ✓'):'No wedding tips in this range','var(--text-dim)');
 }
