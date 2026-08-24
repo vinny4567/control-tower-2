@@ -4676,8 +4676,11 @@ function renderTabs(){const list=document.getElementById('tab-list');list.innerH
 const TIPS_LOG_URL='https://restaurant-scheduler-hh5e.onrender.com/api/tipout-log';
 const TIPS_LOG_KEY='tipout-roster-key-vinny-7k9m2x4p';
 const TIPS_ROSTER_URL='https://restaurant-scheduler-hh5e.onrender.com/api/roster/employees';
-const TIP_SECTIONS=['Server','Bartender','Busser','Food Runner'];
-const TIP_SEC_LABEL={'Server':'Servers','Bartender':'Bartenders','Busser':'Bussers','Food Runner':'Food Runners'};
+const TIP_SECTIONS=['Server','Bartender','Busser','Food Runner','Weddings'];
+const TIP_SEC_LABEL={'Server':'Servers','Bartender':'Bartenders','Busser':'Bussers','Food Runner':'Food Runners','Weddings':'Weddings (event-only)'};
+// Roster categorized from the Google Sheet tip tabs (Weddings = event-only people
+// from the scheduler/Paychex who aren't restaurant staff). Each person appears once.
+const TIP_ROSTER_DATA={"Server":["Patrick Backes","Connor Batogowski","Katelyn Batogowski","Cody Brickner","Erin Burke","Wendy Campos","Jen Dosch","Sophia Evans","Elise Evans","Ava Fangmann","Mike Fornero","Malayna Goldstein","Philip Hurwitz","Gianna Izzo","Emma Jackson","Stephanie Kulczycki","Jared Malek","Kristina Mastrino","Valerie Mitchell","Katia Morfin","Colleen Morgan","Callie Nelson","Trinette Notarangeli","Vincent Notarangeli","Ernest Notarangeli","Angelo Notarangeli","Ashley Penick","Elizabeth Peterson","Hannah Pierce","Kevork Sevan","Dimitar Stefanov","Jaden Tareta","Isabel Wilde"],"Bartender":["Jason Benjamin","Haley Cassells","Emma Dawson","Michael Goodwin","Robin Jaramillo","Priscilla Lagace","Nancy Newell","Martin Rife","Gyselle Tavizon","Lisa Weinstein"],"Busser":["Dennis Anderson","Zoe Batogowski","Carter Berning","Cadence Doyle","Samantha Drager","Frank Drager","Addison Feldmann","Liam Finn-Connell","Micah Fiore","Anthony Fornero","Will Harvey","Ryan Hendricks","Jason Hornbaker","Sona Hudakova","Susan Hurwitz","May Jackson","Lauren Jennings","Luke Johnson","Nadja Jovanovic","Samantha Kafka","Quinn Karstens","Kayleigh Knight","Matthew Kralik","Taylor Kunka","Ivie Lindquist","Nora Mabrey","Lincoln Majersky","Angel Morales","Ethan Nauert","Isa Polavieja","Adelyn Porter","Kamila Skorupskas","Jackson Trotta","Ryan Walsh","Oakley White","Avery White","Allison Wolf","Charles Yenter","Michael Zilm"],"Food Runner":["Lexi Allen","Carter Bergholtz","Aidan Burke","Carson Cassell","Griffin Fiore","Drew Mastrino","Drew Murphy","Preston Rose","Gavin Wilde","Sean Young"],"Weddings":["Thomas Antonson","Jared Carlson","Gabriella Chavez","Alicia Corrao","Chris Dosch","Rebecca Evans","Christy Hatfield","Jillian Hatfield","Guadalope Martinez","Sarah Nelson","Jameson Rosenfeld","Maria S Ruiz","Emily Stone","Adam Tietje","Stella Vigil-Murphy","Isaiah Watson"]};
 let tipsState={off:0,cells:{},adds:{},roster:null,loaded:false,loading:false};
 
 function tipPeriod(off){
@@ -4695,11 +4698,8 @@ function tipId(name){return name.replace(/[^a-z0-9]/gi,'_');}
 
 async function tipsFetchRoster(){
   if(tipsState.roster)return tipsState.roster;
-  let r=null;
-  try{const res=await fetch(TIPS_ROSTER_URL+'?key='+encodeURIComponent(TIPS_LOG_KEY));if(res.ok)r=await res.json();}catch(e){}
-  const g={};TIP_SECTIONS.forEach(s=>g[s]=[]);
-  (r||[]).forEach(e=>{const pos=(e.positions||[]).map(p=>p.name);const sec=TIP_SECTIONS.find(s=>pos.includes(s));if(sec&&g[sec].indexOf(e.name)<0)g[sec].push(e.name);});
-  TIP_SECTIONS.forEach(s=>g[s].sort((a,b)=>a.localeCompare(b)));
+  // Categorization comes from the Google Sheet (embedded). Weddings section last.
+  const g={};TIP_SECTIONS.forEach(s=>g[s]=(TIP_ROSTER_DATA[s]||[]).slice());
   tipsState.roster=g;return g;
 }
 function tipCell(name,label){const p=tipsState.cells[name];return p&&p[label]?p[label]:null;}
@@ -4772,7 +4772,7 @@ async function tipsPull(auto){
     const e=byDate[lb];
     (e.servers||[]).forEach(s=>{if(s.name){ensure(s.name,'Server');put(s.name,lb,s.tips,false);}});
     (e.runners||[]).forEach(r=>{if(r.name){ensure(r.name,'Food Runner');put(r.name,lb,r.tipReceived,true);}});
-    if(e.pools&&e.pools.busser)put('Busser Pool',lb,e.pools.busser,false);
+    if(e.pools&&e.pools.busser)put('Busser Pool',lb,e.pools.busser,true); // pool pays out as UPT
   });
   tipsState.loaded=true;
   if(filled){if(activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();tipsSaveSoon();}
@@ -4786,13 +4786,14 @@ function tipsHTML(){
   let gp=0,gu=0;
   const rowFor=(name,isPool)=>{
     const t=tipRowTotals(name);gp+=t.paid;gu+=t.upt;const id=tipId(name);
+    const bb='border-bottom:1px solid var(--border)';
     const tds=days.map(d=>{const lb=tipDayLabel(d);const c=tipCell(name,lb);const col=c&&c.upt?'#fbbf24':'var(--text)';
-      return `<td style="padding:0;border-right:1px solid var(--border)"><input class="tip-cell" data-n="${esc(name)}" data-d="${lb}" value="${disp(name,lb)}" onchange="tipEdit(this)" style="width:56px;border:none;background:transparent;color:${col};text-align:right;padding:7px 6px;font-size:13px;font-family:inherit;outline:none"></td>`;}).join('');
+      return `<td style="padding:0;border-right:1px solid var(--border);${bb}"><input class="tip-cell" data-n="${esc(name)}" data-d="${lb}" value="${disp(name,lb)}" onchange="tipEdit(this)" style="width:56px;border:none;background:transparent;color:${col};text-align:right;padding:7px 6px;font-size:13px;font-family:inherit;outline:none"></td>`;}).join('');
     return `<tr style="${isPool?'background:rgba(251,191,36,0.06)':''}">
-      <td style="position:sticky;left:0;z-index:1;background:var(--surface);padding:7px 12px;font-weight:${isPool?'800':'600'};white-space:nowrap;border-right:2px solid var(--border);${isPool?'color:#fbbf24':''}">${esc(name)}</td>
+      <td style="position:sticky;left:0;z-index:1;background:var(--surface);padding:7px 12px;font-weight:${isPool?'800':'600'};white-space:nowrap;border-right:2px solid var(--border);${bb};${isPool?'color:#fbbf24':''}">${esc(name)}</td>
       ${tds}
-      <td id="tp-${id}" style="padding:7px 12px;text-align:right;font-weight:700;color:#34d399;white-space:nowrap;border-left:2px solid var(--border)">${t.paid?tipMoney(t.paid):''}</td>
-      <td id="tu-${id}" style="padding:7px 12px;text-align:right;font-weight:700;color:#fbbf24;white-space:nowrap">${t.upt?tipMoney(t.upt):''}</td>
+      <td id="tp-${id}" style="padding:7px 12px;text-align:right;font-weight:700;color:#34d399;white-space:nowrap;border-left:2px solid var(--border);${bb}">${t.paid?tipMoney(t.paid):''}</td>
+      <td id="tu-${id}" style="padding:7px 12px;text-align:right;font-weight:700;color:#fbbf24;white-space:nowrap;${bb}">${t.upt?tipMoney(t.upt):''}</td>
     </tr>`;
   };
   let body='';
