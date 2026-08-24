@@ -4683,11 +4683,42 @@ const TIP_SEC_SHORT={'Server':'Srv','Bartender':'Bar','Busser':'Bus','Food Runne
 function tipHasTips(name){const t=tipRowTotals(name);return t.paid>0||t.upt>0;}
 // Roster categorized from the Google Sheet tip tabs (Weddings = event-only people
 // from the scheduler/Paychex who aren't restaurant staff). Each person appears once.
-const TIP_ROSTER_DATA={"Server":["Patrick Backes","Connor Batogowski","Katelyn Batogowski","Cody Brickner","Erin Burke","Ava Fangmann","Mike Fornero","Philip Hurwitz","Emma Jackson","Jared Malek","Kristina Mastrino","Valerie Mitchell","Colleen Morgan","Callie Nelson","Trinette Notarangeli","Vincent Notarangeli","Ernest Notarangeli","Angelo Notarangeli","Ashley Penick","Hannah Pierce","Jaden Tareta","Isabel Wilde"],"Bartender":["Jason Benjamin","Haley Cassells","Emma Dawson","Michael Goodwin","Robin Jaramillo","Priscilla Lagace","Nancy Newell","Martin Rife","Gyselle Tavizon"],"Busser":["Dennis Anderson","Zoe Batogowski","Carter Berning","Cadence Doyle","Samantha Drager","Frank Drager","Addison Feldmann","Liam Finn-Connell","Micah Fiore","Will Harvey","Ryan Hendricks","Jason Hornbaker","Sona Hudakova","Susan Hurwitz","May Jackson","Lauren Jennings","Luke Johnson","Nadja Jovanovic","Samantha Kafka","Quinn Karstens","Kayleigh Knight","Matthew Kralik","Taylor Kunka","Ivie Lindquist","Nora Mabrey","Angel Morales","Isa Polavieja","Adelyn Porter","Kamila Skorupskas","Jackson Trotta","Ryan Walsh","Allison Wolf","Charles Yenter","Michael Zilm"],"Food Runner":["Lexi Allen","Carter Bergholtz","Aidan Burke","Carson Cassell","Griffin Fiore","Drew Mastrino","Drew Murphy","Preston Rose","Sean Young"],"Weddings":["Thomas Antonson","Wendy Campos","Jared Carlson","Gabriella Chavez","Alicia Corrao","Jen Dosch","Chris Dosch","Sophia Evans","Elise Evans","Rebecca Evans","Anthony Fornero","Malayna Goldstein","Christy Hatfield","Jillian Hatfield","Gianna Izzo","Stephanie Kulczycki","Lincoln Majersky","Guadalope Martinez","Katia Morfin","Ethan Nauert","Sarah Nelson","Elizabeth Peterson","Jameson Rosenfeld","Maria S Ruiz","Kevork Sevan","Dimitar Stefanov","Emily Stone","Adam Tietje","Stella Vigil-Murphy","Isaiah Watson","Lisa Weinstein","Oakley White","Avery White","Gavin Wilde"]};
+const TIP_ROSTER_DATA={"Server":["Patrick Backes","Connor Batogowski","Katelyn Batogowski","Cody Brickner","Erin Burke","Ava Fangmann","Mike Fornero","Philip Hurwitz","Emma Jackson","Jared Malek","Kristina Mastrino","Valerie Mitchell","Colleen Morgan","Callie Nelson","Trinette Notarangeli","Vincent Notarangeli","Ernest Notarangeli","Angelo Notarangeli","Ashley Penick","Hannah Pierce","Jaden Tareta","Isabel Wilde"],"Bartender":["Jason Benjamin","Haley Cassells","Emma Dawson","Michael Goodwin","Robin Jaramillo","Priscilla La Gace","Nancy Newell","Martin Rife","Gyselle Tavizon"],"Busser":["Dennis Anderson","Zoe Batogowski","Carter Berning","Cadence Doyle","Samantha Drager","Frank Drager","Addison Feldmann","Liam Finn-Connell","Micah Fiore","Will Harvey","Ryan Hendricks","Jason Hornbaker","Sona Hudakova","Susan Hurwitz","May Jackson","Lauren Jennings","Luke Johnson","Nadja Jovanovic","Samantha Kafka","Quinn Karstens","Kayleigh Knight","Matthew Kralik","Taylor Kunka","Ivie Lindquist","Nora Mabrey","Angel Morales","Isa Polavieja","Adelyn Porter","Kamila Skorupskas","Jackson Trotta","Ryan Walsh","Allison Wolf","Charles Yenter","Michael Zilm"],"Food Runner":["Lexi Allen","Carter Bergholtz","Aidan Burke","Carson Cassell","Griffin Fiore","Drew Mastrino","Drew Murphy","Preston Rose","Sean Young"],"Weddings":["Thomas Antonson","Wendy Campos","Jared Carlson","Gabriella Chavez","Alicia Corrao","Jen Dosch","Chris Dosch","Sophia Evans","Elise Evans","Rebecca Evans","Anthony Fornero","Malayna Goldstein","Christy Hatfield","Jillian Hatfield","Gianna Izzo","Stephanie Kulczycki","Lincoln Majersky","Guadalope Martinez","Katia Morfin","Ethan Nauert","Sarah Nelson","Elizabeth Peterson","Jameson Rosenfeld","Maria S Ruiz","Kevork Sevan","Dimitar Stefanov","Emily Stone","Adam Tietje","Stella Vigil-Murphy","Isaiah Watson","Lisa Weinstein","Oakley White","Avery White","Gavin Wilde"]};
+// Collapse name spelling/casing variants from the feeds to one canonical roster
+// name, so a pull never creates a duplicate person ("Priscilla Lagace" vs
+// "Priscilla La Gace", "Angelo notarangeli" vs "Angelo Notarangeli").
+const TIP_NAME_ALIASES={'priscilla lagace':'Priscilla La Gace','priscill lagace':'Priscilla La Gace','priscilla la gace':'Priscilla La Gace'};
+function tipNormKey(n){return String(n||'').trim().toLowerCase().replace(/\s+/g,' ');}
+const TIP_ROSTER_CANON=(function(){const m={};Object.keys(TIP_ROSTER_DATA).forEach(sec=>TIP_ROSTER_DATA[sec].forEach(n=>{m[tipNormKey(n)]=n;}));return m;})();
+function tipCanon(name){const k=tipNormKey(name);if(!k)return String(name||'').trim();return TIP_NAME_ALIASES[k]||TIP_ROSTER_CANON[k]||String(name).trim();}
 let tipsState={start:null,end:null,cells:{},adds:{},moves:{},expanded:{},roster:null,loaded:false,loading:false};
 // Which section a person really belongs to = a manual move (global, sticks
 // across periods) if set, else where the embedded roster puts them.
-function tipBaseSection(name){for(const s of TIP_SECTIONS){if(((tipsState.roster&&tipsState.roster[s])||[]).indexOf(name)>=0)return s;if(((tipsState.adds&&tipsState.adds[s])||[]).indexOf(name)>=0)return s;}return null;}
+function tipRosterHas(name){return TIP_SECTIONS.some(s=>((tipsState.roster&&tipsState.roster[s])||[]).indexOf(name)>=0);}
+// Roster placement ALWAYS wins over a stray `adds` entry, so someone in the
+// canonical roster (e.g. Emma Dawson = Bartender) can never be dragged into
+// another section by a stale add left over from an old pull.
+function tipBaseSection(name){
+  for(const s of TIP_SECTIONS){if(((tipsState.roster&&tipsState.roster[s])||[]).indexOf(name)>=0)return s;}
+  for(const s of TIP_SECTIONS){if(((tipsState.adds&&tipsState.adds[s])||[]).indexOf(name)>=0)return s;}
+  return null;
+}
+// Sanitize saved adds: canonicalize spellings, drop anyone already in the roster,
+// and de-duplicate. Heals period data corrupted by pre-canon pulls.
+function tipCleanAdds(){
+  const adds=tipsState.adds||{};let changed=false;
+  Object.keys(adds).forEach(sec=>{
+    const seen={},out=[],orig=adds[sec]||[];
+    orig.forEach(raw=>{
+      const n=tipCanon(raw);
+      if(!n||tipRosterHas(n)||seen[n]){changed=true;return;}
+      seen[n]=1;if(n!==raw)changed=true;out.push(n);
+    });
+    if(out.length!==orig.length)changed=true;
+    adds[sec]=out;
+  });
+  return changed;
+}
 function tipEffSection(name){return (tipsState.moves&&tipsState.moves[name])||tipBaseSection(name);}
 function tipsSaveMoves(){try{kvPush('ct_tips_moves',{moves:tipsState.moves},Date.now());}catch(e){}}
 function tipMovePerson(name,sec){if(!tipsState.moves)tipsState.moves={};if(tipBaseSection(name)===sec)delete tipsState.moves[name];else tipsState.moves[name]=sec;tipsSaveMoves();document.getElementById('viewport').innerHTML=tipsHTML();}
@@ -4742,6 +4773,7 @@ async function tipsInit(){
   tipsState.cells=(remote&&remote.v&&remote.v.cells)?remote.v.cells:{};
   tipsState.adds=(remote&&remote.v&&remote.v.adds)?remote.v.adds:{};
   const rm=await kvGet('ct_tips_moves');tipsState.moves=(rm&&rm.v&&rm.v.moves)?rm.v.moves:{};
+  if(tipCleanAdds())tipsSaveSoon();   // heal stale/duplicate/variant adds left by older pulls
   tipsState.loaded=true;tipsState.loading=false;
   if(activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();
   tipsPull(true);   // always pull straight from the tip-out calculator on open
@@ -4802,12 +4834,13 @@ async function tipsPull(auto){
   log.forEach(e=>{if(!e||!e.date)return;const p=e.date.split('/');if(p.length!==3)return;const lb=parseInt(p[0])+'/'+parseInt(p[1]);if(!inPeriod[lb])return;const cur=byDate[lb];const better=!cur||(!e.draft&&cur.draft)||((!!e.draft===!!cur.draft)&&String(e.savedAt||'')>String(cur.savedAt||''));if(better)byDate[lb]=e;});
   let filled=0;
   const put=(name,lb,v,upt)=>{if(!v)return;if(tipCell(name,lb))return;tipSetCell(name,lb,v,upt);filled++;};
-  const ensure=(name,sec)=>{if(!name)return;if(tipSectionPeople(sec).indexOf(name)<0){if(!tipsState.adds[sec])tipsState.adds[sec]=[];tipsState.adds[sec].push(name);}};
+  // add to a section only if this person isn't already on the grid in ANY section
+  const ensure=(name,sec)=>{if(!name)return;if(TIP_SECTIONS.some(s=>tipSectionPeople(s).indexOf(name)>=0))return;if(!tipsState.adds[sec])tipsState.adds[sec]=[];tipsState.adds[sec].push(name);};
   Object.keys(byDate).forEach(lb=>{
     const e=byDate[lb];
-    (e.servers||[]).forEach(s=>{if(s.name){ensure(s.name,'Server');put(s.name,lb,s.tips,false);}});
-    (e.runners||[]).forEach(r=>{if(r.name){ensure(r.name,'Food Runner');put(r.name,lb,r.tipReceived,true);}});
-    (e.bartenders||[]).forEach(b=>{if(b.name){ensure(b.name,'Bartender');put(b.name,lb,b.tipReceived,true);}}); // received bar tip-out → UPT (own card tips entered by hand)
+    (e.servers||[]).forEach(s=>{const n=tipCanon(s.name);if(n){ensure(n,'Server');put(n,lb,s.tips,false);}});
+    (e.runners||[]).forEach(r=>{const n=tipCanon(r.name);if(n){ensure(n,'Food Runner');put(n,lb,r.tipReceived,true);}});
+    (e.bartenders||[]).forEach(b=>{const n=tipCanon(b.name);if(n){ensure(n,'Bartender');put(n,lb,b.tipReceived,true);}}); // received bar tip-out → UPT (own card tips entered by hand)
     if(e.pools&&e.pools.busser)put('Busser Pool',lb,e.pools.busser,true); // pool pays out as UPT
   });
   tipsState.loaded=true;
@@ -4835,10 +4868,11 @@ async function tipsPullWeddings(){
     const lb=parseInt(p[1])+'/'+parseInt(p[2]); // YYYY-MM-DD -> M/D
     if(!inPeriod[lb])return;
     (ev.people||[]).forEach(pe=>{
-      if(!pe.name||!pe.amount)return;
-      ensureW(pe.name);
-      if(tipCell(pe.name,lb))return; // never clobber a hand edit
-      tipSetCell(pe.name,lb,pe.amount,true,true); // wedding → "W", UPT
+      const n=tipCanon(pe.name);
+      if(!n||!pe.amount)return;
+      ensureW(n);
+      if(tipCell(n,lb))return; // never clobber a hand edit
+      tipSetCell(n,lb,pe.amount,true,true); // wedding → "W", UPT
       filled++;
     });
   });
