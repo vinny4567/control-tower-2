@@ -4680,19 +4680,22 @@ const TIP_SECTIONS=['Server','Bartender','Busser','Food Runner','Weddings'];
 const TIP_SEC_LABEL={'Server':'Servers','Bartender':'Bartenders','Busser':'Bussers','Food Runner':'Food Runners','Weddings':'Weddings (event-only)'};
 // Roster categorized from the Google Sheet tip tabs (Weddings = event-only people
 // from the scheduler/Paychex who aren't restaurant staff). Each person appears once.
-const TIP_ROSTER_DATA={"Server":["Patrick Backes","Connor Batogowski","Katelyn Batogowski","Cody Brickner","Erin Burke","Wendy Campos","Jen Dosch","Sophia Evans","Elise Evans","Ava Fangmann","Mike Fornero","Malayna Goldstein","Philip Hurwitz","Gianna Izzo","Emma Jackson","Stephanie Kulczycki","Jared Malek","Kristina Mastrino","Valerie Mitchell","Katia Morfin","Colleen Morgan","Callie Nelson","Trinette Notarangeli","Vincent Notarangeli","Ernest Notarangeli","Angelo Notarangeli","Ashley Penick","Elizabeth Peterson","Hannah Pierce","Kevork Sevan","Dimitar Stefanov","Jaden Tareta","Isabel Wilde"],"Bartender":["Jason Benjamin","Haley Cassells","Emma Dawson","Michael Goodwin","Robin Jaramillo","Priscilla Lagace","Nancy Newell","Martin Rife","Gyselle Tavizon","Lisa Weinstein"],"Busser":["Dennis Anderson","Zoe Batogowski","Carter Berning","Cadence Doyle","Samantha Drager","Frank Drager","Addison Feldmann","Liam Finn-Connell","Micah Fiore","Anthony Fornero","Will Harvey","Ryan Hendricks","Jason Hornbaker","Sona Hudakova","Susan Hurwitz","May Jackson","Lauren Jennings","Luke Johnson","Nadja Jovanovic","Samantha Kafka","Quinn Karstens","Kayleigh Knight","Matthew Kralik","Taylor Kunka","Ivie Lindquist","Nora Mabrey","Lincoln Majersky","Angel Morales","Ethan Nauert","Isa Polavieja","Adelyn Porter","Kamila Skorupskas","Jackson Trotta","Ryan Walsh","Oakley White","Avery White","Allison Wolf","Charles Yenter","Michael Zilm"],"Food Runner":["Lexi Allen","Carter Bergholtz","Aidan Burke","Carson Cassell","Griffin Fiore","Drew Mastrino","Drew Murphy","Preston Rose","Gavin Wilde","Sean Young"],"Weddings":["Thomas Antonson","Jared Carlson","Gabriella Chavez","Alicia Corrao","Chris Dosch","Rebecca Evans","Christy Hatfield","Jillian Hatfield","Guadalope Martinez","Sarah Nelson","Jameson Rosenfeld","Maria S Ruiz","Emily Stone","Adam Tietje","Stella Vigil-Murphy","Isaiah Watson"]};
-let tipsState={off:0,cells:{},adds:{},roster:null,loaded:false,loading:false};
+const TIP_ROSTER_DATA={"Server":["Patrick Backes","Connor Batogowski","Katelyn Batogowski","Cody Brickner","Erin Burke","Wendy Campos","Elise Evans","Ava Fangmann","Mike Fornero","Malayna Goldstein","Philip Hurwitz","Emma Jackson","Jared Malek","Kristina Mastrino","Valerie Mitchell","Katia Morfin","Colleen Morgan","Callie Nelson","Trinette Notarangeli","Vincent Notarangeli","Ernest Notarangeli","Angelo Notarangeli","Ashley Penick","Hannah Pierce","Kevork Sevan","Jaden Tareta","Isabel Wilde"],"Bartender":["Jason Benjamin","Haley Cassells","Emma Dawson","Michael Goodwin","Robin Jaramillo","Priscilla Lagace","Nancy Newell","Martin Rife","Gyselle Tavizon","Lisa Weinstein"],"Busser":["Dennis Anderson","Zoe Batogowski","Carter Berning","Cadence Doyle","Samantha Drager","Frank Drager","Addison Feldmann","Liam Finn-Connell","Micah Fiore","Anthony Fornero","Will Harvey","Ryan Hendricks","Jason Hornbaker","Sona Hudakova","Susan Hurwitz","May Jackson","Lauren Jennings","Luke Johnson","Nadja Jovanovic","Samantha Kafka","Quinn Karstens","Kayleigh Knight","Matthew Kralik","Taylor Kunka","Ivie Lindquist","Nora Mabrey","Angel Morales","Isa Polavieja","Adelyn Porter","Kamila Skorupskas","Jackson Trotta","Ryan Walsh","Allison Wolf","Charles Yenter","Michael Zilm"],"Food Runner":["Lexi Allen","Carter Bergholtz","Aidan Burke","Carson Cassell","Griffin Fiore","Drew Mastrino","Drew Murphy","Preston Rose","Gavin Wilde","Sean Young"],"Weddings":["Thomas Antonson","Jared Carlson","Gabriella Chavez","Alicia Corrao","Jen Dosch","Chris Dosch","Sophia Evans","Rebecca Evans","Christy Hatfield","Jillian Hatfield","Gianna Izzo","Stephanie Kulczycki","Lincoln Majersky","Guadalope Martinez","Ethan Nauert","Sarah Nelson","Elizabeth Peterson","Jameson Rosenfeld","Maria S Ruiz","Dimitar Stefanov","Emily Stone","Adam Tietje","Stella Vigil-Murphy","Isaiah Watson","Oakley White","Avery White"]};
+let tipsState={start:null,end:null,cells:{},adds:{},roster:null,loaded:false,loading:false};
 
-function tipPeriod(off){
-  const anchor=new Date(2026,2,23); // Mar 23 2026 — same anchor as the tip-out app
-  const now=new Date(),today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
-  const idx=Math.floor((today-anchor)/(14*86400000))+(off||0);
+// Default range = the current 14-day pay period (anchor Mar 23 2026, same as the tip-out app).
+function tipCurrentPeriod(){
+  const anchor=new Date(2026,2,23),now=new Date(),today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  const idx=Math.floor((today-anchor)/(14*86400000));
   const start=new Date(anchor.getTime()+idx*14*86400000);
-  const days=[];for(let i=0;i<14;i++)days.push(new Date(start.getTime()+i*86400000));
-  return {start,end:days[13],days};
+  return {start,end:new Date(start.getTime()+13*86400000)};
 }
+function tipEnsureRange(){if(!tipsState.start||!tipsState.end){const p=tipCurrentPeriod();tipsState.start=p.start;tipsState.end=p.end;}}
+function tipDays(){tipEnsureRange();const out=[];let d=new Date(tipsState.start.getFullYear(),tipsState.start.getMonth(),tipsState.start.getDate());let g=0;while(d<=tipsState.end&&g<400){out.push(new Date(d));d=new Date(d.getTime()+86400000);g++;}return out;}
 function tipDayLabel(d){return (d.getMonth()+1)+'/'+d.getDate();}
-function tipPeriodKey(off){const s=tipPeriod(off).start;return 'ct_tips_'+s.getFullYear()+'_'+(s.getMonth()+1)+'_'+s.getDate();}
+function tipISO(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function tipParseISO(ds){const p=(ds||'').split('-');return p.length===3?new Date(+p[0],+p[1]-1,+p[2]):null;}
+function tipPeriodKey(){tipEnsureRange();const s=tipsState.start;return 'ct_tips_'+s.getFullYear()+'_'+(s.getMonth()+1)+'_'+s.getDate();}
 function tipMoney(n){return '$'+(Math.round(n*100)/100).toFixed(2);}
 function tipId(name){return name.replace(/[^a-z0-9]/gi,'_');}
 
@@ -4710,7 +4713,7 @@ function tipSetCell(name,label,v,upt){
 }
 function tipRowTotals(name){let paid=0,upt=0;const p=tipsState.cells[name]||{};Object.keys(p).forEach(k=>{const c=p[k];if(c.upt)upt+=c.v;else paid+=c.v});return {paid:Math.round(paid*100)/100,upt:Math.round(upt*100)/100};}
 let tipsSaveTimer=null;
-function tipsSaveSoon(){clearTimeout(tipsSaveTimer);tipsSaveTimer=setTimeout(()=>{try{kvPush(tipPeriodKey(tipsState.off),{cells:tipsState.cells,adds:tipsState.adds},Date.now());tipsSetStatus('Saved ✓','var(--text-dim)');}catch(e){tipsSetStatus('⚠ not saved','#f87171');}},600);tipsSetStatus('Saving…','var(--text-dim)');}
+function tipsSaveSoon(){clearTimeout(tipsSaveTimer);tipsSaveTimer=setTimeout(()=>{try{kvPush(tipPeriodKey(),{cells:tipsState.cells,adds:tipsState.adds},Date.now());tipsSetStatus('Saved ✓','var(--text-dim)');}catch(e){tipsSetStatus('⚠ not saved','#f87171');}},600);tipsSetStatus('Saving…','var(--text-dim)');}
 function tipSectionPeople(sec){const base=(tipsState.roster&&tipsState.roster[sec])||[];const extra=(tipsState.adds&&tipsState.adds[sec])||[];const seen={},out=[];base.concat(extra).forEach(n=>{if(!seen[n]){seen[n]=1;out.push(n);}});return out.sort((a,b)=>a.localeCompare(b));}
 function tipAddPerson(sec){const inp=document.getElementById('tip-add-'+sec.replace(/ /g,'_'));if(!inp)return;const name=(inp.value||'').trim();if(!name)return;if(!tipsState.adds[sec])tipsState.adds[sec]=[];const all=tipSectionPeople(sec);if(all.indexOf(name)<0){tipsState.adds[sec].push(name);tipsSaveSoon();}document.getElementById('viewport').innerHTML=tipsHTML();}
 function tipsSetStatus(s,c){const el=document.getElementById('tips-status');if(el){el.textContent=s;el.style.color=c||'var(--text-dim)';}}
@@ -4719,37 +4722,48 @@ async function tipsInit(){
   if(tipsState.loaded||tipsState.loading)return;
   tipsState.loading=true;
   await tipsFetchRoster();
-  const remote=await kvGet(tipPeriodKey(tipsState.off));
+  const remote=await kvGet(tipPeriodKey());
   tipsState.cells=(remote&&remote.v&&remote.v.cells)?remote.v.cells:{};
   tipsState.adds=(remote&&remote.v&&remote.v.adds)?remote.v.adds:{};
   tipsState.loaded=true;tipsState.loading=false;
   if(activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();
   tipsPull(true);   // always pull straight from the tip-out calculator on open
 }
-function tipsPeriodNav(delta){tipsState.off+=delta;tipsState.loaded=false;tipsState.cells={};tipsState.adds={};document.getElementById('viewport').innerHTML=tipsHTML();tipsInit();}
-// Jump to whichever pay period contains the picked date (YYYY-MM-DD).
-function tipsGoToDate(ds){
-  if(!ds)return;const p=ds.split('-');if(p.length!==3)return;
-  const picked=new Date(+p[0],+p[1]-1,+p[2]);
-  const anchor=new Date(2026,2,23),now=new Date(),today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
-  const idxP=Math.floor((picked-anchor)/(14*86400000)),idxNow=Math.floor((today-anchor)/(14*86400000));
-  tipsState.off=idxP-idxNow;tipsState.loaded=false;tipsState.cells={};tipsState.adds={};
-  document.getElementById('viewport').innerHTML=tipsHTML();tipsInit();
-}
+function tipsReload(){tipsState.loaded=false;tipsState.cells={};tipsState.adds={};document.getElementById('viewport').innerHTML=tipsHTML();tipsInit();}
+function tipsSetStart(ds){const d=tipParseISO(ds);if(!d)return;tipsState.start=d;tipsState.end=new Date(d.getTime()+13*86400000);tipsReload();} // snap to a 14-day period; adjust the end for a custom length
+function tipsSetEnd(ds){const d=tipParseISO(ds);if(!d)return;tipsState.end=d;if(tipsState.start>d)tipsState.start=new Date(d.getTime()-13*86400000);tipsReload();}
+function tipsThisPeriod(){const p=tipCurrentPeriod();tipsState.start=p.start;tipsState.end=p.end;tipsReload();}
 
-function tipEdit(inp){
+// Manual entry: type a number, then a Paid / Unpaid popup appears — tap one and
+// it records to that column. (Blur without choosing defaults to Paid so the
+// typed value is never lost.)
+let tipPop={name:null,day:null,inp:null,val:0};
+function tipRefreshRow(name){const t=tipRowTotals(name),id=tipId(name);const pe=document.getElementById('tp-'+id),ue=document.getElementById('tu-'+id);if(pe)pe.textContent=t.paid?tipMoney(t.paid):'';if(ue)ue.textContent=t.upt?tipMoney(t.upt):'';tipsUpdateGrand();}
+function tipEnsurePopup(){
+  let p=document.getElementById('tip-pop');
+  if(!p){p=document.createElement('div');p.id='tip-pop';p.style.cssText='position:fixed;display:none;gap:6px;z-index:99999;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:6px;box-shadow:0 8px 26px rgba(0,0,0,.6)';
+    p.innerHTML='<button onmousedown="event.preventDefault()" onclick="tipCommit(false)" style="background:#34d399;color:#06281c;border:none;border-radius:7px;padding:9px 18px;font-weight:800;cursor:pointer;font-family:inherit;font-size:14px">Paid</button><button onmousedown="event.preventDefault()" onclick="tipCommit(true)" style="background:#fbbf24;color:#3a2a00;border:none;border-radius:7px;padding:9px 18px;font-weight:800;cursor:pointer;font-family:inherit;font-size:14px">Unpaid</button>';
+    document.body.appendChild(p);}
+  return p;
+}
+function tipHidePopup(){const p=document.getElementById('tip-pop');if(p)p.style.display='none';}
+function tipCellType(inp){
+  const num=parseFloat((inp.value||'').replace(/[$,\s]/g,''));
   const name=inp.dataset.n,day=inp.dataset.d;
-  const raw=(inp.value||'').trim();
-  const upt=raw.charAt(0)==='$';
-  const num=parseFloat(raw.replace(/[$,\s]/g,''));
-  tipSetCell(name,day,isNaN(num)?0:num,upt);
-  inp.value=(!num||isNaN(num))?'':(upt?'$'+(Math.round(num*100)/100):String(Math.round(num*100)/100));
-  inp.style.color=upt?'#fbbf24':'var(--text)';
-  const t=tipRowTotals(name),id=tipId(name);
-  const pe=document.getElementById('tp-'+id),ue=document.getElementById('tu-'+id);
-  if(pe)pe.textContent=t.paid?tipMoney(t.paid):'';
-  if(ue)ue.textContent=t.upt?tipMoney(t.upt):'';
-  tipsUpdateGrand();tipsSaveSoon();
+  if(!num||isNaN(num)||num<=0){tipSetCell(name,day,0,false);inp.value='';inp.style.color='var(--text)';tipRefreshRow(name);tipHidePopup();tipPop.name=null;tipsSaveSoon();return;}
+  tipPop={name,day,inp,val:Math.round(num*100)/100};
+  const p=tipEnsurePopup(),r=inp.getBoundingClientRect(),w=160;
+  p.style.display='flex';p.style.left=Math.max(6,Math.min(r.left+r.width/2-w/2,window.innerWidth-w-6))+'px';p.style.top=(r.bottom+4)+'px';
+}
+function tipCommit(upt){
+  const {name,day,val,inp}=tipPop;if(!name)return;
+  tipSetCell(name,day,val,upt);
+  if(inp){inp.value=upt?'$'+val:String(val);inp.style.color=upt?'#fbbf24':'var(--text)';}
+  tipRefreshRow(name);tipHidePopup();tipsSaveSoon();tipPop.name=null;
+}
+function tipCellBlur(inp){
+  if(tipPop.name===inp.dataset.n&&tipPop.day===inp.dataset.d)tipCommit(false); // default Paid, keep the value
+  else tipHidePopup();
 }
 function tipsUpdateGrand(){let gp=0,gu=0;Object.keys(tipsState.cells).forEach(n=>{const t=tipRowTotals(n);gp+=t.paid;gu+=t.upt;});const p=document.getElementById('tips-grand-paid'),u=document.getElementById('tips-grand-upt');if(p)p.textContent=tipMoney(gp);if(u)u.textContent=tipMoney(gu);}
 
@@ -4760,8 +4774,7 @@ async function tipsPull(auto){
   if(!auto)tipsSetStatus('Pulling tip-outs…','var(--text-dim)');
   let log=[];
   try{const r=await fetch(TIPS_LOG_URL+'?key='+encodeURIComponent(TIPS_LOG_KEY));const d=await r.json();log=d.log||[];}catch(e){if(!auto)tipsSetStatus('⚠ could not reach tip-out log','#f87171');return;}
-  const pp=tipPeriod(tipsState.off);
-  const inPeriod={};pp.days.forEach(d=>inPeriod[tipDayLabel(d)]=true);
+  const inPeriod={};tipDays().forEach(d=>inPeriod[tipDayLabel(d)]=true);
   // collapse to one entry per date (prefer finalized over draft, newest)
   const byDate={};
   log.forEach(e=>{if(!e||!e.date)return;const p=e.date.split('/');if(p.length!==3)return;const lb=parseInt(p[0])+'/'+parseInt(p[1]);if(!inPeriod[lb])return;const cur=byDate[lb];const better=!cur||(!e.draft&&cur.draft)||((!!e.draft===!!cur.draft)&&String(e.savedAt||'')>String(cur.savedAt||''));if(better)byDate[lb]=e;});
@@ -4781,19 +4794,19 @@ async function tipsPull(auto){
 
 function tipsHTML(){
   if(!tipsState.loaded)return '<div style="padding:48px;text-align:center;color:var(--text-dim)">Loading tips…</div>';
-  const pp=tipPeriod(tipsState.off),days=pp.days,roster=tipsState.roster||{};
+  const days=tipDays(),roster=tipsState.roster||{};
   const disp=(name,lb)=>{const c=tipCell(name,lb);return c?(c.upt?'$'+c.v:String(c.v)):'';};
   let gp=0,gu=0;
   const rowFor=(name,isPool)=>{
     const t=tipRowTotals(name);gp+=t.paid;gu+=t.upt;const id=tipId(name);
     const bb='border-bottom:1px solid var(--border)';
     const tds=days.map(d=>{const lb=tipDayLabel(d);const c=tipCell(name,lb);const col=c&&c.upt?'#fbbf24':'var(--text)';
-      return `<td style="padding:0;border-right:1px solid var(--border);${bb}"><input class="tip-cell" data-n="${esc(name)}" data-d="${lb}" value="${disp(name,lb)}" onchange="tipEdit(this)" style="width:56px;border:none;background:transparent;color:${col};text-align:right;padding:7px 6px;font-size:13px;font-family:inherit;outline:none"></td>`;}).join('');
+      return `<td style="padding:0;border-right:1px solid var(--border);${bb}"><input class="tip-cell" data-n="${esc(name)}" data-d="${lb}" value="${disp(name,lb)}" oninput="tipCellType(this)" onblur="tipCellBlur(this)" style="width:56px;border:none;background:transparent;color:${col};text-align:right;padding:7px 6px;font-size:13px;font-family:inherit;outline:none"></td>`;}).join('');
     return `<tr style="${isPool?'background:rgba(251,191,36,0.06)':''}">
       <td style="position:sticky;left:0;z-index:1;background:var(--surface);padding:7px 12px;font-weight:${isPool?'800':'600'};white-space:nowrap;border-right:2px solid var(--border);${bb};${isPool?'color:#fbbf24':''}">${esc(name)}</td>
       ${tds}
       <td id="tp-${id}" style="padding:7px 12px;text-align:right;font-weight:700;color:#34d399;white-space:nowrap;border-left:2px solid var(--border);${bb}">${t.paid?tipMoney(t.paid):''}</td>
-      <td id="tu-${id}" style="padding:7px 12px;text-align:right;font-weight:700;color:#fbbf24;white-space:nowrap;${bb}">${t.upt?tipMoney(t.upt):''}</td>
+      <td id="tu-${id}" style="padding:7px 12px;text-align:right;font-weight:700;color:#fbbf24;white-space:nowrap;border-left:2px solid var(--border);${bb}">${t.upt?tipMoney(t.upt):''}</td>
     </tr>`;
   };
   let body='';
@@ -4805,21 +4818,20 @@ function tipsHTML(){
     body+=`<tr><td colspan="${days.length+3}" style="position:sticky;left:0;background:var(--surface);padding:4px 12px"><input id="tip-add-${sec.replace(/ /g,'_')}" placeholder="+ add ${TIP_SEC_LABEL[sec].toLowerCase().replace(/s$/,'')}…" onkeydown="if(event.key==='Enter')tipAddPerson('${sec}')" style="width:200px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 9px;font-size:12px;font-family:inherit"></td></tr>`;
   });
   const dayHead=days.map(d=>{const wd=d.getDay();const closed=(wd===1);return `<th style="padding:6px 4px;font-size:11px;color:${closed?'var(--text-muted)':'var(--text-dim)'};font-weight:600;border-right:1px solid var(--border);white-space:nowrap">${['Su','M','Tu','W','Th','F','Sa'][wd]}<br>${d.getMonth()+1}/${d.getDate()}</th>`;}).join('');
-  const fmt=d=>(d.getMonth()+1)+'/'+d.getDate();
-  const isoStart=pp.start.getFullYear()+'-'+String(pp.start.getMonth()+1).padStart(2,'0')+'-'+String(pp.start.getDate()).padStart(2,'0');
+  const di='background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:5px 8px;font-family:inherit;font-size:13px;color-scheme:dark;cursor:pointer';
   return `
   <div style="height:100%;overflow-y:auto;padding:2px 2px 56px">
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
       <h2 style="margin:0;font-size:22px;font-weight:800">🧾 Tips</h2>
       <div style="display:flex;align-items:center;gap:6px">
-        <button onclick="tipsPeriodNav(-1)" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:5px 10px;cursor:pointer">‹</button>
-        <span style="font-size:13px;color:var(--text-dim);white-space:nowrap">${fmt(pp.start)} – ${fmt(pp.end)}${tipsState.off===0?' (current)':''}</span>
-        <button onclick="tipsPeriodNav(1)" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:5px 10px;cursor:pointer">›</button>
-        <input type="date" value="${isoStart}" onchange="tipsGoToDate(this.value)" title="Jump to a date's pay period" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:5px 8px;font-family:inherit;font-size:12px;color-scheme:dark;cursor:pointer">
+        <input type="date" value="${tipISO(tipsState.start)}" onchange="tipsSetStart(this.value)" title="Start date" style="${di}">
+        <span style="color:var(--text-dim)">→</span>
+        <input type="date" value="${tipISO(tipsState.end)}" onchange="tipsSetEnd(this.value)" title="End date" style="${di}">
+        <button onclick="tipsThisPeriod()" title="Jump to the current pay period" style="background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:12px">This period</button>
       </div>
       <button onclick="tipsPull()" style="background:var(--accent);border:none;color:#000;font-weight:700;border-radius:8px;padding:7px 14px;cursor:pointer">⟳ Pull tip-outs</button>
       <span id="tips-status" style="font-size:12px;color:var(--text-dim)"></span>
-      <span style="margin-left:auto;font-size:12px;color:var(--text-dim)">plain # = <b style="color:#34d399">Paid</b> &nbsp;·&nbsp; $# = <b style="color:#fbbf24">Unpaid</b></span>
+      <span style="margin-left:auto;font-size:12px;color:var(--text-dim)">type an amount → tap <b style="color:#34d399">Paid</b> or <b style="color:#fbbf24">Unpaid</b></span>
     </div>
     <div style="overflow-x:auto;border:1px solid var(--border);border-radius:12px">
       <table style="border-collapse:collapse;font-size:13px;min-width:100%">
@@ -4827,19 +4839,19 @@ function tipsHTML(){
           <th style="position:sticky;left:0;z-index:2;background:var(--surface);padding:6px 12px;text-align:left;border-right:2px solid var(--border);border-bottom:1px solid var(--border)">Name</th>
           ${dayHead}
           <th style="padding:6px 12px;color:#34d399;border-left:2px solid var(--border);border-bottom:1px solid var(--border);white-space:nowrap">Paid</th>
-          <th style="padding:6px 12px;color:#fbbf24;border-bottom:1px solid var(--border);white-space:nowrap">Unpaid</th>
+          <th style="padding:6px 12px;color:#fbbf24;border-bottom:1px solid var(--border);border-left:2px solid var(--border);white-space:nowrap">Unpaid</th>
         </tr></thead>
         <tbody>${body}</tbody>
         <tfoot><tr style="background:var(--surface2);font-weight:800">
           <td style="position:sticky;left:0;background:var(--surface2);padding:9px 12px;border-right:2px solid var(--border);border-top:2px solid var(--border)">TOTAL</td>
           <td colspan="${days.length}" style="border-top:2px solid var(--border)"></td>
           <td id="tips-grand-paid" style="padding:9px 12px;text-align:right;color:#34d399;border-left:2px solid var(--border);border-top:2px solid var(--border)">${tipMoney(gp)}</td>
-          <td id="tips-grand-upt" style="padding:9px 12px;text-align:right;color:#fbbf24;border-top:2px solid var(--border)">${tipMoney(gu)}</td>
+          <td id="tips-grand-upt" style="padding:9px 12px;text-align:right;color:#fbbf24;border-top:2px solid var(--border);border-left:2px solid var(--border)">${tipMoney(gu)}</td>
         </tr></tfoot>
       </table>
     </div>
     <div style="margin-top:10px;font-size:12px;color:var(--text-muted);line-height:1.5">
-      Type a plain number for a <b style="color:#34d399">paid</b> tip, or put a <b>$</b> in front for an <b style="color:#fbbf24">unpaid (charge)</b> tip. Saves automatically. <b>⟳ Pull tip-outs</b> fills empty cells from the nightly calculator — your hand edits are never overwritten.
+      Type an amount in a cell, then tap <b style="color:#34d399">Paid</b> or <b style="color:#fbbf24">Unpaid</b> — it records to that column. Saves automatically. <b>⟳ Pull tip-outs</b> fills empty cells from the nightly calculator — your hand edits are never overwritten.
     </div>
   </div>`;
 }
