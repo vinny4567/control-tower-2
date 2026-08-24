@@ -680,6 +680,7 @@ const DOCS='docs';
 const WED='weddings';
 const LIQ='liquor';
 const BANK='banking';
+const TIPS='tips';
 const CMD_API='https://jarvis-voicejarvis-voice.onrender.com/cmd';
 let cmdConsoleTimer=null;
 let cfg=loadCfg(),focused=null,editing=null,activeTab=cfg.activeTab||DASH;
@@ -4663,10 +4664,176 @@ function tabBarInit(){const el=document.getElementById('tab-list');if(!el||el._w
   el.addEventListener('wheel',e=>{if(Math.abs(e.deltaY)>Math.abs(e.deltaX)){e.preventDefault();el.scrollLeft+=e.deltaY}},{passive:false});
   el.addEventListener('scroll',tabNavSync);
   window.addEventListener('resize',tabNavSync);}
-function renderTabs(){const list=document.getElementById('tab-list');list.innerHTML=`<div class="tab ${activeTab===DASH?'active':''}" onclick="switchTab('${DASH}')">📊 Dashboard</div>`+`<div class="tab ${activeTab===MAIL?'active':''}" onclick="switchTab('${MAIL}')">📧 Email</div>`+`<div class="tab ${activeTab===DOCS?'active':''}" onclick="switchTab('${DOCS}')">📝 Docs</div>`+cfg.panels.map(p=>{const t=`<div class="tab ${activeTab===p.id?'active':''}" onclick="switchTab(${p.id})">${esc(p.name)}</div>`;return p.id===4?t+`<div class="tab ${activeTab===WED?'active':''}" onclick="switchTab('${WED}')">💍 Weddings</div>`:t;}).join('')+`<div class="tab ${activeTab===LIQ?'active':''}" onclick="switchTab('${LIQ}')">🥃 Liquor</div>`+`<div class="tab ${activeTab===BANK?'active':''}" onclick="switchTab('${BANK}')">🏦 Banking</div>`+`<div class="tab ${activeTab===ONLINE?'active':''}" onclick="switchTab('${ONLINE}')">🤖 Jarvis</div>`+`<div class="tab tab-add" onclick="openSettings()" title="Add panel">＋</div>`;tabBarInit();
+function renderTabs(){const list=document.getElementById('tab-list');list.innerHTML=`<div class="tab ${activeTab===DASH?'active':''}" onclick="switchTab('${DASH}')">📊 Dashboard</div>`+`<div class="tab ${activeTab===MAIL?'active':''}" onclick="switchTab('${MAIL}')">📧 Email</div>`+`<div class="tab ${activeTab===DOCS?'active':''}" onclick="switchTab('${DOCS}')">📝 Docs</div>`+cfg.panels.map(p=>{const t=`<div class="tab ${activeTab===p.id?'active':''}" onclick="switchTab(${p.id})">${esc(p.name)}</div>`;return p.id===4?t+`<div class="tab ${activeTab===WED?'active':''}" onclick="switchTab('${WED}')">💍 Weddings</div>`:t;}).join('')+`<div class="tab ${activeTab===LIQ?'active':''}" onclick="switchTab('${LIQ}')">🥃 Liquor</div>`+`<div class="tab ${activeTab===BANK?'active':''}" onclick="switchTab('${BANK}')">🏦 Banking</div>`+`<div class="tab ${activeTab===TIPS?'active':''}" onclick="switchTab('${TIPS}')">🧾 Tips</div>`+`<div class="tab ${activeTab===ONLINE?'active':''}" onclick="switchTab('${ONLINE}')">🤖 Jarvis</div>`+`<div class="tab tab-add" onclick="openSettings()" title="Add panel">＋</div>`;tabBarInit();
   // keep the active tab in view for wheel-only mice
   setTimeout(()=>{const a=document.querySelector('#tab-list .tab.active');if(a&&a.scrollIntoView)a.scrollIntoView({block:'nearest',inline:'nearest'});tabNavSync()},30);}
-function renderViewport(){if(activeTab===WED){document.getElementById('viewport').innerHTML=wedHTML();wedInit();return}if(activeTab===DOCS){docsSetNS('ct_docs');docsPullSync();document.getElementById('viewport').innerHTML=docsHTML();return}if(activeTab===MAIL){document.getElementById('viewport').innerHTML=mailHTML();restoreGmailListScroll();return}if(activeTab===LIQ){document.getElementById('viewport').innerHTML=liqHTML();return}if(activeTab===BANK){document.getElementById('viewport').innerHTML=bankHTML();return}if(activeTab===ONLINE){document.getElementById('viewport').innerHTML=onlineHTML();renderChat();if(ordersKey())loadCmdConsole();return}if(activeTab===DASH){const vp=document.getElementById('viewport');const sc=vp.querySelector('.dashboard');const top=sc?sc.scrollTop:0;const al=vp.querySelector('.ag-list');const alTop=al?al.scrollTop:0;vp.innerHTML=dashboardHTML();if(top){const sc2=vp.querySelector('.dashboard');if(sc2)sc2.scrollTop=top}if(alTop){const al2=vp.querySelector('.ag-list');if(al2)al2.scrollTop=alTop}return}const p=cfg.panels.find(x=>x.id===activeTab);if(!p){document.getElementById('viewport').innerHTML='';return}document.getElementById('viewport').innerHTML=bodyHTML(p);if(activeTab===3)restoreGmailListScroll()}
+// ═══ TIPS TAB — private per-period restaurant tip sheet ════════════════
+// Rows = full tipped roster grouped by role + a Busser Pool row; columns =
+// the 14 days of the pay period, then Paid and UPT totals. THE RULE: a plain
+// number is a PAID tip; a number typed with a leading $ is an UNPAID (charge)
+// tip. Cloud-saved per period via the shared KV. Auto-fills from the nightly
+// tip-out calculator's cloud log; every cell is hand-overridable.
+const TIPS_LOG_URL='https://restaurant-scheduler-hh5e.onrender.com/api/tipout-log';
+const TIPS_LOG_KEY='tipout-roster-key-vinny-7k9m2x4p';
+const TIPS_ROSTER_URL='https://restaurant-scheduler-hh5e.onrender.com/api/roster/employees';
+const TIP_SECTIONS=['Server','Bartender','Busser','Food Runner'];
+const TIP_SEC_LABEL={'Server':'Servers','Bartender':'Bartenders','Busser':'Bussers','Food Runner':'Food Runners'};
+let tipsState={off:0,cells:{},adds:{},roster:null,loaded:false,loading:false};
+
+function tipPeriod(off){
+  const anchor=new Date(2026,2,23); // Mar 23 2026 — same anchor as the tip-out app
+  const now=new Date(),today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  const idx=Math.floor((today-anchor)/(14*86400000))+(off||0);
+  const start=new Date(anchor.getTime()+idx*14*86400000);
+  const days=[];for(let i=0;i<14;i++)days.push(new Date(start.getTime()+i*86400000));
+  return {start,end:days[13],days};
+}
+function tipDayLabel(d){return (d.getMonth()+1)+'/'+d.getDate();}
+function tipPeriodKey(off){const s=tipPeriod(off).start;return 'ct_tips_'+s.getFullYear()+'_'+(s.getMonth()+1)+'_'+s.getDate();}
+function tipMoney(n){return '$'+(Math.round(n*100)/100).toFixed(2);}
+function tipId(name){return name.replace(/[^a-z0-9]/gi,'_');}
+
+async function tipsFetchRoster(){
+  if(tipsState.roster)return tipsState.roster;
+  let r=null;
+  try{const res=await fetch(TIPS_ROSTER_URL+'?key='+encodeURIComponent(TIPS_LOG_KEY));if(res.ok)r=await res.json();}catch(e){}
+  const g={};TIP_SECTIONS.forEach(s=>g[s]=[]);
+  (r||[]).forEach(e=>{const pos=(e.positions||[]).map(p=>p.name);const sec=TIP_SECTIONS.find(s=>pos.includes(s));if(sec&&g[sec].indexOf(e.name)<0)g[sec].push(e.name);});
+  TIP_SECTIONS.forEach(s=>g[s].sort((a,b)=>a.localeCompare(b)));
+  tipsState.roster=g;return g;
+}
+function tipCell(name,label){const p=tipsState.cells[name];return p&&p[label]?p[label]:null;}
+function tipSetCell(name,label,v,upt){
+  if(!tipsState.cells[name])tipsState.cells[name]={};
+  if(!v||isNaN(v))delete tipsState.cells[name][label];
+  else tipsState.cells[name][label]={v:Math.round(v*100)/100,upt:!!upt};
+}
+function tipRowTotals(name){let paid=0,upt=0;const p=tipsState.cells[name]||{};Object.keys(p).forEach(k=>{const c=p[k];if(c.upt)upt+=c.v;else paid+=c.v});return {paid:Math.round(paid*100)/100,upt:Math.round(upt*100)/100};}
+let tipsSaveTimer=null;
+function tipsSaveSoon(){clearTimeout(tipsSaveTimer);tipsSaveTimer=setTimeout(()=>{try{kvPush(tipPeriodKey(tipsState.off),{cells:tipsState.cells,adds:tipsState.adds},Date.now());tipsSetStatus('Saved ✓','var(--text-dim)');}catch(e){tipsSetStatus('⚠ not saved','#f87171');}},600);tipsSetStatus('Saving…','var(--text-dim)');}
+function tipSectionPeople(sec){const base=(tipsState.roster&&tipsState.roster[sec])||[];const extra=(tipsState.adds&&tipsState.adds[sec])||[];const seen={},out=[];base.concat(extra).forEach(n=>{if(!seen[n]){seen[n]=1;out.push(n);}});return out.sort((a,b)=>a.localeCompare(b));}
+function tipAddPerson(sec){const inp=document.getElementById('tip-add-'+sec.replace(/ /g,'_'));if(!inp)return;const name=(inp.value||'').trim();if(!name)return;if(!tipsState.adds[sec])tipsState.adds[sec]=[];const all=tipSectionPeople(sec);if(all.indexOf(name)<0){tipsState.adds[sec].push(name);tipsSaveSoon();}document.getElementById('viewport').innerHTML=tipsHTML();}
+function tipsSetStatus(s,c){const el=document.getElementById('tips-status');if(el){el.textContent=s;el.style.color=c||'var(--text-dim)';}}
+
+async function tipsInit(){
+  if(tipsState.loaded||tipsState.loading)return;
+  tipsState.loading=true;
+  await tipsFetchRoster();
+  const remote=await kvGet(tipPeriodKey(tipsState.off));
+  tipsState.cells=(remote&&remote.v&&remote.v.cells)?remote.v.cells:{};
+  tipsState.adds=(remote&&remote.v&&remote.v.adds)?remote.v.adds:{};
+  tipsState.loaded=true;tipsState.loading=false;
+  if(activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();
+}
+function tipsPeriodNav(delta){tipsState.off+=delta;tipsState.loaded=false;tipsState.cells={};document.getElementById('viewport').innerHTML=tipsHTML();tipsInit();}
+
+function tipEdit(inp){
+  const name=inp.dataset.n,day=inp.dataset.d;
+  const raw=(inp.value||'').trim();
+  const upt=raw.charAt(0)==='$';
+  const num=parseFloat(raw.replace(/[$,\s]/g,''));
+  tipSetCell(name,day,isNaN(num)?0:num,upt);
+  inp.value=(!num||isNaN(num))?'':(upt?'$'+(Math.round(num*100)/100):String(Math.round(num*100)/100));
+  inp.style.color=upt?'#fbbf24':'var(--text)';
+  const t=tipRowTotals(name),id=tipId(name);
+  const pe=document.getElementById('tp-'+id),ue=document.getElementById('tu-'+id);
+  if(pe)pe.textContent=t.paid?tipMoney(t.paid):'';
+  if(ue)ue.textContent=t.upt?tipMoney(t.upt):'';
+  tipsUpdateGrand();tipsSaveSoon();
+}
+function tipsUpdateGrand(){let gp=0,gu=0;Object.keys(tipsState.cells).forEach(n=>{const t=tipRowTotals(n);gp+=t.paid;gu+=t.upt;});const p=document.getElementById('tips-grand-paid'),u=document.getElementById('tips-grand-upt');if(p)p.textContent=tipMoney(gp);if(u)u.textContent=tipMoney(gu);}
+
+// Auto-fill this period's cells from the nightly tip-out cloud log. Fills only
+// EMPTY cells (never clobbers a hand override). Servers' own tips + busser pool
+// are Paid; runner tip-out is UPT; bartenders left for you (own vs received).
+async function tipsPull(){
+  tipsSetStatus('Pulling tip-outs…','var(--text-dim)');
+  let log=[];
+  try{const r=await fetch(TIPS_LOG_URL+'?key='+encodeURIComponent(TIPS_LOG_KEY));const d=await r.json();log=d.log||[];}catch(e){tipsSetStatus('⚠ could not reach tip-out log','#f87171');return;}
+  const pp=tipPeriod(tipsState.off);
+  const inPeriod={};pp.days.forEach(d=>inPeriod[tipDayLabel(d)]=true);
+  // collapse to one entry per date (prefer finalized over draft, newest)
+  const byDate={};
+  log.forEach(e=>{if(!e||!e.date)return;const p=e.date.split('/');if(p.length!==3)return;const lb=parseInt(p[0])+'/'+parseInt(p[1]);if(!inPeriod[lb])return;const cur=byDate[lb];const better=!cur||(!e.draft&&cur.draft)||((!!e.draft===!!cur.draft)&&String(e.savedAt||'')>String(cur.savedAt||''));if(better)byDate[lb]=e;});
+  let filled=0;
+  const put=(name,lb,v,upt)=>{if(!v)return;if(tipCell(name,lb))return;tipSetCell(name,lb,v,upt);filled++;};
+  const ensure=(name,sec)=>{if(!name)return;if(tipSectionPeople(sec).indexOf(name)<0){if(!tipsState.adds[sec])tipsState.adds[sec]=[];tipsState.adds[sec].push(name);}};
+  Object.keys(byDate).forEach(lb=>{
+    const e=byDate[lb];
+    (e.servers||[]).forEach(s=>{if(s.name){ensure(s.name,'Server');put(s.name,lb,s.tips,false);}});
+    (e.runners||[]).forEach(r=>{if(r.name){ensure(r.name,'Food Runner');put(r.name,lb,r.tipReceived,true);}});
+    if(e.pools&&e.pools.busser)put('Busser Pool',lb,e.pools.busser,false);
+  });
+  tipsState.loaded=true;
+  document.getElementById('viewport').innerHTML=tipsHTML();
+  tipsSaveSoon();
+  tipsSetStatus(filled?('Pulled '+filled+' entries ✓'):'Nothing new to pull','var(--text-dim)');
+}
+
+function tipsHTML(){
+  if(!tipsState.loaded)return '<div style="padding:48px;text-align:center;color:var(--text-dim)">Loading tips…</div>';
+  const pp=tipPeriod(tipsState.off),days=pp.days,roster=tipsState.roster||{};
+  const disp=(name,lb)=>{const c=tipCell(name,lb);return c?(c.upt?'$'+c.v:String(c.v)):'';};
+  let gp=0,gu=0;
+  const rowFor=(name,isPool)=>{
+    const t=tipRowTotals(name);gp+=t.paid;gu+=t.upt;const id=tipId(name);
+    const tds=days.map(d=>{const lb=tipDayLabel(d);const c=tipCell(name,lb);const col=c&&c.upt?'#fbbf24':'var(--text)';
+      return `<td style="padding:0;border-right:1px solid var(--border)"><input class="tip-cell" data-n="${esc(name)}" data-d="${lb}" value="${disp(name,lb)}" onchange="tipEdit(this)" style="width:56px;border:none;background:transparent;color:${col};text-align:right;padding:7px 6px;font-size:13px;font-family:inherit;outline:none"></td>`;}).join('');
+    return `<tr style="${isPool?'background:rgba(251,191,36,0.06)':''}">
+      <td style="position:sticky;left:0;z-index:1;background:var(--surface);padding:7px 12px;font-weight:${isPool?'800':'600'};white-space:nowrap;border-right:2px solid var(--border);${isPool?'color:#fbbf24':''}">${esc(name)}</td>
+      ${tds}
+      <td id="tp-${id}" style="padding:7px 12px;text-align:right;font-weight:700;color:#34d399;white-space:nowrap;border-left:2px solid var(--border)">${t.paid?tipMoney(t.paid):''}</td>
+      <td id="tu-${id}" style="padding:7px 12px;text-align:right;font-weight:700;color:#fbbf24;white-space:nowrap">${t.upt?tipMoney(t.upt):''}</td>
+    </tr>`;
+  };
+  let body='';
+  TIP_SECTIONS.forEach(sec=>{
+    const people=tipSectionPeople(sec);
+    body+=`<tr><td colspan="${days.length+3}" style="position:sticky;left:0;background:var(--surface2);color:var(--accent);font-weight:800;padding:8px 12px;letter-spacing:.5px;border-top:1px solid var(--border)">${TIP_SEC_LABEL[sec].toUpperCase()}</td></tr>`;
+    people.forEach(n=>{body+=rowFor(n,false);});
+    if(sec==='Busser')body+=rowFor('Busser Pool',true);
+    body+=`<tr><td colspan="${days.length+3}" style="position:sticky;left:0;background:var(--surface);padding:4px 12px"><input id="tip-add-${sec.replace(/ /g,'_')}" placeholder="+ add ${TIP_SEC_LABEL[sec].toLowerCase().replace(/s$/,'')}…" onkeydown="if(event.key==='Enter')tipAddPerson('${sec}')" style="width:200px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 9px;font-size:12px;font-family:inherit"></td></tr>`;
+  });
+  const dayHead=days.map(d=>{const wd=d.getDay();const closed=(wd===1);return `<th style="padding:6px 4px;font-size:11px;color:${closed?'var(--text-muted)':'var(--text-dim)'};font-weight:600;border-right:1px solid var(--border);white-space:nowrap">${['Su','M','Tu','W','Th','F','Sa'][wd]}<br>${d.getMonth()+1}/${d.getDate()}</th>`;}).join('');
+  const fmt=d=>(d.getMonth()+1)+'/'+d.getDate();
+  return `
+  <div style="max-width:100%;padding:2px">
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+      <h2 style="margin:0;font-size:22px;font-weight:800">🧾 Tips</h2>
+      <div style="display:flex;align-items:center;gap:6px">
+        <button onclick="tipsPeriodNav(-1)" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:5px 10px;cursor:pointer">‹</button>
+        <span style="font-size:13px;color:var(--text-dim);white-space:nowrap">${fmt(pp.start)} – ${fmt(pp.end)}${tipsState.off===0?' (current)':''}</span>
+        <button onclick="tipsPeriodNav(1)" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:5px 10px;cursor:pointer">›</button>
+      </div>
+      <button onclick="tipsPull()" style="background:var(--accent);border:none;color:#000;font-weight:700;border-radius:8px;padding:7px 14px;cursor:pointer">⟳ Pull tip-outs</button>
+      <span id="tips-status" style="font-size:12px;color:var(--text-dim)"></span>
+      <span style="margin-left:auto;font-size:12px;color:var(--text-dim)">plain # = <b style="color:#34d399">Paid</b> &nbsp;·&nbsp; $# = <b style="color:#fbbf24">Unpaid</b></span>
+    </div>
+    <div style="overflow-x:auto;border:1px solid var(--border);border-radius:12px">
+      <table style="border-collapse:collapse;font-size:13px;min-width:100%">
+        <thead><tr style="background:var(--surface)">
+          <th style="position:sticky;left:0;z-index:2;background:var(--surface);padding:6px 12px;text-align:left;border-right:2px solid var(--border);border-bottom:1px solid var(--border)">Name</th>
+          ${dayHead}
+          <th style="padding:6px 12px;color:#34d399;border-left:2px solid var(--border);border-bottom:1px solid var(--border);white-space:nowrap">Paid</th>
+          <th style="padding:6px 12px;color:#fbbf24;border-bottom:1px solid var(--border);white-space:nowrap">Unpaid</th>
+        </tr></thead>
+        <tbody>${body}</tbody>
+        <tfoot><tr style="background:var(--surface2);font-weight:800">
+          <td style="position:sticky;left:0;background:var(--surface2);padding:9px 12px;border-right:2px solid var(--border);border-top:2px solid var(--border)">TOTAL</td>
+          <td colspan="${days.length}" style="border-top:2px solid var(--border)"></td>
+          <td id="tips-grand-paid" style="padding:9px 12px;text-align:right;color:#34d399;border-left:2px solid var(--border);border-top:2px solid var(--border)">${tipMoney(gp)}</td>
+          <td id="tips-grand-upt" style="padding:9px 12px;text-align:right;color:#fbbf24;border-top:2px solid var(--border)">${tipMoney(gu)}</td>
+        </tr></tfoot>
+      </table>
+    </div>
+    <div style="margin-top:10px;font-size:12px;color:var(--text-muted);line-height:1.5">
+      Type a plain number for a <b style="color:#34d399">paid</b> tip, or put a <b>$</b> in front for an <b style="color:#fbbf24">unpaid (charge)</b> tip. Saves automatically. <b>⟳ Pull tip-outs</b> fills empty cells from the nightly calculator — your hand edits are never overwritten.
+    </div>
+  </div>`;
+}
+
+function renderViewport(){if(activeTab===WED){document.getElementById('viewport').innerHTML=wedHTML();wedInit();return}if(activeTab===DOCS){docsSetNS('ct_docs');docsPullSync();document.getElementById('viewport').innerHTML=docsHTML();return}if(activeTab===MAIL){document.getElementById('viewport').innerHTML=mailHTML();restoreGmailListScroll();return}if(activeTab===LIQ){document.getElementById('viewport').innerHTML=liqHTML();return}if(activeTab===BANK){document.getElementById('viewport').innerHTML=bankHTML();return}
+   if(activeTab===TIPS){document.getElementById('viewport').innerHTML=tipsHTML();tipsInit();return}if(activeTab===ONLINE){document.getElementById('viewport').innerHTML=onlineHTML();renderChat();if(ordersKey())loadCmdConsole();return}if(activeTab===DASH){const vp=document.getElementById('viewport');const sc=vp.querySelector('.dashboard');const top=sc?sc.scrollTop:0;const al=vp.querySelector('.ag-list');const alTop=al?al.scrollTop:0;vp.innerHTML=dashboardHTML();if(top){const sc2=vp.querySelector('.dashboard');if(sc2)sc2.scrollTop=top}if(alTop){const al2=vp.querySelector('.ag-list');if(al2)al2.scrollTop=alTop}return}const p=cfg.panels.find(x=>x.id===activeTab);if(!p){document.getElementById('viewport').innerHTML='';return}document.getElementById('viewport').innerHTML=bodyHTML(p);if(activeTab===3)restoreGmailListScroll()}
 
 // ── ONLINE TAB: Otter command bridge ───────────────────────────────
 // Queue actions to the reader userscript on the always-on Mac's Otter tab; it runs them there
