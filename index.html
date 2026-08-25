@@ -4722,9 +4722,11 @@ function tipHoursPersonTot(name){const h=tipHours(name);let reg=0,ot=0,pay=0;Obj
 let tipsHoursSaveTimer=null;
 function tipsSaveHoursSoon(){clearTimeout(tipsHoursSaveTimer);tipsHoursSaveTimer=setTimeout(()=>{try{kvPush(tipHoursKey(),{hours:tipsState.hours},Date.now());tipsSetStatus('Saved ✓','var(--text-dim)');}catch(e){tipsSetStatus('⚠ not saved','#f87171');}},600);tipsSetStatus('Saving…','var(--text-dim)');}
 function tipHoursSetPos(name,sec,field,v){if(!tipsState.hours)tipsState.hours={};if(!tipsState.hours[name])tipsState.hours[name]={};const p=tipsState.hours[name][sec]||{};v=Math.round((+v||0)*100)/100;if(v)p[field]=v;else delete p[field];if(p.h||p.r||p.o)tipsState.hours[name][sec]=p;else delete tipsState.hours[name][sec];if(!Object.keys(tipsState.hours[name]).length)delete tipsState.hours[name];}
-function tipHoursInput(name,sec,field,val){tipHoursSetPos(name,sec,field,val);const id=tipId(name),sid=sec.replace(/[^a-z0-9]/gi,'_');const pe=document.getElementById('hp-'+id+'-'+sid);if(pe){const pp=tipHoursPosPay(tipHours(name)[sec]||{});pe.textContent=pp?tipMoney(pp):'';}const te=document.getElementById('hpt-'+id);if(te){const t=tipHoursPersonTot(name);te.textContent=t.pay?tipMoney(t.pay):'';}tipHoursUpdateGrand();tipsSaveHoursSoon();}
-function tipHoursUpdateGrand(){let hrs=0,pay=0;Object.keys(tipsState.hours||{}).forEach(n=>{const t=tipHoursPersonTot(n);hrs+=t.reg+t.ot;pay+=t.pay;});const he=document.getElementById('hours-grand-hrs'),pe=document.getElementById('hours-grand-pay');if(he)he.textContent=hrs.toFixed(2);if(pe)pe.textContent=tipMoney(pay);}
-function tipHoursAddRow(name){if(!tipsState.hours)tipsState.hours={};if(!tipsState.hours[name])tipsState.hours[name]={};let base='Extra',nm=base,i=2;while(tipsState.hours[name][nm])nm=base+' '+(i++);tipsState.hours[name][nm]={};if(activeTab===TIPS&&(tipsState.view||'tips')==='hours'){document.getElementById('viewport').innerHTML=tipsHTML();const el=document.getElementById('hn-'+tipId(name)+'-'+nm.replace(/[^a-z0-9]/gi,'_'));if(el){el.focus();el.select();}}tipsSaveHoursSoon();}
+function hoursSrc(p){return (p&&p.src)||'wed';}   // legacy positions (no src) default to the wedding side
+function tipHoursPersonTotSrc(name,src){const h=tipHours(name);let reg=0,ot=0,pay=0;Object.keys(h).forEach(sec=>{if(hoursSrc(h[sec])!==src)return;reg+=+h[sec].h||0;ot+=+h[sec].o||0;pay+=tipHoursPosPay(h[sec]);});return {reg:Math.round(reg*100)/100,ot:Math.round(ot*100)/100,pay:Math.round(pay*100)/100};}
+function tipHoursGrand(src){let reg=0,ot=0,pay=0;Object.keys(tipsState.hours||{}).forEach(n=>{const t=tipHoursPersonTotSrc(n,src);reg+=t.reg;ot+=t.ot;pay+=t.pay;});const he=document.getElementById('hgrand-'+src+'-hrs'),pe=document.getElementById('hgrand-'+src+'-pay');if(he)he.textContent=(reg+ot).toFixed(2);if(pe)pe.textContent=tipMoney(pay);}
+function tipHoursInput(name,sec,field,val){const src=hoursSrc((tipsState.hours[name]||{})[sec]);tipHoursSetPos(name,sec,field,val);const id=tipId(name),sid=sec.replace(/[^a-z0-9]/gi,'_');const pe=document.getElementById('hp-'+id+'-'+sid);if(pe){const pp=tipHoursPosPay((tipsState.hours[name]||{})[sec]||{});pe.textContent=pp?tipMoney(pp):'';}const te=document.getElementById('hpt-'+src+'-'+id);if(te){const t=tipHoursPersonTotSrc(name,src);te.textContent=t.pay?tipMoney(t.pay):'';}tipHoursGrand(src);tipsSaveHoursSoon();}
+function tipHoursAddRow(name,src){if(!tipsState.hours)tipsState.hours={};if(!tipsState.hours[name])tipsState.hours[name]={};let base='Extra',nm=base,i=2;while(tipsState.hours[name][nm])nm=base+' '+(i++);tipsState.hours[name][nm]={src:src||'wed'};if(activeTab===TIPS&&(tipsState.view||'tips')==='hours'){document.getElementById('viewport').innerHTML=tipsHTML();const el=document.getElementById('hn-'+tipId(name)+'-'+nm.replace(/[^a-z0-9]/gi,'_'));if(el){el.focus();el.select();}}tipsSaveHoursSoon();}
 function tipHoursRenamePos(name,oldSec,newSec){newSec=(newSec||'').trim();const H=tipsState.hours&&tipsState.hours[name];if(!H||!(oldSec in H)){return;}if(!newSec||newSec===oldSec){document.getElementById('viewport').innerHTML=tipsHTML();return;}if(H[newSec]){tipsSetStatus('“'+newSec+'” already exists for '+name,'#f87171');document.getElementById('viewport').innerHTML=tipsHTML();return;}H[newSec]=H[oldSec];delete H[oldSec];document.getElementById('viewport').innerHTML=tipsHTML();tipsSaveHoursSoon();}
 function tipHoursDelPos(name,sec){const H=tipsState.hours&&tipsState.hours[name];if(H){delete H[sec];if(!Object.keys(H).length)delete tipsState.hours[name];}if(activeTab===TIPS&&(tipsState.view||'tips')==='hours')document.getElementById('viewport').innerHTML=tipsHTML();tipsSaveHoursSoon();}
 const EVENTS_HOURS_URL='https://restaurant-scheduler-hh5e.onrender.com/api/events-hours';
@@ -4746,6 +4748,7 @@ async function tipsPullWeddingHours(auto){
       if(cur&&cur.h)return;   // don't clobber existing hours for this position
       tipHoursSetPos(nm,pos.sec,'h',pos.hrs);
       if(pos.rate)tipHoursSetPos(nm,pos.sec,'r',pos.rate);
+      if(tipsState.hours[nm]&&tipsState.hours[nm][pos.sec])tipsState.hours[nm][pos.sec].src='wed';   // schedule-app = wedding side
       filled++;
     });
   });
@@ -4971,23 +4974,46 @@ function hoursHTML(){
       <td style="border-right:1px solid var(--border);${bb};text-align:right">${inp(name,sec,'o',h.o)}</td>
       <td id="hp-${id}-${sid}" style="padding:6px 10px;text-align:right;font-weight:600;color:#34d399;border-left:2px solid var(--border);${bb};white-space:nowrap">${pay?tipMoney(pay):''}</td>`;};
   const posInput=(name,sec)=>{const id=tipId(name),sid=sec.replace(/[^a-z0-9]/gi,'_'),en=esc(name).replace(/'/g,"\\'"),es=esc(sec).replace(/'/g,"\\'");return `<input id="hn-${id}-${sid}" value="${esc(sec)}" onchange="tipHoursRenamePos('${en}','${es}',this.value)" placeholder="position" style="background:transparent;border:none;border-bottom:1px dashed var(--border);color:var(--text-dim);font-size:12px;width:82px;padding:1px 0;font-family:inherit;outline:none">`;};
-  const addBtn=(name)=>`<button onclick="tipHoursAddRow('${esc(name).replace(/'/g,"\\'")}')" title="Add a position / special-rate row" style="background:transparent;border:1px solid var(--border);color:var(--text-muted);border-radius:5px;font-size:12px;line-height:1;padding:2px 6px;cursor:pointer;margin-left:8px">＋</button>`;
+  const addBtn=(name,src)=>`<button onclick="tipHoursAddRow('${esc(name).replace(/'/g,"\\'")}','${src}')" title="Add a position / special-rate row" style="background:transparent;border:1px solid var(--border);color:var(--text-muted);border-radius:5px;font-size:12px;line-height:1;padding:2px 6px;cursor:pointer;margin-left:8px">＋</button>`;
   const delX=(name,sec)=>`<button onclick="tipHoursDelPos('${esc(name).replace(/'/g,"\\'")}','${esc(sec).replace(/'/g,"\\'")}')" title="Delete this row" style="background:transparent;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;line-height:1;padding:0 3px;margin-left:4px">×</button>`;
-  const names=Object.keys(tipsState.hours||{}).sort((a,b)=>lastOf(a).localeCompare(lastOf(b))||a.localeCompare(b));
-  let gReg=0,gOt=0,gPay=0,body='';
-  names.forEach(name=>{
-    const h=tipHours(name),secs=Object.keys(h).sort(),id=tipId(name),t=tipHoursPersonTot(name);
-    gReg+=t.reg;gOt+=t.ot;gPay+=t.pay;
-    if(secs.length<=1){
-      const sec=secs[0]||'';
-      body+=`<tr><td style="position:sticky;left:0;background:var(--surface);padding:7px 12px;white-space:nowrap;border-right:2px solid var(--border);${bb}"><span style="font-weight:600">${esc(name)}</span> ${posInput(name,sec)}${delX(name,sec)}${addBtn(name)}</td>${cells(name,sec)}</tr>`;
-    }else{
-      body+=`<tr style="background:var(--surface2)"><td style="position:sticky;left:0;background:var(--surface2);padding:7px 12px;font-weight:800;white-space:nowrap;border-right:2px solid var(--border);${bb}">${esc(name)}${addBtn(name)}</td><td style="${bb}"></td><td style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.reg}</td><td style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.ot||''}</td><td id="hpt-${id}" style="padding:7px 10px;text-align:right;font-weight:800;color:#34d399;border-left:2px solid var(--border);${bb}">${t.pay?tipMoney(t.pay):''}</td></tr>`;
-      secs.forEach(sec=>{body+=`<tr><td style="position:sticky;left:0;background:var(--surface);padding:6px 12px 6px 26px;white-space:nowrap;border-right:2px solid var(--border);${bb}">↳ ${posInput(name,sec)}${delX(name,sec)}</td>${cells(name,sec)}</tr>`;});
-    }
-  });
-  if(!names.length)body=`<tr><td colspan="5" style="padding:34px;text-align:center;color:var(--text-dim);line-height:1.6">No hours yet.<br>Pick a date range to pull the <b>wedding/event hours</b>, or give me the <b>MICROS timesheet</b> for restaurant hours.</td></tr>`;
   const th=(t,extra)=>`<th style="padding:6px 8px;${bb};${extra||''}">${t}</th>`;
+  const tableFor=(srcWanted,title,accent,emptyMsg)=>{
+    const names=Object.keys(tipsState.hours||{}).filter(nm=>Object.keys(tipsState.hours[nm]||{}).some(sec=>hoursSrc(tipsState.hours[nm][sec])===srcWanted)).sort((a,b)=>lastOf(a).localeCompare(lastOf(b))||a.localeCompare(b));
+    let gReg=0,gOt=0,gPay=0,body='';
+    names.forEach(name=>{
+      const all=tipHours(name),secs=Object.keys(all).filter(sec=>hoursSrc(all[sec])===srcWanted).sort(),id=tipId(name),t=tipHoursPersonTotSrc(name,srcWanted);
+      gReg+=t.reg;gOt+=t.ot;gPay+=t.pay;
+      if(secs.length<=1){
+        const sec=secs[0]||'';
+        body+=`<tr><td style="position:sticky;left:0;background:var(--surface);padding:7px 12px;white-space:nowrap;border-right:2px solid var(--border);${bb}"><span style="font-weight:600">${esc(name)}</span> ${posInput(name,sec)}${delX(name,sec)}${addBtn(name,srcWanted)}</td>${cells(name,sec)}</tr>`;
+      }else{
+        body+=`<tr style="background:var(--surface2)"><td style="position:sticky;left:0;background:var(--surface2);padding:7px 12px;font-weight:800;white-space:nowrap;border-right:2px solid var(--border);${bb}">${esc(name)}${addBtn(name,srcWanted)}</td><td style="${bb}"></td><td style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.reg}</td><td style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.ot||''}</td><td id="hpt-${srcWanted}-${id}" style="padding:7px 10px;text-align:right;font-weight:800;color:#34d399;border-left:2px solid var(--border);${bb}">${t.pay?tipMoney(t.pay):''}</td></tr>`;
+        secs.forEach(sec=>{body+=`<tr><td style="position:sticky;left:0;background:var(--surface);padding:6px 12px 6px 26px;white-space:nowrap;border-right:2px solid var(--border);${bb}">↳ ${posInput(name,sec)}${delX(name,sec)}</td>${cells(name,sec)}</tr>`;});
+      }
+    });
+    if(!names.length)body=`<tr><td colspan="5" style="padding:28px;text-align:center;color:var(--text-dim);line-height:1.6">${emptyMsg}</td></tr>`;
+    return `<div style="flex:1 1 460px;min-width:430px">
+      <div style="font-weight:800;color:${accent};font-size:14px;padding:2px 2px 8px;letter-spacing:.02em">${title}</div>
+      <div style="overflow-x:auto;border:1px solid var(--border);border-radius:12px">
+        <table style="border-collapse:collapse;font-size:13px;width:100%">
+          <thead><tr style="background:var(--surface)">
+            ${th('Name / position','position:sticky;left:0;z-index:2;background:var(--surface);text-align:left;border-right:2px solid var(--border)')}
+            ${th('Rate','text-align:right;border-right:1px solid var(--border)')}
+            ${th('Reg','text-align:right;border-right:1px solid var(--border)')}
+            ${th('OT','text-align:right;border-right:1px solid var(--border)')}
+            ${th('Pay','text-align:right;color:#34d399;border-left:2px solid var(--border)')}
+          </tr></thead>
+          <tbody>${body}</tbody>
+          <tfoot><tr style="background:var(--surface2);font-weight:800">
+            <td style="position:sticky;left:0;background:var(--surface2);padding:9px 12px;border-right:2px solid var(--border);border-top:2px solid var(--border)">TOTAL</td>
+            <td style="border-top:2px solid var(--border)"></td>
+            <td colspan="2" style="padding:9px 8px;text-align:right;border-top:2px solid var(--border);border-left:1px solid var(--border);white-space:nowrap"><span id="hgrand-${srcWanted}-hrs">${(gReg+gOt).toFixed(2)}</span> hrs</td>
+            <td id="hgrand-${srcWanted}-pay" style="padding:9px 8px;text-align:right;color:#34d399;border-left:2px solid var(--border);border-top:2px solid var(--border)">${tipMoney(gPay)}</td>
+          </tr></tfoot>
+        </table>
+      </div>
+    </div>`;
+  };
   return `
   <div style="height:100%;overflow-y:auto;padding:2px 2px 56px">
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
@@ -4999,28 +5025,14 @@ function hoursHTML(){
         <button onclick="tipsThisPeriod()" title="Jump to the current pay period" style="background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:12px">This period</button>
       </div>
       <span id="tips-status" style="font-size:12px;color:var(--text-dim)"></span>
-      <span style="margin-left:auto;font-size:12px;color:var(--text-dim)">weddings auto-pull on date pick · MICROS timesheet fills the rest</span>
+      <span style="margin-left:auto;font-size:12px;color:var(--text-dim)">restaurant (MICROS) on the left · weddings (schedule app) on the right</span>
     </div>
-    <div style="overflow-x:auto;border:1px solid var(--border);border-radius:12px;max-width:600px">
-      <table style="border-collapse:collapse;font-size:13px;width:100%">
-        <thead><tr style="background:var(--surface)">
-          ${th('Name / position','position:sticky;left:0;z-index:2;background:var(--surface);text-align:left;border-right:2px solid var(--border)')}
-          ${th('Rate','text-align:right;border-right:1px solid var(--border)')}
-          ${th('Reg','text-align:right;border-right:1px solid var(--border)')}
-          ${th('OT','text-align:right;border-right:1px solid var(--border)')}
-          ${th('Pay','text-align:right;color:#34d399;border-left:2px solid var(--border)')}
-        </tr></thead>
-        <tbody>${body}</tbody>
-        <tfoot><tr style="background:var(--surface2);font-weight:800">
-          <td style="position:sticky;left:0;background:var(--surface2);padding:9px 12px;border-right:2px solid var(--border);border-top:2px solid var(--border)">TOTAL</td>
-          <td style="border-top:2px solid var(--border)"></td>
-          <td colspan="2" style="padding:9px 8px;text-align:right;border-top:2px solid var(--border);border-left:1px solid var(--border);white-space:nowrap"><span id="hours-grand-hrs">${(gReg+gOt).toFixed(2)}</span> hrs</td>
-          <td id="hours-grand-pay" style="padding:9px 8px;text-align:right;color:#34d399;border-left:2px solid var(--border);border-top:2px solid var(--border)">${tipMoney(gPay)}</td>
-        </tr></tfoot>
-      </table>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
+      ${tableFor('rest','🍽 RESTAURANT (MICROS)','var(--accent)','No restaurant hours yet — give me the MICROS timesheet.')}
+      ${tableFor('wed','💍 WEDDINGS / EVENTS','#c4b5fd','No wedding hours — pick a date range to pull them.')}
     </div>
-    <div style="margin-top:10px;font-size:12px;color:var(--text-muted);line-height:1.5;max-width:600px">
-      Period hours per person, by position (a person can work more than one rate). <b>Pay</b> = Reg × Rate + OT × Rate × 1.5. Picking a date range pulls the <b>wedding/event hours</b> from the schedule app; the <b>MICROS timesheet</b> fills restaurant hours. Saves automatically.
+    <div style="margin-top:10px;font-size:12px;color:var(--text-muted);line-height:1.5">
+      Hours by position (a person can work several at different rates). <b>Pay</b> = Reg × Rate + OT × Rate × 1.5. Restaurant hours come from the <b>MICROS timesheet</b>; wedding/event hours <b>auto-pull</b> from the schedule app on date pick. <b>＋</b> adds a special-rate row, <b>×</b> deletes one. Saves automatically.
     </div>
   </div>`;
 }
