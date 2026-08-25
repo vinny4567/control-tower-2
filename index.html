@@ -1165,6 +1165,20 @@ function renderCompose(){
 }
 // Unregister any stale service workers
 if('serviceWorker'in navigator){navigator.serviceWorker.getRegistrations().then(rs=>rs.forEach(r=>r.unregister()));}
+// ── Auto-update: GitHub Pages caches the HTML in the browser, so poll this page's
+// ETag/Last-Modified and refresh when a new version is deployed — but never while
+// a tip cell is being edited (that popup open = don't yank the page). ──
+(function(){
+  let baseTag=null,pending=false;
+  async function fetchTag(){try{const r=await fetch(location.pathname+'?_v='+Date.now(),{method:'HEAD',cache:'no-store'});return r.headers.get('etag')||r.headers.get('last-modified')||null;}catch(e){return null;}}
+  function busy(){const p=document.getElementById('tip-pop');return !!(p&&p.style.display!=='none');}
+  function maybeReload(){if(pending&&!busy())location.reload();}
+  async function check(){const t=await fetchTag();if(!t)return;if(baseTag===null){baseTag=t;return;}if(t!==baseTag){pending=true;maybeReload();}}
+  fetchTag().then(t=>{baseTag=t;});
+  setInterval(check,90000);
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){check();maybeReload();}});
+  window.addEventListener('focus',()=>{check();maybeReload();});
+})();
 // ═══ EMAIL TAB — consolidated multi-account catering inbox via the jarvis-voice mail bridge ═══
 const MAIL_BASE='https://jarvis-voicejarvis-voice.onrender.com';
 let mailx={accts:null,acct:null,folder:'inbox',lists:{},selUid:null,selMsg:null,selThread:null,loadingList:false,loadingMsg:false,composing:false,composeNew:false,search:'',searchResults:null,searching:false,sendStatus:null,error:null,attach:[]};
