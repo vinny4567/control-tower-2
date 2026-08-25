@@ -4988,15 +4988,16 @@ function hoursHTML(){
     // 'rest' = restaurant employees (any MICROS position), shown with ALL their positions;
     // 'wed' = wedding-only people (no MICROS position).
     const names=Object.keys(tipsState.hours||{}).filter(nm=>Object.keys(tipsState.hours[nm]||{}).length && (mode==='rest'?isRestEmp(nm):!isRestEmp(nm))).sort((a,b)=>lastOf(a).localeCompare(lastOf(b))||a.localeCompare(b));
+    const nameBg=mode==='rest'?'rgba(255,179,0,0.13)':'rgba(196,181,253,0.14)',nameBar=mode==='rest'?'var(--accent)':'#c4b5fd';
     let gReg=0,gOt=0,gPay=0,body='';
     names.forEach(name=>{
       const all=tipHours(name),secs=Object.keys(all).sort(),id=tipId(name),t=tipHoursPersonTot(name);
       gReg+=t.reg;gOt+=t.ot;gPay+=t.pay;
       if(secs.length<=1){
         const sec=secs[0]||'';
-        body+=`<tr><td style="position:sticky;left:0;background:var(--surface);padding:7px 12px;white-space:nowrap;border-right:2px solid var(--border);${bb}"><span style="font-weight:600">${esc(name)}</span> ${posInput(name,sec)}${wtag(all,sec)}${delX(name,sec)}${addBtn(name,mode)}</td>${cells(name,sec)}</tr>`;
+        body+=`<tr style="background:${nameBg}"><td style="position:sticky;left:0;background:${nameBg};border-left:3px solid ${nameBar};padding:7px 12px;white-space:nowrap;border-right:2px solid var(--border);${bb}"><span style="font-weight:700">${esc(name)}</span> ${posInput(name,sec)}${wtag(all,sec)}${delX(name,sec)}${addBtn(name,mode)}</td>${cells(name,sec)}</tr>`;
       }else{
-        body+=`<tr style="background:var(--surface2)"><td style="position:sticky;left:0;background:var(--surface2);padding:7px 12px;font-weight:800;white-space:nowrap;border-right:2px solid var(--border);${bb}">${esc(name)}${addBtn(name,mode)}</td><td style="${bb}"></td><td style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.reg}</td><td style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.ot||''}</td><td id="hpt-${id}" style="padding:7px 10px;text-align:right;font-weight:800;color:#34d399;border-left:2px solid var(--border);${bb}">${t.pay?tipMoney(t.pay):''}</td></tr>`;
+        body+=`<tr style="background:${nameBg}"><td style="position:sticky;left:0;background:${nameBg};border-left:3px solid ${nameBar};padding:7px 12px;font-weight:800;white-space:nowrap;border-right:2px solid var(--border);${bb}">${esc(name)}${addBtn(name,mode)}</td><td style="${bb}"></td><td style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.reg}</td><td style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.ot||''}</td><td id="hpt-${id}" style="padding:7px 10px;text-align:right;font-weight:800;color:#34d399;border-left:2px solid var(--border);${bb}">${t.pay?tipMoney(t.pay):''}</td></tr>`;
         secs.forEach(sec=>{body+=`<tr><td style="position:sticky;left:0;background:var(--surface);padding:6px 12px 6px 26px;white-space:nowrap;border-right:2px solid var(--border);${bb}">↳ ${posInput(name,sec)}${wtag(all,sec)}${delX(name,sec)}</td>${cells(name,sec)}</tr>`;});
       }
     });
