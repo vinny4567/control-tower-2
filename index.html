@@ -4836,10 +4836,14 @@ function tipsThisPeriod(){const p=tipCurrentPeriod();tipsState.start=p.start;tip
 let tipEdit={name:null,day:null};
 function tipRefreshRow(name){const t=tipRowTotals(name),id=tipId(name);const pe=document.getElementById('tp-'+id),ue=document.getElementById('tu-'+id);if(pe)pe.textContent=t.paid?tipMoney(t.paid):'';if(ue)ue.textContent=t.upt?tipMoney(t.upt):'';tipsUpdateGrand();}
 function tipRefreshCell(name,day){const el=document.getElementById('tc-'+tipId(name)+'-'+day.replace('/','_'));if(el)el.innerHTML=tipCompsHTML(tipCell(name,day));}
-function tipHidePopup(){const p=document.getElementById('tip-pop');if(p)p.style.display='none';tipEdit.name=null;}
+function tipHidePopup(){const p=document.getElementById('tip-pop');if(p)p.style.display='none';tipCellClearHighlight();tipEdit.name=null;}
 function tipCellEditorEl(){let p=document.getElementById('tip-pop');if(!p){p=document.createElement('div');p.id='tip-pop';p.style.cssText='position:fixed;display:none;flex-direction:column;gap:7px;z-index:99999;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px;box-shadow:0 8px 26px rgba(0,0,0,.6);min-width:172px';document.body.appendChild(p);}return p;}
+function tipCellClearHighlight(){if(tipEdit&&tipEdit.cellEl){tipEdit.cellEl.style.boxShadow='';tipEdit.cellEl.style.background='';tipEdit.cellEl=null;}}
 function tipCellEdit(name,day){
+  tipCellClearHighlight();
   tipEdit={name,day};
+  const cellEl=document.getElementById('tc-'+tipId(name)+'-'+day.replace('/','_'));
+  if(cellEl){cellEl.style.boxShadow='inset 0 0 0 2px var(--accent2)';cellEl.style.background='rgba(34,211,238,0.14)';tipEdit.cellEl=cellEl;}
   const c=tipCell(name,day)||{};
   const fld=(lab,comp,color,val)=>`<label style="display:flex;align-items:center;gap:8px;font-size:12px;color:${color};font-weight:800"><span style="width:56px">${lab}</span><input inputmode="decimal" value="${val!=null?val:''}" oninput="tipEditSet('${comp}',this.value)" onkeydown="if(event.key==='Enter')tipHidePopup()" style="width:82px;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:13px;font-family:inherit;text-align:right;outline:none"></label>`;
   const p=tipCellEditorEl();
