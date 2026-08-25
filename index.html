@@ -4709,7 +4709,7 @@ const TIP_NAME_ALIASES={'priscilla lagace':'Priscilla La Gace','priscill lagace'
 function tipNormKey(n){return String(n||'').trim().toLowerCase().replace(/\s+/g,' ');}
 const TIP_ROSTER_CANON=(function(){const m={};Object.keys(TIP_ROSTER_DATA).forEach(sec=>TIP_ROSTER_DATA[sec].forEach(n=>{m[tipNormKey(n)]=n;}));return m;})();
 function tipCanon(name){const k=tipNormKey(name);if(!k)return String(name||'').trim();return TIP_NAME_ALIASES[k]||TIP_ROSTER_CANON[k]||String(name).trim();}
-let tipsState={start:null,end:null,cells:{},adds:{},moves:{},expanded:{},roster:null,hours:{},view:'tips',loaded:false,loading:false};
+let tipsState={start:null,end:null,cells:{},adds:{},moves:{},expanded:{},roster:null,hours:{},empIds:{},view:'tips',loaded:false,loading:false};
 let tipsGen=0;   // bumped on every (re)load; guards against two period-loads racing and crossing data
 function tipsSetView(v){tipsState.view=v;document.getElementById('viewport').innerHTML=tipsHTML();}
 // Re-render the Tips/Hours view in place WITHOUT losing the vertical scroll position
@@ -4723,14 +4723,14 @@ function tipHours(name){return (tipsState.hours&&tipsState.hours[name])?tipsStat
 function tipHoursPosPay(p){const r=+(p&&p.r)||0;return Math.round((r*(+(p&&p.h)||0)+r*1.5*(+(p&&p.o)||0))*100)/100;}
 function tipHoursPersonTot(name){const h=tipHours(name);let reg=0,ot=0,pay=0;Object.keys(h).forEach(sec=>{reg+=+h[sec].h||0;ot+=+h[sec].o||0;pay+=tipHoursPosPay(h[sec]);});return {reg:Math.round(reg*100)/100,ot:Math.round(ot*100)/100,pay:Math.round(pay*100)/100};}
 let tipsHoursSaveTimer=null;
-function tipsSaveHoursSoon(){clearTimeout(tipsHoursSaveTimer);tipsHoursSaveTimer=setTimeout(()=>{try{kvPush(tipHoursKey(),{hours:tipsState.hours},Date.now());tipsSetStatus('Saved ✓','var(--text-dim)');}catch(e){tipsSetStatus('⚠ not saved','#f87171');}},600);tipsSetStatus('Saving…','var(--text-dim)');}
+function tipsSaveHoursSoon(){clearTimeout(tipsHoursSaveTimer);tipsHoursSaveTimer=setTimeout(()=>{try{kvPush(tipHoursKey(),{hours:tipsState.hours,empIds:tipsState.empIds},Date.now());tipsSetStatus('Saved ✓','var(--text-dim)');}catch(e){tipsSetStatus('⚠ not saved','#f87171');}},600);tipsSetStatus('Saving…','var(--text-dim)');}
 function tipHoursSetPos(name,sec,field,v){if(!tipsState.hours)tipsState.hours={};if(!tipsState.hours[name])tipsState.hours[name]={};const p=tipsState.hours[name][sec]||{};v=Math.round((+v||0)*100)/100;if(v)p[field]=v;else delete p[field];if(p.h||p.r||p.o)tipsState.hours[name][sec]=p;else delete tipsState.hours[name][sec];if(!Object.keys(tipsState.hours[name]).length)delete tipsState.hours[name];}
 function hoursSrc(p){return (p&&p.src)||'wed';}   // legacy positions (no src) default to the wedding side
 // A person is a RESTAURANT employee if they have any MICROS (rest) position. Such a
 // person shows ONCE, in the restaurant table, with ALL their positions (incl weddings)
 // under their name. Wedding-ONLY people (no rest position) show in the weddings table.
 function isRestEmp(name){const h=tipsState.hours[name]||{};return Object.keys(h).some(sec=>hoursSrc(h[sec])==='rest');}
-function tipHoursGrandAll(){const r={reg:0,ot:0,pay:0},w={reg:0,ot:0,pay:0};Object.keys(tipsState.hours||{}).forEach(n=>{const t=tipHoursPersonTot(n),g=isRestEmp(n)?r:w;g.reg+=t.reg;g.ot+=t.ot;g.pay+=t.pay;});[['rest',r],['wed',w]].forEach(([m,g])=>{const he=document.getElementById('hgrand-'+m+'-hrs'),pe=document.getElementById('hgrand-'+m+'-pay');if(he)he.textContent=(Math.round((g.reg+g.ot)*100)/100).toFixed(2);if(pe)pe.textContent=tipMoney(g.pay);});}
+function tipHoursGrandAll(){let reg=0,ot=0,pay=0;Object.keys(tipsState.hours||{}).forEach(n=>{const t=tipHoursPersonTot(n);reg+=t.reg;ot+=t.ot;pay+=t.pay;});const he=document.getElementById('hgrand-hrs'),pe=document.getElementById('hgrand-pay');if(he)he.textContent=(Math.round((reg+ot)*100)/100).toFixed(2);if(pe)pe.textContent=tipMoney(pay);}
 function tipHoursInput(name,sec,field,val){tipHoursSetPos(name,sec,field,val);const id=tipId(name),sid=sec.replace(/[^a-z0-9]/gi,'_');const pe=document.getElementById('hp-'+id+'-'+sid);if(pe){const pp=tipHoursPosPay((tipsState.hours[name]||{})[sec]||{});pe.textContent=pp?tipMoney(pp):'';}const te=document.getElementById('hpt-'+id);if(te){const t=tipHoursPersonTot(name);te.textContent=t.pay?tipMoney(t.pay):'';}tipHoursGrandAll();tipsSaveHoursSoon();}
 function tipHoursAddRow(name,src){if(!tipsState.hours)tipsState.hours={};if(!tipsState.hours[name])tipsState.hours[name]={};let base='Extra',nm=base,i=2;while(tipsState.hours[name][nm])nm=base+' '+(i++);tipsState.hours[name][nm]={src:src||'wed'};if(activeTab===TIPS&&(tipsState.view||'tips')==='hours'){tipsRerender();const el=document.getElementById('hn-'+tipId(name)+'-'+nm.replace(/[^a-z0-9]/gi,'_'));if(el){el.focus({preventScroll:true});el.select();}}tipsSaveHoursSoon();}
 function tipHoursRenamePos(name,oldSec,newSec){newSec=(newSec||'').trim();const H=tipsState.hours&&tipsState.hours[name];if(!H||!(oldSec in H)){return;}if(!newSec||newSec===oldSec){tipsRerender();return;}if(H[newSec]){tipsSetStatus('“'+newSec+'” already exists for '+name,'#f87171');tipsRerender();return;}H[newSec]=H[oldSec];delete H[oldSec];tipsRerender();tipsSaveHoursSoon();}
@@ -4748,6 +4748,7 @@ async function tipsPullWeddingHours(auto){
   let filled=0;
   people.forEach(p=>{
     const nm=tipCanon(p.name);if(!nm)return;
+    if(p.workerId){if(!tipsState.empIds)tipsState.empIds={};if(!tipsState.empIds[nm])tipsState.empIds[nm]=String(p.workerId);}
     (p.positions||[]).forEach(pos=>{
       if(!pos.hrs)return;
       const cur=(tipsState.hours[nm]&&tipsState.hours[nm][pos.sec])?tipsState.hours[nm][pos.sec]:null;
@@ -4849,7 +4850,7 @@ async function tipsInit(){
   tipsState.cells=(remote&&remote.v&&remote.v.cells)?remote.v.cells:{};
   tipsState.adds=(remote&&remote.v&&remote.v.adds)?remote.v.adds:{};
   const rm=await kvGet('ct_tips_moves');if(g!==tipsGen)return;tipsState.moves=(rm&&rm.v&&rm.v.moves)?rm.v.moves:{};
-  const rh=await kvGet(tipHoursKey());if(g!==tipsGen)return;tipsState.hours=(rh&&rh.v&&rh.v.hours)?rh.v.hours:{};   // Hours page (period totals)
+  const rh=await kvGet(tipHoursKey());if(g!==tipsGen)return;tipsState.hours=(rh&&rh.v&&rh.v.hours)?rh.v.hours:{};tipsState.empIds=(rh&&rh.v&&rh.v.empIds)?rh.v.empIds:{};   // Hours page (period totals) + Paychex emp-IDs
   let _mig=tipMigrateCells();if(tipCleanAdds())_mig=true;if(_mig)tipsSaveSoon();   // upgrade legacy {v,upt,wed} cells + heal stale adds
   tipsState.loaded=true;tipsState.loading=false;
   if(activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();
@@ -4984,46 +4985,28 @@ function hoursHTML(){
   const delX=(name,sec)=>`<button onclick="tipHoursDelPos('${esc(name).replace(/'/g,"\\'")}','${esc(sec).replace(/'/g,"\\'")}')" title="Delete this row" style="background:transparent;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;line-height:1;padding:0 3px;margin-left:4px">×</button>`;
   const th=(t,extra)=>`<th style="padding:6px 8px;${bb};${extra||''}">${t}</th>`;
   const wtag=(all,sec)=>hoursSrc(all[sec])==='wed'?` <span title="wedding / event" style="color:#c4b5fd;font-size:10px">💍</span>`:'';
-  const tableFor=(mode,title,accent,emptyMsg)=>{
-    // 'rest' = restaurant employees (any MICROS position), shown with ALL their positions;
-    // 'wed' = wedding-only people (no MICROS position).
-    const names=Object.keys(tipsState.hours||{}).filter(nm=>Object.keys(tipsState.hours[nm]||{}).length && (mode==='rest'?isRestEmp(nm):!isRestEmp(nm))).sort((a,b)=>lastOf(a).localeCompare(lastOf(b))||a.localeCompare(b));
-    const nameBg=mode==='rest'?'rgba(255,179,0,0.13)':'rgba(196,181,253,0.14)',nameBar=mode==='rest'?'var(--accent)':'#c4b5fd';
-    let gReg=0,gOt=0,gPay=0,body='';
-    names.forEach(name=>{
-      const all=tipHours(name),secs=Object.keys(all).sort(),id=tipId(name),t=tipHoursPersonTot(name);
-      gReg+=t.reg;gOt+=t.ot;gPay+=t.pay;
-      if(secs.length<=1){
-        const sec=secs[0]||'';
-        body+=`<tr style="background:${nameBg}"><td style="position:sticky;left:0;background:${nameBg};border-left:3px solid ${nameBar};padding:7px 12px;white-space:nowrap;border-right:2px solid var(--border);${bb}"><span style="font-weight:700">${esc(name)}</span> ${posInput(name,sec)}${wtag(all,sec)}${delX(name,sec)}${addBtn(name,mode)}</td>${cells(name,sec)}</tr>`;
-      }else{
-        body+=`<tr style="background:${nameBg}"><td style="position:sticky;left:0;background:${nameBg};border-left:3px solid ${nameBar};padding:7px 12px;font-weight:800;white-space:nowrap;border-right:2px solid var(--border);${bb}">${esc(name)}${addBtn(name,mode)}</td><td style="${bb}"></td><td style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.reg}</td><td style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.ot||''}</td><td id="hpt-${id}" style="padding:7px 10px;text-align:right;font-weight:800;color:#34d399;border-left:2px solid var(--border);${bb}">${t.pay?tipMoney(t.pay):''}</td></tr>`;
-        secs.forEach(sec=>{body+=`<tr><td style="position:sticky;left:0;background:var(--surface);padding:6px 12px 6px 26px;white-space:nowrap;border-right:2px solid var(--border);${bb}">↳ ${posInput(name,sec)}${wtag(all,sec)}${delX(name,sec)}</td>${cells(name,sec)}</tr>`;});
-      }
-    });
-    if(!names.length)body=`<tr><td colspan="5" style="padding:28px;text-align:center;color:var(--text-dim);line-height:1.6">${emptyMsg}</td></tr>`;
-    return `<div style="flex:1 1 460px;min-width:430px">
-      <div style="font-weight:800;color:${accent};font-size:14px;padding:2px 2px 8px;letter-spacing:.02em">${title}</div>
-      <div style="overflow-x:auto;border:1px solid var(--border);border-radius:12px">
-        <table style="border-collapse:collapse;font-size:13px;width:100%">
-          <thead><tr style="background:var(--surface)">
-            ${th('Name / position','position:sticky;left:0;z-index:2;background:var(--surface);text-align:left;border-right:2px solid var(--border)')}
-            ${th('Rate','text-align:right;border-right:1px solid var(--border)')}
-            ${th('Reg','text-align:right;border-right:1px solid var(--border)')}
-            ${th('OT','text-align:right;border-right:1px solid var(--border)')}
-            ${th('Pay','text-align:right;color:#34d399;border-left:2px solid var(--border)')}
-          </tr></thead>
-          <tbody>${body}</tbody>
-          <tfoot><tr style="background:var(--surface2);font-weight:800">
-            <td style="position:sticky;left:0;background:var(--surface2);padding:9px 12px;border-right:2px solid var(--border);border-top:2px solid var(--border)">TOTAL</td>
-            <td style="border-top:2px solid var(--border)"></td>
-            <td colspan="2" style="padding:9px 8px;text-align:right;border-top:2px solid var(--border);border-left:1px solid var(--border);white-space:nowrap"><span id="hgrand-${mode}-hrs">${(gReg+gOt).toFixed(2)}</span> hrs</td>
-            <td id="hgrand-${mode}-pay" style="padding:9px 8px;text-align:right;color:#34d399;border-left:2px solid var(--border);border-top:2px solid var(--border)">${tipMoney(gPay)}</td>
-          </tr></tfoot>
-        </table>
-      </div>
-    </div>`;
-  };
+  const empBadge=(name)=>{const id=(tipsState.empIds||{})[name];return id?`<span title="Paychex worker ID" style="color:var(--accent2);font-weight:700;font-size:11px;margin-right:7px;font-variant-numeric:tabular-nums">${esc(id)}</span>`:`<span title="no Paychex ID — set it in the scheduler worker-IDs database" style="color:#f87171;font-size:10px;margin-right:6px">no id</span>`;};
+  // ONE combined sheet: everyone, restaurant positions over wedding (💍), + Tips/Unpaid from the Tips tab.
+  const secOrd=(all)=>Object.keys(all).sort((a,b)=>{const sa=hoursSrc(all[a])==='rest'?0:1,sb=hoursSrc(all[b])==='rest'?0:1;return sa-sb||a.localeCompare(b);});
+  const set={};Object.keys(tipsState.hours||{}).forEach(n=>set[n]=1);Object.keys(tipsState.cells||{}).forEach(n=>{const t=tipRowTotals(n);if(t.paid>0||t.upt>0)set[n]=1;});
+  const names=Object.keys(set).sort((a,b)=>lastOf(a).localeCompare(lastOf(b))||a.localeCompare(b));
+  const nameBg='rgba(255,179,0,0.13)',nameBar='var(--accent)';
+  const tipCells=(id,tt)=>`<td id="htip-${id}" style="padding:7px 10px;text-align:right;font-weight:700;color:#34d399;border-left:1px solid var(--border);${bb};white-space:nowrap">${tt.paid?tipMoney(tt.paid):''}</td><td id="hupt-${id}" style="padding:7px 10px;text-align:right;font-weight:700;color:#fbbf24;border-left:1px solid var(--border);${bb};white-space:nowrap">${tt.upt?tipMoney(tt.upt):''}</td>`;
+  const blankTips=`<td style="border-left:1px solid var(--border);${bb}"></td><td style="border-left:1px solid var(--border);${bb}"></td>`;
+  let gHrs=0,gPay=0,gTip=0,gUpt=0,body='';
+  names.forEach(name=>{
+    const all=tipHours(name),secs=secOrd(all),id=tipId(name),t=tipHoursPersonTot(name),tt=tipRowTotals(name),asrc=isRestEmp(name)?'rest':'wed';
+    gHrs+=t.reg+t.ot;gPay+=t.pay;gTip+=tt.paid;gUpt+=tt.upt;
+    const nb=`position:sticky;left:0;background:${nameBg};border-left:3px solid ${nameBar};padding:7px 12px;white-space:nowrap;border-right:2px solid var(--border);${bb}`;
+    if(secs.length===1){
+      const sec=secs[0];
+      body+=`<tr style="background:${nameBg}"><td style="${nb}">${empBadge(name)}<span style="font-weight:700">${esc(name)}</span> ${posInput(name,sec)}${wtag(all,sec)}${delX(name,sec)}${addBtn(name,asrc)}</td>${cells(name,sec)}${tipCells(id,tt)}</tr>`;
+    }else{
+      body+=`<tr style="background:${nameBg}"><td style="${nb};font-weight:800">${empBadge(name)}${esc(name)}${addBtn(name,asrc)}</td><td style="${bb}"></td><td style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.reg||''}</td><td style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.ot||''}</td><td id="hpt-${id}" style="padding:7px 10px;text-align:right;font-weight:800;color:#34d399;border-left:2px solid var(--border);${bb}">${t.pay?tipMoney(t.pay):''}</td>${tipCells(id,tt)}</tr>`;
+      secs.forEach(sec=>{body+=`<tr><td style="position:sticky;left:0;background:var(--surface);padding:6px 12px 6px 26px;white-space:nowrap;border-right:2px solid var(--border);${bb}">↳ ${posInput(name,sec)}${wtag(all,sec)}${delX(name,sec)}</td>${cells(name,sec)}${blankTips}</tr>`;});
+    }
+  });
+  if(!names.length)body=`<tr><td colspan="7" style="padding:34px;text-align:center;color:var(--text-dim);line-height:1.6">No hours or tips yet — pick a date range to pull weddings, and give me the MICROS timesheet.</td></tr>`;
   return `
   <div style="height:100%;overflow-y:auto;padding:2px 2px 56px">
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
@@ -5035,14 +5018,32 @@ function hoursHTML(){
         <button onclick="tipsThisPeriod()" title="Jump to the current pay period" style="background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:12px">This period</button>
       </div>
       <span id="tips-status" style="font-size:12px;color:var(--text-dim)"></span>
-      <span style="margin-left:auto;font-size:12px;color:var(--text-dim)">restaurant (MICROS) on the left · weddings (schedule app) on the right</span>
+      <span style="margin-left:auto;font-size:12px;color:var(--text-dim)">everyone · restaurant over wedding (💍) · + tips — the Paychex picture</span>
     </div>
-    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
-      ${tableFor('rest','🍽 RESTAURANT (MICROS)','var(--accent)','No restaurant hours yet — give me the MICROS timesheet.')}
-      ${tableFor('wed','💍 WEDDINGS / EVENTS','#c4b5fd','No wedding hours — pick a date range to pull them.')}
+    <div style="overflow-x:auto;border:1px solid var(--border);border-radius:12px">
+      <table style="border-collapse:collapse;font-size:13px;width:100%">
+        <thead><tr style="background:var(--surface)">
+          ${th('Name / position','position:sticky;left:0;z-index:2;background:var(--surface);text-align:left;border-right:2px solid var(--border)')}
+          ${th('Rate','text-align:right;border-right:1px solid var(--border)')}
+          ${th('Reg','text-align:right;border-right:1px solid var(--border)')}
+          ${th('OT','text-align:right;border-right:1px solid var(--border)')}
+          ${th('Pay','text-align:right;color:#34d399;border-left:2px solid var(--border)')}
+          ${th('Tips','text-align:right;color:#34d399;border-left:1px solid var(--border)')}
+          ${th('Unpaid','text-align:right;color:#fbbf24;border-left:1px solid var(--border)')}
+        </tr></thead>
+        <tbody>${body}</tbody>
+        <tfoot><tr style="background:var(--surface2);font-weight:800">
+          <td style="position:sticky;left:0;background:var(--surface2);padding:9px 12px;border-right:2px solid var(--border);border-top:2px solid var(--border)">TOTAL</td>
+          <td style="border-top:2px solid var(--border)"></td>
+          <td colspan="2" style="padding:9px 8px;text-align:right;border-top:2px solid var(--border);border-left:1px solid var(--border);white-space:nowrap"><span id="hgrand-hrs">${gHrs.toFixed(2)}</span> hrs</td>
+          <td id="hgrand-pay" style="padding:9px 8px;text-align:right;color:#34d399;border-left:2px solid var(--border);border-top:2px solid var(--border)">${tipMoney(gPay)}</td>
+          <td style="padding:9px 8px;text-align:right;color:#34d399;border-left:1px solid var(--border);border-top:2px solid var(--border)">${tipMoney(gTip)}</td>
+          <td style="padding:9px 8px;text-align:right;color:#fbbf24;border-left:1px solid var(--border);border-top:2px solid var(--border)">${tipMoney(gUpt)}</td>
+        </tr></tfoot>
+      </table>
     </div>
     <div style="margin-top:10px;font-size:12px;color:var(--text-muted);line-height:1.5">
-      Hours by position (a person can work several at different rates). <b>Pay</b> = Reg × Rate + OT × Rate × 1.5. Restaurant hours come from the <b>MICROS timesheet</b>; wedding/event hours <b>auto-pull</b> from the schedule app on date pick. <b>＋</b> adds a special-rate row, <b>×</b> deletes one. Saves automatically.
+      Everyone in one sheet — restaurant positions (MICROS) first, then wedding/event (💍) — with each person's <b>Tips</b> (paid) and <b>Unpaid</b> tips from the Tips tab. <b>Pay</b> = Reg × Rate + OT × Rate × 1.5. This is the shape of the Paychex export. Saves automatically.
     </div>
   </div>`;
 }
