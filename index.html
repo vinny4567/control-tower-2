@@ -4694,15 +4694,43 @@ function tipCanon(name){const k=tipNormKey(name);if(!k)return String(name||'').t
 let tipsState={start:null,end:null,cells:{},adds:{},moves:{},expanded:{},roster:null,hours:{},view:'tips',loaded:false,loading:false};
 let tipsGen=0;   // bumped on every (re)load; guards against two period-loads racing and crossing data
 function tipsSetView(v){tipsState.view=v;document.getElementById('viewport').innerHTML=tipsHTML();}
-// ── Hours page (period totals per person, from the MICROS timesheet) ──
+// ── Hours page — per person, hours by POSITION (weddings pull + MICROS import) ──
+// tipsState.hours[name] = { <section>: {h:hours, r:rate, o:ot} }  (a person can work
+// several positions at different rates — e.g. Bar $15 + Servers $25).
 function tipHoursKey(){tipEnsureRange();const s=tipsState.start;return 'ct_hours_'+s.getFullYear()+'_'+(s.getMonth()+1)+'_'+s.getDate();}
 function tipHours(name){return (tipsState.hours&&tipsState.hours[name])?tipsState.hours[name]:{};}
-function tipHoursPay(name){const h=tipHours(name),rate=+h.rate||0;return Math.round((rate*(+h.reg||0)+rate*1.5*(+h.ot||0))*100)/100;}
+function tipHoursPosPay(p){const r=+(p&&p.r)||0;return Math.round((r*(+(p&&p.h)||0)+r*1.5*(+(p&&p.o)||0))*100)/100;}
+function tipHoursPersonTot(name){const h=tipHours(name);let reg=0,ot=0,pay=0;Object.keys(h).forEach(sec=>{reg+=+h[sec].h||0;ot+=+h[sec].o||0;pay+=tipHoursPosPay(h[sec]);});return {reg:Math.round(reg*100)/100,ot:Math.round(ot*100)/100,pay:Math.round(pay*100)/100};}
 let tipsHoursSaveTimer=null;
 function tipsSaveHoursSoon(){clearTimeout(tipsHoursSaveTimer);tipsHoursSaveTimer=setTimeout(()=>{try{kvPush(tipHoursKey(),{hours:tipsState.hours},Date.now());tipsSetStatus('Saved ✓','var(--text-dim)');}catch(e){tipsSetStatus('⚠ not saved','#f87171');}},600);tipsSetStatus('Saving…','var(--text-dim)');}
-function tipHoursSet(name,field,v){if(!tipsState.hours)tipsState.hours={};const h=tipsState.hours[name]||{};v=Math.round((+v||0)*100)/100;if(v)h[field]=v;else delete h[field];if(h.rate||h.reg||h.ot)tipsState.hours[name]=h;else delete tipsState.hours[name];}
-function tipHoursInput(name,field,val){tipHoursSet(name,field,val);const pe=document.getElementById('hpay-'+tipId(name));if(pe){const p=tipHoursPay(name);pe.textContent=p?tipMoney(p):'';}tipHoursUpdateGrand();tipsSaveHoursSoon();}
-function tipHoursUpdateGrand(){let hrs=0,pay=0;Object.keys(tipsState.hours||{}).forEach(n=>{const h=tipsState.hours[n];hrs+=(+h.reg||0)+(+h.ot||0);pay+=tipHoursPay(n);});const he=document.getElementById('hours-grand-hrs'),pe=document.getElementById('hours-grand-pay');if(he)he.textContent=hrs.toFixed(2);if(pe)pe.textContent=tipMoney(pay);}
+function tipHoursSetPos(name,sec,field,v){if(!tipsState.hours)tipsState.hours={};if(!tipsState.hours[name])tipsState.hours[name]={};const p=tipsState.hours[name][sec]||{};v=Math.round((+v||0)*100)/100;if(v)p[field]=v;else delete p[field];if(p.h||p.r||p.o)tipsState.hours[name][sec]=p;else delete tipsState.hours[name][sec];if(!Object.keys(tipsState.hours[name]).length)delete tipsState.hours[name];}
+function tipHoursInput(name,sec,field,val){tipHoursSetPos(name,sec,field,val);const id=tipId(name),sid=sec.replace(/[^a-z0-9]/gi,'_');const pe=document.getElementById('hp-'+id+'-'+sid);if(pe){const pp=tipHoursPosPay(tipHours(name)[sec]||{});pe.textContent=pp?tipMoney(pp):'';}const te=document.getElementById('hpt-'+id);if(te){const t=tipHoursPersonTot(name);te.textContent=t.pay?tipMoney(t.pay):'';}tipHoursUpdateGrand();tipsSaveHoursSoon();}
+function tipHoursUpdateGrand(){let hrs=0,pay=0;Object.keys(tipsState.hours||{}).forEach(n=>{const t=tipHoursPersonTot(n);hrs+=t.reg+t.ot;pay+=t.pay;});const he=document.getElementById('hours-grand-hrs'),pe=document.getElementById('hours-grand-pay');if(he)he.textContent=hrs.toFixed(2);if(pe)pe.textContent=tipMoney(pay);}
+const EVENTS_HOURS_URL='https://restaurant-scheduler-hh5e.onrender.com/api/events-hours';
+async function tipsPullWeddingHours(auto){
+  const g=tipsGen;
+  if(!auto)tipsSetStatus('Pulling wedding hours…','var(--text-dim)');
+  const from=tipISO(tipsState.start), to=tipISO(tipsState.end);
+  let people=[];
+  try{const r=await fetch(EVENTS_HOURS_URL+'?from='+encodeURIComponent(from)+'&to='+encodeURIComponent(to)+'&key='+encodeURIComponent(TIPS_LOG_KEY));const d=await r.json();people=d.people||[];}
+  catch(e){if(!auto)tipsSetStatus('⚠ could not reach wedding hours','#f87171');return;}
+  if(g!==tipsGen)return;
+  if(!tipsState.hours)tipsState.hours={};
+  let filled=0;
+  people.forEach(p=>{
+    const nm=tipCanon(p.name);if(!nm)return;
+    (p.positions||[]).forEach(pos=>{
+      if(!pos.hrs)return;
+      const cur=(tipsState.hours[nm]&&tipsState.hours[nm][pos.sec])?tipsState.hours[nm][pos.sec]:null;
+      if(cur&&cur.h)return;   // don't clobber existing hours for this position
+      tipHoursSetPos(nm,pos.sec,'h',pos.hrs);
+      if(pos.rate)tipHoursSetPos(nm,pos.sec,'r',pos.rate);
+      filled++;
+    });
+  });
+  if(filled){if(activeTab===TIPS&&(tipsState.view||'tips')==='hours')document.getElementById('viewport').innerHTML=tipsHTML();tipsSaveHoursSoon();}
+  if(!auto||filled)tipsSetStatus(filled?('Pulled '+filled+' wedding hour line'+(filled>1?'s':'')+' ✓'):'✓ in sync','var(--text-dim)');
+}
 // Which section a person really belongs to = a manual move (global, sticks
 // across periods) if set, else where the embedded roster puts them.
 function tipRosterHas(name){return TIP_SECTIONS.some(s=>((tipsState.roster&&tipsState.roster[s])||[]).indexOf(name)>=0);}
@@ -4770,7 +4798,7 @@ function tipSetComp(name,label,comp,v){
 function tipMigrateCells(){let ch=false;const C=tipsState.cells||{};Object.keys(C).forEach(nm=>{const by=C[nm]||{};Object.keys(by).forEach(lb=>{const c=by[lb];if(c&&c.v!==undefined&&c.p===undefined&&c.u===undefined&&c.w===undefined){const nc={};if(c.wed)nc.w=c.v;else if(c.upt)nc.u=c.v;else nc.p=c.v;by[lb]=nc;ch=true;}});});return ch;}
 function tipNum(n){return String(Math.round((+n||0)*100)/100);}
 function tipCellComps(c){const out=[];if(!c)return out;if(c.p)out.push({txt:tipNum(c.p),color:'#34d399'});if(c.u)out.push({txt:'$'+tipNum(c.u),color:'#fbbf24'});if(c.w)out.push({txt:tipNum(c.w)+' W',color:'#c4b5fd'});return out;}
-function tipCompsHTML(c){const comps=tipCellComps(c);const multi=comps.length>1;return comps.map(x=>`<span style="display:block;color:${x.color};font-size:${multi?'10px':'13px'};line-height:1.25;font-weight:${multi?'700':'400'}">${x.txt}</span>`).join('');}
+function tipCompsHTML(c){const comps=tipCellComps(c);if(!comps.length)return '';const multi=comps.length>1;return `<div style="display:flex;gap:8px;justify-content:flex-end;align-items:baseline;white-space:nowrap">`+comps.map(x=>`<span style="color:${x.color};font-size:13px;line-height:1.2;font-weight:${multi?'700':'500'}">${x.txt}</span>`).join('')+`</div>`;}
 function tipRowTotals(name){let paid=0,upt=0;const p=tipsState.cells[name]||{};Object.keys(p).forEach(k=>{const c=p[k];paid+=c.p||0;upt+=(c.u||0)+(c.w||0);});return {paid:Math.round(paid*100)/100,upt:Math.round(upt*100)/100};}
 let tipsSaveTimer=null;
 function tipsSaveSoon(){clearTimeout(tipsSaveTimer);tipsSaveTimer=setTimeout(()=>{try{kvPush(tipPeriodKey(),{cells:tipsState.cells,adds:tipsState.adds},Date.now());tipsSetStatus('Saved ✓','var(--text-dim)');}catch(e){tipsSetStatus('⚠ not saved','#f87171');}},600);tipsSetStatus('Saving…','var(--text-dim)');}
@@ -4795,7 +4823,7 @@ async function tipsInit(){
   let _mig=tipMigrateCells();if(tipCleanAdds())_mig=true;if(_mig)tipsSaveSoon();   // upgrade legacy {v,upt,wed} cells + heal stale adds
   tipsState.loaded=true;tipsState.loading=false;
   if(activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();
-  tipsPull(true).then(()=>{ if(g===tipsGen) tipsPullWeddings(true); });   // picking a date range pulls BOTH the tip-out log AND the wedding/event tips
+  tipsPull(true).then(()=>{ if(g!==tipsGen)return; tipsPullWeddings(true); tipsPullWeddingHours(true); });   // picking a date range pulls the tip-out log + wedding tips + wedding hours
 }
 function tipsReload(){tipsGen++;tipsState.loaded=false;tipsState.loading=false;tipsState.cells={};tipsState.adds={};document.getElementById('viewport').innerHTML=tipsHTML();tipsInit();}
 function tipsSetStart(ds){const d=tipParseISO(ds);if(!d)return;tipsState.start=d;tipsState.end=new Date(d.getTime()+13*86400000);tipsReload();} // snap to a 14-day period; adjust the end for a custom length
@@ -4909,28 +4937,29 @@ function tipsToggleHTML(view){
 }
 function hoursHTML(){
   const di='background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:5px 8px;font-family:inherit;font-size:13px;color-scheme:dark;cursor:pointer';
-  let totHrs=0,totPay=0;
-  const inp=(name,field,val,ph)=>`<input inputmode="decimal" value="${val!=null?val:''}" placeholder="${ph}" oninput="tipHoursInput('${esc(name).replace(/'/g,"\\'")}','${field}',this.value)" style="width:60px;background:transparent;border:none;color:var(--text);text-align:right;padding:7px 4px;font-size:13px;font-family:inherit;outline:none">`;
   const bb='border-bottom:1px solid var(--border)';
-  const row=(name)=>{
-    const h=tipHours(name),id=tipId(name),pay=tipHoursPay(name);
-    totHrs+=(+h.reg||0)+(+h.ot||0);totPay+=pay;
-    return `<tr>
-      <td style="position:sticky;left:0;background:var(--surface);padding:7px 12px;font-weight:600;white-space:nowrap;border-right:2px solid var(--border);${bb}">${esc(name)}</td>
-      <td style="border-right:1px solid var(--border);${bb};text-align:right;white-space:nowrap"><span style="color:var(--text-muted);font-size:12px">$</span>${inp(name,'rate',h.rate,'0')}</td>
-      <td style="border-right:1px solid var(--border);${bb};text-align:right">${inp(name,'reg',h.reg,'0')}</td>
-      <td style="border-right:1px solid var(--border);${bb};text-align:right">${inp(name,'ot',h.ot,'0')}</td>
-      <td id="hpay-${id}" style="padding:7px 12px;text-align:right;font-weight:700;color:#34d399;border-left:2px solid var(--border);${bb};white-space:nowrap">${pay?tipMoney(pay):''}</td>
-    </tr>`;
-  };
-  let body='';
-  TIP_SECTIONS.forEach(sec=>{
-    const people=tipSectionPeople(sec);
-    body+=`<tr><td colspan="5" style="position:sticky;left:0;background:var(--surface2);color:var(--accent);font-weight:800;padding:8px 12px;letter-spacing:.5px;border-top:1px solid var(--border)">${TIP_SEC_LABEL[sec].toUpperCase()}</td></tr>`;
-    people.forEach(n=>{body+=row(n);});
-    body+=`<tr><td colspan="5" style="position:sticky;left:0;background:var(--surface);padding:4px 12px"><input id="tip-add-h-${sec.replace(/ /g,'_')}" placeholder="+ add ${TIP_SEC_LABEL[sec].toLowerCase().replace(/s$/,'')}…" onkeydown="if(event.key==='Enter')tipAddPerson('${sec}')" style="width:180px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 9px;font-size:12px;font-family:inherit"></td></tr>`;
+  const lastOf=n=>String(n||'').trim().split(' ').pop();
+  const inp=(name,sec,field,val)=>`<input inputmode="decimal" value="${val!=null?val:''}" placeholder="0" oninput="tipHoursInput('${esc(name).replace(/'/g,"\\'")}','${esc(sec).replace(/'/g,"\\'")}','${field}',this.value)" style="width:54px;background:transparent;border:none;color:var(--text);text-align:right;padding:6px 4px;font-size:13px;font-family:inherit;outline:none">`;
+  const cells=(name,sec)=>{const h=tipHours(name)[sec]||{},id=tipId(name),sid=sec.replace(/[^a-z0-9]/gi,'_'),pay=tipHoursPosPay(h);
+    return `<td style="border-right:1px solid var(--border);${bb};text-align:right;white-space:nowrap"><span style="color:var(--text-muted);font-size:12px">$</span>${inp(name,sec,'r',h.r)}</td>
+      <td style="border-right:1px solid var(--border);${bb};text-align:right">${inp(name,sec,'h',h.h)}</td>
+      <td style="border-right:1px solid var(--border);${bb};text-align:right">${inp(name,sec,'o',h.o)}</td>
+      <td id="hp-${id}-${sid}" style="padding:6px 10px;text-align:right;font-weight:600;color:#34d399;border-left:2px solid var(--border);${bb};white-space:nowrap">${pay?tipMoney(pay):''}</td>`;};
+  const names=Object.keys(tipsState.hours||{}).sort((a,b)=>lastOf(a).localeCompare(lastOf(b))||a.localeCompare(b));
+  let gReg=0,gOt=0,gPay=0,body='';
+  names.forEach(name=>{
+    const h=tipHours(name),secs=Object.keys(h).sort(),id=tipId(name),t=tipHoursPersonTot(name);
+    gReg+=t.reg;gOt+=t.ot;gPay+=t.pay;
+    if(secs.length<=1){
+      const sec=secs[0]||'';
+      body+=`<tr><td style="position:sticky;left:0;background:var(--surface);padding:7px 12px;white-space:nowrap;border-right:2px solid var(--border);${bb};font-weight:600">${esc(name)} <span style="color:var(--text-muted);font-size:11px;font-weight:500">${esc(sec)}</span></td>${cells(name,sec)}</tr>`;
+    }else{
+      body+=`<tr style="background:var(--surface2)"><td style="position:sticky;left:0;background:var(--surface2);padding:7px 12px;font-weight:800;white-space:nowrap;border-right:2px solid var(--border);${bb}">${esc(name)}</td><td style="${bb}"></td><td style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.reg}</td><td style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.ot||''}</td><td id="hpt-${id}" style="padding:7px 10px;text-align:right;font-weight:800;color:#34d399;border-left:2px solid var(--border);${bb}">${t.pay?tipMoney(t.pay):''}</td></tr>`;
+      secs.forEach(sec=>{body+=`<tr><td style="position:sticky;left:0;background:var(--surface);padding:6px 12px 6px 30px;white-space:nowrap;border-right:2px solid var(--border);${bb};color:var(--text-dim);font-size:12px">↳ ${esc(sec)}</td>${cells(name,sec)}</tr>`;});
+    }
   });
-  const th=(t,extra)=>`<th style="padding:6px 10px;${bb};${extra||''}">${t}</th>`;
+  if(!names.length)body=`<tr><td colspan="5" style="padding:34px;text-align:center;color:var(--text-dim);line-height:1.6">No hours yet.<br>Pick a date range to pull the <b>wedding/event hours</b>, or give me the <b>MICROS timesheet</b> for restaurant hours.</td></tr>`;
+  const th=(t,extra)=>`<th style="padding:6px 8px;${bb};${extra||''}">${t}</th>`;
   return `
   <div style="height:100%;overflow-y:auto;padding:2px 2px 56px">
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
@@ -4942,28 +4971,28 @@ function hoursHTML(){
         <button onclick="tipsThisPeriod()" title="Jump to the current pay period" style="background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:12px">This period</button>
       </div>
       <span id="tips-status" style="font-size:12px;color:var(--text-dim)"></span>
-      <span style="margin-left:auto;font-size:12px;color:var(--text-dim)">give me the MICROS timesheet → I'll fill hours + rates</span>
+      <span style="margin-left:auto;font-size:12px;color:var(--text-dim)">weddings auto-pull on date pick · MICROS timesheet fills the rest</span>
     </div>
-    <div style="overflow-x:auto;border:1px solid var(--border);border-radius:12px;max-width:640px">
+    <div style="overflow-x:auto;border:1px solid var(--border);border-radius:12px;max-width:600px">
       <table style="border-collapse:collapse;font-size:13px;width:100%">
         <thead><tr style="background:var(--surface)">
-          ${th('Name','position:sticky;left:0;z-index:2;background:var(--surface);text-align:left;border-right:2px solid var(--border)')}
+          ${th('Name / position','position:sticky;left:0;z-index:2;background:var(--surface);text-align:left;border-right:2px solid var(--border)')}
           ${th('Rate','text-align:right;border-right:1px solid var(--border)')}
-          ${th('Reg hrs','text-align:right;border-right:1px solid var(--border)')}
-          ${th('OT hrs','text-align:right;border-right:1px solid var(--border)')}
-          ${th('Total pay','text-align:right;color:#34d399;border-left:2px solid var(--border)')}
+          ${th('Reg','text-align:right;border-right:1px solid var(--border)')}
+          ${th('OT','text-align:right;border-right:1px solid var(--border)')}
+          ${th('Pay','text-align:right;color:#34d399;border-left:2px solid var(--border)')}
         </tr></thead>
         <tbody>${body}</tbody>
         <tfoot><tr style="background:var(--surface2);font-weight:800">
           <td style="position:sticky;left:0;background:var(--surface2);padding:9px 12px;border-right:2px solid var(--border);border-top:2px solid var(--border)">TOTAL</td>
           <td style="border-top:2px solid var(--border)"></td>
-          <td colspan="2" style="padding:9px 12px;text-align:right;border-top:2px solid var(--border);border-left:1px solid var(--border);white-space:nowrap"><span id="hours-grand-hrs">${totHrs.toFixed(2)}</span> hrs</td>
-          <td id="hours-grand-pay" style="padding:9px 12px;text-align:right;color:#34d399;border-left:2px solid var(--border);border-top:2px solid var(--border)">${tipMoney(totPay)}</td>
+          <td colspan="2" style="padding:9px 8px;text-align:right;border-top:2px solid var(--border);border-left:1px solid var(--border);white-space:nowrap"><span id="hours-grand-hrs">${(gReg+gOt).toFixed(2)}</span> hrs</td>
+          <td id="hours-grand-pay" style="padding:9px 8px;text-align:right;color:#34d399;border-left:2px solid var(--border);border-top:2px solid var(--border)">${tipMoney(gPay)}</td>
         </tr></tfoot>
       </table>
     </div>
-    <div style="margin-top:10px;font-size:12px;color:var(--text-muted);line-height:1.5;max-width:640px">
-      Period hours per person for payroll. <b>Total pay</b> = Reg × Rate + OT × Rate × 1.5. Saves automatically. Give me the <b>MICROS timesheet</b> and I'll fill everyone's hours + rate here.
+    <div style="margin-top:10px;font-size:12px;color:var(--text-muted);line-height:1.5;max-width:600px">
+      Period hours per person, by position (a person can work more than one rate). <b>Pay</b> = Reg × Rate + OT × Rate × 1.5. Picking a date range pulls the <b>wedding/event hours</b> from the schedule app; the <b>MICROS timesheet</b> fills restaurant hours. Saves automatically.
     </div>
   </div>`;
 }
@@ -4977,12 +5006,12 @@ function tipsHTML(){
     const bb='border-bottom:1px solid var(--border)';
     const en=esc(name).replace(/'/g,"\\'");
     const tds=days.map(d=>{const lb=tipDayLabel(d);
-      return `<td id="tc-${id}-${lb.replace('/','_')}" data-tipcell onclick="tipCellEdit('${en}','${lb}')" title="Click to edit" style="cursor:pointer;border-right:1px solid var(--border);${bb};text-align:right;padding:5px 7px;min-width:60px;white-space:nowrap;vertical-align:middle">${tipCompsHTML(tipCell(name,lb))}</td>`;}).join('');
+      return `<td id="tc-${id}-${lb.replace('/','_')}" data-tipcell onclick="tipCellEdit('${en}','${lb}')" title="Click to edit" style="cursor:pointer;border-right:1px solid var(--border);${bb};text-align:right;padding:6px 9px;min-width:84px;white-space:nowrap;vertical-align:middle">${tipCompsHTML(tipCell(name,lb))}</td>`;}).join('');
     return `<tr style="${isPool?'background:rgba(251,191,36,0.06)':''}">
       <td style="position:sticky;left:0;z-index:1;background:var(--surface);padding:7px 12px;font-weight:${isPool?'800':'600'};white-space:nowrap;border-right:2px solid var(--border);${bb};${isPool?'color:#fbbf24':''}"><span style="display:inline-flex;align-items:center;gap:6px">${esc(name)}${isPool?'':`<select title="Move to another section" onchange="tipMovePerson('${esc(name).replace(/'/g,"\\'")}',this.value)" style="background:transparent;border:none;color:var(--text-muted);font-size:11px;font-family:inherit;cursor:pointer;-webkit-appearance:none;appearance:none;padding:0 2px">${TIP_SECTIONS.map(s=>`<option value="${s}" ${tipEffSection(name)===s?'selected':''} style="color:#000">${TIP_SEC_SHORT[s]}</option>`).join('')}</select>`}</span></td>
       ${tds}
-      <td id="tp-${id}" style="padding:7px 12px;text-align:right;font-weight:700;color:#34d399;white-space:nowrap;border-left:2px solid var(--border);${bb}">${t.paid?tipMoney(t.paid):''}</td>
-      <td id="tu-${id}" style="padding:7px 12px;text-align:right;font-weight:700;color:#fbbf24;white-space:nowrap;border-left:2px solid var(--border);${bb}">${t.upt?tipMoney(t.upt):''}</td>
+      <td id="tp-${id}" style="padding:7px 8px;text-align:right;font-weight:700;color:#34d399;white-space:nowrap;border-left:2px solid var(--border);${bb}">${t.paid?tipMoney(t.paid):''}</td>
+      <td id="tu-${id}" style="padding:7px 8px;text-align:right;font-weight:700;color:#fbbf24;white-space:nowrap;border-left:2px solid var(--border);${bb}">${t.upt?tipMoney(t.upt):''}</td>
     </tr>`;
   };
   let body='';
@@ -5015,15 +5044,15 @@ function tipsHTML(){
         <thead><tr style="background:var(--surface)">
           <th style="position:sticky;left:0;z-index:2;background:var(--surface);padding:6px 12px;text-align:left;border-right:2px solid var(--border);border-bottom:1px solid var(--border)">Name</th>
           ${dayHead}
-          <th style="padding:6px 12px;color:#34d399;border-left:2px solid var(--border);border-bottom:1px solid var(--border);white-space:nowrap">Paid</th>
-          <th style="padding:6px 12px;color:#fbbf24;border-bottom:1px solid var(--border);border-left:2px solid var(--border);white-space:nowrap">Unpaid</th>
+          <th style="padding:6px 8px;color:#34d399;border-left:2px solid var(--border);border-bottom:1px solid var(--border);white-space:nowrap">Paid</th>
+          <th style="padding:6px 8px;color:#fbbf24;border-bottom:1px solid var(--border);border-left:2px solid var(--border);white-space:nowrap">Unpaid</th>
         </tr></thead>
         <tbody>${body}</tbody>
         <tfoot><tr style="background:var(--surface2);font-weight:800">
           <td style="position:sticky;left:0;background:var(--surface2);padding:9px 12px;border-right:2px solid var(--border);border-top:2px solid var(--border)">TOTAL</td>
           <td colspan="${days.length}" style="border-top:2px solid var(--border)"></td>
-          <td id="tips-grand-paid" style="padding:9px 12px;text-align:right;color:#34d399;border-left:2px solid var(--border);border-top:2px solid var(--border)">${tipMoney(gp)}</td>
-          <td id="tips-grand-upt" style="padding:9px 12px;text-align:right;color:#fbbf24;border-top:2px solid var(--border);border-left:2px solid var(--border)">${tipMoney(gu)}</td>
+          <td id="tips-grand-paid" style="padding:9px 8px;text-align:right;color:#34d399;border-left:2px solid var(--border);border-top:2px solid var(--border)">${tipMoney(gp)}</td>
+          <td id="tips-grand-upt" style="padding:9px 8px;text-align:right;color:#fbbf24;border-top:2px solid var(--border);border-left:2px solid var(--border)">${tipMoney(gu)}</td>
         </tr></tfoot>
       </table>
     </div>
