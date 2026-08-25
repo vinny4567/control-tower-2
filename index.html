@@ -4795,7 +4795,7 @@ async function tipsInit(){
   let _mig=tipMigrateCells();if(tipCleanAdds())_mig=true;if(_mig)tipsSaveSoon();   // upgrade legacy {v,upt,wed} cells + heal stale adds
   tipsState.loaded=true;tipsState.loading=false;
   if(activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();
-  tipsPull(true);   // always pull straight from the tip-out calculator on open
+  tipsPull(true).then(()=>{ if(g===tipsGen) tipsPullWeddings(true); });   // picking a date range pulls BOTH the tip-out log AND the wedding/event tips
 }
 function tipsReload(){tipsGen++;tipsState.loaded=false;tipsState.loading=false;tipsState.cells={};tipsState.adds={};document.getElementById('viewport').innerHTML=tipsHTML();tipsInit();}
 function tipsSetStart(ds){const d=tipParseISO(ds);if(!d)return;tipsState.start=d;tipsState.end=new Date(d.getTime()+13*86400000);tipsReload();} // snap to a 14-day period; adjust the end for a custom length
@@ -4874,9 +4874,9 @@ async function tipsPull(auto){
 // always counted as UPT. Restaurant regulars who also worked a wedding (Angelo)
 // keep their row in their own section and just get a W on that date; wedding-only
 // people are added to the Weddings section.
-async function tipsPullWeddings(){
+async function tipsPullWeddings(auto){
   const g=tipsGen;
-  tipsSetStatus('Pulling wedding tips…','var(--text-dim)');
+  if(!auto)tipsSetStatus('Pulling wedding tips…','var(--text-dim)');
   const from=tipISO(tipsState.start), to=tipISO(tipsState.end);
   let events=[];
   try{const r=await fetch(EVENTS_TIPS_URL+'?from='+encodeURIComponent(from)+'&to='+encodeURIComponent(to)+'&key='+encodeURIComponent(TIPS_LOG_KEY));const d=await r.json();events=d.events||[];}
@@ -4900,7 +4900,7 @@ async function tipsPullWeddings(){
   });
   Object.keys(wed).forEach(n=>{Object.keys(wed[n]).forEach(lb=>{ensureW(n);const c=tipCell(n,lb);if(c&&c.w)return;tipSetComp(n,lb,'w',wed[n][lb]);filled++;});});
   if(filled){if(activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();tipsSaveSoon();}
-  tipsSetStatus(filled?('Pulled '+filled+' wedding tip'+(filled>1?'s':'')+' ✓'):'No wedding tips in this range','var(--text-dim)');
+  tipsSetStatus(filled?('Pulled '+filled+' wedding tip'+(filled>1?'s':'')+' ✓'):(auto?'✓ in sync':'No wedding tips in this range'),'var(--text-dim)');
 }
 
 function tipsToggleHTML(view){
@@ -5007,10 +5007,8 @@ function tipsHTML(){
         <input type="date" value="${tipISO(tipsState.end)}" onchange="tipsSetEnd(this.value)" title="End date" style="${di}">
         <button onclick="tipsThisPeriod()" title="Jump to the current pay period" style="background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:12px">This period</button>
       </div>
-      <button onclick="tipsPull()" style="background:var(--accent);border:none;color:#000;font-weight:700;border-radius:8px;padding:7px 14px;cursor:pointer">⟳ Pull tip-outs</button>
-      <button onclick="tipsPullWeddings()" title="Pull each person's wedding/event tip-out from the scheduler (marked W, counts as UPT)" style="background:#7c3aed;border:none;color:#fff;font-weight:700;border-radius:8px;padding:7px 14px;cursor:pointer">💍 Pull weddings</button>
       <span id="tips-status" style="font-size:12px;color:var(--text-dim)"></span>
-      <span style="margin-left:auto;font-size:12px;color:var(--text-dim)">type an amount → tap <b style="color:#34d399">Paid</b> or <b style="color:#fbbf24">Unpaid</b></span>
+      <span style="margin-left:auto;font-size:12px;color:var(--text-dim)">picking dates pulls the tip-out log + weddings automatically · click a cell to edit</span>
     </div>
     <div style="overflow-x:auto;border:1px solid var(--border);border-radius:12px">
       <table style="border-collapse:collapse;font-size:13px;min-width:100%">
@@ -5030,7 +5028,7 @@ function tipsHTML(){
       </table>
     </div>
     <div style="margin-top:10px;font-size:12px;color:var(--text-muted);line-height:1.5">
-      Type an amount in a cell, then tap <b style="color:#34d399">Paid</b> or <b style="color:#fbbf24">Unpaid</b> — it records to that column. Saves automatically. <b>⟳ Pull tip-outs</b> fills empty cells from the nightly calculator — your hand edits are never overwritten.
+Picking a date range automatically pulls the nightly <b>tip-out log</b> (restaurant) and the <b>wedding/event tips</b> (schedule app) — filling only empty cells, so your hand edits are never overwritten. <b style="color:#34d399">Paid</b> = green, <b style="color:#fbbf24">Unpaid</b> = amber, <b style="color:#c4b5fd">Wedding</b> = purple W. Click any cell to edit. Saves automatically.
     </div>
   </div>`;
 }
