@@ -4698,7 +4698,8 @@ const EVENTS_TIPS_URL='https://restaurant-scheduler-hh5e.onrender.com/api/events
 const TIP_SECTIONS=['Server','Bartender','Busser','Food Runner','Weddings'];
 const TIP_SEC_LABEL={'Server':'Servers','Bartender':'Bartenders','Busser':'Bussers','Food Runner':'Food Runners','Weddings':'Weddings (event-only)'};
 const TIP_SEC_SHORT={'Server':'Srv','Bartender':'Bar','Busser':'Bus','Food Runner':'Run','Weddings':'Wed'};
-function tipHasTips(name){const t=tipRowTotals(name);return t.paid>0||t.upt>0;}
+function tipBusserSplit(name){return (tipsState.busserSplit&&tipsState.busserSplit[name])||0;}   // period-total busser pool share
+function tipHasTips(name){const t=tipRowTotals(name);return t.paid>0||t.upt>0||tipBusserSplit(name)>0;}
 // Roster categorized from the Google Sheet tip tabs (Weddings = event-only people
 // from the scheduler/Paychex who aren't restaurant staff). Each person appears once.
 const TIP_ROSTER_DATA={"Server":["Patrick Backes","Connor Batogowski","Katelyn Batogowski","Cody Brickner","Erin Burke","Ava Fangmann","Mike Fornero","Philip Hurwitz","Emma Jackson","Jared Malek","Kristina Mastrino","Valerie Mitchell","Colleen Morgan","Callie Nelson","Trinette Notarangeli","Vincent Notarangeli","Ernest Notarangeli","Angelo Notarangeli","Ashley Penick","Hannah Pierce","Jaden Tareta","Isabel Wilde"],"Bartender":["Jason Benjamin","Haley Cassells","Emma Dawson","Michael Goodwin","Robin Jaramillo","Priscilla La Gace","Nancy Newell","Martin Rife","Gyselle Tavizon"],"Busser":["Dennis Anderson","Zoe Batogowski","Carter Berning","Cadence Doyle","Samantha Drager","Frank Drager","Addison Feldmann","Liam Finn-Connell","Micah Fiore","Will Harvey","Ryan Hendricks","Jason Hornbaker","Sona Hudakova","Susan Hurwitz","May Jackson","Lauren Jennings","Luke Johnson","Nadja Jovanovic","Samantha Kafka","Quinn Karstens","Kayleigh Knight","Matthew Kralik","Taylor Kunka","Ivie Lindquist","Nora Mabrey","Angel Morales","Isa Polavieja","Adelyn Porter","Kamila Skorupskas","Jackson Trotta","Ryan Walsh","Allison Wolf","Charles Yenter","Michael Zilm"],"Food Runner":["Lexi Allen","Carter Bergholtz","Aidan Burke","Carson Cassell","Griffin Fiore","Drew Mastrino","Drew Murphy","Preston Rose","Sean Young"],"Weddings":["Thomas Antonson","Wendy Campos","Jared Carlson","Gabriella Chavez","Alicia Corrao","Jen Dosch","Chris Dosch","Sophia Evans","Elise Evans","Rebecca Evans","Anthony Fornero","Malayna Goldstein","Christy Hatfield","Jillian Hatfield","Gianna Izzo","Stephanie Kulczycki","Lincoln Majersky","Guadalope Martinez","Katia Morfin","Ethan Nauert","Sarah Nelson","Elizabeth Peterson","Jameson Rosenfeld","Maria S Ruiz","Kevork Sevan","Dimitar Stefanov","Emily Stone","Adam Tietje","Stella Vigil-Murphy","Isaiah Watson","Lisa Weinstein","Oakley White","Avery White","Gavin Wilde"]};
@@ -4709,10 +4710,21 @@ const TIP_NAME_ALIASES={'priscilla lagace':'Priscilla La Gace','priscill lagace'
 function tipNormKey(n){return String(n||'').trim().toLowerCase().replace(/[-'’]/g,' ').replace(/\s+/g,' ').trim();}
 const TIP_ROSTER_CANON=(function(){const m={};Object.keys(TIP_ROSTER_DATA).forEach(sec=>TIP_ROSTER_DATA[sec].forEach(n=>{m[tipNormKey(n)]=n;}));return m;})();
 function tipCanon(name){const k=tipNormKey(name);if(!k)return String(name||'').trim();return TIP_NAME_ALIASES[k]||TIP_ROSTER_CANON[k]||String(name).trim();}
-let tipsState={start:null,end:null,cells:{},adds:{},moves:{},expanded:{},roster:null,hours:{},empIds:{},busserSplit:{},view:'tips',loaded:false,loading:false};
+let tipsState={start:null,end:null,cells:{},adds:{},moves:{},expanded:{},roster:null,hours:{},empIds:{},busserSplit:{},busserSplitByDay:{},view:'tips',loaded:false,loading:false};
 let tipsGen=0;   // bumped on every (re)load; guards against two period-loads racing and crossing data
 function tipsSetView(v){tipsState.view=v;document.getElementById('viewport').innerHTML=tipsHTML();}
 function tipsSetHoursFilter(f){tipsState.hoursFilter=f;tipsRerender();}
+// Import the MICROS timesheet PDF: upload it to the cloud for this period (Claude
+// parses it into hours + rates + busser splits; auto-parse backend is coming).
+function tipsImportTimesheet(input){
+  const f=input&&input.files&&input.files[0];if(!f){return;}
+  tipsSetStatus('Reading '+f.name+'…','var(--text-dim)');
+  const r=new FileReader();
+  r.onload=function(){try{const b64=String(r.result||'').split(',').pop();kvPush('ct_timesheet_'+tipPeriodKey(),{name:f.name,at:Date.now(),size:f.size,data:b64},Date.now());tipsSetStatus('📄 '+f.name+' uploaded ✓ — importing hours & tips',' #34d399');}catch(e){tipsSetStatus('⚠ upload failed','#f87171');}};
+  r.onerror=function(){tipsSetStatus('⚠ could not read file','#f87171');};
+  r.readAsDataURL(f);input.value='';
+}
+function tipsImportBtnHTML(){return `<label title="Import the MICROS timesheet PDF" style="background:#7c3aed;border:none;color:#fff;font-weight:700;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px;display:inline-flex;align-items:center;gap:5px;white-space:nowrap">📄 Import timesheet<input type="file" accept="application/pdf,.pdf" onchange="tipsImportTimesheet(this)" style="display:none"></label>`;}
 // Re-render the Tips/Hours view in place WITHOUT losing the vertical scroll position
 // (a plain innerHTML swap snaps the page back to the top).
 function tipsRerender(){const vp=document.getElementById('viewport');if(!vp)return;const sc=vp.firstElementChild;const top=sc?sc.scrollTop:0;vp.innerHTML=tipsHTML();const sc2=vp.firstElementChild;if(sc2)sc2.scrollTop=top;}
@@ -4736,7 +4748,7 @@ function tipHoursInput(name,sec,field,val){tipHoursSetPos(name,sec,field,val);co
 function tipHoursAddRow(name,src){if(!tipsState.hours)tipsState.hours={};if(!tipsState.hours[name])tipsState.hours[name]={};let base='Extra',nm=base,i=2;while(tipsState.hours[name][nm])nm=base+' '+(i++);tipsState.hours[name][nm]={src:src||'wed'};if(activeTab===TIPS&&(tipsState.view||'tips')==='hours'){tipsRerender();const el=document.getElementById('hn-'+tipId(name)+'-'+nm.replace(/[^a-z0-9]/gi,'_'));if(el){el.focus({preventScroll:true});el.select();}}tipsSaveHoursSoon();}
 function tipHoursRenamePos(name,oldSec,newSec){newSec=(newSec||'').trim();const H=tipsState.hours&&tipsState.hours[name];if(!H||!(oldSec in H)){return;}if(!newSec||newSec===oldSec){tipsRerender();return;}if(H[newSec]){tipsSetStatus('“'+newSec+'” already exists for '+name,'#f87171');tipsRerender();return;}H[newSec]=H[oldSec];delete H[oldSec];tipsRerender();tipsSaveHoursSoon();}
 function tipHoursDelPos(name,sec){const H=tipsState.hours&&tipsState.hours[name];if(H){delete H[sec];if(!Object.keys(H).length)delete tipsState.hours[name];}if(activeTab===TIPS&&(tipsState.view||'tips')==='hours')tipsRerender();tipsSaveHoursSoon();}
-function tipEmpIdSet(name,val){if(!tipsState.empIds)tipsState.empIds={};val=(val||'').trim();if(val)tipsState.empIds[name]=val;else delete tipsState.empIds[name];tipsRerender();tipsSaveHoursSoon();}
+function tipEmpIdSet(name,val){if(!tipsState.empIds)tipsState.empIds={};val=(val||'').trim();if(val)tipsState.empIds[name]=val;else delete tipsState.empIds[name];try{kvPush('ct_emp_ids',{emp:tipsState.empIds},Date.now());}catch(e){}tipsRerender();tipsSaveHoursSoon();}   // emp-IDs are global + permanent
 const EVENTS_HOURS_URL='https://restaurant-scheduler-hh5e.onrender.com/api/events-hours';
 async function tipsPullWeddingHours(auto){
   const g=tipsGen;
@@ -4852,7 +4864,9 @@ async function tipsInit(){
   tipsState.cells=(remote&&remote.v&&remote.v.cells)?remote.v.cells:{};
   tipsState.adds=(remote&&remote.v&&remote.v.adds)?remote.v.adds:{};
   const rm=await kvGet('ct_tips_moves');if(g!==tipsGen)return;tipsState.moves=(rm&&rm.v&&rm.v.moves)?rm.v.moves:{};
-  const rh=await kvGet(tipHoursKey());if(g!==tipsGen)return;tipsState.hours=(rh&&rh.v&&rh.v.hours)?rh.v.hours:{};tipsState.empIds=(rh&&rh.v&&rh.v.empIds)?rh.v.empIds:{};tipsState.busserSplit=(rh&&rh.v&&rh.v.busserSplit)?rh.v.busserSplit:{};   // Hours page + Paychex emp-IDs + per-busser pool split
+  const rh=await kvGet(tipHoursKey());if(g!==tipsGen)return;tipsState.hours=(rh&&rh.v&&rh.v.hours)?rh.v.hours:{};const ge=await kvGet('ct_emp_ids');if(g!==tipsGen)return;const globalEmp=(ge&&ge.v&&ge.v.emp)?ge.v.emp:{};   // emp-IDs never change → remembered globally across periods
+tipsState.empIds=Object.assign({},(rh&&rh.v&&rh.v.empIds)?rh.v.empIds:{},globalEmp);   // global wins
+tipsState.busserSplit=(rh&&rh.v&&rh.v.busserSplit)?rh.v.busserSplit:{};tipsState.busserSplitByDay=(rh&&rh.v&&rh.v.busserSplitByDay)?rh.v.busserSplitByDay:{};   // per-person + per-night busser pool split
   let _mig=tipMigrateCells();if(tipCleanAdds())_mig=true;if(_mig)tipsSaveSoon();   // upgrade legacy {v,upt,wed} cells + heal stale adds
   tipsState.loaded=true;tipsState.loading=false;
   if(activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();
@@ -4894,7 +4908,7 @@ function tipEditSet(comp,val){
   tipRefreshCell(name,day);tipRefreshRow(name);tipsSaveSoon();
 }
 document.addEventListener('mousedown',e=>{const p=document.getElementById('tip-pop');if(p&&p.style.display!=='none'&&!p.contains(e.target)&&!(e.target.closest&&e.target.closest('[data-tipcell]')))tipHidePopup();});
-function tipsUpdateGrand(){let gp=0,gu=0;Object.keys(tipsState.cells).forEach(n=>{const t=tipRowTotals(n);gp+=t.paid;gu+=t.upt;});const p=document.getElementById('tips-grand-paid'),u=document.getElementById('tips-grand-upt');if(p)p.textContent=tipMoney(gp);if(u)u.textContent=tipMoney(gu);}
+function tipsUpdateGrand(){let gp=0,gu=0;Object.keys(tipsState.cells).forEach(n=>{const t=tipRowTotals(n);gp+=t.paid;gu+=t.upt;});Object.keys(tipsState.busserSplit||{}).forEach(n=>{gu+=tipsState.busserSplit[n];});const p=document.getElementById('tips-grand-paid'),u=document.getElementById('tips-grand-upt');if(p)p.textContent=tipMoney(gp);if(u)u.textContent=tipMoney(gu);}
 
 // Auto-fill this period's cells from the nightly tip-out cloud log. Fills only
 // EMPTY cells (never clobbers a hand override). Servers' own tips + busser pool
@@ -5026,6 +5040,7 @@ function hoursHTML(){
         <button onclick="tipsThisPeriod()" title="Jump to the current pay period" style="background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:12px">This period</button>
       </div>
       ${filtToggle}
+      ${tipsImportBtnHTML()}
       <span id="tips-status" style="font-size:12px;color:var(--text-dim)"></span>
       <span style="margin-left:auto;font-size:12px;color:var(--text-dim)">restaurant on top · weddings below (💍) · + tips — the Paychex picture</span>
     </div>
@@ -5062,16 +5077,17 @@ function tipsHTML(){
   const days=tipDays(),roster=tipsState.roster||{};
   let gp=0,gu=0;
   const rowFor=(name,isPool)=>{
-    const t=tipRowTotals(name);gp+=t.paid;gu+=t.upt;const id=tipId(name);
+    const t=tipRowTotals(name),upt=Math.round((t.upt+tipBusserSplit(name))*100)/100;gp+=t.paid;gu+=upt;const id=tipId(name);
     const bb='border-bottom:1px solid var(--border)';
     const en=esc(name).replace(/'/g,"\\'");
-    const tds=days.map(d=>{const lb=tipDayLabel(d);const mon=(d.getDay()===1);
-      return `<td id="tc-${id}-${lb.replace('/','_')}" data-tipcell onclick="tipCellEdit('${en}','${lb}')" title="Click to edit" style="cursor:pointer;border-right:1px solid var(--border);${bb};text-align:right;padding:6px ${mon?'2px':'9px'};min-width:${mon?'20px':'84px'};white-space:nowrap;vertical-align:middle">${tipCompsHTML(tipCell(name,lb))}</td>`;}).join('');
+    const bday=(tipsState.busserSplitByDay||{})[name]||{};
+    const tds=days.map(d=>{const lb=tipDayLabel(d);const mon=(d.getDay()===1);const c=tipCell(name,lb),sp=bday[lb];
+      return `<td id="tc-${id}-${lb.replace('/','_')}" data-tipcell onclick="tipCellEdit('${en}','${lb}')" title="Click to edit" style="cursor:pointer;border-right:1px solid var(--border);${bb};text-align:right;padding:6px ${mon?'2px':'9px'};min-width:${mon?'20px':'84px'};white-space:nowrap;vertical-align:middle">${c?tipCompsHTML(c):(sp?tipCompsHTML({u:sp}):'')}</td>`;}).join('');
     return `<tr style="${isPool?'background:rgba(251,191,36,0.06)':''}">
       <td style="position:sticky;left:0;z-index:1;background:var(--surface);padding:7px 12px;font-weight:${isPool?'800':'600'};white-space:nowrap;border-right:2px solid var(--border);${bb};${isPool?'color:#fbbf24':''}"><span style="display:inline-flex;align-items:center;gap:6px">${esc(name)}${isPool?'':`<select title="Move to another section" onchange="tipMovePerson('${esc(name).replace(/'/g,"\\'")}',this.value)" style="background:transparent;border:none;color:var(--text-muted);font-size:11px;font-family:inherit;cursor:pointer;-webkit-appearance:none;appearance:none;padding:0 2px">${TIP_SECTIONS.map(s=>`<option value="${s}" ${tipEffSection(name)===s?'selected':''} style="color:#000">${TIP_SEC_SHORT[s]}</option>`).join('')}</select>`}</span></td>
       ${tds}
       <td id="tp-${id}" style="padding:7px 8px;text-align:right;font-weight:700;color:#34d399;white-space:nowrap;border-left:2px solid var(--border);${bb}">${t.paid?tipMoney(t.paid):''}</td>
-      <td id="tu-${id}" style="padding:7px 8px;text-align:right;font-weight:700;color:#fbbf24;white-space:nowrap;border-left:2px solid var(--border);${bb}">${t.upt?tipMoney(t.upt):''}</td>
+      <td id="tu-${id}" style="padding:7px 8px;text-align:right;font-weight:700;color:#fbbf24;white-space:nowrap;border-left:2px solid var(--border);${bb}">${upt?tipMoney(upt):''}</td>
     </tr>`;
   };
   let body='';
@@ -5080,7 +5096,7 @@ function tipsHTML(){
     // Full staff list always shown; people WITH tips float to the top of their section.
     const ordered=[...people.filter(tipHasTips),...people.filter(n=>!tipHasTips(n))];
     body+=`<tr><td colspan="${days.length+3}" style="position:sticky;left:0;background:var(--surface2);color:var(--accent);font-weight:800;padding:8px 12px;letter-spacing:.5px;border-top:1px solid var(--border)">${TIP_SEC_LABEL[sec].toUpperCase()}</td></tr>`;
-    if(sec==='Busser')body+=rowFor('Busser Pool',true);
+    if(sec==='Busser'&&!Object.keys(tipsState.busserSplitByDay||{}).length)body+=rowFor('Busser Pool',true);   // pool shown only until the timesheet splits it per busser
     ordered.forEach(n=>{body+=rowFor(n,false);});
     body+=`<tr><td colspan="${days.length+3}" style="position:sticky;left:0;background:var(--surface);padding:4px 12px"><input id="tip-add-${sec.replace(/ /g,'_')}" placeholder="+ add ${TIP_SEC_LABEL[sec].toLowerCase().replace(/s$/,'')}…" onkeydown="if(event.key==='Enter')tipAddPerson('${sec}')" style="width:180px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 9px;font-size:12px;font-family:inherit"></td></tr>`;
   });
@@ -5096,6 +5112,7 @@ function tipsHTML(){
         <input type="date" value="${tipISO(tipsState.end)}" onchange="tipsSetEnd(this.value)" title="End date" style="${di}">
         <button onclick="tipsThisPeriod()" title="Jump to the current pay period" style="background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:12px">This period</button>
       </div>
+      ${tipsImportBtnHTML()}
       <span id="tips-status" style="font-size:12px;color:var(--text-dim)"></span>
       <span style="margin-left:auto;font-size:12px;color:var(--text-dim)">picking dates pulls the tip-out log + weddings automatically · click a cell to edit</span>
     </div>
