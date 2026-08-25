@@ -500,6 +500,66 @@
     .liq-actions{position:absolute;top:12px;right:12px;display:flex;gap:6px;opacity:.55}
     .liq-card:hover .liq-actions{opacity:1}
     .liq-tip{margin-top:22px;font-size:12px;color:var(--text-muted)}
+    /* Liquor: inventory · order · sales */
+    .liq-nav{display:flex;gap:6px;flex-wrap:wrap}
+    .liq-navb{background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:9px;padding:8px 14px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;position:relative;white-space:nowrap}
+    .liq-navb.on{border-color:var(--accent);color:var(--accent);background:rgba(255,179,0,.08)}
+    .liq-badge{display:inline-block;margin-left:7px;min-width:18px;padding:1px 5px;border-radius:9px;background:var(--accent);color:#0a0b0f;font-size:11px;font-weight:800;text-align:center}
+    .liq-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+    .liq-search{flex:1 1 220px;min-width:180px;max-width:340px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:9px;padding:9px 12px;font-family:inherit;font-size:14px}
+    .liq-sel{background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:9px;padding:9px 10px;font-family:inherit;font-size:13px;font-weight:700}
+    .liq-lbl{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted);font-weight:700;white-space:nowrap}
+    .liq-stats{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:12px;padding:11px 14px;background:var(--surface);border:1px solid var(--border);border-radius:11px}
+    .liq-stat{font-size:12px;color:var(--text-muted)}
+    .liq-stat b{font-size:16px;color:var(--accent);font-weight:800;margin-right:5px}
+    .liq-stat.liq-dim b,.liq-dim{color:var(--text-muted)}
+    .liq-tblwrap{border:1px solid var(--border);border-radius:12px;overflow:auto;background:var(--surface);max-height:calc(100vh - 300px)}
+    .liq-tbl{width:100%;border-collapse:collapse;font-size:13px}
+    .liq-tbl th{position:sticky;top:0;z-index:2;background:var(--surface2);color:var(--text-muted);font-size:11px;letter-spacing:.4px;text-transform:uppercase;text-align:left;padding:9px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
+    .liq-tbl td{padding:5px 10px;border-bottom:1px solid var(--border);vertical-align:middle}
+    .liq-tbl tr:last-child td{border-bottom:none}
+    .liq-tbl .liq-num{text-align:right;white-space:nowrap}
+    .liq-tbl th.liq-num{text-align:right}
+    .liq-sec td{background:var(--surface2);font-weight:800;font-size:11px;letter-spacing:1px;color:var(--accent);padding:7px 10px;position:sticky;top:33px;z-index:1}
+    .liq-nm{font-weight:600;color:var(--text);min-width:180px}
+    .liq-sz{display:block;font-size:11px;color:var(--text-muted);font-weight:400;margin-top:1px}
+    .liq-sup{font-size:11px;color:var(--text-muted);white-space:nowrap}
+    .liq-src{font-size:11px;color:var(--text-muted)}
+    .liq-in{background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:6px 8px;font-family:inherit;font-size:13px;text-align:right;width:66px}
+    .liq-in:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px rgba(255,179,0,.18)}
+    .liq-oh{font-weight:800;color:var(--accent);width:72px}
+    .liq-cost{width:70px;color:var(--text-dim)}
+    .liq-par.auto{color:var(--text-muted);font-style:italic}
+    .liq-date{width:auto;text-align:left;font-size:12px}
+    .liq-need{font-weight:800;color:var(--text-muted)}
+    .liq-need.on{color:#0a0b0f;background:var(--accent);border-radius:7px;padding:2px 8px;display:inline-block;min-width:22px;text-align:center}
+    .liq-crit{color:#e5484d;font-weight:800}
+    .liq-warn{color:var(--accent);font-weight:700}
+    .liq-qty{font-weight:800;color:var(--accent);text-align:right;width:48px;font-size:15px}
+    .liq-ord{border:1px solid var(--border);border-radius:12px;background:var(--surface);margin-bottom:14px;overflow:hidden}
+    .liq-ordhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:11px 14px;background:var(--surface2);border-bottom:1px solid var(--border)}
+    .liq-ordsup{font-weight:800;font-size:15px;color:var(--accent)}
+    .liq-ordn{font-size:12px;color:var(--text-muted)}
+    .liq-ordtbl{font-size:13px}
+    .liq-empty{padding:56px 24px;text-align:center;color:var(--text-muted);border:1px solid var(--border);border-radius:12px;background:var(--surface)}
+    .liq-empty-t{font-weight:800;font-size:16px;color:var(--text);margin:10px 0 6px}
+    .liq-empty-s{font-size:13px;line-height:1.55;max-width:460px;margin:0 auto}
+    .liq-feed{display:flex;align-items:center;gap:12px;padding:13px 15px;border:1px solid var(--border);border-radius:12px;background:var(--surface);margin-bottom:14px;flex-wrap:wrap}
+    .liq-feed-dot{width:10px;height:10px;border-radius:50%;background:var(--text-muted);flex-shrink:0}
+    .liq-feed.on .liq-feed-dot{background:var(--accent2);box-shadow:0 0 8px var(--accent2)}
+    .liq-feed-t{font-weight:800;font-size:14px;color:var(--text)}
+    .liq-feed-s{font-size:12px;color:var(--text-muted);margin-top:2px;line-height:1.5;max-width:620px}
+    .liq-paste{margin-top:16px;padding:14px;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
+    .liq-paste-t{font-weight:800;font-size:14px;color:var(--text)}
+    .liq-paste-s{font-size:12px;color:var(--text-muted);margin:3px 0 9px;line-height:1.5}
+    .liq-paste-row{display:flex;gap:10px;align-items:center;margin-top:9px;flex-wrap:wrap}
+    .liq-ta{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:9px;padding:10px;font-family:ui-monospace,Menlo,monospace;font-size:12px;resize:vertical}
+    .liq-doc{max-width:720px}
+    .liq-doc h3{font-size:17px;margin:14px 0 8px;color:var(--accent)}
+    .liq-doc p{font-size:13px;line-height:1.65;color:var(--text-dim);margin:0 0 11px}
+    .liq-doc code{background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:1px 5px;font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--accent)}
+    .liq-pre{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:13px;font-family:ui-monospace,Menlo,monospace;font-size:12px;line-height:1.5;color:var(--text-dim);overflow-x:auto;white-space:pre}
+    @media(max-width:640px){.liq-tblwrap{max-height:none}.liq-nm{min-width:120px}.liq-sup{display:none}.liq-tbl th:last-child{display:none}}
     /* ═══ WEDDINGS TAB — event list + drag-and-drop floor plans ═══ */
     #wed-root{display:flex;flex-direction:column;height:100%;overflow:hidden}
     .wed-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 12px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0}
@@ -2194,7 +2254,7 @@ function liqStore(){const at=Date.now();
   try{localStorage.setItem('ct_liq',JSON.stringify({v:liq.list,at}))}catch(e){}
   if(typeof kvPush==='function')kvPush('ct_liq',liq.list,at);
   if(activeTab===LIQ)renderViewport()}
-async function liqPull(){try{
+async function liqPull(){liqPullX();try{
   const remote=await kvGet('ct_liq');
   let localAt=0,localV=null;try{const j=JSON.parse(localStorage.getItem('ct_liq')||'{}');localAt=j.at||0;localV=j.v||null}catch(e){}
   if(remote&&remote.v&&(remote.at||0)>localAt){liq.list=remote.v;
@@ -2206,6 +2266,18 @@ async function liqPull(){try{
     kvPush('ct_liq',localV,localAt);
   }
 }catch(e){}}
+// The inventory/sales/order data rides the same KV bridge; pulled whenever the tab opens.
+async function liqPullX(){const keys=[['ct_liq_items','items'],['ct_liq_counts','counts'],['ct_liq_sales','sales'],['ct_liq_recv','recv'],['ct_liq_cfg','cfg']];
+  let changed=false;
+  for(const [k,f] of keys){try{
+    const remote=await kvGet(k);
+    let localAt=0,localV=null;try{const j=JSON.parse(localStorage.getItem(k)||'{}');localAt=j.at||0;localV=j.v!=null?j.v:null}catch(e){}
+    if(remote&&remote.v!=null&&(remote.at||0)>localAt){
+      try{localStorage.setItem(k,JSON.stringify({v:remote.v,at:remote.at}))}catch(e){}
+      liqX[f]=null;changed=true}
+    else if(localV!=null&&localAt>((remote&&remote.at)||0))kvPush(k,localV,localAt); // self-heal, same as the rest of the app
+  }catch(e){}}
+  if(changed&&activeTab===LIQ&&!document.querySelector('.liq-in:focus'))renderViewport()}
 function liqOpen(i){const p=liqLoad()[i];if(p)window.open(p.url,'_blank')}
 function liqAdd(){const name=(prompt('Portal name:')||'').trim();if(!name)return;
   let url=(prompt('Portal web address:')||'').trim();if(!url)return;
@@ -2279,7 +2351,7 @@ function bankHTML(){const list=bankLoad();
       <button class="wed-btn amber" style="margin-top:14px" onclick="bankAdd()">＋ Add your first site</button>
     </div>`}
   </div>`}
-function liqHTML(){const list=liqLoad();
+function liqPortalsHTML(){const list=liqLoad();
   return `<div class="liq-wrap">
     <div class="liq-head">
       <span class="liq-title">🥃 Liquor Ordering</span>
@@ -2300,6 +2372,598 @@ function liqHTML(){const list=liqLoad();
     </div>
     <div class="liq-tip">💡 Tip: the Liquor Inventory sheet's Supplier column tells you which portal carries each item.</div>
   </div>`}
+// ── LIQUOR: INVENTORY · SALES · ORDERING ────────────────────────────────────────
+// Four views behind the 🥃 tab: 📦 Inventory (the count sheet), 🛒 Order (what to buy,
+// grouped by distributor), 📈 Sales (what's moving + the POS feed), 🔗 Portals (the old
+// launcher, unchanged). Catalog is seeded from Vinny's Google count sheet — 275 items with
+// size, cost and supplier — and then LIVES HERE: edits stay put, re-import only refreshes
+// price/size/supplier and never touches par or counts.
+//
+// WHY IT'S BUILT THIS WAY: the new POS will eventually know what was poured. Rather than
+// wait for it, ordering runs off "usage per week", which has two sources and prefers the
+// better one automatically:
+//   1. POS feed  — ct_liq_sales, units sold per day (nothing writes this yet)
+//   2. counts    — depletion between two counts: prevCount + delivered - thisCount
+// So the page is useful the day it ships (count twice, get order suggestions) and gets
+// sharper the moment the POS starts posting. See liqPosDoc() for the ingest contract.
+const LIQ_SEED=`WINE|SPARKLING & CHAMPAGNE|Rotari Brut (split)|187ML split|6.75|Southern
+WINE|SPARKLING & CHAMPAGNE|Ruffino Prosecco|750ML|16.50|Southern
+WINE|SPARKLING & CHAMPAGNE|La Marca Prosecco|750ML|10.25|Breakthru
+WINE|SPARKLING & CHAMPAGNE|Martini & Rossi Asti|750ML|12.62|Southern
+WINE|SPARKLING & CHAMPAGNE|Moet & Chandon "Imperial" Brut|750ML|48.04|Breakthru
+WINE|SPARKLING & CHAMPAGNE|Dom Perignon|750ML|241.25|Breakthru
+WINE|PINOT GRIGIO|Mezzacorona|1.5L & 750ML|17.00|Southern
+WINE|PINOT GRIGIO|Ruffino Lumina|750ML|13.50|Southern
+WINE|PINOT GRIGIO|Stemmari|750ML|10.50|Southern
+WINE|PINOT GRIGIO|Santa Margherita|750ML|19.25|Breakthru
+WINE|PINOT GRIGIO|Cupcake|750ML|12.75|Southern
+WINE|PINOT GRIGIO|Cupcake Lighthearted (low-cal)|750ML|12.75|Southern
+WINE|CHARDONNAY|Mezzacorona|1.5L & 750ML|16.00|Southern
+WINE|CHARDONNAY|Stemmari|750ML|10.50|Southern
+WINE|CHARDONNAY|J. Lohr "Riverstone"|750ML|12.75|Southern
+WINE|CHARDONNAY|Wente "Riva Ranch"|750ML|17.83|Southern
+WINE|CHARDONNAY|Ferrari Carano|750ML|26.25|Southern
+WINE|CHARDONNAY|Sonoma Cutrer|750ML|13.00|Breakthru
+WINE|CHARDONNAY|Jordan|750ML|32.25|Southern
+WINE|ROSE|Stemmari Rose|750ML|10.50|Southern
+WINE|MOSCATO & RIESLING|Mezzacorona Moscato|750ML|11.25|Southern
+WINE|MOSCATO & RIESLING|Chateau Ste Michelle "Harvest Select" Riesling|750ML|12.00|Southern
+WINE|MOSCATO & RIESLING|Chateau Ste Michelle Riesling (regular)|750ML|12.00|Southern
+WINE|SANGRIA & WHITE ZINFANDEL|Real Sangria - Red|750ML|10.40|Southern
+WINE|SANGRIA & WHITE ZINFANDEL|Real Sangria - White|750ML|10.40|Southern
+WINE|SANGRIA & WHITE ZINFANDEL|Beringer White Zinfandel|750ML & 1.5L|6.75|Southern
+WINE|SAUVIGNON BLANC / FUME BLANC|Ferrari Carano Fume Blanc|750ML|16.00|Southern
+WINE|SAUVIGNON BLANC / FUME BLANC|Kim Crawford Sauvignon Blanc|750ML|24.04|Southern
+WINE|SAUVIGNON BLANC / FUME BLANC|Echo Bay (Marlborough)|750ML|14.83|Southern
+WINE|WHITE BLEND|Dalila Viognier/Grillo (Stemmari)|750ML|16.50|Southern
+WINE|CHIANTI & SANGIOVESE|Querceto Chianti|1.5L & 750ML|18.75|Southern
+WINE|CHIANTI & SANGIOVESE|Palladio Chianti Riserva|750ML||Not at either
+WINE|CHIANTI & SANGIOVESE|Querceto Chianti Classico|750ML|15.00|Southern
+WINE|CHIANTI & SANGIOVESE|Ruffino Chianti Classico Riserva "Tan Label"|750ML|24.75|Southern
+WINE|CHIANTI & SANGIOVESE|Ruffino Chianti Classico Riserva Ducale "Gold Label"|750ML|34.38|Southern
+WINE|CHIANTI & SANGIOVESE|Cecchi Sangiovese|750ML|13.50|Southern
+WINE|PINOT NOIR|Stemmari|750ML|10.50|Southern
+WINE|PINOT NOIR|Meiomi|750ML|26.00|Southern
+WINE|PINOT NOIR|Sea Sun by Caymus|750ML|17.50|Southern
+WINE|PINOT NOIR|The Calling|750ML|29.33|Southern
+WINE|PINOT NOIR|Belle Glos "Clark & Telephone"|750ML|54.83|Breakthru
+WINE|MERLOT|Mezzacorona|1.5L & 750ML|16.00|Southern
+WINE|MERLOT|Rodney Strong|750ML|17.42|Southern
+WINE|MERLOT|Rutherford Hill|750ML|30.00|Southern
+WINE|SWEET RED|Sonoroso|750ML|11.25|Southern
+WINE|DISTINCTIVE REDS - DOMESTIC|7 Deadly Zins Zinfandel|750ML|13.33|Southern
+WINE|DISTINCTIVE REDS - DOMESTIC|Saldo Zinfandel (Prisoner Wine Co.)|750ML|29.25|Southern
+WINE|DISTINCTIVE REDS - DOMESTIC|J. Lohr "Tower Road" Petite Sirah|750ML|19.67|Southern
+WINE|DISTINCTIVE REDS - DOMESTIC|The Prisoner Red Blend|750ML|40.50|Southern
+WINE|DISTINCTIVE REDS - IMPORTED|Di Notte Rosso Blend (Mezzacorona)|750ML|11.25|Southern
+WINE|DISTINCTIVE REDS - IMPORTED|Pertinace Barbera d'Alba|750ML|13.75|Southern
+WINE|DISTINCTIVE REDS - IMPORTED|Righetti Valpolicella (Baby Amarone)|750ML|17.25|Southern
+WINE|DISTINCTIVE REDS - IMPORTED|Righetti "Sol" Super Veneto Blend|750ML|20.25|Southern
+WINE|DISTINCTIVE REDS - IMPORTED|Modus "Super Tuscan" (Ruffino)|750ML|30.75|Southern
+WINE|DISTINCTIVE REDS - IMPORTED|Righetti Amarone|750ML|30.00|Southern
+WINE|DISTINCTIVE REDS - IMPORTED|Pertinace Barbaresco|750ML|32.25|Southern
+WINE|DISTINCTIVE REDS - IMPORTED|Pertinace Barolo|750ML|45.00|Southern
+WINE|DISTINCTIVE REDS - IMPORTED|Graffigna Malbec|750ML|11.25|Southern
+WINE|DISTINCTIVE REDS - IMPORTED|Nannetti Brunello di Montalcino|750ML|46.50|Southern
+WINE|CABERNET SAUVIGNON|Mezzacorona|1.5L & 750ML|17.00|Southern
+WINE|CABERNET SAUVIGNON|J. Lohr "Seven Oaks"|750ML|14.79|Southern
+WINE|CABERNET SAUVIGNON|Joel Gott "815"|750ML|17.79|Southern
+WINE|CABERNET SAUVIGNON|Bonanza|750ML & 1L|18.75|Southern
+WINE|CABERNET SAUVIGNON|Ferrari Carano|750ML|26.25|Southern
+WINE|CABERNET SAUVIGNON|J. Lohr "Hilltop"|750ML|23.50|Southern
+WINE|CABERNET SAUVIGNON|Simi|750ML|24.38|Southern
+WINE|CABERNET SAUVIGNON|The Prisoner Cab|750ML|44.17|Southern
+WINE|CABERNET SAUVIGNON|Austin Hope|750ML||Not at either
+WINE|CABERNET SAUVIGNON|Stags Leap "Artemis"|750ML|67.50|Southern
+WINE|CABERNET SAUVIGNON|Jordan|750ML|52.50|Southern
+WINE|CABERNET SAUVIGNON|Caymus (1 liter)|1L|83.33|Southern
+WINE|CABERNET SAUVIGNON|Caymus 50th Anniversary|750ML|66.00|Southern
+WINE|CABERNET SAUVIGNON|Butter|750ML|16.50|Southern
+WINE|BULK / HOUSE WINE|Franzia Chablis (5L box)|5L box|21.00|Southern
+WINE|NON-ALCOHOLIC WINE|Giesen Pinot Grigio Zero (N/A)|750ML|13.04|Breakthru
+WINE|NON-ALCOHOLIC WINE|Giesen Red Blend Zero (N/A)|750ML|13.04|Breakthru
+WINE|NON-ALCOHOLIC WINE|Josh Cellars Sparkling (N/A)|750ML|14.33|Southern
+LIQUOR|VODKA|Absolut|1L|26.25|Southern
+LIQUOR|VODKA|Absolut Citron|1L|26.25|Southern
+LIQUOR|VODKA|Absolut Mandarin|1L|26.25|Southern
+LIQUOR|VODKA|Absolut Pear|1L|26.25|Southern
+LIQUOR|VODKA|Absolut Raspberri|1L|26.25|Southern
+LIQUOR|VODKA|Absolut Vanilia|1L|26.25|Southern
+LIQUOR|VODKA|Stoli|1L|32.46|Breakthru
+LIQUOR|VODKA|Belvedere|1L|47.79|Breakthru
+LIQUOR|VODKA|Grey Goose|1L|41.58|Southern
+LIQUOR|VODKA|Chopin|750ML||Not at either
+LIQUOR|VODKA|Tito's Handmade|1L|20.50|Breakthru
+LIQUOR|VODKA|Ketel One|1L|34.38|Breakthru
+LIQUOR|VODKA|Skyy|1L|15.75|Southern
+LIQUOR|VODKA|Three Olives (well)|1L|12.75|Southern
+LIQUOR|VODKA|Barton Vodka 80 (well)|1L|6.00|Breakthru
+LIQUOR|VODKA|Vanilla Vodka (Three Olives)|1L|12.75|Southern
+LIQUOR|VODKA|Espresso Vodka (Three Olives)|1L|12.75|Southern
+LIQUOR|VODKA|Caramel Vodka (Pinnacle Salted Caramel)|750ML|12.91|Southern
+LIQUOR|GIN|Hendrick's|1L|44.16|Breakthru
+LIQUOR|GIN|Tanqueray London Dry|1L|33.20|Breakthru
+LIQUOR|GIN|Beefeater|1L|28.00|Southern
+LIQUOR|GIN|Bombay Sapphire|1L & 750ML|32.80|Southern
+LIQUOR|GIN|Roku (Suntory)|750ML|25.49|Southern
+LIQUOR|GIN|Monkey 47|750ML|52.50|Southern
+LIQUOR|GIN|Barton Gin 80 (well)|1L|7.50|Breakthru
+LIQUOR|RUM|Bacardi Superior White|1L|20.79|Southern
+LIQUOR|RUM|Captain Morgan Spiced|1L|28.44|Breakthru
+LIQUOR|RUM|Diplomatico Seleccion de Familia|700ML|42.30|Breakthru
+LIQUOR|RUM|Malibu Coconut Rum|750ML & 1L|17.25|Southern
+LIQUOR|TEQUILA & MEZCAL|Casamigos Blanco|1L|41.43|Breakthru
+LIQUOR|TEQUILA & MEZCAL|Casamigos Reposado|1L|44.04|Breakthru
+LIQUOR|TEQUILA & MEZCAL|Patron Silver|750ML|41.67|Southern
+LIQUOR|TEQUILA & MEZCAL|Patron Reposado|750ML|45.42|Southern
+LIQUOR|TEQUILA & MEZCAL|Patron Anejo|750ML|50.42|Southern
+LIQUOR|TEQUILA & MEZCAL|Patron Cristalino Anejo|750ML|60.67|Southern
+LIQUOR|TEQUILA & MEZCAL|Jose Cuervo Gold Especial|1L|21.75|Southern
+LIQUOR|TEQUILA & MEZCAL|Jose Cuervo Tradicional Reposado|1L|24.92|Southern
+LIQUOR|TEQUILA & MEZCAL|Hornitos Plata|1L|28.17|Southern
+LIQUOR|TEQUILA & MEZCAL|Gran Centenario Plata|750ML|24.75|Southern
+LIQUOR|TEQUILA & MEZCAL|Gran Centenario Reposado|750ML|25.50|Southern
+LIQUOR|TEQUILA & MEZCAL|Clase Azul Reposado|750ML|145.50|Southern
+LIQUOR|TEQUILA & MEZCAL|1800 Reposado|1L|33.33|Southern
+LIQUOR|TEQUILA & MEZCAL|Espolon Reposado|1L|34.00|Southern
+LIQUOR|TEQUILA & MEZCAL|Espolon Anejo (Bourbon Barrel)|750ML|35.75|Southern
+LIQUOR|TEQUILA & MEZCAL|Ilegal Mezcal Joven|1L|59.37|Southern
+LIQUOR|CORDIALS & LIQUEURS|B&B|1L|41.17|Southern
+LIQUOR|CORDIALS & LIQUEURS|Anisette|1L|10.12|Southern
+LIQUOR|CORDIALS & LIQUEURS|Drambuie|1L|45.04|Breakthru
+LIQUOR|CORDIALS & LIQUEURS|Baileys|1L|39.52|Breakthru
+LIQUOR|CORDIALS & LIQUEURS|Frangelico|1L|38.32|Southern
+LIQUOR|CORDIALS & LIQUEURS|Galliano|700ML|33.75|Breakthru
+LIQUOR|CORDIALS & LIQUEURS|RumChata|1L|33.33|Breakthru
+LIQUOR|CORDIALS & LIQUEURS|Grappa|750ML|61.50|Southern
+LIQUOR|CORDIALS & LIQUEURS|Tia Maria|1L|31.67|Breakthru
+LIQUOR|CORDIALS & LIQUEURS|Kahlua|1L|30.00|Southern
+LIQUOR|CORDIALS & LIQUEURS|Limoncello (Caravella)|750ML|16.28|Breakthru
+LIQUOR|CORDIALS & LIQUEURS|Licor 43|1L|36.00|Southern
+LIQUOR|CORDIALS & LIQUEURS|Licor 43 Chocolate|750ML|27.75|Southern
+LIQUOR|CORDIALS & LIQUEURS|Amaretto DiSaronno|1L|42.79|Breakthru
+LIQUOR|CORDIALS & LIQUEURS|DeKuyper Amaretto (well)|1L|13.50|Southern
+LIQUOR|CORDIALS & LIQUEURS|Grand Marnier|1L|39.00|Southern
+LIQUOR|CORDIALS & LIQUEURS|St Germain Elderflower|750ML|38.75|Southern
+LIQUOR|CORDIALS & LIQUEURS|Sambuca Romana|1L|33.93|Breakthru
+LIQUOR|CORDIALS & LIQUEURS|Black Sambuca Romana|1L|32.90|Breakthru
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Jim Beam|1L|22.92|Southern
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Jim Beam Black|1L|30.96|Southern
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Jim Beam Apple|1L|22.92|Southern
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Knob Creek|1L|41.03|Southern
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Knob Creek Rye|1L|41.03|Southern
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Elijah Craig|1L|36.99|Southern
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Buffalo Trace|1L|26.50|Breakthru
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Maker's Mark|1L|37.83|Southern
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Maker's 46|750ML|32.25|Southern
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Woodford Reserve|1L|42.50|Breakthru
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Angel's Envy|750ML|53.58|Southern
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Angel's Envy Triple Oak|750ML|68.58|Southern
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Basil Hayden|1L|50.00|Southern
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Basil Hayden Toast|750ML|54.00|Southern
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Evan Williams Black|1L|18.22|Southern
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Jefferson's|750ML|32.25|Southern
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Gentleman Jack|1L|42.99|Breakthru
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Jack Daniel's Black (Sour Mash)|1L|36.09|Breakthru
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Bulleit Bourbon|1L|42.29|Breakthru
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Bulleit Rye|1L|42.29|Breakthru
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Templeton Rye|1L|36.52|Breakthru
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Seagram's 7 Crown|1L|23.07|Breakthru
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Seagram's VO|1L|25.30|Breakthru
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Southern Comfort|1L|24.30|Breakthru
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Canadian Club|1L|21.88|Southern
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Quality House (well)|1L|9.66|Southern
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Crown Royal|1L|37.16|Breakthru
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Crown Royal Black Label|1L|39.18|Breakthru
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Crown Royal Regal Apple|1L|37.16|Breakthru
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Skrewball Peanut Butter|1L|37.50|Southern
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Jameson (Irish)|1L|34.00|Southern
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Jameson Black Barrel (Irish)|1L & 750ML|39.75|Southern
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Jameson Orange (Irish)|1L|34.00|Southern
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Bushmills (Irish)|1L|21.00|Southern
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Teeling Small Batch (Irish)|750ML|32.42|Southern
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Tullamore Dew (Irish)|1L|26.83|Breakthru
+LIQUOR|WHISKEY / RYE / BOURBON / IRISH|Midleton (Irish)|750ML|176.50|Southern
+LIQUOR|SCOTCH|Johnnie Walker Red|1L|36.87|Breakthru
+LIQUOR|SCOTCH|Johnnie Walker Black|1L|47.74|Breakthru
+LIQUOR|SCOTCH|Johnnie Walker Blue|750ML|223.33|Breakthru
+LIQUOR|SCOTCH|Dewar's White Label|1L & 750ML|29.17|Southern
+LIQUOR|SCOTCH|Dewar's 12yr|1L|35.23|Southern
+LIQUOR|SCOTCH|Dewar's 18yr|750ML|62.08|Southern
+LIQUOR|SCOTCH|Chivas Regal 12yr|750ML|36.75|Southern
+LIQUOR|SCOTCH|J&B|1L|32.40|Breakthru
+LIQUOR|SCOTCH|House of Stuart 3yr (well)|750ML|10.52|Breakthru
+LIQUOR|SCOTCH|Glenlivet 12yr|750ML|43.50|Southern
+LIQUOR|SCOTCH|Glenlivet Founder's Reserve|750ML|39.75|Southern
+LIQUOR|SCOTCH|Glenlivet 18yr|750ML|128.80|Southern
+LIQUOR|SCOTCH|Glenfiddich 12yr|1L|49.21|Breakthru
+LIQUOR|SCOTCH|Glenmorangie|1L|40.67|Breakthru
+LIQUOR|SCOTCH|Macallan 12yr|750ML|68.08|Breakthru
+LIQUOR|SCOTCH|Macallan 18yr|750ML|286.17|Breakthru
+LIQUOR|SCOTCH|Oban|750ML|88.50|Breakthru
+LIQUOR|SCOTCH|Talisker|750ML|70.42|Breakthru
+LIQUOR|COGNAC & BRANDY|Hennessy VS|1L|48.58|Breakthru
+LIQUOR|COGNAC & BRANDY|Hennessy VSOP|750ML|56.58|Breakthru
+LIQUOR|COGNAC & BRANDY|Remy Martin VS|1L|59.83|Breakthru
+LIQUOR|COGNAC & BRANDY|Martell Cordon Bleu|750ML|180.75|Southern
+LIQUOR|COGNAC & BRANDY|Courvoisier VS|1L|29.99|Southern
+LIQUOR|COGNAC & BRANDY|Christian Brothers Brandy|1L|16.02|Southern
+LIQUOR|PORT|Dows 20 Year Old|750ML||Not at either
+LIQUOR|PORT|Fonseca Bin 27|750ML|18.90|Breakthru
+BEER|DRAFT|Stella Artois (draft)|1/2 BBL keg|185.00|Schamberger Bros.
+BEER|DRAFT|Moretti (draft)|20L keg|100.00|Schamberger Bros.
+BEER|DRAFT|Seasonal Draft (rotating)|1/6 BBL keg|77.00|Euclid Beverage
+BEER|DRAFT|Local Draft (rotating)|1/6 BBL keg|123.00|Chicago Bev. Systems
+BEER|BOTTLES - DOMESTIC & IMPORT|Budweiser|12oz btl|1.06|Superior Beverage
+BEER|BOTTLES - DOMESTIC & IMPORT|Bud Light|12oz btl|1.06|Superior Beverage
+BEER|BOTTLES - DOMESTIC & IMPORT|Busch Light|12oz btl|0.82|Superior Beverage
+BEER|BOTTLES - DOMESTIC & IMPORT|Coors Light|12oz btl|1.03|Euclid Beverage
+BEER|BOTTLES - DOMESTIC & IMPORT|Michelob Ultra|12oz btl|0.96|Superior Beverage
+BEER|BOTTLES - DOMESTIC & IMPORT|Miller Lite|12oz btl|1.03|Euclid Beverage
+BEER|BOTTLES - DOMESTIC & IMPORT|Sam Adams Boston Lager|12oz btl|1.44|Euclid Beverage
+BEER|BOTTLES - DOMESTIC & IMPORT|Sam Adams Cherry Wheat|12oz btl|1.49|Euclid Beverage
+BEER|BOTTLES - DOMESTIC & IMPORT|Sam Adams Octoberfest (seasonal)|12oz btl|1.44|Euclid Beverage
+BEER|BOTTLES - DOMESTIC & IMPORT|Blue Moon|12oz btl|1.48|Euclid Beverage
+BEER|BOTTLES - DOMESTIC & IMPORT|Stella Artois|12oz btl||Superior Beverage
+BEER|BOTTLES - DOMESTIC & IMPORT|Peroni|12oz btl|1.46|Euclid Beverage
+BEER|BOTTLES - DOMESTIC & IMPORT|Yuengling|12oz btl||Euclid Bev. (?)
+BEER|BOTTLES - DOMESTIC & IMPORT|Moretti|11.2oz btl|1.63|Schamberger Bros.
+BEER|BOTTLES - DOMESTIC & IMPORT|Corona Extra|12oz btl|1.46|Blue Ribbon Products
+BEER|BOTTLES - DOMESTIC & IMPORT|Corona Light|12oz btl|1.46|Blue Ribbon Products
+BEER|BOTTLES - DOMESTIC & IMPORT|Modelo Especial|12oz btl|1.46|Blue Ribbon Products
+BEER|BOTTLES - DOMESTIC & IMPORT|Heineken|12oz btl||Euclid Bev. (?)
+BEER|BOTTLES - DOMESTIC & IMPORT|Heineken 0.0 (N/A)|12oz btl|1.46|Euclid Beverage
+BEER|BOTTLES - DOMESTIC & IMPORT|Guinness|11.2oz btl||Euclid Bev. (?)
+BEER|BOTTLES - DOMESTIC & IMPORT|Shiner Bock|12oz btl||Euclid Bev. (?)
+BEER|BOTTLES - DOMESTIC & IMPORT|O'Doul's (N/A)|12oz btl||Superior Beverage
+BEER|BOTTLES - DOMESTIC & IMPORT|Beck's (N/A)|12oz btl|1.18|Schamberger Bros.
+BEER|BOTTLES - DOMESTIC & IMPORT|Angry Orchard|12oz btl||Euclid Bev. (?)
+BEER|SELTZERS & CRAFT|High Noon Black Cherry|355ML can|1.92|Breakthru
+BEER|SELTZERS & CRAFT|High Noon Watermelon|355ML can|1.92|Breakthru
+BEER|SELTZERS & CRAFT|High Noon Peach|355ML can|1.92|Breakthru
+BEER|SELTZERS & CRAFT|High Noon Grapefruit|355ML can|1.92|Breakthru
+BEER|SELTZERS & CRAFT|High Noon Pineapple|355ML can|1.92|Breakthru
+BEER|SELTZERS & CRAFT|Lagunitas IPA|12oz btl||CBS/Windy City (?)
+BEER|SELTZERS & CRAFT|Lagunitas Little Sumpin' Sumpin' Ale|12oz btl||CBS/Windy City (?)
+BEER|SELTZERS & CRAFT|Maplewood Son of Juice Hazy IPA|12oz can||CBS/Windy City (?)
+BEER|SELTZERS & CRAFT|Two Brothers Domaine Dupage|12oz btl||CBS/Windy City (?)
+BEER|SELTZERS & CRAFT|Two Brothers Pinball Pale Ale|12oz btl||CBS/Windy City (?)
+BEER|SELTZERS & CRAFT|Fat Tire|12oz btl||Euclid Bev. (?)
+MISC|MISC|Aperol|1L|39.75|Southern
+MISC|MISC|Campari|1L|35.75|Southern
+MISC|MISC|Chambord|700ML|31.24|Breakthru
+MISC|MISC|Martini & Rossi Sweet Vermouth (Rosso)|1L & 750ML|13.17|Southern
+MISC|MISC|Martini Vermouth extra dry|750 ML||Southern
+MISC|MISC|DeKuyper Triple Sec|1L & 750ML|7.50|Southern
+MISC|MISC|DeKuyper Blue Curacao|1L|12.75|Southern
+MISC|MISC|DeKuyper Creme de Cacao Dark|1L|12.75|Southern
+MISC|MISC|DeKuyper Creme de Cacao White|1L|12.75|Southern
+MISC|MISC|DeKuyper Creme de Menthe Green|1L|12.75|Southern
+MISC|MISC|DeKuyper Peach Schnapps (Peachtree)|1L|11.25|Southern
+MISC|MISC|DeKuyper Sour Apple (Pucker)|1L|11.25|Southern
+MISC|MISC|DeKuyper Peppermint Schnapps|1L|12.75|Southern
+MISC|MISC|DeKuyper Blackberry Brandy|1L|12.75|Southern
+MISC|MISC|Butterscotch Schnapps (DeKuyper Buttershots)|1L|11.25|Southern
+MISC|MISC|Pomegranate Liqueur (Pama)|1L & 750ML|45.41|Southern
+MISC|MISC|Chocolate Liqueur (Maraska Nocelino)|750ML|24.79|Breakthru
+MISC|MISC|Creamy Limoncello|||Not at either
+MISC|MISC|Kahlua White Chocolate Sips|750ML|28.50|Southern
+MISC|MISC|Luxardo Maraschino Cherries|400g jar|20.25|Southern
+MISC|MISC|Wild Tonic Mango Kombucha|||Not at either
+MISC|MISC|Ginger Beer (Barritts)|12oz can|1.14|Breakthru
+MISC|MISC|Ginger Beer (Owen's)|240ML can|6.67|Southern
+MISC|MISC|Rose's Grenadine|1L|7.19|Breakthru
+MISC|MISC|Daily's Grenadine|1L|5.44|Southern
+MISC|MISC|Rose's Lime Juice|1L|7.03|Breakthru
+MISC|MISC|IBC Root Beer|12oz btl|1.33|Breakthru
+MISC|MISC|IBC Cream Soda|12oz btl|1.21|Breakthru
+MISC|MISC|Zing Zang Bloody Mary Mix|32oz|5.70|Southern
+MISC|MISC|Angostura Bitters|16oz|24.17|Southern
+MISC|MISC|Colombo Marsala Dry (1.5L)|1.5L|20.00|Southern
+MISC|MISC|Lombardo Marsala Ambra Dry (1.5L)|1.5L|19.17|Southern`;
+const LIQ_SUP_URL={'Breakthru':'https://now.breakthrubev.com/bbg/en/','Southern':'https://www.sgproof.com','Superior Beverage':'https://mybeesapp.com'};
+const LIQ_VIEWS=[['inv','📦 Inventory'],['order','🛒 Order'],['sales','📈 Sales'],['portals','🔗 Portals']];
+let liqX={items:null,counts:null,sales:null,recv:null,cfg:null,view:'inv',q:'',grp:'ALL',sup:'ALL',needOnly:false};
+
+function liqSlug(s){return (s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'')}
+function liqParseSeed(){return LIQ_SEED.trim().split('\n').map(l=>{const p=l.split('|');
+  return {id:liqSlug(p[1])+'--'+liqSlug(p[2]),n:p[2],z:p[3],p:parseFloat(p[4])||0,s:p[5],sec:p[1],g:p[0],par:'',cs:''}})}
+function liqMoney(n){return '$'+(Math.round((+n||0)*100)/100).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}
+function liqToday(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function liqDays(a,b){return Math.max(1,Math.round((new Date(b+'T12:00')-new Date(a+'T12:00'))/864e5))}
+function liqPretty(d){if(!d)return '';const p=d.split('-');return p[1].replace(/^0/,'')+'/'+p[2].replace(/^0/,'')}
+
+// storage — same localStorage-mirrors-KV pattern the rest of the app uses
+function liqLS(k,d){try{const r=JSON.parse(localStorage.getItem(k)||'null');return(r&&r.v!=null)?r.v:d}catch(e){return d}}
+function liqPut(k,v){const at=Date.now();try{localStorage.setItem(k,JSON.stringify({v,at}))}catch(e){}if(typeof kvPush==='function')kvPush(k,v,at)}
+function liqItems(){if(liqX.items)return liqX.items;const saved=liqLS('ct_liq_items',null);
+  if(!saved)liqX.items=liqParseSeed();
+  else{const by={};saved.forEach(it=>by[it.id]=it);
+    liqParseSeed().forEach(s=>{if(!by[s.id])saved.push(s)}); // items added to the sheet later show up; existing rows keep their edits
+    liqX.items=saved}
+  return liqX.items}
+function liqCounts(){if(!liqX.counts)liqX.counts=liqLS('ct_liq_counts',{});return liqX.counts}
+function liqSales(){if(!liqX.sales)liqX.sales=liqLS('ct_liq_sales',{});return liqX.sales}
+function liqRecv(){if(!liqX.recv)liqX.recv=liqLS('ct_liq_recv',{});return liqX.recv}
+function liqCfg(){if(!liqX.cfg)liqX.cfg=liqLS('ct_liq_cfg',{cover:2,date:liqToday()});if(!liqX.cfg.date)liqX.cfg.date=liqToday();return liqX.cfg}
+function liqSaveCfg(){liqPut('ct_liq_cfg',liqCfg())}
+
+// counts: {date:{itemId:qty}} — the selected date is the sheet you're filling in now
+function liqCountDates(){return Object.keys(liqCounts()).sort()}
+function liqCur(){const c=liqCounts(),d=liqCfg().date;if(!c[d])c[d]={};return c[d]}
+function liqRaw(id){const v=liqCur()[id];return v==null?'':v}
+// Effective on-hand: this count if entered, else the most recent earlier count that had a
+// number — so a partial count (just the vodkas tonight) doesn't zero out everything else.
+function liqOnHand(id){const c=liqCounts(),sel=liqCfg().date;
+  const ds=liqCountDates().filter(d=>d<=sel).reverse();
+  for(const d of ds){const v=c[d]&&c[d][id];if(v!=null&&v!=='')return +v||0}
+  return null}
+function liqRecvBetween(id,a,b){const r=liqRecv();let t=0;
+  Object.keys(r).forEach(d=>{if(d>a&&d<=b){const v=r[d]&&r[d][id];if(v!=null)t+=(+v||0)}});return t}
+
+// usage/week — POS feed if it's there, otherwise depletion between the last two counts
+function liqUsageWk(id){
+  const s=liqSales(),sd=Object.keys(s).filter(d=>s[d]&&s[d][id]!=null&&s[d][id]!=='').sort();
+  if(sd.length){const first=sd[0],last=sd[sd.length-1];let tot=0;
+    sd.forEach(d=>tot+=(+s[d][id]||0));
+    const days=(first===last)?1:liqDays(first,last)+1;
+    return tot/(days/7)}
+  const cd=liqCountDates().filter(d=>{const m=liqCounts()[d];return m&&m[id]!=null&&m[id]!==''});
+  if(cd.length>=2){const a=cd[cd.length-2],b=cd[cd.length-1];
+    const used=(+liqCounts()[a][id]||0)+liqRecvBetween(id,a,b)-(+liqCounts()[b][id]||0);
+    const wks=liqDays(a,b)/7;
+    if(wks>0&&used>0)return used/wks}
+  return 0}
+function liqUsageSrc(id){const s=liqSales();
+  if(Object.keys(s).some(d=>s[d]&&s[d][id]!=null&&s[d][id]!==''))return 'pos';
+  const cd=liqCountDates().filter(d=>{const m=liqCounts()[d];return m&&m[id]!=null&&m[id]!==''});
+  return cd.length>=2?'count':'none'}
+// Par: what you set, else covers N weeks of usage (N = the cover selector on the Order view)
+function liqPar(it){const p=parseFloat(it.par);if(it.par!==''&&!isNaN(p))return p;
+  const u=liqUsageWk(it.id);return u>0?Math.ceil(u*(+liqCfg().cover||2)):null}
+function liqParAuto(it){return !(it.par!==''&&!isNaN(parseFloat(it.par)))}
+function liqNeed(it){const par=liqPar(it);if(par==null)return 0;const oh=liqOnHand(it.id);
+  return Math.max(0,Math.ceil(par-(oh||0)))}
+function liqWksLeft(it){const u=liqUsageWk(it.id);if(!u)return null;const oh=liqOnHand(it.id);
+  if(oh==null)return null;return oh/u}
+
+function liqValue(){let t=0;liqItems().forEach(it=>{const oh=liqOnHand(it.id);if(oh)t+=oh*it.p});return t}
+function liqOrderCost(){let t=0;liqItems().forEach(it=>{t+=liqNeed(it)*it.p});return t}
+function liqCountedN(){const c=liqCur();return Object.keys(c).filter(k=>c[k]!==''&&c[k]!=null).length}
+
+// live cell updates — never re-render the whole table on a keystroke (it would eat focus)
+function liqRowPaint(id){const it=liqItems().find(x=>x.id===id);if(!it)return;
+  const oh=liqOnHand(id);
+  const v=document.getElementById('liqv-'+id);if(v)v.textContent=oh?liqMoney(oh*it.p):'';
+  const n=document.getElementById('liqn-'+id);if(n){const need=liqNeed(it);n.textContent=need||'';n.className='liq-need'+(need?' on':'')}
+  const p=document.getElementById('liqp-'+id);if(p&&liqParAuto(it)){const par=liqPar(it);p.placeholder=par!=null?String(par):'—'}}
+function liqTotPaint(){const t=document.getElementById('liq-total');if(t)t.textContent=liqMoney(liqValue());
+  const c=document.getElementById('liq-counted');if(c)c.textContent=liqCountedN()+' counted';
+  const o=document.getElementById('liq-ordercost');if(o)o.textContent=liqMoney(liqOrderCost())}
+function liqSetCount(id,v){const c=liqCur();if(v===''||v==null)delete c[id];else c[id]=(+v||0);
+  liqPut('ct_liq_counts',liqCounts());liqRowPaint(id);liqTotPaint()}
+function liqSetPar(id,v){const it=liqItems().find(x=>x.id===id);if(!it)return;it.par=(v==null?'':String(v).trim());
+  liqPut('ct_liq_items',liqItems());liqRowPaint(id);liqTotPaint()}
+function liqSetPrice(id,v){const it=liqItems().find(x=>x.id===id);if(!it)return;it.p=parseFloat(v)||0;
+  liqPut('ct_liq_items',liqItems());liqRowPaint(id);liqTotPaint()}
+
+// view plumbing
+function liqGo(v){liqX.view=v;renderViewport()}
+function liqSetQ(v){liqX.q=v;liqRenderRows()}
+function liqSetGrp(v){liqX.grp=v;liqRenderRows()}
+function liqSetSup(v){liqX.sup=v;liqRenderRows()}
+function liqToggleNeed(){liqX.needOnly=!liqX.needOnly;renderViewport()}
+function liqSetDate(v){if(!v)return;liqCfg().date=v;liqSaveCfg();renderViewport()}
+function liqSetCover(v){liqCfg().cover=+v||2;liqSaveCfg();renderViewport()}
+function liqRenderRows(){const host=document.getElementById('liq-rows');if(host){host.innerHTML=liqRowsHTML();liqTotPaint()}}
+function liqFiltered(){const q=(liqX.q||'').toLowerCase().trim();
+  return liqItems().filter(it=>{
+    if(liqX.grp!=='ALL'&&it.g!==liqX.grp)return false;
+    if(liqX.sup!=='ALL'&&it.s!==liqX.sup)return false;
+    if(liqX.needOnly&&!liqNeed(it))return false;
+    if(q&&!(it.n+' '+it.sec+' '+it.s).toLowerCase().includes(q))return false;
+    return true})}
+function liqGroups(){const s={};liqItems().forEach(it=>s[it.g]=1);return Object.keys(s)}
+function liqSups(){const s={};liqItems().forEach(it=>s[it.s]=1);return Object.keys(s).sort()}
+
+// ── INVENTORY VIEW ─────────────────────────────────────────────────────────────
+function liqRowsHTML(){const list=liqFiltered();let sec='',out='';
+  if(!list.length)return `<tr><td colspan="7" style="padding:26px;text-align:center;color:var(--text-muted)">Nothing matches that filter.</td></tr>`;
+  list.forEach(it=>{
+    if(it.sec!==sec){sec=it.sec;out+=`<tr class="liq-sec"><td colspan="7">${esc(sec)}</td></tr>`}
+    const oh=liqOnHand(it.id),raw=liqRaw(it.id),need=liqNeed(it),par=liqPar(it),auto=liqParAuto(it);
+    out+=`<tr>
+      <td class="liq-nm">${esc(it.n)}<span class="liq-sz">${esc(it.z||'')}</span></td>
+      <td class="liq-num"><input class="liq-in liq-cost" value="${it.p?it.p.toFixed(2):''}" inputmode="decimal" onchange="liqSetPrice('${it.id}',this.value)"></td>
+      <td class="liq-num"><input class="liq-in liq-oh" value="${raw===''?'':esc(String(raw))}" inputmode="decimal" placeholder="—" oninput="liqSetCount('${it.id}',this.value)"></td>
+      <td class="liq-num"><input id="liqp-${it.id}" class="liq-in liq-par${auto?' auto':''}" value="${auto?'':esc(String(it.par))}" inputmode="numeric" placeholder="${auto?(par!=null?par:'—'):''}" title="${auto?'Auto: covers '+(liqCfg().cover||2)+' weeks of usage. Type a number to lock it.':'Your par'}" onchange="liqSetPar('${it.id}',this.value)"></td>
+      <td class="liq-num"><span id="liqn-${it.id}" class="liq-need${need?' on':''}">${need||''}</span></td>
+      <td class="liq-num" id="liqv-${it.id}">${oh?liqMoney(oh*it.p):''}</td>
+      <td class="liq-sup">${esc(it.s)}</td></tr>`});
+  return out}
+function liqInvHTML(){const dates=liqCountDates(),cfg=liqCfg();
+  return `<div class="liq-bar">
+      <input class="liq-search" type="search" placeholder="Search item, section, supplier…" value="${esc(liqX.q)}" oninput="liqSetQ(this.value)">
+      <select class="liq-sel" onchange="liqSetGrp(this.value)"><option value="ALL">All types</option>${liqGroups().map(g=>`<option value="${esc(g)}"${liqX.grp===g?' selected':''}>${esc(g)}</option>`).join('')}</select>
+      <select class="liq-sel" onchange="liqSetSup(this.value)"><option value="ALL">All suppliers</option>${liqSups().map(s=>`<option value="${esc(s)}"${liqX.sup===s?' selected':''}>${esc(s)}</option>`).join('')}</select>
+      <button class="wed-btn${liqX.needOnly?' amber':''}" onclick="liqToggleNeed()">${liqX.needOnly?'✓ ':''}Needs only</button>
+      <span style="flex:1"></span>
+      <label class="liq-lbl">Count date <input class="liq-in liq-date" type="date" value="${cfg.date}" onchange="liqSetDate(this.value)"></label>
+      <button class="wed-btn" onclick="liqNewCount()">＋ New count</button>
+    </div>
+    <div class="liq-stats">
+      <span class="liq-stat"><b id="liq-total">${liqMoney(liqValue())}</b> on hand</span>
+      <span class="liq-stat"><b id="liq-counted">${liqCountedN()} counted</b> of ${liqItems().length}</span>
+      <span class="liq-stat"><b id="liq-ordercost">${liqMoney(liqOrderCost())}</b> to reorder</span>
+      ${dates.length>1?`<span class="liq-stat liq-dim">last count ${liqPretty(dates[dates.length-2])}</span>`:''}
+    </div>
+    <div class="liq-tblwrap"><table class="liq-tbl">
+      <thead><tr><th>Item</th><th class="liq-num">Cost</th><th class="liq-num">On hand</th><th class="liq-num">Par</th><th class="liq-num">Need</th><th class="liq-num">Value</th><th>Supplier</th></tr></thead>
+      <tbody id="liq-rows">${liqRowsHTML()}</tbody></table></div>
+    <div class="liq-tip">💡 Par left blank = automatic: ${cfg.cover||2} weeks of measured usage. Type a number to lock your own. Counting the same items again next week is what teaches it how fast things move.</div>`}
+function liqNewCount(){const d=prompt('Start a new count sheet for which date?',liqToday());if(!d)return;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(d)){alert('Use the date form 2026-08-25.');return}
+  liqCfg().date=d;liqSaveCfg();if(!liqCounts()[d])liqCounts()[d]={};liqPut('ct_liq_counts',liqCounts());renderViewport()}
+
+// ── ORDER VIEW ─────────────────────────────────────────────────────────────────
+function liqOrderGroups(){const by={};
+  liqItems().forEach(it=>{const n=liqNeed(it);if(n>0)(by[it.s]=by[it.s]||[]).push({it,n})});
+  return Object.keys(by).sort().map(s=>({sup:s,rows:by[s].sort((a,b)=>a.it.sec.localeCompare(b.it.sec)||a.it.n.localeCompare(b.it.n)),
+    cost:by[s].reduce((t,r)=>t+r.n*r.it.p,0)}))}
+function liqSupUrl(sup){const k=Object.keys(LIQ_SUP_URL).find(k=>sup.indexOf(k)===0);return k?LIQ_SUP_URL[k]:''}
+function liqOrderText(sup){const g=liqOrderGroups().find(x=>x.sup===sup);if(!g)return '';
+  return `ANGELI'S — order for ${sup} (${liqPretty(liqCfg().date)})\n`+
+    g.rows.map(r=>`${r.n} x ${r.it.n}${r.it.z?' ('+r.it.z+')':''}`).join('\n')+
+    `\n\nEstimated: ${liqMoney(g.cost)}`}
+function liqCopyOrder(sup,btn){const t=liqOrderText(sup);const done=()=>{const o=btn.textContent;btn.textContent='✓ Copied';setTimeout(()=>btn.textContent=o,1400)};
+  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(t).then(done).catch(()=>{liqCopyFallback(t);done()});
+  else{liqCopyFallback(t);done()}}
+function liqCopyFallback(t){const ta=document.createElement('textarea');ta.value=t;ta.style.cssText='position:fixed;opacity:0';
+  document.body.appendChild(ta);ta.select();try{document.execCommand('copy')}catch(e){}ta.remove()}
+function liqOrderHTML(){const gs=liqOrderGroups(),cfg=liqCfg();
+  const noPar=liqItems().filter(it=>liqPar(it)==null).length;
+  return `<div class="liq-bar">
+      <label class="liq-lbl">Order up to <select class="liq-sel" onchange="liqSetCover(this.value)">${[1,2,3,4].map(w=>`<option value="${w}"${(+cfg.cover||2)===w?' selected':''}>${w} week${w>1?'s':''}</option>`).join('')}</select> of stock</label>
+      <span style="flex:1"></span>
+      <span class="liq-stat"><b>${liqMoney(gs.reduce((t,g)=>t+g.cost,0))}</b> estimated total</span>
+      <button class="wed-btn" onclick="liqPrintOrder()">🖨 Print all</button>
+    </div>
+    ${gs.length?gs.map(g=>`<div class="liq-ord">
+      <div class="liq-ordhead">
+        <span class="liq-ordsup">${esc(g.sup)}</span>
+        <span class="liq-ordn">${g.rows.length} item${g.rows.length>1?'s':''} · ${liqMoney(g.cost)}</span>
+        <span style="flex:1"></span>
+        <button class="wed-btn" onclick="liqCopyOrder('${esc(g.sup).replace(/'/g,"\\'")}',this)">📋 Copy list</button>
+        ${liqSupUrl(g.sup)?`<button class="wed-btn amber" onclick="window.open('${liqSupUrl(g.sup)}','_blank')">Open portal ↗</button>`:''}
+      </div>
+      <table class="liq-tbl liq-ordtbl"><tbody>
+        ${g.rows.map(r=>`<tr><td class="liq-qty">${r.n}</td>
+          <td class="liq-nm">${esc(r.it.n)}<span class="liq-sz">${esc(r.it.z||'')}</span></td>
+          <td class="liq-num liq-dim">have ${liqOnHand(r.it.id)||0} · par ${liqPar(r.it)}</td>
+          <td class="liq-num">${liqMoney(r.n*r.it.p)}</td></tr>`).join('')}
+      </tbody></table></div>`).join(''):
+      `<div class="liq-empty"><div style="font-size:34px">🛒</div>
+        <div class="liq-empty-t">Nothing to order yet</div>
+        <div class="liq-empty-s">Count your bottles on the Inventory tab — anything below par shows up here, split by distributor.${noPar?` <br><br>${noPar} items don't have a par yet and no measured usage, so they can't be suggested. Set a par on those, or count them twice and let usage do it.`:''}</div></div>`}`}
+function liqPrintOrder(){const gs=liqOrderGroups();if(!gs.length){alert('Nothing to order yet.');return}
+  const w=window.open('','_blank');
+  w.document.write(`<html><head><title>Liquor order — ${liqPretty(liqCfg().date)}</title><style>
+    body{font-family:-apple-system,Helvetica,sans-serif;color:#000;font-size:11px;margin:24px}
+    h1{font-size:16px;margin:0 0 2px}.meta{font-size:11px;margin-bottom:12px;color:#444}
+    h2{font-size:13px;margin:16px 0 4px;border-bottom:2px solid #000;padding-bottom:2px}
+    table{width:100%;border-collapse:collapse;margin-bottom:4px}td,th{border:1px solid #000;padding:3px 6px;text-align:left}
+    th{background:#eee}.q{font-weight:700;text-align:right;width:44px}.r{text-align:right;width:70px}
+    .sub{font-weight:700;text-align:right;font-size:11px;margin-bottom:10px}</style></head><body>
+    <h1>Liquor order</h1><div class="meta">Angeli's · counted ${liqPretty(liqCfg().date)} · ordering up to ${liqCfg().cover||2} week(s) of stock</div>
+    ${gs.map(g=>`<h2>${g.sup}</h2><table><tr><th class="q">Qty</th><th>Item</th><th>Size</th><th class="r">Est. cost</th></tr>
+      ${g.rows.map(r=>`<tr><td class="q">${r.n}</td><td>${r.it.n}</td><td>${r.it.z||''}</td><td class="r">${liqMoney(r.n*r.it.p)}</td></tr>`).join('')}
+      </table><div class="sub">${g.sup} subtotal: ${liqMoney(g.cost)}</div>`).join('')}
+    <div class="sub" style="font-size:13px;border-top:2px solid #000;padding-top:4px">TOTAL: ${liqMoney(gs.reduce((t,g)=>t+g.cost,0))}</div>
+    </body></html>`);
+  w.document.close();setTimeout(()=>{try{w.print()}catch(e){}},400)}
+
+// ── SALES VIEW ─────────────────────────────────────────────────────────────────
+function liqSalesDates(){return Object.keys(liqSales()).sort()}
+function liqMovers(){return liqItems().map(it=>({it,u:liqUsageWk(it.id),src:liqUsageSrc(it.id),w:liqWksLeft(it)}))
+  .filter(r=>r.u>0).sort((a,b)=>b.u*b.it.p-a.u*a.it.p)}
+function liqSalesHTML(){const sd=liqSalesDates(),movers=liqMovers(),cd=liqCountDates();
+  const live=sd.length>0;
+  return `<div class="liq-feed ${live?'on':''}">
+      <div class="liq-feed-dot"></div>
+      <div>
+        <div class="liq-feed-t">${live?'POS feed connected':'POS feed not connected yet'}</div>
+        <div class="liq-feed-s">${live
+          ? `Last sales posted ${liqPretty(sd[sd.length-1])} · ${sd.length} day${sd.length>1?'s':''} of data. Ordering is using real depletion.`
+          : `Ordering is running on count-to-count depletion${cd.length>=2?` (${cd.length} counts so far)`:` — needs 2 counts to measure usage`}. When the new POS starts posting what it pours, this switches over on its own.`}</div>
+      </div>
+      <span style="flex:1"></span>
+      <button class="wed-btn" onclick="liqGo('feeddoc')">How to connect →</button>
+    </div>
+    ${movers.length?`<div class="liq-tblwrap"><table class="liq-tbl">
+      <thead><tr><th>Item</th><th class="liq-num">Used / wk</th><th class="liq-num">On hand</th><th class="liq-num">Weeks left</th><th class="liq-num">Cost / wk</th><th>Source</th></tr></thead>
+      <tbody>${movers.slice(0,60).map(r=>{const w=r.w;
+        const cls=w==null?'':(w<1?'liq-crit':(w<2?'liq-warn':''));
+        return `<tr><td class="liq-nm">${esc(r.it.n)}<span class="liq-sz">${esc(r.it.z||'')}</span></td>
+          <td class="liq-num"><b>${r.u.toFixed(1)}</b></td>
+          <td class="liq-num">${liqOnHand(r.it.id)!=null?liqOnHand(r.it.id):'—'}</td>
+          <td class="liq-num ${cls}">${w==null?'—':w.toFixed(1)}</td>
+          <td class="liq-num">${liqMoney(r.u*r.it.p)}</td>
+          <td class="liq-src">${r.src==='pos'?'POS':'counts'}</td></tr>`}).join('')}</tbody></table></div>
+      <div class="liq-tip">💡 "Weeks left" is on-hand ÷ usage. <span class="liq-crit">Red</span> = under a week — order it now. Sorted by what costs you the most per week.</div>`
+    :`<div class="liq-empty"><div style="font-size:34px">📈</div>
+      <div class="liq-empty-t">No usage measured yet</div>
+      <div class="liq-empty-s">Two things teach this page how fast liquor moves: count the same items twice (a week apart is ideal), or let the new POS post what it sells. Either one fills this in — you don't have to wait for the POS.</div></div>`}
+    <div class="liq-paste">
+      <div class="liq-paste-t">Paste sales by hand</div>
+      <div class="liq-paste-s">One line per item: <b>name</b> then a tab or comma, then <b>bottles sold</b>. Useful for a MICROS product-mix report until the new POS is live.</div>
+      <textarea id="liq-paste" class="liq-ta" rows="4" placeholder="Tito's Handmade	6&#10;Jameson (Irish)	3"></textarea>
+      <div class="liq-paste-row">
+        <label class="liq-lbl">for <input class="liq-in liq-date" type="date" id="liq-paste-date" value="${liqToday()}"></label>
+        <button class="wed-btn amber" onclick="liqImportSales()">Add to sales</button>
+      </div>
+    </div>`}
+function liqImportSales(){const ta=document.getElementById('liq-paste');if(!ta)return;
+  const date=(document.getElementById('liq-paste-date')||{}).value||liqToday();
+  const lines=(ta.value||'').split('\n').map(l=>l.trim()).filter(Boolean);
+  if(!lines.length){alert('Paste some lines first.');return}
+  const items=liqItems();let ok=0;const miss=[];
+  const day=liqSales()[date]||(liqSales()[date]={});
+  lines.forEach(l=>{const m=l.split(/\t|,(?=\s*[\d.]+\s*$)/);
+    const name=(m[0]||'').trim(),qty=parseFloat((m[1]||'').trim());
+    if(!name||isNaN(qty))return miss.push(l);
+    const key=name.toLowerCase();
+    let hit=items.find(it=>it.n.toLowerCase()===key)||items.find(it=>it.n.toLowerCase().includes(key)||key.includes(it.n.toLowerCase()));
+    if(!hit)return miss.push(l);
+    day[hit.id]=(+day[hit.id]||0)+qty;ok++});
+  liqPut('ct_liq_sales',liqSales());
+  ta.value='';renderViewport();
+  alert(ok+' line'+(ok===1?'':'s')+' added to '+date+(miss.length?'\n\nCouldn\'t match:\n'+miss.slice(0,12).join('\n'):''))}
+function liqPosDoc(){return `<div class="liq-doc">
+    <button class="wed-btn" onclick="liqGo('sales')">← Back to Sales</button>
+    <h3>Wiring the POS into this page</h3>
+    <p>When the new POS knows what it poured, it posts a day's depletion here and the Order tab
+    starts working off real sales instead of counts. One HTTP call, no other changes:</p>
+    <pre class="liq-pre">POST ${KV_URL}ct_liq_sales?token=&lt;CT token&gt;
+Content-Type: application/json
+
+{
+  "v": {
+    "2026-08-25": {
+      "vodka--tito-s-handmade": 6,
+      "whiskey-rye-bourbon-irish--jameson-irish": 3
+    }
+  },
+  "at": 1756137600000
+}</pre>
+    <p><b>The shape:</b> <code>v</code> is every day you've posted, keyed <code>YYYY-MM-DD</code>,
+    each holding <code>itemId → bottles sold that day</code>. It's a whole-value store, so the POS
+    reads the current value, adds its day, and posts the merged object back (same as this app does).
+    <code>at</code> is the timestamp in milliseconds — highest wins.</p>
+    <p><b>Item ids</b> are <code>section--item</code>, slugged (lowercase, non-letters → dashes).
+    That keeps the four different "Mezzacorona" rows distinct. Pull the current list any time from
+    <code>ct_liq_items</code>, or copy it here:</p>
+    <button class="wed-btn amber" onclick="liqCopyIds(this)">📋 Copy item id list</button>
+    <p style="margin-top:14px"><b>Partial pours:</b> post fractions — 0.25 is a quarter bottle. The
+    math treats bottles as decimals all the way through.</p>
+    <p><b>Nothing breaks if the POS is quiet.</b> Any item the feed hasn't seen falls back to
+    count-to-count depletion, so a half-wired POS still gives you a correct order sheet.</p>
+  </div>`}
+function liqCopyIds(btn){const t=liqItems().map(it=>it.id+'\t'+it.n+(it.z?' ('+it.z+')':'')).join('\n');
+  const done=()=>{const o=btn.textContent;btn.textContent='✓ Copied '+liqItems().length+' ids';setTimeout(()=>btn.textContent=o,1600)};
+  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(t).then(done).catch(()=>{liqCopyFallback(t);done()});
+  else{liqCopyFallback(t);done()}}
+
+// ── SHELL ──────────────────────────────────────────────────────────────────────
+function liqHTML(){const v=liqX.view;
+  const body=v==='inv'?liqInvHTML():v==='order'?liqOrderHTML():v==='sales'?liqSalesHTML():v==='feeddoc'?liqPosDoc():liqPortalsHTML();
+  const needN=liqItems().reduce((t,it)=>t+(liqNeed(it)?1:0),0);
+  return `<div class="liq-wrap">
+    <div class="liq-head">
+      <span class="liq-title">🥃 Liquor</span>
+      <div class="liq-nav">${LIQ_VIEWS.map(([k,lbl])=>`<button class="liq-navb${(v===k||(v==='feeddoc'&&k==='sales'))?' on':''}" onclick="liqGo('${k}')">${lbl}${k==='order'&&needN?`<span class="liq-badge">${needN}</span>`:''}</button>`).join('')}</div>
+    </div>
+    ${body}</div>`}
+
 // ── TRUCK PACKING — master packing template per event ───────────────────────────
 // Digitized straight from the binder: Standard / Premium / Beer&Wine bar sheets at
 // 80/120/160/200/240 guests (values verbatim, incl. quirks), plus equipment rules
@@ -5095,8 +5759,16 @@ function tipsHTML(){
     const people=tipSectionPeople(sec);
     // Full staff list always shown; people WITH tips float to the top of their section.
     const ordered=[...people.filter(tipHasTips),...people.filter(n=>!tipHasTips(n))];
-    body+=`<tr><td colspan="${days.length+3}" style="position:sticky;left:0;background:var(--surface2);color:var(--accent);font-weight:800;padding:8px 12px;letter-spacing:.5px;border-top:1px solid var(--border)">${TIP_SEC_LABEL[sec].toUpperCase()}</td></tr>`;
-    if(sec==='Busser'&&!Object.keys(tipsState.busserSplitByDay||{}).length)body+=rowFor('Busser Pool',true);   // pool shown only until the timesheet splits it per busser
+    const bsd=tipsState.busserSplitByDay||{};
+    if(sec==='Busser'&&Object.keys(bsd).length){
+      const poolByDay={};Object.keys(bsd).forEach(nm=>{const by=bsd[nm];Object.keys(by).forEach(lb=>{poolByDay[lb]=Math.round(((poolByDay[lb]||0)+by[lb])*100)/100;});});
+      const ptds=days.map(d=>{const lb=tipDayLabel(d);const mon=(d.getDay()===1);const p=poolByDay[lb];return `<td style="text-align:right;padding:5px ${mon?'2px':'6px'};color:#fbbf24;font-weight:700;font-size:11px;border-right:1px solid var(--border);border-top:1px solid var(--border);white-space:nowrap">${p?tipMoney(p):''}</td>`;}).join('');
+      const ptot=Math.round(Object.values(poolByDay).reduce((s,x)=>s+x,0)*100)/100;
+      body+=`<tr style="background:var(--surface2)"><td style="position:sticky;left:0;z-index:1;background:var(--surface2);color:var(--accent);font-weight:800;padding:6px 12px;letter-spacing:.5px;border-top:1px solid var(--border);border-right:2px solid var(--border);white-space:nowrap">BUSSERS <span style="color:var(--text-muted);font-weight:600;font-size:9px;letter-spacing:0">pool / night</span></td>${ptds}<td style="border-top:1px solid var(--border)"></td><td style="text-align:right;color:#fbbf24;font-weight:800;padding:6px 8px;border-top:1px solid var(--border);border-left:2px solid var(--border);white-space:nowrap">${ptot?tipMoney(ptot):''}</td></tr>`;
+    }else{
+      body+=`<tr><td colspan="${days.length+3}" style="position:sticky;left:0;background:var(--surface2);color:var(--accent);font-weight:800;padding:8px 12px;letter-spacing:.5px;border-top:1px solid var(--border)">${TIP_SEC_LABEL[sec].toUpperCase()}</td></tr>`;
+      if(sec==='Busser')body+=rowFor('Busser Pool',true);   // no timesheet yet → show the lumped pool row
+    }
     ordered.forEach(n=>{body+=rowFor(n,false);});
     body+=`<tr><td colspan="${days.length+3}" style="position:sticky;left:0;background:var(--surface);padding:4px 12px"><input id="tip-add-${sec.replace(/ /g,'_')}" placeholder="+ add ${TIP_SEC_LABEL[sec].toLowerCase().replace(/s$/,'')}…" onkeydown="if(event.key==='Enter')tipAddPerson('${sec}')" style="width:180px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 9px;font-size:12px;font-family:inherit"></td></tr>`;
   });
