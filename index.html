@@ -591,6 +591,7 @@
   <div class="tab-list" id="tab-list"></div>
   <button class="tab-nav" id="tab-nav-r" onclick="tabScroll(1)" title="Scroll tabs right">›</button>
   <div class="header-right">
+    <button class="icon-btn" onclick="forceUpdate()" title="Refresh — load the latest version">⟳</button>
     <button class="icon-btn" id="theme-btn" onclick="toggleTheme()" title="Toggle light/dark mode">☀️</button>
     <button class="icon-btn" onclick="openSettings()" title="Manage panels">⚙</button>
   </div>
@@ -1179,6 +1180,9 @@ if('serviceWorker'in navigator){navigator.serviceWorker.getRegistrations().then(
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){check();maybeReload();}});
   window.addEventListener('focus',()=>{check();maybeReload();});
 })();
+// Manual "get latest version" — navigate with a unique query so the browser can't
+// serve the cached HTML (a plain reload can).
+function forceUpdate(){try{location.replace(location.pathname+'?v='+Date.now());}catch(e){location.reload();}}
 // ═══ EMAIL TAB — consolidated multi-account catering inbox via the jarvis-voice mail bridge ═══
 const MAIL_BASE='https://jarvis-voicejarvis-voice.onrender.com';
 let mailx={accts:null,acct:null,folder:'inbox',lists:{},selUid:null,selMsg:null,selThread:null,loadingList:false,loadingMsg:false,composing:false,composeNew:false,search:'',searchResults:null,searching:false,sendStatus:null,error:null,attach:[]};
