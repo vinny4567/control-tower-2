@@ -4990,7 +4990,8 @@ function hoursHTML(){
   const empBadge=(name)=>{const id=(tipsState.empIds||{})[name]||'',en=esc(name).replace(/'/g,"\\'");return `<input value="${esc(id)}" onchange="tipEmpIdSet('${en}',this.value)" placeholder="id" title="Paychex worker ID — click to edit" style="width:36px;background:transparent;border:none;border-bottom:1px dashed ${id?'var(--border)':'#f87171'};color:${id?'var(--accent2)':'#f87171'};font-weight:700;font-size:11px;text-align:center;margin-right:6px;padding:0 1px;font-family:inherit;outline:none;font-variant-numeric:tabular-nums">`;};
   // ONE combined sheet: everyone, restaurant positions over wedding (💍), + Tips/Unpaid from the Tips tab.
   const secOrd=(all)=>Object.keys(all).sort((a,b)=>{const sa=hoursSrc(all[a])==='rest'?0:1,sb=hoursSrc(all[b])==='rest'?0:1;return sa-sb||a.localeCompare(b);});
-  const set={};Object.keys(tipsState.hours||{}).forEach(n=>set[n]=1);Object.keys(tipsState.cells||{}).forEach(n=>{const t=tipRowTotals(n);if(t.paid>0||t.upt>0)set[n]=1;});
+  const isPoolRow=(n)=>/\bpool\b/i.test(n);   // "Busser Pool" etc. are pooled rows, not people
+  const set={};Object.keys(tipsState.hours||{}).forEach(n=>{if(!isPoolRow(n))set[n]=1;});Object.keys(tipsState.cells||{}).forEach(n=>{if(isPoolRow(n))return;const t=tipRowTotals(n);if(t.paid>0||t.upt>0)set[n]=1;});
   const filt=tipsState.hoursFilter||'all';   // 'all' | 'rest' | 'wed'
   let names=Object.keys(set).sort((a,b)=>{const ra=isRestEmp(a)?0:1,rb=isRestEmp(b)?0:1;return ra-rb||lastOf(a).localeCompare(lastOf(b))||a.localeCompare(b);});   // restaurant first, wedding-only at the bottom
   if(filt==='rest')names=names.filter(isRestEmp);else if(filt==='wed')names=names.filter(n=>!isRestEmp(n));
@@ -5027,8 +5028,8 @@ function hoursHTML(){
       <span id="tips-status" style="font-size:12px;color:var(--text-dim)"></span>
       <span style="margin-left:auto;font-size:12px;color:var(--text-dim)">restaurant on top · weddings below (💍) · + tips — the Paychex picture</span>
     </div>
-    <div style="overflow-x:auto;border:1px solid var(--border);border-radius:12px;width:fit-content;max-width:100%">
-      <table style="border-collapse:collapse;font-size:13px">
+    <div style="overflow-x:auto;border:1px solid var(--border);border-radius:12px;width:860px;max-width:100%">
+      <table style="border-collapse:collapse;font-size:13px;width:100%">
         <thead><tr style="background:var(--surface)">
           ${th('Name / position','position:sticky;left:0;z-index:2;background:var(--surface);text-align:left;border-right:2px solid var(--border)')}
           ${th('Rate','text-align:right;border-right:1px solid var(--border)')}
