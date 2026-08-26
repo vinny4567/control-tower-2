@@ -5693,9 +5693,9 @@ function hoursHTML(){
   const di='background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:5px 8px;font-family:inherit;font-size:13px;color-scheme:dark;cursor:pointer';
   const bb='border-bottom:1px solid var(--border)';
   const lastOf=n=>String(n||'').trim().split(' ').pop();
-  const inp=(name,sec,field,val)=>`<input inputmode="decimal" value="${val!=null?val:''}" placeholder="0" oninput="tipHoursInput('${esc(name).replace(/'/g,"\\'")}','${esc(sec).replace(/'/g,"\\'")}','${field}',this.value)" style="width:54px;background:transparent;border:none;color:var(--text);text-align:right;padding:1px 4px;font-size:13px;font-family:inherit;outline:none">`;
+  const inp=(name,sec,field,val,w)=>`<input inputmode="decimal" value="${val!=null?val:''}" placeholder="0" oninput="tipHoursInput('${esc(name).replace(/'/g,"\\'")}','${esc(sec).replace(/'/g,"\\'")}','${field}',this.value)" style="width:${w||54}px;background:transparent;border:none;color:var(--text);text-align:right;padding:1px 2px 1px 4px;font-size:13px;font-family:inherit;outline:none">`;
   const cells=(name,sec)=>{const h=tipHours(name)[sec]||{},id=tipId(name),sid=sec.replace(/[^a-z0-9]/gi,'_'),pay=tipHoursPosPay(h);
-    return `<td style="border-right:1px solid var(--border);${bb};text-align:right;white-space:nowrap"><span style="color:var(--text-muted);font-size:12px">$</span>${inp(name,sec,'r',h.r)}</td>
+    return `<td style="border-right:1px solid var(--border);${bb};text-align:right;white-space:nowrap;padding-right:6px"><span style="color:var(--text-muted);font-size:12px">$</span>${inp(name,sec,'r',h.r,28)}</td>
       <td style="border-right:1px solid var(--border);${bb};text-align:right">${inp(name,sec,'h',h.h)}</td>
       <td style="border-right:1px solid var(--border);${bb};text-align:right">${inp(name,sec,'o',h.o)}</td>
       <td id="hp-${id}-${sid}" style="padding:2px 10px;text-align:right;font-weight:600;color:#34d399;border-left:2px solid var(--border);${bb};white-space:nowrap">${pay?tipMoney(pay):''}</td>`;};
