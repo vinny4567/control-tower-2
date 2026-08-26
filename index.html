@@ -5389,6 +5389,45 @@ function tipsImportTimesheet(input){
   r.readAsDataURL(f);input.value='';
 }
 function tipsImportBtnHTML(){return `<label title="Import the MICROS timesheet PDF" style="background:#7c3aed;border:none;color:#fff;font-weight:700;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px;display:inline-flex;align-items:center;gap:5px;white-space:nowrap">📄 Import timesheet<input type="file" accept="application/pdf,.pdf" onchange="tipsImportTimesheet(this)" style="display:none"></label>`;}
+// ── Paychex wide CSV (the format from ~/Desktop/Payroll/*/PAYCHEX COMBINED…WITH NAMES.csv) ──
+function csvEsc(s){s=String(s==null?'':s);return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}
+function tipsPaychexCsv(){
+  const COMPANY='11048355';
+  const isPool=(n)=>/\bpool\b/i.test(n)||/private\s*party/i.test(n);
+  const set={};Object.keys(tipsState.hours||{}).forEach(n=>{if(!isPool(n))set[n]=1;});Object.keys(tipsState.cells||{}).forEach(n=>{if(isPool(n))return;const t=tipRowTotals(n);if(t.paid>0||t.upt>0)set[n]=1;});
+  const names=Object.keys(set).sort((a,b)=>{const wa=parseInt((tipsState.empIds||{})[a])||999999,wb=parseInt((tipsState.empIds||{})[b])||999999;return wa-wb||a.localeCompare(b);});
+  const lines=['Company ID,Worker ID,Name,Pay Component,Hours,Rate,Tips,Unpaid Tips,Overtime Hours,Training Hours,Training Rate,Bonus Amount'];
+  const f=n=>{n=Math.round((+n||0)*100)/100;return n?n.toFixed(2):'';};
+  const rn=r=>{r=Math.round((+r||0)*100)/100;return r?(r%1===0?String(r):String(r)):'';};
+  names.forEach(name=>{
+    const wid=(tipsState.empIds||{})[name]||'';
+    const tt=tipRowTotals(name);
+    const tips=tt.paid, unpaid=Math.round((tt.upt+((tipsState.busserSplit||{})[name]||0))*100)/100;
+    const h=tipHours(name);
+    const byRate={};let trainH=0,trainR=0;
+    Object.keys(h).forEach(sec=>{const p=h[sec],r=Math.round((+p.r||0)*100)/100,reg=+p.h||0,ot=+p.o||0;if(!(reg||ot))return;
+      if(/training/i.test(sec)){trainH+=reg+ot;trainR=r;return;}
+      byRate[r]=byRate[r]||{reg:0,ot:0};byRate[r].reg+=reg;byRate[r].ot+=ot;});
+    const rates=Object.keys(byRate).map(Number).sort((a,b)=>a-b);
+    const rows=rates.map(r=>({hours:byRate[r].reg,rate:r,ot:byRate[r].ot}));
+    if(!rows.length&&(tips||unpaid||trainH))rows.push({hours:0,rate:0,ot:0});
+    rows.forEach((row,i)=>{const base=i===0;
+      lines.push([COMPANY,wid,csvEsc(name),'hourly',f(row.hours),rn(row.rate),base?f(tips):'',base?f(unpaid):'',f(row.ot),base?f(trainH):'',base&&trainR?rn(trainR):'',''].join(','));});
+  });
+  return lines.join('\n');
+}
+function tipsDownloadCsv(){try{
+  const csv=tipsPaychexCsv();
+  const rows=csv.split('\n').slice(1).filter(Boolean);
+  const ppl=new Set(),miss=new Set();
+  rows.forEach(r=>{const c=r.split(',');const id=c[1],nm=(c[2]||'').replace(/^"|"$/g,'');ppl.add(nm);if(!id)miss.add(nm);});
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download='Paychex '+tipISO(tipsState.start)+' to '+tipISO(tipsState.end)+'.csv';
+  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);
+  if(miss.size)tipsSetStatus('CSV downloaded — ⚠ '+miss.size+' need emp-ID before import: '+[...miss].join(', '),'#fbbf24');
+  else tipsSetStatus('CSV downloaded ✓ — '+ppl.size+' people, Paychex-ready','#34d399');
+}catch(e){tipsSetStatus('⚠ CSV failed: '+e.message,'#f87171');}}
+function tipsCsvBtnHTML(){return `<button onclick="tipsDownloadCsv()" title="Download the Paychex-ready CSV for this period" style="background:#34d399;border:none;color:#06281c;font-weight:800;border-radius:8px;padding:6px 14px;cursor:pointer;font-size:12px;white-space:nowrap;margin-left:auto">⬇ Paychex CSV</button>`;}
 // Re-render the Tips/Hours view in place WITHOUT losing the vertical scroll position
 // (a plain innerHTML swap snaps the page back to the top).
 function tipsRerender(){const vp=document.getElementById('viewport');if(!vp)return;const sc=vp.firstElementChild;const top=sc?sc.scrollTop:0;vp.innerHTML=tipsHTML();const sc2=vp.firstElementChild;if(sc2)sc2.scrollTop=top;}
@@ -5706,7 +5745,7 @@ function hoursHTML(){
       ${filtToggle}
       ${tipsImportBtnHTML()}
       <span id="tips-status" style="font-size:12px;color:var(--text-dim)"></span>
-      <span style="margin-left:auto;font-size:12px;color:var(--text-dim)">restaurant on top · weddings below (💍) · + tips — the Paychex picture</span>
+      ${tipsCsvBtnHTML()}
     </div>
     <div style="overflow-x:auto;border:1px solid var(--border);border-radius:12px;width:860px;max-width:100%">
       <table style="border-collapse:collapse;font-size:13px;width:100%">
