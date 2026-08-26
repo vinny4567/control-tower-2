@@ -5693,13 +5693,13 @@ function hoursHTML(){
   const di='background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:5px 8px;font-family:inherit;font-size:13px;color-scheme:dark;cursor:pointer';
   const bb='border-bottom:1px solid var(--border)';
   const lastOf=n=>String(n||'').trim().split(' ').pop();
-  const inp=(name,sec,field,val)=>`<input inputmode="decimal" value="${val!=null?val:''}" placeholder="0" oninput="tipHoursInput('${esc(name).replace(/'/g,"\\'")}','${esc(sec).replace(/'/g,"\\'")}','${field}',this.value)" style="width:54px;background:transparent;border:none;color:var(--text);text-align:right;padding:1px 4px;font-size:13px;font-family:inherit;outline:none">`;
+  const inp=(name,sec,field,val)=>`<input inputmode="decimal" value="${val!=null?val:''}" placeholder="0" oninput="tipHoursInput('${esc(name).replace(/'/g,"\\'")}','${esc(sec).replace(/'/g,"\\'")}','${field}',this.value)" style="width:54px;background:transparent;border:none;color:var(--text);text-align:right;padding:0 4px;font-size:13px;font-family:inherit;outline:none">`;
   const cells=(name,sec)=>{const h=tipHours(name)[sec]||{},id=tipId(name),sid=sec.replace(/[^a-z0-9]/gi,'_'),pay=tipHoursPosPay(h);
     return `<td style="border-right:1px solid var(--border);${bb};text-align:right;white-space:nowrap"><span style="color:var(--text-muted);font-size:12px">$</span>${inp(name,sec,'r',h.r)}</td>
       <td style="border-right:1px solid var(--border);${bb};text-align:right">${inp(name,sec,'h',h.h)}</td>
       <td style="border-right:1px solid var(--border);${bb};text-align:right">${inp(name,sec,'o',h.o)}</td>
-      <td id="hp-${id}-${sid}" style="padding:2px 10px;text-align:right;font-weight:600;color:#34d399;border-left:2px solid var(--border);${bb};white-space:nowrap">${pay?tipMoney(pay):''}</td>`;};
-  const posInput=(name,sec)=>{const id=tipId(name),sid=sec.replace(/[^a-z0-9]/gi,'_'),en=esc(name).replace(/'/g,"\\'"),es=esc(sec).replace(/'/g,"\\'");return `<input id="hn-${id}-${sid}" value="${esc(sec)}" onchange="tipHoursRenamePos('${en}','${es}',this.value)" placeholder="position" style="background:transparent;border:none;border-bottom:1px dashed var(--border);color:var(--text-dim);font-size:12px;width:82px;padding:1px 0;font-family:inherit;outline:none">`;};
+      <td id="hp-${id}-${sid}" style="padding:1px 10px;text-align:right;font-weight:600;color:#34d399;border-left:2px solid var(--border);${bb};white-space:nowrap">${pay?tipMoney(pay):''}</td>`;};
+  const posInput=(name,sec)=>{const id=tipId(name),sid=sec.replace(/[^a-z0-9]/gi,'_'),en=esc(name).replace(/'/g,"\\'"),es=esc(sec).replace(/'/g,"\\'");return `<input id="hn-${id}-${sid}" value="${esc(sec)}" onchange="tipHoursRenamePos('${en}','${es}',this.value)" placeholder="position" style="background:transparent;border:none;border-bottom:1px dashed var(--border);color:var(--text-dim);font-size:12px;width:82px;padding:0;font-family:inherit;outline:none">`;};
   const addBtn=(name,src)=>`<button onclick="tipHoursAddRow('${esc(name).replace(/'/g,"\\'")}','${src}')" title="Add a position / special-rate row" style="background:transparent;border:1px solid var(--border);color:var(--text-muted);border-radius:5px;font-size:12px;line-height:1;padding:2px 6px;cursor:pointer;margin-left:8px">＋</button>`;
   const delX=(name,sec)=>`<button onclick="tipHoursDelPos('${esc(name).replace(/'/g,"\\'")}','${esc(sec).replace(/'/g,"\\'")}')" title="Delete this row" style="background:transparent;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;line-height:1;padding:0 3px;margin-left:4px">×</button>`;
   const th=(t,extra)=>`<th style="padding:3px 8px;${bb};${extra||''}">${t}</th>`;
@@ -5715,18 +5715,18 @@ function hoursHTML(){
   const nameBg='rgba(255,179,0,0.13)',nameBar='var(--accent)';
   const fbtn=(f,lab)=>`<button onclick="tipsSetHoursFilter('${f}')" style="background:${filt===f?'var(--accent)':'transparent'};color:${filt===f?'#000':'var(--text-dim)'};border:none;padding:5px 11px;font-weight:700;cursor:pointer;font-size:12px;font-family:inherit;${f!=='all'?'border-left:1px solid var(--border)':''}">${lab}</button>`;
   const filtToggle=`<div style="display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden">${fbtn('all','Both')}${fbtn('rest','🍽 Restaurant')}${fbtn('wed','💍 Weddings')}</div>`;
-  const tipCells=(id,paid,upt)=>`<td id="htip-${id}" style="padding:3px 10px;text-align:right;font-weight:700;color:#34d399;border-left:1px solid var(--border);${bb};white-space:nowrap">${paid?tipMoney(paid):''}</td><td id="hupt-${id}" style="padding:3px 10px;text-align:right;font-weight:700;color:#fbbf24;border-left:1px solid var(--border);${bb};white-space:nowrap">${upt?tipMoney(upt):''}</td>`;
+  const tipCells=(id,paid,upt)=>`<td id="htip-${id}" style="padding:1px 10px;text-align:right;font-weight:700;color:#34d399;border-left:1px solid var(--border);${bb};white-space:nowrap">${paid?tipMoney(paid):''}</td><td id="hupt-${id}" style="padding:1px 10px;text-align:right;font-weight:700;color:#fbbf24;border-left:1px solid var(--border);${bb};white-space:nowrap">${upt?tipMoney(upt):''}</td>`;
   const blankTips=`<td style="border-left:1px solid var(--border);${bb}"></td><td style="border-left:1px solid var(--border);${bb}"></td>`;
   let gHrs=0,gPay=0,gTip=0,gUpt=0,body='';
   names.forEach(name=>{
     const all=tipHours(name),secs=secOrd(all),id=tipId(name),t=tipHoursPersonTot(name),tt=tipRowTotals(name),asrc=isRestEmp(name)?'rest':'wed';
     const uptTot=Math.round((tt.upt+((tipsState.busserSplit||{})[name]||0))*100)/100;   // unpaid = tips + this busser's share of the nightly pools
     gHrs+=t.reg+t.ot;gPay+=t.pay;gTip+=tt.paid;gUpt+=uptTot;
-    const nb=`position:sticky;left:0;background:${nameBg};border-left:3px solid ${nameBar};padding:3px 12px;white-space:nowrap;border-right:2px solid var(--border);${bb}`;
+    const nb=`position:sticky;left:0;background:${nameBg};border-left:3px solid ${nameBar};padding:1px 12px;white-space:nowrap;border-right:2px solid var(--border);${bb}`;
     // Name row = the person + their period totals; each position sits on its own
     // indented ↳ row below (positions stay, just never inline next to the name).
-    body+=`<tr style="background:${nameBg}"><td style="${nb};font-weight:800">${empBadge(name)}${esc(name)}${addBtn(name,asrc)}</td><td style="${bb}"></td><td style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.reg||''}</td><td style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.ot||''}</td><td id="hpt-${id}" style="padding:3px 10px;text-align:right;font-weight:800;color:#34d399;border-left:2px solid var(--border);${bb}">${t.pay?tipMoney(t.pay):''}</td>${tipCells(id,tt.paid,uptTot)}</tr>`;
-    secs.forEach(sec=>{body+=`<tr><td style="position:sticky;left:0;background:var(--surface);padding:2px 12px 2px 26px;white-space:nowrap;border-right:2px solid var(--border);${bb}">↳ ${posInput(name,sec)}${wtag(all,sec)}${delX(name,sec)}</td>${cells(name,sec)}${blankTips}</tr>`;});
+    body+=`<tr style="background:${nameBg}"><td style="${nb};font-weight:800">${empBadge(name)}${esc(name)}${addBtn(name,asrc)}</td><td style="${bb}"></td><td style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.reg||''}</td><td style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.ot||''}</td><td id="hpt-${id}" style="padding:1px 10px;text-align:right;font-weight:800;color:#34d399;border-left:2px solid var(--border);${bb}">${t.pay?tipMoney(t.pay):''}</td>${tipCells(id,tt.paid,uptTot)}</tr>`;
+    secs.forEach(sec=>{body+=`<tr><td style="position:sticky;left:0;background:var(--surface);padding:0 12px 0 26px;white-space:nowrap;border-right:2px solid var(--border);${bb}">↳ ${posInput(name,sec)}${wtag(all,sec)}${delX(name,sec)}</td>${cells(name,sec)}${blankTips}</tr>`;});
   });
   if(!names.length)body=`<tr><td colspan="7" style="padding:34px;text-align:center;color:var(--text-dim);line-height:1.6">No hours or tips yet — pick a date range to pull weddings, and give me the MICROS timesheet.</td></tr>`;
   return `
@@ -5745,7 +5745,7 @@ function hoursHTML(){
       ${tipsCsvBtnHTML()}
     </div>
     <div style="overflow-x:auto;border:1px solid var(--border);border-radius:12px;width:860px;max-width:100%">
-      <table style="border-collapse:collapse;font-size:13px;width:100%">
+      <table style="border-collapse:collapse;font-size:13px;width:100%;line-height:1.15">
         <thead><tr style="background:var(--surface)">
           ${th('Name','position:sticky;left:0;z-index:2;background:var(--surface);text-align:left;border-right:2px solid var(--border)')}
           ${th('Rate','text-align:right;border-right:1px solid var(--border)')}
