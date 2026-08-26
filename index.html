@@ -5723,13 +5723,10 @@ function hoursHTML(){
     const uptTot=Math.round((tt.upt+((tipsState.busserSplit||{})[name]||0))*100)/100;   // unpaid = tips + this busser's share of the nightly pools
     gHrs+=t.reg+t.ot;gPay+=t.pay;gTip+=tt.paid;gUpt+=uptTot;
     const nb=`position:sticky;left:0;background:${nameBg};border-left:3px solid ${nameBar};padding:3px 12px;white-space:nowrap;border-right:2px solid var(--border);${bb}`;
-    if(secs.length===1){
-      const sec=secs[0];
-      body+=`<tr style="background:${nameBg}"><td style="${nb}">${empBadge(name)}<span style="font-weight:700">${esc(name)}</span>${wtag(all,sec)}${delX(name,sec)}${addBtn(name,asrc)}</td>${cells(name,sec)}${tipCells(id,tt.paid,uptTot)}</tr>`;
-    }else{
-      body+=`<tr style="background:${nameBg}"><td style="${nb};font-weight:800">${empBadge(name)}${esc(name)}${addBtn(name,asrc)}</td><td style="${bb}"></td><td style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.reg||''}</td><td style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.ot||''}</td><td id="hpt-${id}" style="padding:3px 10px;text-align:right;font-weight:800;color:#34d399;border-left:2px solid var(--border);${bb}">${t.pay?tipMoney(t.pay):''}</td>${tipCells(id,tt.paid,uptTot)}</tr>`;
-      secs.forEach(sec=>{body+=`<tr><td style="position:sticky;left:0;background:var(--surface);padding:2px 12px 2px 26px;white-space:nowrap;border-right:2px solid var(--border);${bb}">↳${wtag(all,sec)}${delX(name,sec)}</td>${cells(name,sec)}${blankTips}</tr>`;});
-    }
+    // Name row = the person + their period totals; each position sits on its own
+    // indented ↳ row below (positions stay, just never inline next to the name).
+    body+=`<tr style="background:${nameBg}"><td style="${nb};font-weight:800">${empBadge(name)}${esc(name)}${addBtn(name,asrc)}</td><td style="${bb}"></td><td style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.reg||''}</td><td style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.ot||''}</td><td id="hpt-${id}" style="padding:3px 10px;text-align:right;font-weight:800;color:#34d399;border-left:2px solid var(--border);${bb}">${t.pay?tipMoney(t.pay):''}</td>${tipCells(id,tt.paid,uptTot)}</tr>`;
+    secs.forEach(sec=>{body+=`<tr><td style="position:sticky;left:0;background:var(--surface);padding:2px 12px 2px 26px;white-space:nowrap;border-right:2px solid var(--border);${bb}">↳ ${posInput(name,sec)}${wtag(all,sec)}${delX(name,sec)}</td>${cells(name,sec)}${blankTips}</tr>`;});
   });
   if(!names.length)body=`<tr><td colspan="7" style="padding:34px;text-align:center;color:var(--text-dim);line-height:1.6">No hours or tips yet — pick a date range to pull weddings, and give me the MICROS timesheet.</td></tr>`;
   return `
