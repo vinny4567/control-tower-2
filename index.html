@@ -5714,7 +5714,7 @@ function hoursHTML(){
   const posInput=(name,sec)=>{const id=tipId(name),sid=sec.replace(/[^a-z0-9]/gi,'_'),en=esc(name).replace(/'/g,"\\'"),es=esc(sec).replace(/'/g,"\\'");return `<input id="hn-${id}-${sid}" value="${esc(sec)}" onchange="tipHoursRenamePos('${en}','${es}',this.value)" placeholder="position" style="background:transparent;border:none;border-bottom:1px dashed var(--border);color:var(--text-dim);font-size:12px;width:82px;padding:1px 0;font-family:inherit;outline:none">`;};
   const addBtn=(name,src)=>`<button onclick="tipHoursAddRow('${esc(name).replace(/'/g,"\\'")}','${src}')" title="Add a position / special-rate row" style="background:transparent;border:1px solid var(--border);color:var(--text-muted);border-radius:5px;font-size:12px;line-height:1;padding:2px 6px;cursor:pointer;margin-left:8px">＋</button>`;
   const delX=(name,sec)=>`<button onclick="tipHoursDelPos('${esc(name).replace(/'/g,"\\'")}','${esc(sec).replace(/'/g,"\\'")}')" title="Delete this row" style="background:transparent;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;line-height:1;padding:0 3px;margin-left:4px">×</button>`;
-  const delPersonBtn=(name)=>`<button onclick="tipHoursDelPerson('${esc(name).replace(/'/g,"\\'")}')" title="Take this person out of the pay period" style="background:transparent;border:none;color:#f87171;opacity:.7;cursor:pointer;font-size:15px;line-height:1;padding:0 4px;margin:0">✕</button>`;
+  const delPersonBtn=(name)=>`<button onclick="tipHoursDelPerson('${esc(name).replace(/'/g,"\\'")}')" title="Take this person out of the pay period" style="background:transparent;border:none;color:#f87171;opacity:.7;cursor:pointer;font-size:15px;line-height:1;padding:0 2px 0 8px;margin-left:auto">✕</button>`;
   const th=(t,extra)=>`<th style="padding:3px 8px;${bb};${extra||''}">${t}</th>`;
   const wtag=(all,sec)=>hoursSrc(all[sec])==='wed'?` <span title="wedding / event" style="color:#c4b5fd;font-size:10px">💍</span>`:'';
   const empBadge=(name)=>{const id=(tipsState.empIds||{})[name]||'',en=esc(name).replace(/'/g,"\\'");return `<input value="${esc(id)}" onchange="tipEmpIdSet('${en}',this.value)" placeholder="id" title="Paychex worker ID — click to edit" style="width:36px;background:transparent;border:none;border-bottom:1px dashed ${id?'var(--border)':'#f87171'};color:${id?'var(--accent2)':'#f87171'};font-weight:700;font-size:11px;text-align:center;margin-right:6px;padding:0 1px;font-family:inherit;outline:none;font-variant-numeric:tabular-nums">`;};
@@ -5738,10 +5738,10 @@ function hoursHTML(){
     const nb=`position:sticky;left:0;background:${nameBg};border-left:3px solid ${nameBar};padding:3px 12px;white-space:nowrap;border-right:2px solid var(--border);${bb}`;
     // Name row = the person + their period totals; each position sits on its own
     // indented ↳ row below (positions stay, just never inline next to the name).
-    body+=`<tr style="background:${nameBg}"><td style="${nb};font-weight:800">${empBadge(name)}${esc(name)}${addBtn(name,asrc)}</td><td style="${bb}"></td><td style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.reg||''}</td><td style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.ot||''}</td><td id="hpt-${id}" style="padding:3px 10px;text-align:right;font-weight:800;color:#34d399;border-left:2px solid var(--border);${bb}">${t.pay?tipMoney(t.pay):''}</td>${tipCells(id,tt.paid,uptTot)}<td style="${bb};text-align:center;padding:0 4px">${delPersonBtn(name)}</td></tr>`;
-    secs.forEach(sec=>{body+=`<tr><td style="position:sticky;left:0;background:var(--surface);padding:2px 12px 2px 26px;white-space:nowrap;border-right:2px solid var(--border);${bb}">↳ ${posInput(name,sec)}${wtag(all,sec)}${delX(name,sec)}</td>${cells(name,sec)}${blankTips}<td style="${bb}"></td></tr>`;});
+    body+=`<tr style="background:${nameBg}"><td style="${nb};font-weight:800;width:270px"><div style="display:flex;align-items:center;width:100%">${empBadge(name)}<span style="white-space:nowrap">${esc(name)}</span>${addBtn(name,asrc)}${delPersonBtn(name)}</div></td><td style="${bb}"></td><td style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.reg||''}</td><td style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.ot||''}</td><td id="hpt-${id}" style="padding:3px 10px;text-align:right;font-weight:800;color:#34d399;border-left:2px solid var(--border);${bb}">${t.pay?tipMoney(t.pay):''}</td>${tipCells(id,tt.paid,uptTot)}</tr>`;
+    secs.forEach(sec=>{body+=`<tr><td style="position:sticky;left:0;background:var(--surface);padding:2px 12px 2px 26px;white-space:nowrap;border-right:2px solid var(--border);${bb}">↳ ${posInput(name,sec)}${wtag(all,sec)}${delX(name,sec)}</td>${cells(name,sec)}${blankTips}</tr>`;});
   });
-  if(!names.length)body=`<tr><td colspan="8" style="padding:34px;text-align:center;color:var(--text-dim);line-height:1.6">No hours or tips yet — pick a date range to pull weddings, and give me the MICROS timesheet.</td></tr>`;
+  if(!names.length)body=`<tr><td colspan="7" style="padding:34px;text-align:center;color:var(--text-dim);line-height:1.6">No hours or tips yet — pick a date range to pull weddings, and give me the MICROS timesheet.</td></tr>`;
   return `
   <div style="height:100%;overflow-y:auto;padding:2px 2px 56px">
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
@@ -5760,14 +5760,13 @@ function hoursHTML(){
     <div style="overflow-x:auto;border:1px solid var(--border);border-radius:12px;width:860px;max-width:100%">
       <table style="border-collapse:collapse;font-size:13px;width:100%">
         <thead><tr style="background:var(--surface)">
-          ${th('Name','position:sticky;left:0;z-index:2;background:var(--surface);text-align:left;border-right:2px solid var(--border)')}
+          ${th('Name','position:sticky;left:0;z-index:2;background:var(--surface);text-align:left;border-right:2px solid var(--border);width:270px')}
           ${th('Rate','text-align:right;border-right:1px solid var(--border)')}
           ${th('Reg','text-align:right;border-right:1px solid var(--border)')}
           ${th('OT','text-align:right;border-right:1px solid var(--border)')}
           ${th('Pay','text-align:right;color:#34d399;border-left:2px solid var(--border)')}
           ${th('Tips','text-align:right;color:#34d399;border-left:1px solid var(--border)')}
           ${th('Unpaid','text-align:right;color:#fbbf24;border-left:1px solid var(--border)')}
-          ${th('','border-left:1px solid var(--border)')}
         </tr></thead>
         <tbody>${body}</tbody>
         <tfoot><tr style="background:var(--surface2);font-weight:800">
@@ -5777,7 +5776,6 @@ function hoursHTML(){
           <td id="hgrand-pay" style="padding:5px 8px;text-align:right;color:#34d399;border-left:2px solid var(--border);border-top:2px solid var(--border)">${tipMoney(gPay)}</td>
           <td style="padding:5px 8px;text-align:right;color:#34d399;border-left:1px solid var(--border);border-top:2px solid var(--border)">${tipMoney(gTip)}</td>
           <td style="padding:5px 8px;text-align:right;color:#fbbf24;border-left:1px solid var(--border);border-top:2px solid var(--border)">${tipMoney(gUpt)}</td>
-          <td style="border-left:1px solid var(--border);border-top:2px solid var(--border)"></td>
         </tr></tfoot>
       </table>
     </div>
