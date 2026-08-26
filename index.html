@@ -5419,15 +5419,40 @@ function tipsPaychexCsv(){
   });
   return {csv:lines.join('\n'),people,skipped};
 }
-function tipsDownloadCsv(){try{
-  const out=tipsPaychexCsv();
+// Save the Paychex CSV straight into ~/Desktop/Payroll/<period>/ via the File System
+// Access API (Chrome/Edge). Pick the Payroll folder ONCE — the browser remembers it,
+// and re-saving the same period reuses that period folder + overwrites the file (no dup).
+let tipsPayrollHandle=null;
+function tipsFsDb(){return new Promise((res,rej)=>{const r=indexedDB.open('ct_fs',1);r.onupgradeneeded=()=>{r.result.createObjectStore('h');};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});}
+async function tipsFsGet(k){try{const db=await tipsFsDb();return await new Promise((res,rej)=>{const t=db.transaction('h','readonly').objectStore('h').get(k);t.onsuccess=()=>res(t.result||null);t.onerror=()=>rej(t.error);});}catch(e){return null;}}
+async function tipsFsPut(k,v){try{const db=await tipsFsDb();await new Promise((res,rej)=>{const t=db.transaction('h','readwrite').objectStore('h').put(v,k);t.onsuccess=()=>res();t.onerror=()=>rej(t.error);});}catch(e){}}
+function tipsPeriodFolder(){const s=tipsState.start,e=tipsState.end;return (s.getMonth()+1)+'-'+s.getDate()+'-'+(e.getMonth()+1)+'-'+e.getDate()+'--'+s.getFullYear();}  // matches "7-27-8-9--2026"
+async function tipsPayrollDir(){
+  let h=tipsPayrollHandle||await tipsFsGet('payrollDir');
+  if(h){try{let p=await h.queryPermission({mode:'readwrite'});if(p!=='granted')p=await h.requestPermission({mode:'readwrite'});if(p==='granted'){tipsPayrollHandle=h;return h;}}catch(e){}}
+  tipsSetStatus('Pick your Payroll folder (on the Desktop)…','var(--text-dim)');
+  h=await window.showDirectoryPicker({id:'ctPayroll',mode:'readwrite',startIn:'desktop'});
+  if((h.name||'').toLowerCase()!=='payroll'){try{h=await h.getDirectoryHandle('Payroll',{create:true});}catch(e){}}  // picked Desktop → nest into Payroll
+  tipsPayrollHandle=h;await tipsFsPut('payrollDir',h);return h;
+}
+async function tipsDownloadCsv(){
+  let out;try{out=tipsPaychexCsv();}catch(e){tipsSetStatus('⚠ CSV failed: '+e.message,'#f87171');return;}
+  const fname='Paychex '+tipISO(tipsState.start)+' to '+tipISO(tipsState.end)+'.csv',folder=tipsPeriodFolder();
+  const note=out.skipped.length?(' — left off (no emp-ID): '+out.skipped.join(', ')):'',col=out.skipped.length?'#fbbf24':'#34d399';
+  if(window.showDirectoryPicker){
+    try{
+      const base=await tipsPayrollDir();
+      const pdir=await base.getDirectoryHandle(folder,{create:true});   // reuse the period folder if it already exists — never a duplicate
+      const fh=await pdir.getFileHandle(fname,{create:true});           // same filename → overwrites in place on a re-save
+      const w=await fh.createWritable();await w.write(out.csv);await w.close();
+      tipsSetStatus('Saved to Payroll/'+folder+'/ ✓ — '+out.people.length+' people'+note,col);return;
+    }catch(e){ if(e&&e.name==='AbortError'){tipsSetStatus('Folder pick cancelled','var(--text-dim)');return;} /* other FS errors → fall back to a normal download */ }
+  }
   const blob=new Blob([out.csv],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');a.href=url;a.download='Paychex '+tipISO(tipsState.start)+' to '+tipISO(tipsState.end)+'.csv';
-  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);
-  if(out.skipped.length)tipsSetStatus('CSV downloaded ✓ — '+out.people.length+' people. Left off (no emp-ID): '+out.skipped.join(', '),'#fbbf24');
-  else tipsSetStatus('CSV downloaded ✓ — '+out.people.length+' people, Paychex-ready','#34d399');
-}catch(e){tipsSetStatus('⚠ CSV failed: '+e.message,'#f87171');}}
-function tipsCsvBtnHTML(){return `<button onclick="tipsDownloadCsv()" title="Download the Paychex-ready CSV for this period" style="background:#34d399;border:none;color:#06281c;font-weight:800;border-radius:8px;padding:6px 14px;cursor:pointer;font-size:12px;white-space:nowrap;margin-left:auto">⬇ Paychex CSV</button>`;}
+  const a=document.createElement('a');a.href=url;a.download=fname;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);
+  tipsSetStatus('CSV downloaded to Downloads'+note+(window.showDirectoryPicker?'':' — (open the Watch Tower in Chrome to save straight into Payroll/'+folder+'/)'),col);
+}
+function tipsCsvBtnHTML(){return `<button onclick="tipsDownloadCsv()" title="Save the Paychex CSV into Desktop/Payroll/<period>/ (pick the Payroll folder the first time)" style="background:#34d399;border:none;color:#06281c;font-weight:800;border-radius:8px;padding:6px 14px;cursor:pointer;font-size:12px;white-space:nowrap;margin-left:auto">⬇ Paychex CSV</button>`;}
 // Re-render the Tips/Hours view in place WITHOUT losing the vertical scroll position
 // (a plain innerHTML swap snaps the page back to the top).
 function tipsRerender(){const vp=document.getElementById('viewport');if(!vp)return;const sc=vp.firstElementChild;const top=sc?sc.scrollTop:0;vp.innerHTML=tipsHTML();const sc2=vp.firstElementChild;if(sc2)sc2.scrollTop=top;}
