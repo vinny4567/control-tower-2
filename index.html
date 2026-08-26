@@ -5399,8 +5399,11 @@ function tipsPaychexCsv(){
   const lines=['Company ID,Worker ID,Name,Pay Component,Hours,Rate,Tips,Unpaid Tips,Overtime Hours,Training Hours,Training Rate,Bonus Amount'];
   const f=n=>{n=Math.round((+n||0)*100)/100;return n?n.toFixed(2):'';};
   const rn=r=>{r=Math.round((+r||0)*100)/100;return r?(r%1===0?String(r):String(r)):'';};
+  const people=[],skipped=[];
   names.forEach(name=>{
     const wid=(tipsState.empIds||{})[name]||'';
+    if(!wid){skipped.push(name);return;}   // no Paychex Worker ID → can't import; leave them off (Amanda etc.)
+    people.push(name);
     const tt=tipRowTotals(name);
     const tips=tt.paid, unpaid=Math.round((tt.upt+((tipsState.busserSplit||{})[name]||0))*100)/100;
     const h=tipHours(name);
@@ -5414,18 +5417,15 @@ function tipsPaychexCsv(){
     rows.forEach((row,i)=>{const base=i===0;
       lines.push([COMPANY,wid,csvEsc(name),'hourly',f(row.hours),rn(row.rate),base?f(tips):'',base?f(unpaid):'',f(row.ot),base?f(trainH):'',base&&trainR?rn(trainR):'',''].join(','));});
   });
-  return lines.join('\n');
+  return {csv:lines.join('\n'),people,skipped};
 }
 function tipsDownloadCsv(){try{
-  const csv=tipsPaychexCsv();
-  const rows=csv.split('\n').slice(1).filter(Boolean);
-  const ppl=new Set(),miss=new Set();
-  rows.forEach(r=>{const c=r.split(',');const id=c[1],nm=(c[2]||'').replace(/^"|"$/g,'');ppl.add(nm);if(!id)miss.add(nm);});
-  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);
+  const out=tipsPaychexCsv();
+  const blob=new Blob([out.csv],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);
   const a=document.createElement('a');a.href=url;a.download='Paychex '+tipISO(tipsState.start)+' to '+tipISO(tipsState.end)+'.csv';
   document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);
-  if(miss.size)tipsSetStatus('CSV downloaded — ⚠ '+miss.size+' need emp-ID before import: '+[...miss].join(', '),'#fbbf24');
-  else tipsSetStatus('CSV downloaded ✓ — '+ppl.size+' people, Paychex-ready','#34d399');
+  if(out.skipped.length)tipsSetStatus('CSV downloaded ✓ — '+out.people.length+' people. Left off (no emp-ID): '+out.skipped.join(', '),'#fbbf24');
+  else tipsSetStatus('CSV downloaded ✓ — '+out.people.length+' people, Paychex-ready','#34d399');
 }catch(e){tipsSetStatus('⚠ CSV failed: '+e.message,'#f87171');}}
 function tipsCsvBtnHTML(){return `<button onclick="tipsDownloadCsv()" title="Download the Paychex-ready CSV for this period" style="background:#34d399;border:none;color:#06281c;font-weight:800;border-radius:8px;padding:6px 14px;cursor:pointer;font-size:12px;white-space:nowrap;margin-left:auto">⬇ Paychex CSV</button>`;}
 // Re-render the Tips/Hours view in place WITHOUT losing the vertical scroll position
