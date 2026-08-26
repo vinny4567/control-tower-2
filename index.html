@@ -5451,6 +5451,18 @@ function tipHoursInput(name,sec,field,val){tipHoursSetPos(name,sec,field,val);co
 function tipHoursAddRow(name,src){if(!tipsState.hours)tipsState.hours={};if(!tipsState.hours[name])tipsState.hours[name]={};let base='Extra',nm=base,i=2;while(tipsState.hours[name][nm])nm=base+' '+(i++);tipsState.hours[name][nm]={src:src||'wed'};if(activeTab===TIPS&&(tipsState.view||'tips')==='hours'){tipsRerender();const el=document.getElementById('hn-'+tipId(name)+'-'+nm.replace(/[^a-z0-9]/gi,'_'));if(el){el.focus({preventScroll:true});el.select();}}tipsSaveHoursSoon();}
 function tipHoursRenamePos(name,oldSec,newSec){newSec=(newSec||'').trim();const H=tipsState.hours&&tipsState.hours[name];if(!H||!(oldSec in H)){return;}if(!newSec||newSec===oldSec){tipsRerender();return;}if(H[newSec]){tipsSetStatus('“'+newSec+'” already exists for '+name,'#f87171');tipsRerender();return;}H[newSec]=H[oldSec];delete H[oldSec];tipsRerender();tipsSaveHoursSoon();}
 function tipHoursDelPos(name,sec){const H=tipsState.hours&&tipsState.hours[name];if(H){delete H[sec];if(!Object.keys(H).length)delete tipsState.hours[name];}if(activeTab===TIPS&&(tipsState.view||'tips')==='hours')tipsRerender();tipsSaveHoursSoon();}
+// Take a whole person out of this pay period — clears their hours AND tips (both this period only; global emp-ID is left untouched). Destructive → confirm first.
+function tipHoursDelPerson(name){
+  if(!confirm('Take '+name+' out of this pay period?\n\nThis removes their hours and tips from this period. (Their saved emp-ID is kept.)'))return;
+  const nk=tipNormKey(name);
+  if(tipsState.hours)delete tipsState.hours[name];
+  if(tipsState.cells)delete tipsState.cells[name];
+  if(tipsState.busserSplit)delete tipsState.busserSplit[name];
+  if(tipsState.busserSplitByDay)Object.keys(tipsState.busserSplitByDay).forEach(d=>{const o=tipsState.busserSplitByDay[d];if(o)delete o[name];});
+  if(tipsState.adds)Object.keys(tipsState.adds).forEach(sec=>{tipsState.adds[sec]=(tipsState.adds[sec]||[]).filter(n=>tipNormKey(n)!==nk);});
+  tipsSaveSoon();tipsSaveHoursSoon();tipsRerender();
+  tipsSetStatus(name+' removed from this period','#fbbf24');
+}
 function tipEmpIdSet(name,val){if(!tipsState.empIds)tipsState.empIds={};val=(val||'').trim();if(val)tipsState.empIds[name]=val;else delete tipsState.empIds[name];try{kvPush('ct_emp_ids',{emp:tipsState.empIds},Date.now());}catch(e){}tipsRerender();tipsSaveHoursSoon();}   // emp-IDs are global + permanent
 const EVENTS_HOURS_URL='https://restaurant-scheduler-hh5e.onrender.com/api/events-hours';
 async function tipsPullWeddingHours(auto){
@@ -5702,6 +5714,7 @@ function hoursHTML(){
   const posInput=(name,sec)=>{const id=tipId(name),sid=sec.replace(/[^a-z0-9]/gi,'_'),en=esc(name).replace(/'/g,"\\'"),es=esc(sec).replace(/'/g,"\\'");return `<input id="hn-${id}-${sid}" value="${esc(sec)}" onchange="tipHoursRenamePos('${en}','${es}',this.value)" placeholder="position" style="background:transparent;border:none;border-bottom:1px dashed var(--border);color:var(--text-dim);font-size:12px;width:82px;padding:1px 0;font-family:inherit;outline:none">`;};
   const addBtn=(name,src)=>`<button onclick="tipHoursAddRow('${esc(name).replace(/'/g,"\\'")}','${src}')" title="Add a position / special-rate row" style="background:transparent;border:1px solid var(--border);color:var(--text-muted);border-radius:5px;font-size:12px;line-height:1;padding:2px 6px;cursor:pointer;margin-left:8px">＋</button>`;
   const delX=(name,sec)=>`<button onclick="tipHoursDelPos('${esc(name).replace(/'/g,"\\'")}','${esc(sec).replace(/'/g,"\\'")}')" title="Delete this row" style="background:transparent;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;line-height:1;padding:0 3px;margin-left:4px">×</button>`;
+  const delPersonBtn=(name)=>`<button onclick="tipHoursDelPerson('${esc(name).replace(/'/g,"\\'")}')" title="Take this person out of the pay period" style="background:transparent;border:none;color:#f87171;opacity:.7;cursor:pointer;font-size:15px;line-height:1;padding:0 4px;margin-left:10px">✕</button>`;
   const th=(t,extra)=>`<th style="padding:3px 8px;${bb};${extra||''}">${t}</th>`;
   const wtag=(all,sec)=>hoursSrc(all[sec])==='wed'?` <span title="wedding / event" style="color:#c4b5fd;font-size:10px">💍</span>`:'';
   const empBadge=(name)=>{const id=(tipsState.empIds||{})[name]||'',en=esc(name).replace(/'/g,"\\'");return `<input value="${esc(id)}" onchange="tipEmpIdSet('${en}',this.value)" placeholder="id" title="Paychex worker ID — click to edit" style="width:36px;background:transparent;border:none;border-bottom:1px dashed ${id?'var(--border)':'#f87171'};color:${id?'var(--accent2)':'#f87171'};font-weight:700;font-size:11px;text-align:center;margin-right:6px;padding:0 1px;font-family:inherit;outline:none;font-variant-numeric:tabular-nums">`;};
@@ -5725,7 +5738,7 @@ function hoursHTML(){
     const nb=`position:sticky;left:0;background:${nameBg};border-left:3px solid ${nameBar};padding:3px 12px;white-space:nowrap;border-right:2px solid var(--border);${bb}`;
     // Name row = the person + their period totals; each position sits on its own
     // indented ↳ row below (positions stay, just never inline next to the name).
-    body+=`<tr style="background:${nameBg}"><td style="${nb};font-weight:800">${empBadge(name)}${esc(name)}${addBtn(name,asrc)}</td><td style="${bb}"></td><td style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.reg||''}</td><td style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.ot||''}</td><td id="hpt-${id}" style="padding:3px 10px;text-align:right;font-weight:800;color:#34d399;border-left:2px solid var(--border);${bb}">${t.pay?tipMoney(t.pay):''}</td>${tipCells(id,tt.paid,uptTot)}</tr>`;
+    body+=`<tr style="background:${nameBg}"><td style="${nb};font-weight:800">${empBadge(name)}${esc(name)}${addBtn(name,asrc)}${delPersonBtn(name)}</td><td style="${bb}"></td><td style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.reg||''}</td><td style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.ot||''}</td><td id="hpt-${id}" style="padding:3px 10px;text-align:right;font-weight:800;color:#34d399;border-left:2px solid var(--border);${bb}">${t.pay?tipMoney(t.pay):''}</td>${tipCells(id,tt.paid,uptTot)}</tr>`;
     secs.forEach(sec=>{body+=`<tr><td style="position:sticky;left:0;background:var(--surface);padding:2px 12px 2px 26px;white-space:nowrap;border-right:2px solid var(--border);${bb}">↳ ${posInput(name,sec)}${wtag(all,sec)}${delX(name,sec)}</td>${cells(name,sec)}${blankTips}</tr>`;});
   });
   if(!names.length)body=`<tr><td colspan="7" style="padding:34px;text-align:center;color:var(--text-dim);line-height:1.6">No hours or tips yet — pick a date range to pull weddings, and give me the MICROS timesheet.</td></tr>`;
