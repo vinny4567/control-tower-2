@@ -5725,10 +5725,10 @@ function hoursHTML(){
     const nb=`position:sticky;left:0;background:${nameBg};border-left:3px solid ${nameBar};padding:3px 12px;white-space:nowrap;border-right:2px solid var(--border);${bb}`;
     if(secs.length===1){
       const sec=secs[0];
-      body+=`<tr style="background:${nameBg}"><td style="${nb}">${empBadge(name)}<span style="font-weight:700">${esc(name)}</span> ${posInput(name,sec)}${wtag(all,sec)}${delX(name,sec)}${addBtn(name,asrc)}</td>${cells(name,sec)}${tipCells(id,tt.paid,uptTot)}</tr>`;
+      body+=`<tr style="background:${nameBg}"><td style="${nb}">${empBadge(name)}<span style="font-weight:700">${esc(name)}</span>${wtag(all,sec)}${delX(name,sec)}${addBtn(name,asrc)}</td>${cells(name,sec)}${tipCells(id,tt.paid,uptTot)}</tr>`;
     }else{
       body+=`<tr style="background:${nameBg}"><td style="${nb};font-weight:800">${empBadge(name)}${esc(name)}${addBtn(name,asrc)}</td><td style="${bb}"></td><td style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.reg||''}</td><td style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.ot||''}</td><td id="hpt-${id}" style="padding:3px 10px;text-align:right;font-weight:800;color:#34d399;border-left:2px solid var(--border);${bb}">${t.pay?tipMoney(t.pay):''}</td>${tipCells(id,tt.paid,uptTot)}</tr>`;
-      secs.forEach(sec=>{body+=`<tr><td style="position:sticky;left:0;background:var(--surface);padding:2px 12px 2px 26px;white-space:nowrap;border-right:2px solid var(--border);${bb}">↳ ${posInput(name,sec)}${wtag(all,sec)}${delX(name,sec)}</td>${cells(name,sec)}${blankTips}</tr>`;});
+      secs.forEach(sec=>{body+=`<tr><td style="position:sticky;left:0;background:var(--surface);padding:2px 12px 2px 26px;white-space:nowrap;border-right:2px solid var(--border);${bb}">↳${wtag(all,sec)}${delX(name,sec)}</td>${cells(name,sec)}${blankTips}</tr>`;});
     }
   });
   if(!names.length)body=`<tr><td colspan="7" style="padding:34px;text-align:center;color:var(--text-dim);line-height:1.6">No hours or tips yet — pick a date range to pull weddings, and give me the MICROS timesheet.</td></tr>`;
@@ -5750,7 +5750,7 @@ function hoursHTML(){
     <div style="overflow-x:auto;border:1px solid var(--border);border-radius:12px;width:860px;max-width:100%">
       <table style="border-collapse:collapse;font-size:13px;width:100%">
         <thead><tr style="background:var(--surface)">
-          ${th('Name / position','position:sticky;left:0;z-index:2;background:var(--surface);text-align:left;border-right:2px solid var(--border)')}
+          ${th('Name','position:sticky;left:0;z-index:2;background:var(--surface);text-align:left;border-right:2px solid var(--border)')}
           ${th('Rate','text-align:right;border-right:1px solid var(--border)')}
           ${th('Reg','text-align:right;border-right:1px solid var(--border)')}
           ${th('OT','text-align:right;border-right:1px solid var(--border)')}
