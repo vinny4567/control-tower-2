@@ -5654,12 +5654,13 @@ async function tipsPull(auto){
     // runners + bartenders: received tip-out → Unpaid
     (e.runners||[]).forEach(r=>{const n=tipCanon(r.name);if(n){ensure(n,'Food Runner');putC(n,lb,'u',r.tipReceived);}});
     (e.bartenders||[]).forEach(b=>{const n=tipCanon(b.name);if(n){ensure(n,'Bartender');putC(n,lb,'u',b.tipReceived);}});
-    if(e.pools&&e.pools.busser)putC('Busser Pool',lb,'u',e.pools.busser); // busser pool → Unpaid
+    if(e.pools&&e.pools.busser){const bc=tipCell('Busser Pool',lb);if(!bc||bc.u!==e.pools.busser){tipSetComp('Busser Pool',lb,'u',e.pools.busser);filled++;}} // busser pool is calculator-only (never hand-typed) → always reflect the LATEST log value so an early/partial pool self-corrects
     // everyone else with a direct party tip (bartender/busser/runner) → Paid, on their own row
     Object.keys(direct).forEach(nm=>{const info=direct[nm];if(!info.amt)return;ensure(nm,ROLE_SEC[info.role]||tipBaseSection(nm)||'Weddings');putC(nm,lb,'p',info.amt);});
   });
   tipsState.loaded=true;
-  if(filled){if(activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();tipsSaveSoon();}
+  if(filled&&activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();
+  if(filled&&!auto)tipsSaveSoon();   // UNDO auto-save: an auto pull (on load) only DISPLAYS the calculator's numbers now — it no longer freezes them into saved data (that's what stuck the early/partial busser pool). Only a manual pull or a hand edit saves.
   tipsSetStatus(filled?('Pulled '+filled+' from calculator ✓'):(auto?'✓ in sync with calculator':'Nothing new to pull'),'var(--text-dim)');
 }
 
@@ -5693,7 +5694,8 @@ async function tipsPullWeddings(auto){
     });
   });
   Object.keys(wed).forEach(n=>{Object.keys(wed[n]).forEach(lb=>{ensureW(n);const c=tipCell(n,lb);if(c&&c.w)return;tipSetComp(n,lb,'w',wed[n][lb]);filled++;});});
-  if(filled){if(activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();tipsSaveSoon();}
+  if(filled&&activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();
+  if(filled&&!auto)tipsSaveSoon();   // same undo as the tip-out pull: an auto pull only displays, it no longer auto-saves
   tipsSetStatus(filled?('Pulled '+filled+' wedding tip'+(filled>1?'s':'')+' ✓'):(auto?'✓ in sync':'No wedding tips in this range'),'var(--text-dim)');
 }
 
