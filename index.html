@@ -5924,6 +5924,30 @@ async function posFetch(base,path,opts){
   let body=null;try{body=await r.json()}catch(_){}
   return{ok:r.ok,status:r.status,body:body||{}};
 }
+// Before asking for an address, just look for a portal on this machine. When Vinny is
+// working on the laptop the servers are on localhost, and making him paste a URL to
+// find something already running on the same computer is friction for nothing.
+//
+// Chrome treats localhost as trustworthy, so an https page may call it. Safari does
+// not — on an iPad this quietly fails and the setup card appears, which is correct:
+// from an iPad the answer really is the mini.
+async function posProbe(url){
+  try{
+    const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),1200);
+    const r=await fetch(url.replace(/\/+$/,'')+'/api/health',{signal:ctl.signal,credentials:'include'});
+    clearTimeout(t);return r.ok;
+  }catch(_){return false}
+}
+const POS_LOCAL_PORTAL='http://localhost:4310';
+const POS_LOCAL_SERVER='http://localhost:4320';
+async function posFindLocal(which){
+  const url=which==='srv'?POS_LOCAL_SERVER:POS_LOCAL_PORTAL;
+  if(!await posProbe(url))return false;
+  if(which==='srv'){posS.srv=url;localStorage.setItem(POS_SRV_KEY,url)}
+  else{posS.url=url;localStorage.setItem(POS_URL_KEY,url)}
+  return true;
+}
+
 const posApi=(p,o)=>posFetch(posS.url,p,o);
 const posSrv=(p,o)=>posFetch(posS.srv,p,o);
 
@@ -6059,6 +6083,7 @@ function posPrintersHTML(){
 
 // ---- Reports ----------------------------------------------------------------
 async function posLoadReports(){
+  if(!posS.srv){await posFindLocal('srv')}
   if(!posS.srv){renderViewport();return}
   posS.repBusy=true;posS.repErr='';renderViewport();
   try{
@@ -6071,10 +6096,17 @@ async function posLoadReports(){
 }
 function posRepDays(d){posS.repDays=d;posLoadReports()}
 function posReportsHTML(){
-  if(!posS.srv)return `<div style="${posCardCss};max-width:560px">
-    <div style="font-weight:800;font-size:16px;margin-bottom:6px">Point this at the POS server</div>
-    <div style="color:var(--text-dim);font-size:13px;line-height:1.5;margin-bottom:12px">Sales, item counts and voids are computed from stored checks, so this needs the server that stores them — the one that will live on the mini. Add its address under <b>Connections</b> above.</div>
-    <button onclick="posToggleConn()" style="${posBtn('#f59e0b')}">Connections</button></div>`;
+  if(!posS.srv)return `<div style="${posCardCss};max-width:620px">
+    <div style="font-weight:800;font-size:16px;margin-bottom:6px">The POS server isn't running</div>
+    <div style="color:var(--text-dim);font-size:13px;line-height:1.6;margin-bottom:12px">
+      Sales, item counts and voids are computed from stored checks, so this reads the server that stores them.
+      <div style="margin-top:6px;padding:10px 12px;background:var(--surface2);border-radius:8px;font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--text)">cd ~/angelis-pos &amp;&amp; node server/index.js</div>
+      <div style="margin-top:10px;color:var(--text-muted);font-size:12px">Checked <code>localhost:4320</code> already. Nothing will show until the register saves checks to it.</div>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button onclick="posLoadReports()" style="${posBtn('#f59e0b')}">Look again</button>
+      <button onclick="posToggleConn()" style="${posBtn('#3f3f46')}">Enter an address</button>
+    </div></div>`;
   if(posS.repBusy)return '<div style="color:var(--text-dim)">Reading the night…</div>';
   if(posS.repErr)return `<div style="${posCardCss};max-width:560px"><div style="font-weight:800;margin-bottom:6px">Can't reach the POS server</div>
     <div style="color:var(--text-dim);font-size:13px;line-height:1.6">${esc(posS.srv)} didn't answer.<div style="margin-top:6px;color:var(--text-muted)">${esc(posS.repErr)}</div></div>
@@ -6132,6 +6164,7 @@ function posReportsHTML(){
 
 // ---- Grazie (gift cards + customers, via the CRM portal) --------------------
 async function posBoot(){
+  if(!posS.url&&!posMixed()){await posFindLocal('portal')}
   if(!posS.url||posMixed()){renderViewport();return}
   posS.health='checking';posS.err='';renderViewport();
   try{
@@ -6159,10 +6192,20 @@ async function posFindCust(){const q=((document.getElementById('pos-cust')||{}).
   const r=await posApi('/api/customer?q='+encodeURIComponent(q));posS.cust=r.body;renderViewport()}
 
 function posGrazieHTML(){
-  if(!posS.url)return `<div style="${posCardCss};max-width:560px">
-    <div style="font-weight:800;font-size:16px;margin-bottom:6px">Point this at the CRM portal</div>
-    <div style="color:var(--text-dim);font-size:13px;line-height:1.5;margin-bottom:12px">Gift card balances and Grazie Club records live in the portal. Add its address under <b>Connections</b>.</div>
-    <button onclick="posToggleConn()" style="${posBtn('#f59e0b')}">Connections</button></div>`;
+  if(!posS.url)return `<div style="${posCardCss};max-width:620px">
+    <div style="font-weight:800;font-size:16px;margin-bottom:6px">The portal isn't running</div>
+    <div style="color:var(--text-dim);font-size:13px;line-height:1.6;margin-bottom:12px">
+      Member records and gift card balances never travel into this page — the Watch Tower lives in a
+      <b>public</b> repository, and 133 people's names, phones and emails cannot sit in one. So unlike
+      Menu items, this section reads from the CRM portal rather than a snapshot.
+      <div style="margin-top:10px">Start it on the machine holding the data:</div>
+      <div style="margin-top:6px;padding:10px 12px;background:var(--surface2);border-radius:8px;font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--text)">cd ~/angelis-pos &amp;&amp; ./crm/start.sh</div>
+      <div style="margin-top:10px;color:var(--text-muted);font-size:12px">This tab checks <code>localhost:4310</code> on its own — no address to paste. From an iPad it can't reach a laptop, so that one waits for the mini.</div>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button onclick="posBoot()" style="${posBtn('#f59e0b')}">Look again</button>
+      <button onclick="posToggleConn()" style="${posBtn('#3f3f46')}">Enter an address</button>
+    </div></div>`;
   if(posMixed())return `<div style="${posCardCss};max-width:560px"><div style="font-weight:800;margin-bottom:6px">That address can't be reached from here</div>
     <div style="color:var(--text-dim);font-size:13px;line-height:1.6"><b>${esc(posS.url)}</b> is plain http and this page is https — the browser blocks the call before it leaves. Serve the portal over https with <code>tailscale serve</code>.</div></div>`;
   if(posS.health==='checking')return '<div style="color:var(--text-dim)">Looking for the portal…</div>';
