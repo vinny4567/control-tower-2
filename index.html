@@ -6243,7 +6243,10 @@ function posHTML(){
   const nav=POS_SECTIONS.map(([k,l])=>`<button onclick="posSec('${k}')" style="${posBtn(posS.sec===k?'#f59e0b':'#3f3f46')};padding:9px 15px;font-size:14px">${l}</button>`).join('');
   const who=(posS.me&&posS.health==='ok'&&posS.sec==='grazie')?`<span style="font-size:13px;color:var(--text-dim)">${esc(posS.me.username)}</span><button onclick="posLogout()" style="${posBtn('#3f3f46')};padding:7px 12px;font-size:13px">Sign out</button>`:'';
   const body=posS.sec==='items'?posItemsHTML():posS.sec==='printers'?posPrintersHTML():posS.sec==='reports'?posReportsHTML():posGrazieHTML();
-  return `<div style="max-width:1000px;margin:0 auto;padding:4px">
+  // #viewport is fixed and overflow:hidden, so every tab brings its own scroller —
+  // without one, anything past the fold is simply clipped.
+  return `<div style="height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch">
+    <div style="max-width:1000px;margin:0 auto;padding:4px 4px 56px">
     <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px">
       <h2 style="margin:0;font-size:24px;font-weight:800">🍽️ POS</h2>
       <span style="font-size:13px;color:var(--text-dim)">The back office — read-only from here.</span>
@@ -6252,7 +6255,7 @@ function posHTML(){
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">${nav}</div>
     ${posS.showConn?posConnHTML():''}
-    ${body}</div>`;
+    ${body}</div></div>`;
 }
 
 // ── ONLINE TAB: Otter command bridge ───────────────────────────────
