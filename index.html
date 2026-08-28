@@ -501,6 +501,19 @@
     .liq-card:hover .liq-actions{opacity:1}
     .liq-tip{margin-top:22px;font-size:12px;color:var(--text-muted)}
     /* Liquor: inventory · order · sales */
+    .pos-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:10px}
+    .pos-lbl{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted);font-weight:800;margin-bottom:6px}
+    .pos-big{font-size:28px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.15}
+    .pos-dim{color:var(--text-dim);font-size:13px}
+    .pos-mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums}
+    .pos-hist{border-top:1px solid var(--border);margin-top:14px;padding-top:8px;font-size:13px}
+    .pos-hist>div,.pos-rw{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--surface2)}
+    .pos-hist>div:last-child,.pos-rw:last-child{border-bottom:0}
+    .pos-amt{font-variant-numeric:tabular-nums;font-weight:800;white-space:nowrap}
+    .pos-up{color:#8DBE99}.pos-dn{color:#E09B84}
+    .pos-pill{font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:3px 7px;border-radius:5px;background:rgba(141,190,153,.14);color:#8DBE99;align-self:center;white-space:nowrap}
+    .pos-note{padding:10px 12px;border-radius:10px;margin-top:10px;font-size:13px;background:rgba(224,155,132,.12);color:#E09B84}
+    .pos-note.ok{background:rgba(141,190,153,.12);color:#8DBE99}
     .liq-nav{display:flex;gap:6px;flex-wrap:wrap}
     .liq-navb{background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:9px;padding:8px 14px;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;position:relative;white-space:nowrap}
     .liq-navb.on{border-color:var(--accent);color:var(--accent);background:rgba(255,179,0,.08)}
@@ -742,6 +755,7 @@ const WED='weddings';
 const LIQ='liquor';
 const BANK='banking';
 const TIPS='tips';
+const POS='pos';
 const CMD_API='https://jarvis-voicejarvis-voice.onrender.com/cmd';
 let cmdConsoleTimer=null;
 let cfg=loadCfg(),focused=null,editing=null,activeTab=cfg.activeTab||DASH;
@@ -5346,9 +5360,182 @@ function tabBarInit(){const el=document.getElementById('tab-list');if(!el||el._w
   el.addEventListener('wheel',e=>{if(Math.abs(e.deltaY)>Math.abs(e.deltaX)){e.preventDefault();el.scrollLeft+=e.deltaY}},{passive:false});
   el.addEventListener('scroll',tabNavSync);
   window.addEventListener('resize',tabNavSync);}
-function renderTabs(){const list=document.getElementById('tab-list');list.innerHTML=`<div class="tab ${activeTab===DASH?'active':''}" onclick="switchTab('${DASH}')">📊 Dashboard</div>`+`<div class="tab ${activeTab===MAIL?'active':''}" onclick="switchTab('${MAIL}')">📧 Email</div>`+`<div class="tab ${activeTab===DOCS?'active':''}" onclick="switchTab('${DOCS}')">📝 Docs</div>`+cfg.panels.map(p=>{const t=`<div class="tab ${activeTab===p.id?'active':''}" onclick="switchTab(${p.id})">${esc(p.name)}</div>`;return p.id===4?t+`<div class="tab ${activeTab===WED?'active':''}" onclick="switchTab('${WED}')">💍 Weddings</div>`:t;}).join('')+`<div class="tab ${activeTab===LIQ?'active':''}" onclick="switchTab('${LIQ}')">🥃 Liquor</div>`+`<div class="tab ${activeTab===BANK?'active':''}" onclick="switchTab('${BANK}')">🏦 Banking</div>`+`<div class="tab ${activeTab===TIPS?'active':''}" onclick="switchTab('${TIPS}')">🧾 Tips</div>`+`<div class="tab ${activeTab===ONLINE?'active':''}" onclick="switchTab('${ONLINE}')">🤖 Jarvis</div>`+`<div class="tab tab-add" onclick="openSettings()" title="Add panel">＋</div>`;tabBarInit();
+function renderTabs(){const list=document.getElementById('tab-list');list.innerHTML=`<div class="tab ${activeTab===DASH?'active':''}" onclick="switchTab('${DASH}')">📊 Dashboard</div>`+`<div class="tab ${activeTab===MAIL?'active':''}" onclick="switchTab('${MAIL}')">📧 Email</div>`+`<div class="tab ${activeTab===DOCS?'active':''}" onclick="switchTab('${DOCS}')">📝 Docs</div>`+cfg.panels.map(p=>{const t=`<div class="tab ${activeTab===p.id?'active':''}" onclick="switchTab(${p.id})">${esc(p.name)}</div>`;return p.id===4?t+`<div class="tab ${activeTab===WED?'active':''}" onclick="switchTab('${WED}')">💍 Weddings</div>`:t;}).join('')+`<div class="tab ${activeTab===LIQ?'active':''}" onclick="switchTab('${LIQ}')">🥃 Liquor</div>`+`<div class="tab ${activeTab===BANK?'active':''}" onclick="switchTab('${BANK}')">🏦 Banking</div>`+`<div class="tab ${activeTab===TIPS?'active':''}" onclick="switchTab('${TIPS}')">🧾 Tips</div>`+`<div class="tab ${activeTab===POS?'active':''}" onclick="switchTab('${POS}')">🍽️ POS</div>`+`<div class="tab ${activeTab===ONLINE?'active':''}" onclick="switchTab('${ONLINE}')">🤖 Jarvis</div>`+`<div class="tab tab-add" onclick="openSettings()" title="Add panel">＋</div>`;tabBarInit();
   // keep the active tab in view for wheel-only mice
   setTimeout(()=>{const a=document.querySelector('#tab-list .tab.active');if(a&&a.scrollIntoView)a.scrollIntoView({block:'nearest',inline:'nearest'});tabNavSync()},30);}
+
+// ═══ POS TAB — the new Angeli's POS, seen from here ═══════════════════
+// Sections: CRM (live), Sales and Labor (once the register is running).
+//
+// The CRM lives on the Mac mini in the office, NOT in the cloud — gift card balances
+// are real money and they stay in the building. This page reaches it over Tailscale,
+// which means two things: there is no port open to the public internet, and the mini
+// needs a real HTTPS name before this page can call it at all. A page served over
+// HTTPS cannot fetch an http:// address; browsers block it as mixed content, silently.
+//
+// Tailscale hands out that name and the certificate for free:
+//     tailscale serve --bg 4310
+// which publishes the portal at https://<machine>.<tailnet>.ts.net — valid cert,
+// reachable only by your own devices.
+const POS_VIEWS=[['crm','💳 CRM'],['sales','📈 Sales'],['labor','🕐 Labor']];
+let posX={view:'crm',tried:false,url:localStorage.getItem('ct_crm_url')||'',me:null,dash:null,card:null,cust:null,msg:'',busy:false};
+
+function posGo(v){posX.view=v;renderViewport()}
+function posSaveUrl(){
+  const v=(document.getElementById('pos-url')||{}).value||'';
+  posX.url=v.trim().replace(/\/+$/,'');
+  localStorage.setItem('ct_crm_url',posX.url);
+  posX.msg=''; posX.tried=true; posConnect();
+}
+async function posApi(path,body){
+  if(!posX.url) throw new Error('no CRM address set');
+  const o={credentials:'include',headers:{'x-crm':'1','content-type':'application/json'}};
+  if(body!==undefined){o.method='POST';o.body=JSON.stringify(body)}
+  const r=await fetch(posX.url+path,o);
+  if(r.status===401){posX.me=null;throw new Error('signed out')}
+  return r.json();
+}
+async function posConnect(){
+  posX.busy=true;renderViewport();
+  try{
+    const me=await posApi('/api/me');
+    posX.me=(me&&me.username)?me:null;
+    if(posX.me)posX.dash=await posApi('/api/dashboard');
+  }catch(e){
+    posX.me=null;
+    // The mixed-content block and a dead server look identical to fetch(), so name both.
+    posX.msg=(posX.url&&posX.url.startsWith('http://')&&location.protocol==='https:')
+      ? 'This page is HTTPS, so it cannot call an http:// address. Give the mini an HTTPS name with: tailscale serve --bg 4310'
+      : (e.message==='signed out'?'':'Cannot reach the CRM. Is the mini awake and are you on Tailscale?');
+  }
+  posX.busy=false;renderViewport();
+}
+async function posLogin(){
+  const u=(document.getElementById('pos-u')||{}).value, pw=(document.getElementById('pos-p')||{}).value;
+  try{
+    const r=await posApi('/api/login',{username:u,password:pw});
+    if(r.error){posX.msg=r.error;return renderViewport()}
+    posX.me=r;posX.msg='';posX.dash=await posApi('/api/dashboard');
+  }catch(e){posX.msg=e.message}
+  renderViewport();
+}
+async function posLogout(){try{await posApi('/api/logout',{})}catch(e){}posX.me=null;posX.card=null;posX.cust=null;posX.tried=true;renderViewport()}
+async function posFindCard(){
+  const q=(document.getElementById('pos-cq')||{}).value||'';
+  try{posX.card=await posApi('/api/card?q='+encodeURIComponent(q))}catch(e){posX.msg=e.message}
+  renderViewport();
+}
+async function posFindCust(){
+  const q=(document.getElementById('pos-pq')||{}).value||'';
+  try{posX.cust=await posApi('/api/customer?q='+encodeURIComponent(q))}catch(e){posX.msg=e.message}
+  renderViewport();
+}
+const posMoney=(c)=>(c<0?'-':'')+'$'+(Math.abs(c||0)/100).toFixed(2);
+const posDt=(x)=>String(x||'').slice(0,16).replace('T',' ');
+
+function posCardHTML(){
+  const r=posX.card; if(!r)return'';
+  if(r.status==='too_short')return posNote(`Type at least ${r.min} digits.`);
+  if(r.status==='none')return posNote('No card ends with those digits.');
+  if(r.status==='ambiguous')return posNote(`${r.count} cards share those digits — type ${r.need_more_digits} more.`);
+  const c=r.card;
+  return `<div class="pos-card">
+    <div class="pos-lbl">${c.source==='appsuite_import'?'Imported card':'Card'}</div>
+    <div class="pos-mono" style="color:var(--text-dim);margin-bottom:4px">${esc(c.code)}</div>
+    <div class="pos-big">${posMoney(c.balance_cents)}</div>
+    <div class="pos-hist">${(r.history||[]).slice().reverse().map(t=>`<div><div>${esc(t.kind)}
+      <div class="pos-dim">${posDt(t.created_at)} · ${esc(t.employee||'')}${t.check_id?' · chk '+esc(t.check_id):''}${t.reason?'<br>'+esc(t.reason):''}</div></div>
+      <div class="pos-amt ${t.delta_cents>0?'pos-up':'pos-dn'}">${posMoney(t.delta_cents)}</div></div>`).join('')}</div></div>`;
+}
+function posCustHTML(){
+  const r=posX.cust; if(!r)return'';
+  if(r.status==='too_short')return posNote(`Type at least ${r.min} digits.`);
+  if(r.status==='none')return posNote('Nobody with that number.');
+  if(r.status==='ambiguous')return posNote(`${r.count} people share those digits: `+r.matches.map(m=>esc(m.name)+' ('+m.phone_tail+')').join(', ')+' — type more.');
+  const c=r.customer;
+  return `<div class="pos-card">
+    <div class="pos-lbl">Customer</div>
+    <div style="font-size:19px;font-weight:800">${esc(((c.first||'')+' '+(c.last||'')).trim()||'—')}</div>
+    <div class="pos-dim">${esc(c.phone_pretty||'')}${c.email?' · '+esc(c.email):''}</div>
+    <div class="pos-big" style="margin-top:10px">${r.balance}<span style="font-size:14px;font-weight:600;color:var(--text-dim)"> points</span></div>
+    <div style="margin-top:10px">${(r.rewards||[]).length?r.rewards.map(x=>`<div class="pos-rw"><div>${esc(x.name)}<div class="pos-dim">${x.grant_id?'offer'+(x.expires_at?' · expires '+x.expires_at.slice(0,10):''):x.cost_points+' pts'}</div></div><span class="pos-pill">${x.grant_id?'granted':'available'}</span></div>`).join(''):'<div class="pos-dim">No rewards available yet.</div>'}</div>
+    <div class="pos-hist">${(r.history||[]).map(t=>`<div><div>${esc(t.kind)}
+      <div class="pos-dim">${posDt(t.created_at)} · ${esc(t.employee||'')}${t.check_id?' · chk '+esc(t.check_id):''}${t.reason?'<br>'+esc(t.reason):''}</div></div>
+      <div class="pos-amt ${t.delta_points>0?'pos-up':'pos-dn'}">${t.delta_points>0?'+':''}${t.delta_points}</div></div>`).join('')}</div></div>`;
+}
+function posNote(t,kind){return `<div class="pos-note${kind==='ok'?' ok':''}">${esc(t)}</div>`}
+
+function posSetupHTML(){
+  return `<div class="pos-card">
+    <div class="pos-lbl">Connect to the CRM</div>
+    <p class="pos-dim" style="margin:6px 0 12px">The CRM runs on the Mac mini in the office — gift card balances are real money, so they stay in the building. This page reaches it over Tailscale.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <input id="pos-url" value="${esc(posX.url)}" placeholder="https://mini.your-tailnet.ts.net" style="flex:1;min-width:220px;padding:11px 13px;border:1px solid var(--border);background:var(--surface2);color:var(--text);border-radius:10px;font-size:15px">
+      <button onclick="posSaveUrl()" style="${cmdBtn('#2E5B3E')}">Connect</button>
+    </div>
+    ${posX.msg?posNote(posX.msg):''}
+    <details style="margin-top:14px"><summary style="cursor:pointer;color:var(--text-muted);font-size:12px;font-weight:700">How to get that address</summary>
+      <div class="pos-dim" style="margin-top:8px;line-height:1.7">
+        On the mini, with the portal running:<br>
+        <code class="pos-mono" style="color:var(--accent)">tailscale serve --bg 4310</code><br>
+        That publishes it at <span class="pos-mono">https://&lt;machine&gt;.&lt;tailnet&gt;.ts.net</span> with a real certificate, reachable only by your own devices. It must be <b>https</b> — this page can't call a plain http address.
+      </div></details></div>`;
+}
+function posLoginHTML(){
+  return `<div class="pos-card">
+    <div class="pos-lbl">Sign in to the CRM</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+      <input id="pos-u" placeholder="Username" autocapitalize="none" style="flex:1;min-width:150px;padding:11px 13px;border:1px solid var(--border);background:var(--surface2);color:var(--text);border-radius:10px;font-size:15px">
+      <input id="pos-p" type="password" placeholder="Password" onkeydown="if(event.key==='Enter')posLogin()" style="flex:1;min-width:150px;padding:11px 13px;border:1px solid var(--border);background:var(--surface2);color:var(--text);border-radius:10px;font-size:15px">
+      <button onclick="posLogin()" style="${cmdBtn('#2E5B3E')}">Sign in</button>
+    </div>
+    ${posX.msg?posNote(posX.msg):''}
+    <div class="pos-dim" style="margin-top:10px">Separate from the register PIN — this screen can move money.</div></div>`;
+}
+function posCrmHTML(){
+  if(!posX.url)return posSetupHTML();
+  if(posX.busy&&!posX.me)return `<div class="pos-card pos-dim">Connecting…</div>`;
+  if(!posX.me)return posSetupHTML()+posLoginHTML();
+  const d=posX.dash||{liability:{},today:{},review:[]};
+  const rev=(d.review||[]).map(r=>`<div class="pos-rw"><div><b>${esc(r.kind)}</b> <span class="pos-mono">${esc(r.card)}</span>
+    <div class="pos-dim">${posDt(r.when)} · ${esc(r.who||'')} (${esc(r.role||'')}) ${r.check_id?'· chk '+esc(r.check_id):'· <b style="color:#E09B84">no check</b>'}${r.reason?'<br>'+esc(r.reason):''}</div></div>
+    <div class="pos-amt ${r.amount_cents>0?'pos-up':'pos-dn'}">${posMoney(r.amount_cents)}</div></div>`).join('')||'<div class="pos-dim">Nothing needs your attention.</div>';
+  return `
+  <div class="pos-card"><div class="pos-lbl">Outstanding gift card liability</div>
+    <div class="pos-big" style="font-size:34px">${posMoney((d.liability||{}).total_cents)}</div>
+    <div class="pos-dim">${(d.liability||{}).cards_with_balance||0} live cards · ${(d.liability||{}).cards_total||0} on file · ${d.customers||0} customers</div></div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+    <div class="pos-card" style="flex:1;min-width:150px;margin:0"><div class="pos-lbl">Loaded today</div><div class="pos-big" style="font-size:22px">${posMoney((d.today||{}).loaded_cents)}</div></div>
+    <div class="pos-card" style="flex:1;min-width:150px;margin:0"><div class="pos-lbl">Redeemed today</div><div class="pos-big" style="font-size:22px">${posMoney((d.today||{}).redeemed_cents)}</div></div>
+  </div>
+  <div class="pos-card"><div class="pos-lbl">Find a gift card</div>
+    <div style="display:flex;gap:8px;margin-top:6px"><input id="pos-cq" placeholder="Last 5 digits" inputmode="numeric" onkeydown="if(event.key==='Enter')posFindCard()" style="flex:1;padding:11px 13px;border:1px solid var(--border);background:var(--surface2);color:var(--text);border-radius:10px;font-size:15px">
+    <button onclick="posFindCard()" style="${cmdBtn('#2E5B3E')}">Find</button></div>
+    <div class="pos-dim" style="margin-top:6px">The digits printed on the back — no swipe needed.</div></div>
+  ${posCardHTML()}
+  <div class="pos-card"><div class="pos-lbl">Find a customer</div>
+    <div style="display:flex;gap:8px;margin-top:6px"><input id="pos-pq" placeholder="Phone, or last 4" inputmode="numeric" onkeydown="if(event.key==='Enter')posFindCust()" style="flex:1;padding:11px 13px;border:1px solid var(--border);background:var(--surface2);color:var(--text);border-radius:10px;font-size:15px">
+    <button onclick="posFindCust()" style="${cmdBtn('#2E5B3E')}">Find</button></div></div>
+  ${posCustHTML()}
+  <div class="pos-card"><div class="pos-lbl">Needs review</div>${rev}</div>`;
+}
+function posHTML(){
+  const v=posX.view;
+  return `<div style="max-width:820px;margin:0 auto;padding:4px">
+    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+      <h2 style="margin:0;font-size:24px;font-weight:800">🍽️ POS</h2>
+      <span style="font-size:13px;color:var(--text-dim)">Angeli's own register &amp; CRM</span>
+      ${posX.me?`<span style="margin-left:auto;font-size:12px;color:var(--text-dim)">${esc(posX.me.username)} · ${esc(posX.me.role)} <a href="#" onclick="posLogout();return false" style="color:var(--accent)">sign out</a></span>`:''}
+    </div>
+    <div class="liq-nav" style="margin-bottom:12px">${POS_VIEWS.map(([k,l])=>`<button class="liq-navb${v===k?' on':''}" onclick="posGo('${k}')">${l}</button>`).join('')}</div>
+    ${v==='crm'?posCrmHTML():
+      `<div class="pos-card pos-dim">${v==='sales'?'Sales reporting arrives when the register goes live — gross, by day, cash vs card, tips, and what each item sold.':'Clock-in, hours and the timesheet data payroll needs. Comes with the register.'}</div>`}
+  </div>`;
+}
+// Only probe once per visit to the tab. posConnect() re-renders, and renderViewport()
+// calls posInit() again — without this latch that is an infinite reconnect loop.
+function posInit(){ if(posX.url&&!posX.me&&!posX.busy&&!posX.tried){posX.tried=true;posConnect()} }
+
 // ═══ TIPS TAB — private per-period restaurant tip sheet ════════════════
 // Rows = full tipped roster grouped by role + a Busser Pool row; columns =
 // the 14 days of the pay period, then Paid and UPT totals. THE RULE: a plain
@@ -5888,7 +6075,7 @@ Picking a date range automatically pulls the nightly <b>tip-out log</b> (restaur
 }
 
 function renderViewport(){if(activeTab===WED){document.getElementById('viewport').innerHTML=wedHTML();wedInit();return}if(activeTab===DOCS){docsSetNS('ct_docs');docsPullSync();document.getElementById('viewport').innerHTML=docsHTML();return}if(activeTab===MAIL){document.getElementById('viewport').innerHTML=mailHTML();restoreGmailListScroll();return}if(activeTab===LIQ){document.getElementById('viewport').innerHTML=liqHTML();return}if(activeTab===BANK){document.getElementById('viewport').innerHTML=bankHTML();return}
-   if(activeTab===TIPS){document.getElementById('viewport').innerHTML=tipsHTML();tipsInit();return}if(activeTab===ONLINE){document.getElementById('viewport').innerHTML=onlineHTML();renderChat();if(ordersKey())loadCmdConsole();return}if(activeTab===DASH){const vp=document.getElementById('viewport');const sc=vp.querySelector('.dashboard');const top=sc?sc.scrollTop:0;const al=vp.querySelector('.ag-list');const alTop=al?al.scrollTop:0;vp.innerHTML=dashboardHTML();if(top){const sc2=vp.querySelector('.dashboard');if(sc2)sc2.scrollTop=top}if(alTop){const al2=vp.querySelector('.ag-list');if(al2)al2.scrollTop=alTop}return}const p=cfg.panels.find(x=>x.id===activeTab);if(!p){document.getElementById('viewport').innerHTML='';return}document.getElementById('viewport').innerHTML=bodyHTML(p);if(activeTab===3)restoreGmailListScroll()}
+   if(activeTab===TIPS){document.getElementById('viewport').innerHTML=tipsHTML();tipsInit();return}if(activeTab===POS){document.getElementById('viewport').innerHTML=posHTML();posInit();return}if(activeTab===ONLINE){document.getElementById('viewport').innerHTML=onlineHTML();renderChat();if(ordersKey())loadCmdConsole();return}if(activeTab===DASH){const vp=document.getElementById('viewport');const sc=vp.querySelector('.dashboard');const top=sc?sc.scrollTop:0;const al=vp.querySelector('.ag-list');const alTop=al?al.scrollTop:0;vp.innerHTML=dashboardHTML();if(top){const sc2=vp.querySelector('.dashboard');if(sc2)sc2.scrollTop=top}if(alTop){const al2=vp.querySelector('.ag-list');if(al2)al2.scrollTop=alTop}return}const p=cfg.panels.find(x=>x.id===activeTab);if(!p){document.getElementById('viewport').innerHTML='';return}document.getElementById('viewport').innerHTML=bodyHTML(p);if(activeTab===3)restoreGmailListScroll()}
 
 // ── ONLINE TAB: Otter command bridge ───────────────────────────────
 // Queue actions to the reader userscript on the always-on Mac's Otter tab; it runs them there
