@@ -5346,7 +5346,7 @@ function tabBarInit(){const el=document.getElementById('tab-list');if(!el||el._w
   el.addEventListener('wheel',e=>{if(Math.abs(e.deltaY)>Math.abs(e.deltaX)){e.preventDefault();el.scrollLeft+=e.deltaY}},{passive:false});
   el.addEventListener('scroll',tabNavSync);
   window.addEventListener('resize',tabNavSync);}
-function renderTabs(){const list=document.getElementById('tab-list');list.innerHTML=`<div class="tab ${activeTab===DASH?'active':''}" onclick="switchTab('${DASH}')">📊 Dashboard</div>`+`<div class="tab ${activeTab===MAIL?'active':''}" onclick="switchTab('${MAIL}')">📧 Email</div>`+`<div class="tab ${activeTab===DOCS?'active':''}" onclick="switchTab('${DOCS}')">📝 Docs</div>`+cfg.panels.map(p=>{const t=`<div class="tab ${activeTab===p.id?'active':''}" onclick="switchTab(${p.id})">${esc(p.name)}</div>`;return p.id===4?t+`<div class="tab ${activeTab===WED?'active':''}" onclick="switchTab('${WED}')">💍 Weddings</div>`:t;}).join('')+`<div class="tab ${activeTab===LIQ?'active':''}" onclick="switchTab('${LIQ}')">🥃 Liquor</div>`+`<div class="tab ${activeTab===BANK?'active':''}" onclick="switchTab('${BANK}')">🏦 Banking</div>`+`<div class="tab ${activeTab===TIPS?'active':''}" onclick="switchTab('${TIPS}')">🧾 Tips</div>`+`<div class="tab ${activeTab===ONLINE?'active':''}" onclick="switchTab('${ONLINE}')">🤖 Jarvis</div>`+`<div class="tab tab-add" onclick="openSettings()" title="Add panel">＋</div>`;tabBarInit();
+function renderTabs(){const list=document.getElementById('tab-list');list.innerHTML=`<div class="tab ${activeTab===DASH?'active':''}" onclick="switchTab('${DASH}')">📊 Dashboard</div>`+`<div class="tab ${activeTab===MAIL?'active':''}" onclick="switchTab('${MAIL}')">📧 Email</div>`+`<div class="tab ${activeTab===DOCS?'active':''}" onclick="switchTab('${DOCS}')">📝 Docs</div>`+cfg.panels.map(p=>{const t=`<div class="tab ${activeTab===p.id?'active':''}" onclick="switchTab(${p.id})">${esc(p.name)}</div>`;return p.id===4?t+`<div class="tab ${activeTab===WED?'active':''}" onclick="switchTab('${WED}')">💍 Weddings</div>`:t;}).join('')+`<div class="tab ${activeTab===LIQ?'active':''}" onclick="switchTab('${LIQ}')">🥃 Liquor</div>`+`<div class="tab ${activeTab===BANK?'active':''}" onclick="switchTab('${BANK}')">🏦 Banking</div>`+`<div class="tab ${activeTab===TIPS?'active':''}" onclick="switchTab('${TIPS}')">🧾 Tips</div>`+`<div class="tab ${activeTab===POS?'active':''}" onclick="switchTab('${POS}')">🍽️ POS</div>`+`<div class="tab ${activeTab===ONLINE?'active':''}" onclick="switchTab('${ONLINE}')">🤖 Jarvis</div>`+`<div class="tab tab-add" onclick="openSettings()" title="Add panel">＋</div>`;tabBarInit();
   // keep the active tab in view for wheel-only mice
   setTimeout(()=>{const a=document.querySelector('#tab-list .tab.active');if(a&&a.scrollIntoView)a.scrollIntoView({block:'nearest',inline:'nearest'});tabNavSync()},30);}
 // ═══ TIPS TAB — private per-period restaurant tip sheet ════════════════
@@ -5888,7 +5888,182 @@ Picking a date range automatically pulls the nightly <b>tip-out log</b> (restaur
 }
 
 function renderViewport(){if(activeTab===WED){document.getElementById('viewport').innerHTML=wedHTML();wedInit();return}if(activeTab===DOCS){docsSetNS('ct_docs');docsPullSync();document.getElementById('viewport').innerHTML=docsHTML();return}if(activeTab===MAIL){document.getElementById('viewport').innerHTML=mailHTML();restoreGmailListScroll();return}if(activeTab===LIQ){document.getElementById('viewport').innerHTML=liqHTML();return}if(activeTab===BANK){document.getElementById('viewport').innerHTML=bankHTML();return}
-   if(activeTab===TIPS){document.getElementById('viewport').innerHTML=tipsHTML();tipsInit();return}if(activeTab===ONLINE){document.getElementById('viewport').innerHTML=onlineHTML();renderChat();if(ordersKey())loadCmdConsole();return}if(activeTab===DASH){const vp=document.getElementById('viewport');const sc=vp.querySelector('.dashboard');const top=sc?sc.scrollTop:0;const al=vp.querySelector('.ag-list');const alTop=al?al.scrollTop:0;vp.innerHTML=dashboardHTML();if(top){const sc2=vp.querySelector('.dashboard');if(sc2)sc2.scrollTop=top}if(alTop){const al2=vp.querySelector('.ag-list');if(al2)al2.scrollTop=alTop}return}const p=cfg.panels.find(x=>x.id===activeTab);if(!p){document.getElementById('viewport').innerHTML='';return}document.getElementById('viewport').innerHTML=bodyHTML(p);if(activeTab===3)restoreGmailListScroll()}
+   if(activeTab===TIPS){document.getElementById('viewport').innerHTML=tipsHTML();tipsInit();return}if(activeTab===POS){document.getElementById('viewport').innerHTML=posHTML();return}if(activeTab===ONLINE){document.getElementById('viewport').innerHTML=onlineHTML();renderChat();if(ordersKey())loadCmdConsole();return}if(activeTab===DASH){const vp=document.getElementById('viewport');const sc=vp.querySelector('.dashboard');const top=sc?sc.scrollTop:0;const al=vp.querySelector('.ag-list');const alTop=al?al.scrollTop:0;vp.innerHTML=dashboardHTML();if(top){const sc2=vp.querySelector('.dashboard');if(sc2)sc2.scrollTop=top}if(alTop){const al2=vp.querySelector('.ag-list');if(al2)al2.scrollTop=alTop}return}const p=cfg.panels.find(x=>x.id===activeTab);if(!p){document.getElementById('viewport').innerHTML='';return}document.getElementById('viewport').innerHTML=bodyHTML(p);if(activeTab===3)restoreGmailListScroll()}
+
+// ── POS TAB: the manager back office on the Mac mini ───────────────
+// The register and the gift-card ledger run on the mini, on the restaurant LAN.
+// This tab is the ONLY remote surface, reached over Tailscale — which is why the
+// mini has no port open to the internet. The staff register is never remote.
+//
+// Two limits, both deliberate:
+//   • It cannot iframe the portal. That page sends X-Frame-Options: DENY, because a
+//     page that moves money should never be framed. So this talks to its JSON API.
+//   • It is READ-ONLY. Money moves at the register or in the portal itself, where
+//     whoever is doing it is standing in the building.
+const POS='pos';
+const POS_URL_KEY='ct_pos_url';
+let posS={url:localStorage.getItem(POS_URL_KEY)||'',health:'unknown',me:null,dash:null,err:'',card:null,cust:null,busy:false};
+const posBase=()=>(posS.url||'').replace(/\/+$/,'');
+// A https page cannot call a http box — the browser blocks it before the request
+// leaves. Worth saying out loud, because the failure looks identical to "mini is off".
+const posMixed=()=>location.protocol==='https:'&&/^http:\/\//i.test(posS.url||'');
+
+async function posFetch(path,opts){
+  const o=Object.assign({credentials:'include',headers:{}},opts||{});
+  if(o.method==='POST'){o.headers['content-type']='application/json';o.headers['x-crm']='1'}
+  const r=await fetch(posBase()+path,o);
+  let body=null;try{body=await r.json()}catch(_){}
+  return{ok:r.ok,status:r.status,body:body||{}};
+}
+function posSaveUrl(){
+  const v=(document.getElementById('pos-url')||{}).value||'';
+  posS.url=v.trim();localStorage.setItem(POS_URL_KEY,posS.url);
+  posS.health='unknown';posS.me=null;posS.err='';renderViewport();posBoot();
+}
+function posForget(){posS.url='';localStorage.removeItem(POS_URL_KEY);posS.health='unknown';posS.me=null;posS.dash=null;renderViewport()}
+
+async function posBoot(){
+  if(!posS.url||posMixed()){renderViewport();return}
+  posS.health='checking';posS.err='';renderViewport();
+  try{
+    const h=await posFetch('/api/health');
+    posS.health=h.ok?'ok':'down';
+    if(h.ok){const me=await posFetch('/api/me');posS.me=me.ok?me.body:null;if(posS.me)await posLoadDash()}
+  }catch(e){posS.health='down';posS.err=String(e&&e.message||e)}
+  renderViewport();
+}
+async function posLoadDash(){const d=await posFetch('/api/dashboard');if(d.ok)posS.dash=d.body}
+async function posLogin(){
+  const u=(document.getElementById('pos-user')||{}).value||'';
+  const p=(document.getElementById('pos-pass')||{}).value||'';
+  posS.busy=true;posS.err='';renderViewport();
+  try{
+    const r=await posFetch('/api/login',{method:'POST',body:JSON.stringify({username:u,password:p})});
+    if(r.ok){posS.me=r.body;await posLoadDash()}else posS.err=r.body.error||('sign in failed ('+r.status+')');
+  }catch(e){posS.err=String(e&&e.message||e)}
+  posS.busy=false;renderViewport();
+}
+async function posLogout(){try{await posFetch('/api/logout',{method:'POST'})}catch(_){}posS.me=null;posS.dash=null;posS.card=null;posS.cust=null;renderViewport()}
+async function posFindCard(){
+  const q=((document.getElementById('pos-card')||{}).value||'').trim();
+  if(!q)return;const r=await posFetch('/api/card?q='+encodeURIComponent(q));posS.card=r.body;renderViewport();
+}
+async function posFindCust(){
+  const q=((document.getElementById('pos-cust')||{}).value||'').trim();
+  if(!q)return;const r=await posFetch('/api/customer?q='+encodeURIComponent(q));posS.cust=r.body;renderViewport();
+}
+const posMoney=(c)=>c==null?'—':'$'+(c/100).toFixed(2);
+function posCard(label,value,sub){
+  return `<div style="border:1px solid var(--border);border-radius:12px;background:var(--surface);padding:14px 16px;min-width:150px;flex:1">
+    <div style="font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.6px">${label}</div>
+    <div style="font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;margin-top:4px">${value}</div>
+    ${sub?`<div style="font-size:12px;color:var(--text-dim);margin-top:2px">${sub}</div>`:''}</div>`;
+}
+function posBtn(c){return `padding:11px 16px;border:none;border-radius:10px;cursor:pointer;font-family:inherit;font-weight:700;font-size:15px;color:#fff;background:${c};-webkit-tap-highlight-color:transparent`}
+const posInput='padding:11px 13px;border:1px solid var(--border);background:var(--surface2);color:var(--text);border-radius:10px;font-size:16px';
+
+function posSetupHTML(msg){
+  return `<div style="border:1px solid var(--border);border-radius:14px;background:var(--surface);padding:18px;max-width:560px">
+    <div style="font-weight:800;font-size:16px;margin-bottom:6px">Point this at the mini</div>
+    <div style="color:var(--text-dim);font-size:13px;line-height:1.5;margin-bottom:12px">${msg||`Its Tailscale address, e.g. <code>https://mini.your-tailnet.ts.net</code>. Must be <b>https</b> — <code>tailscale serve</code> issues a real certificate, and this page cannot call a plain-http box.`}</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <input id="pos-url" type="url" autocomplete="off" placeholder="https://mini.your-tailnet.ts.net" value="${esc(posS.url||'')}" style="${posInput};flex:1;min-width:240px" onkeydown="if(event.key==='Enter')posSaveUrl()">
+      <button onclick="posSaveUrl()" style="${posBtn('#f59e0b')}">Save</button>
+    </div></div>`;
+}
+function posDownHTML(){
+  return `<div style="border:1px solid var(--border);border-radius:14px;background:var(--surface);padding:18px;max-width:560px">
+    <div style="font-weight:800;font-size:16px;margin-bottom:6px">Can't reach the mini</div>
+    <div style="color:var(--text-dim);font-size:13px;line-height:1.6;margin-bottom:12px">
+      Nothing answered at <code>${esc(posS.url)}</code>. Usually one of:
+      <ul style="margin:8px 0 0 18px;padding:0"><li>this device isn't on the tailnet</li><li>the mini is asleep or the portal isn't running</li><li>the address changed</li></ul>
+      ${posS.err?`<div style="margin-top:8px;color:var(--text-muted)">${esc(posS.err)}</div>`:''}
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button onclick="posBoot()" style="${posBtn('#f59e0b')}">Try again</button>
+      <button onclick="posForget()" style="${posBtn('#3f3f46')}">Change address</button>
+    </div></div>`;
+}
+function posLoginHTML(){
+  return `<div style="border:1px solid var(--border);border-radius:14px;background:var(--surface);padding:18px;max-width:420px">
+    <div style="font-weight:800;font-size:16px;margin-bottom:2px">Sign in</div>
+    <div style="color:var(--text-dim);font-size:13px;line-height:1.5;margin-bottom:12px">Your portal password — <b>not</b> a register PIN. Being on the tailnet gets you to the door; this opens it.</div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <input id="pos-user" type="text" autocomplete="username" placeholder="username" style="${posInput}">
+      <input id="pos-pass" type="password" autocomplete="current-password" placeholder="password" style="${posInput}" onkeydown="if(event.key==='Enter')posLogin()">
+      <button onclick="posLogin()" style="${posBtn('#f59e0b')}" ${posS.busy?'disabled':''}>${posS.busy?'…':'Sign in'}</button>
+      ${posS.err?`<div style="color:#ef4444;font-size:13px">${esc(posS.err)}</div>`:''}
+    </div></div>`;
+}
+function posDashHTML(){
+  const d=posS.dash||{};const L=d.liability||{};const T=d.today||{};const rev=d.review||[];
+  return `
+  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+    ${posCard('Gift card liability',posMoney(L.total_cents),`${L.cards_with_balance||0} of ${L.cards_total||0} cards carry a balance`)}
+    ${posCard('Loaded today',posMoney(T.loaded_cents),`${T.count||0} transactions`)}
+    ${posCard('Redeemed today',posMoney(T.redeemed_cents),'')}
+    ${posCard('Customers',String(d.customers||0),'Grazie Club records')}
+  </div>
+  <div style="border:1px solid var(--border);border-radius:14px;background:var(--surface);padding:16px;margin-bottom:16px">
+    <div style="font-weight:800;font-size:15px;margin-bottom:4px">Review queue</div>
+    <div style="color:var(--text-dim);font-size:12px;margin-bottom:10px">Adjustments, loads with no check, and loads of $250 or more. The short list worth reading each morning.</div>
+    ${rev.length?rev.map(t=>`<div style="display:flex;gap:10px;align-items:baseline;padding:8px 0;border-top:1px solid var(--border);font-size:14px;flex-wrap:wrap">
+        <span style="font-variant-numeric:tabular-nums;font-weight:700;min-width:86px">${posMoney(t.amount_cents)}</span>
+        <span style="color:var(--text-dim);min-width:92px">${esc(t.kind||'')}</span>
+        ${t.kind==='load'&&!t.check_id?'<span style="color:#f59e0b;font-size:12px;font-weight:700">no check</span>':''}
+        <span style="flex:1;min-width:140px">${esc(t.reason||t.card||'')}</span>
+        <span style="color:var(--text-muted);font-size:12px">${esc((t.who||'')+' · '+String(t.when||'').slice(0,10))}</span>
+      </div>`).join(''):'<div style="color:var(--text-dim);font-size:14px">Nothing flagged.</div>'}
+  </div>
+  <div style="display:flex;gap:12px;flex-wrap:wrap">
+    <div style="border:1px solid var(--border);border-radius:14px;background:var(--surface);padding:16px;flex:1;min-width:280px">
+      <div style="font-weight:800;font-size:15px;margin-bottom:8px">Look up a gift card</div>
+      <div style="display:flex;gap:8px"><input id="pos-card" placeholder="last 4–6 digits" style="${posInput};flex:1" onkeydown="if(event.key==='Enter')posFindCard()"><button onclick="posFindCard()" style="${posBtn('#3f3f46')}">Find</button></div>
+      ${posS.card?posResultHTML(posS.card,'card'):''}
+    </div>
+    <div style="border:1px solid var(--border);border-radius:14px;background:var(--surface);padding:16px;flex:1;min-width:280px">
+      <div style="font-weight:800;font-size:15px;margin-bottom:8px">Look up a customer</div>
+      <div style="display:flex;gap:8px"><input id="pos-cust" placeholder="last 4–6 of their phone" style="${posInput};flex:1" onkeydown="if(event.key==='Enter')posFindCust()"><button onclick="posFindCust()" style="${posBtn('#3f3f46')}">Find</button></div>
+      ${posS.cust?posResultHTML(posS.cust,'cust'):''}
+    </div>
+  </div>`;
+}
+// The lookups never guess: an ambiguous tail asks for more digits rather than
+// picking one. Show that answer as-is instead of inventing a best match.
+function posResultHTML(r,kind){
+  const box='margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--surface2);font-size:14px';
+  if(!r||!r.status)return'';
+  if(r.status!=='found')return `<div style="${box};color:var(--text-dim)">${esc(r.status==='ambiguous'?'More than one match — type more digits.':(r.message||r.status))}</div>`;
+  if(kind==='card'){const c=r.card||{};return `<div style="${box}">
+    <div style="font-weight:800;font-size:20px;font-variant-numeric:tabular-nums">${posMoney(c.balance_cents)}</div>
+    <div style="color:var(--text-dim);font-size:12px;margin-top:2px">card ${esc(c.code||'')}</div></div>`}
+  const c=r.customer||{};const nm=[c.first,c.last].filter(Boolean).join(' ').trim();
+  const rw=(r.rewards||[]).length;
+  return `<div style="${box}">
+    <div style="font-weight:800">${esc(nm||'(no name on file)')}</div>
+    <div style="color:var(--text-dim);font-size:13px">${esc(c.phone_pretty||c.phone||'')}</div>
+    <div style="margin-top:6px;font-variant-numeric:tabular-nums">${r.balance==null?'':esc(String(r.balance))+' points'}${rw?` · ${rw} reward${rw>1?'s':''} available`:''}</div></div>`;
+}
+function posHTML(){
+  let body;
+  if(!posS.url)body=posSetupHTML();
+  else if(posMixed())body=posSetupHTML(`<b>${esc(posS.url)}</b> is plain http, and this page is https — the browser blocks that call before it leaves. Serve the portal over https with <code>tailscale serve</code> and use that address.`);
+  else if(posS.health==='checking')body='<div style="color:var(--text-dim)">Looking for the mini…</div>';
+  else if(posS.health!=='ok')body=posDownHTML();
+  else if(!posS.me)body=posLoginHTML();
+  else body=posDashHTML();
+  // Don't keep showing a signed-in name when the mini is unreachable — that identity
+  // is a memory of a server we can't see, and it reads as "everything is fine".
+  const who=(posS.me&&posS.health==='ok')?`<span style="font-size:13px;color:var(--text-dim)">${esc(posS.me.username)} · ${esc(posS.me.role)}</span><button onclick="posLogout()" style="${posBtn('#3f3f46')};padding:7px 12px;font-size:13px">Sign out</button>`:'';
+  return `<div style="max-width:900px;margin:0 auto;padding:4px">
+    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px">
+      <h2 style="margin:0;font-size:24px;font-weight:800">🍽️ POS</h2>
+      <span style="font-size:13px;color:var(--text-dim)">Gift cards, customers and the morning review — read-only from here.</span>
+      <span style="margin-left:auto;display:flex;gap:10px;align-items:center">${who}</span>
+    </div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">Money moves at the register or in the portal itself. Sales and labor reports arrive once checks are saved on the mini.</div>
+    ${body}</div>`;
+}
 
 // ── ONLINE TAB: Otter command bridge ───────────────────────────────
 // Queue actions to the reader userscript on the always-on Mac's Otter tab; it runs them there
@@ -6328,6 +6503,7 @@ function switchTab(id){
   if(id===DASH){loadCateringOrders();loadLiveOrders();}
   if(id===WED){wed.view='list';wedFetchFeed();wedPullSync();wedMetaPull();}
   if(id===LIQ){liqPull();}
+  if(id===POS){posBoot();}
   if(id===BANK){bankPull();}
   if(id===MAIL){if(mailx.accts===null||mailx.accts==='error')loadMailAccounts();else if(mailx.acct)loadMailList();}
   if(gmailValid()){
