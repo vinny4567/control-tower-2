@@ -5243,7 +5243,7 @@ function wedEventHTML(){const fe=wedFeedEvent(wed.evId);if(!fe){wed.view='list';
       ${wed.pane==='plan'
         ?`<div class="wed-main wed-main-col">${wedPlanChrome(true)}</div>`
         :wed.pane==='catering'
-        ?`<div class="wed-main"><iframe src="https://order.angeliscatering.com/catering-notes.html?event=sched-${fe.id}&name=${encodeURIComponent(fe.label)}" allow="storage-access fullscreen"></iframe></div>`
+        ?`<div class="wed-main"><iframe onload="ctNotesKey(this)" src="https://order.angeliscatering.com/catering-notes.html?event=sched-${fe.id}&name=${encodeURIComponent(fe.label)}" allow="storage-access fullscreen"></iframe></div>`
         :wed.pane==='docs'
         ?`<div class="wed-main wed-main-col">${(docsSetNS('ct_docs_ev_sched-'+fe.id),docsHTML())}</div>`
         :wed.pane==='truck'
@@ -5254,7 +5254,7 @@ function wedEventHTML(){const fe=wedFeedEvent(wed.evId);if(!fe){wed.view='list';
         ?wedSchedPaneHTML(fe)
         :wed.pane==='sheet'
         ?wedSheetPaneHTML(fe)
-        :`<div class="wed-main"><iframe src="https://order.angeliscatering.com/wedding-notes.html?event=sched-${fe.id}&name=${encodeURIComponent(fe.label)}" allow="storage-access fullscreen"></iframe></div>`}
+        :`<div class="wed-main"><iframe onload="ctNotesKey(this)" src="https://order.angeliscatering.com/wedding-notes.html?event=sched-${fe.id}&name=${encodeURIComponent(fe.label)}" allow="storage-access fullscreen"></iframe></div>`}
     </div>
   </div>`}
 function wedHTML(){wedLoad();return wed.view==='plan'?wedPlanHTML():wed.view==='event'?wedEventHTML():wedListHTML()}
@@ -7083,6 +7083,9 @@ function urlCancel(id){editing=null;refreshBody(id)}
 let draft=[];
 // Access keys live on the device, not in the page. A missing key is the difference
 // between "the Watch Tower is broken" and "this iPad hasn't been set up yet" — say which.
+// The event-tool iframes are on order.angeliscatering.com, a different origin with its
+// own localStorage, so they can't see the key this device already has. Hand it over.
+function ctNotesKey(f){try{f.contentWindow.postMessage({ctKvKey:localStorage.getItem('ct_kv_key')||''},'https://order.angeliscatering.com')}catch(e){}}
 function ctKeysMissing(){const m=[];if(!localStorage.getItem('ct_kv_key'))m.push('Sync');if(!localStorage.getItem('ct_sched_key'))m.push('Schedule');if(!localStorage.getItem('ct_mail_key'))m.push('Email');return m}
 function setCtKeys(){
   const cur=k=>localStorage.getItem(k)||'';
