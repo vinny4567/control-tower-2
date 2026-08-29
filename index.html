@@ -6058,7 +6058,7 @@ function posPrintersHTML(){
   <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
     ${(c.printers||[]).map(p=>posStat(p,String(counts[p]||0),'items route here')).join('')}
   </div>
-  <div style="color:var(--text-muted);font-size:12px;margin:-4px 0 14px">Expo reads zero because it is not a print class — it takes a copy of everything when an order is fired, which is how it marries courses rather than cooking them.</div>
+
   <div style="${posCardCss};margin-bottom:14px">
     <div style="font-weight:800;font-size:15px;margin-bottom:4px">Print classes</div>
     <div style="color:var(--text-dim);font-size:12px;margin-bottom:10px">Micros routes on a print class, not a station — one class can send the same item to two printers. Guessing a station from an item would print entrées at the pizza oven.</div>
