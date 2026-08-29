@@ -661,6 +661,12 @@
   <div id="modal">
     <div class="modal-head">
       <h2>⚙&nbsp; Manage Panels</h2>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;margin:0 0 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface)">
+        <span style="font-weight:700">🔑 Access keys</span>
+        <span id="ct-keys-state" style="font-size:12px;color:var(--text-muted)"></span>
+        <span style="flex:1"></span>
+        <button class="wed-btn" onclick="setCtKeys()">Enter keys</button>
+      </div>
       <button class="icon-btn" onclick="closeSettings()">✕</button>
     </div>
     <div class="modal-body">
@@ -764,7 +770,7 @@ window.addEventListener('message',function(e){
 // (no Google cookies in the browser, so Safari's cookie clearing can't break it).
 const GMAIL_TOKEN_ENDPOINT='https://restaurant-scheduler-hh5e.onrender.com/api/gmail/token';
 const GMAIL_AUTH_ENDPOINT='https://restaurant-scheduler-hh5e.onrender.com/api/gmail/auth';
-const GMAIL_BACKEND_KEY='tipout-roster-key-vinny-7k9m2x4p';
+const GMAIL_BACKEND_KEY=()=>localStorage.getItem('ct_sched_key')||'';  // see the note on KV_TOKEN
 let gmailToken=null;try{gmailToken=JSON.parse(localStorage.getItem('gmail_token_v4')||'null')}catch(e){}
 let gmailUserEmail=null;
 let gmailEmails=null,gmailLoading=false;
@@ -779,7 +785,7 @@ async function gmailRefreshFromBackend(){
   if(gmailRefreshing)return gmailValid();
   gmailRefreshing=true;
   try{
-    const r=await fetch(GMAIL_TOKEN_ENDPOINT+'?key='+encodeURIComponent(GMAIL_BACKEND_KEY));
+    const r=await fetch(GMAIL_TOKEN_ENDPOINT+'?key='+encodeURIComponent(GMAIL_BACKEND_KEY()));
     if(r.status===404){gmailConnected=false;gmailClearToken();return false}
     if(!r.ok)return gmailValid();
     const data=await r.json();
@@ -1594,7 +1600,7 @@ function setReplyStatus(text,kind){const el=document.getElementById('mail-reply-
 function mailAcctObj(){return (mailx.accts||[]).find(a=>a.id===mailx.acct)||{};}
 async function gmailAccessToken(email){
   const acctQ=email==='angelisreservations1478@gmail.com'?'':('account='+encodeURIComponent(email)+'&');
-  const r=await fetch(GMAIL_TOKEN_ENDPOINT+'?'+acctQ+'key='+encodeURIComponent(GMAIL_BACKEND_KEY));
+  const r=await fetch(GMAIL_TOKEN_ENDPOINT+'?'+acctQ+'key='+encodeURIComponent(GMAIL_BACKEND_KEY()));
   if(r.status===404){const e=new Error('not_connected');e.notConnected=true;throw e;}
   if(!r.ok)throw new Error('token '+r.status);
   const d=await r.json();if(!d.access_token)throw new Error('no access token');return d.access_token;
@@ -2151,11 +2157,15 @@ function docsHTML(){
 // Whole-value newest-wins for simple buckets; id-level merge with tombstones
 // for weddings + docs so Vinny and Dad can both edit without losing work. ═══
 const KV_URL='https://order.angeliscatering.com/api/kv/';
-const KV_TOKEN='ctsync-3e1fd98589118f5578125e3eb676cced';
-async function kvGet(k){try{const r=await fetch(KV_URL+encodeURIComponent(k)+'?token='+KV_TOKEN);if(!r.ok)return null;return await r.json()}catch(e){return null}}
+// NEVER hardcode a key here — this page is served publicly from GitHub Pages, so
+  // anything in the source is readable by anyone with the URL, and it lives on in git
+  // history. Keys are pasted once per device and kept in localStorage, exactly like
+  // the Email tab's access key.
+  const KV_TOKEN=()=>localStorage.getItem('ct_kv_key')||'';
+async function kvGet(k){try{const r=await fetch(KV_URL+encodeURIComponent(k)+'?token='+encodeURIComponent(KV_TOKEN()));if(!r.ok)return null;return await r.json()}catch(e){return null}}
 const kvPushTimers={};
 const kvPending={}; // k -> {v,at} not yet sent (debounce window)
-function kvSend(k,p,keepalive){try{fetch(KV_URL+encodeURIComponent(k)+'?token='+KV_TOKEN,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:p.v,at:p.at}),keepalive:!!keepalive}).catch(()=>{})}catch(e){}}
+function kvSend(k,p,keepalive){try{fetch(KV_URL+encodeURIComponent(k)+'?token='+encodeURIComponent(KV_TOKEN()),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:p.v,at:p.at}),keepalive:!!keepalive}).catch(()=>{})}catch(e){}}
 function kvPush(k,v,at){kvPending[k]={v,at};clearTimeout(kvPushTimers[k]);kvPushTimers[k]=setTimeout(()=>{const p=kvPending[k];delete kvPending[k];if(p)kvSend(k,p,false)},1200)}
 // Closing/backgrounding the app used to kill pending pushes (the 1.2s debounce) — edits made right
 // before putting the iPad down stayed device-only. Flush everything the moment we lose the foreground.
@@ -3514,7 +3524,7 @@ function wedDefaultItems(){const it=[];let n=1;
 // ── schedule-app feed ──
 function wedFeedCache(){try{return JSON.parse(localStorage.getItem('ct_wed_feed')||'null')}catch(e){return null}}
 async function wedFetchFeed(){if(wed.loading)return;wed.loading=true;wed.feedErr=null;
-  try{const r=await fetch(WED_FEED+'?key='+encodeURIComponent(GMAIL_BACKEND_KEY));
+  try{const r=await fetch(WED_FEED+'?key='+encodeURIComponent(GMAIL_BACKEND_KEY()));
     const d=await r.json();
     if(!r.ok)throw new Error(d.error||('HTTP '+r.status));
     wed.feed=d;try{localStorage.setItem('ct_wed_feed',JSON.stringify({at:Date.now(),today:d.today,events:d.events}))}catch(e){}
@@ -3670,7 +3680,7 @@ async function wedTsLoad(fe){
   const key='ts'+fe.id;
   wed.tsRes={key,loading:true,err:null,data:null};paintWedTs();
   try{
-    const r=await fetch(WED_TS_FEED+'?date='+encodeURIComponent(fe.date)+'&key='+encodeURIComponent(GMAIL_BACKEND_KEY));
+    const r=await fetch(WED_TS_FEED+'?date='+encodeURIComponent(fe.date)+'&key='+encodeURIComponent(GMAIL_BACKEND_KEY()));
     const d=await r.json();
     if(!r.ok)throw new Error(d.error||('HTTP '+r.status));
     if(!wed.tsRes||wed.tsRes.key!==key)return;
@@ -3728,7 +3738,7 @@ async function wedSchedLoad(fe){
   const key='ev'+fe.id;
   wed.schedRes={key,loading:true,staff:[],reserves:[],max:fe.maxSignups,err:null};paintWedSched();
   try{
-    const r=await fetch(WED_FEED+'?event='+encodeURIComponent(fe.id)+'&key='+encodeURIComponent(GMAIL_BACKEND_KEY));
+    const r=await fetch(WED_FEED+'?event='+encodeURIComponent(fe.id)+'&key='+encodeURIComponent(GMAIL_BACKEND_KEY()));
     const d=await r.json();
     if(!r.ok)throw new Error(d.error||'schedule error');
     if(!wed.schedRes||wed.schedRes.key!==key)return;
@@ -5356,7 +5366,7 @@ function renderTabs(){const list=document.getElementById('tab-list');list.innerH
 // tip. Cloud-saved per period via the shared KV. Auto-fills from the nightly
 // tip-out calculator's cloud log; every cell is hand-overridable.
 const TIPS_LOG_URL='https://restaurant-scheduler-hh5e.onrender.com/api/tipout-log';
-const TIPS_LOG_KEY='tipout-roster-key-vinny-7k9m2x4p';
+const TIPS_LOG_KEY=()=>localStorage.getItem('ct_sched_key')||'';       // same scheduler key
 const TIPS_ROSTER_URL='https://restaurant-scheduler-hh5e.onrender.com/api/roster/employees';
 const EVENTS_TIPS_URL='https://restaurant-scheduler-hh5e.onrender.com/api/events-tips';
 const TIP_SECTIONS=['Server','Bartender','Busser','Food Runner','Weddings'];
@@ -5495,7 +5505,7 @@ async function tipsPullWeddingHours(auto){
   if(!auto)tipsSetStatus('Pulling wedding hours…','var(--text-dim)');
   const from=tipISO(tipsState.start), to=tipISO(tipsState.end);
   let people=[];
-  try{const r=await fetch(EVENTS_HOURS_URL+'?from='+encodeURIComponent(from)+'&to='+encodeURIComponent(to)+'&key='+encodeURIComponent(TIPS_LOG_KEY));const d=await r.json();people=d.people||[];}
+  try{const r=await fetch(EVENTS_HOURS_URL+'?from='+encodeURIComponent(from)+'&to='+encodeURIComponent(to)+'&key='+encodeURIComponent(TIPS_LOG_KEY()));const d=await r.json();people=d.people||[];}
   catch(e){if(!auto)tipsSetStatus('⚠ could not reach wedding hours','#f87171');return;}
   if(g!==tipsGen)return;
   if(!tipsState.hours)tipsState.hours={};
@@ -5657,7 +5667,7 @@ async function tipsPull(auto){
   const g=tipsGen;   // if the period changes mid-pull, don't write these cells into the new one
   if(!auto)tipsSetStatus('Pulling tip-outs…','var(--text-dim)');
   let log=[];
-  try{const r=await fetch(TIPS_LOG_URL+'?key='+encodeURIComponent(TIPS_LOG_KEY));const d=await r.json();log=d.log||[];}catch(e){if(!auto)tipsSetStatus('⚠ could not reach tip-out log','#f87171');return;}
+  try{const r=await fetch(TIPS_LOG_URL+'?key='+encodeURIComponent(TIPS_LOG_KEY()));const d=await r.json();log=d.log||[];}catch(e){if(!auto)tipsSetStatus('⚠ could not reach tip-out log','#f87171');return;}
   if(g!==tipsGen)return;
   const inPeriod={};tipDays().forEach(d=>inPeriod[tipDayLabel(d)]=true);
   // collapse to one entry per date (prefer finalized over draft, newest)
@@ -5699,7 +5709,7 @@ async function tipsPullWeddings(auto){
   if(!auto)tipsSetStatus('Pulling wedding tips…','var(--text-dim)');
   const from=tipISO(tipsState.start), to=tipISO(tipsState.end);
   let events=[];
-  try{const r=await fetch(EVENTS_TIPS_URL+'?from='+encodeURIComponent(from)+'&to='+encodeURIComponent(to)+'&key='+encodeURIComponent(TIPS_LOG_KEY));const d=await r.json();events=d.events||[];}
+  try{const r=await fetch(EVENTS_TIPS_URL+'?from='+encodeURIComponent(from)+'&to='+encodeURIComponent(to)+'&key='+encodeURIComponent(TIPS_LOG_KEY()));const d=await r.json();events=d.events||[];}
   catch(e){tipsSetStatus('⚠ could not reach wedding tips','#f87171');return;}
   if(g!==tipsGen)return;   // period changed mid-pull — abort
   const inPeriod={};tipDays().forEach(d=>inPeriod[tipDayLabel(d)]=true);
@@ -6644,7 +6654,7 @@ async function agendaLoad(force){
   if(!ag.orders&&!ag.feed){try{const c=JSON.parse(localStorage.getItem('ct_agenda')||'null');if(c){ag.orders=c.orders;ag.feed=c.feed}}catch(e){}}
   const [o,f]=await Promise.all([
     fetch(AG_ORDERS_API).then(r=>r.ok?r.json():null).catch(()=>null),
-    fetch(WED_FEED+'?key='+encodeURIComponent(GMAIL_BACKEND_KEY)).then(r=>r.ok?r.json():null).catch(()=>null)
+    fetch(WED_FEED+'?key='+encodeURIComponent(GMAIL_BACKEND_KEY())).then(r=>r.ok?r.json():null).catch(()=>null)
   ]);
   if(o)ag.orders=o; if(f)ag.feed=f;
   ag.err=((!o&&!ag.orders)||(!f&&!ag.feed))?'a calendar feed is offline':null;
@@ -7071,7 +7081,22 @@ function urlKey(e,id){if(e.key==='Enter')urlSave(id);if(e.key==='Escape')urlCanc
 function urlSave(id){const inp=document.getElementById(`ui-${id}`);if(!inp)return;const p=cfg.panels.find(x=>x.id===id);if(p){p.url=inp.value.trim();saveCfg()}editing=null;refreshBody(id)}
 function urlCancel(id){editing=null;refreshBody(id)}
 let draft=[];
-function openSettings(){draft=cfg.panels.map(p=>({...p}));renderEditList();renderGmailStatus();stampBuild();document.getElementById('overlay').classList.add('open')}
+// Access keys live on the device, not in the page. A missing key is the difference
+// between "the Watch Tower is broken" and "this iPad hasn't been set up yet" — say which.
+function ctKeysMissing(){const m=[];if(!localStorage.getItem('ct_kv_key'))m.push('Sync');if(!localStorage.getItem('ct_sched_key'))m.push('Schedule');if(!localStorage.getItem('ct_mail_key'))m.push('Email');return m}
+function setCtKeys(){
+  const cur=k=>localStorage.getItem(k)||'';
+  const kv=prompt('Sync key \u2014 saves and loads everything in the Watch Tower.\n(SYNC_TOKEN in Render \u2192 angelis-backend)',cur('ct_kv_key'));
+  if(kv!==null)kv.trim()?localStorage.setItem('ct_kv_key',kv.trim()):localStorage.removeItem('ct_kv_key');
+  const sc=prompt('Schedule key \u2014 weddings, time sheets and tips.\n(ROSTER_API_KEY in Render \u2192 restaurant-scheduler)',cur('ct_sched_key'));
+  if(sc!==null)sc.trim()?localStorage.setItem('ct_sched_key',sc.trim()):localStorage.removeItem('ct_sched_key');
+  const ml=prompt('Email key \u2014 the inboxes.\n(MAIL_TOKEN in Render \u2192 jarvis-voice)',cur('ct_mail_key'));
+  if(ml!==null)ml.trim()?localStorage.setItem('ct_mail_key',ml.trim()):localStorage.removeItem('ct_mail_key');
+  location.reload();
+}
+function openSettings(){draft=cfg.panels.map(p=>({...p}));renderEditList();renderGmailStatus();stampBuild();
+  const ks=document.getElementById('ct-keys-state');
+  if(ks){const m=ctKeysMissing();ks.textContent=m.length?('missing: '+m.join(', ')):'all set on this device';ks.style.color=m.length?'#ff6b6b':'var(--text-muted)';}document.getElementById('overlay').classList.add('open')}
 function renderGmailStatus(){
   const el=document.getElementById('gmail-status');if(!el)return;
   if(gmailValid()){
