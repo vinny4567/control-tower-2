@@ -5908,7 +5908,7 @@ const POS_URL_KEY='ct_pos_url';      // CRM portal (gift cards, customers)
 const POS_SRV_KEY='ct_pos_srv';      // POS server (checks, reports)
 let posS={sec:'items',url:localStorage.getItem(POS_URL_KEY)||'',srv:localStorage.getItem(POS_SRV_KEY)||'',
   health:'unknown',me:null,dash:null,err:'',card:null,cust:null,busy:false,
-  cat:null,catErr:'',q:'',catFilter:'all',gapsOnly:false,crmQ:'',crmResults:null,crmMember:null,
+  cat:null,catErr:'',q:'',catFilter:'all',gapsOnly:false,crmQ:'',crmResults:null,crmMember:null,demo:false,emp:null,
   rep:null,repDays:1,repErr:'',repBusy:false,showConn:false};
 
 const posBaseUrl=(u)=>(u||'').replace(/\/+$/,'');
@@ -5961,6 +5961,7 @@ function posSaveConn(){
 }
 function posSec(s){posS.sec=s;renderViewport();
   if(s==='items'||s==='printers')posLoadCatalog();
+  if(s==='employees'&&!posS.demo&&!posS.url)posBoot();
   if(s==='reports')posLoadReports();
   if(s==='grazie')posBoot();
 }
@@ -6162,6 +6163,113 @@ function posReportsHTML(){
   </div>`;
 }
 
+// ---- sample data -------------------------------------------------------------
+// So the screens can be designed and argued about with nothing running. Everything
+// here is invented; the banner says so on every screen that uses it, because a demo
+// number that gets mistaken for a real one is worse than no number at all.
+const POS_SAMPLE={
+  dash:{liability:{total_cents:1284750,cards_with_balance:214,cards_total:906},
+    today:{loaded_cents:35000,redeemed_cents:12500,count:9},customers:1347},
+  review:[{amount_cents:-2500,kind:'adjust',reason:'card demagnetized, moved balance to new card',who:'Vinny',when:'2026-08-29'},
+    {amount_cents:25000,kind:'load',check_id:null,card:'7001…4471',who:'Marco',when:'2026-08-29'},
+    {amount_cents:30000,kind:'load',check_id:'1183',card:'7001…9902',who:'Jennifer',when:'2026-08-28'}],
+  members:[
+    {id:'s1',first:'Maria',last:'Bianchi',phone:'6305550142',phone_pretty:'(630) 555-0142',email:'maria.b@example.com',
+     birthday:'04-11',anniversary:'06-02',created_at:'2019-03-14',source:'catering',marketing_ok:true,active:true,
+     tier_name:'Gold Rewards Member',next_tier:'Platinum Rewards Member',points_to_next:167,earned_this_year:833,balance:412,
+     rewards:[{name:'Free Dessert!',min_spend_cents:2500,expires_at:'2026-09-30',grant_id:'g1'},
+              {name:'$25 Reward',cost_points:250}],
+     history:[{created_at:'2026-08-24',kind:'earn',delta_points:47,check_id:'1146'},
+              {created_at:'2026-08-11',kind:'redeem',delta_points:-250,reason:'$25 Reward'},
+              {created_at:'2026-07-30',kind:'earn',delta_points:61,check_id:'0987'}]},
+    {id:'s2',first:'Tom',last:'Crowley',phone:'6304046396',phone_pretty:'(630) 404-6396',email:'tc@example.com',
+     birthday:'11-02',anniversary:null,created_at:'2024-08-26',source:'pos',marketing_ok:false,active:true,
+     tier_name:'Silver Rewards Member',next_tier:'Gold Rewards Member',points_to_next:212,earned_this_year:288,balance:288,
+     rewards:[],history:[{created_at:'2026-08-19',kind:'earn',delta_points:38,check_id:'1101'}]},
+    {id:'s3',first:'Patti',last:'Kuefler',phone:'6309130877',phone_pretty:'(630) 913-0877',email:null,
+     birthday:null,anniversary:'09-08',created_at:'2026-08-26',source:'party',marketing_ok:false,active:true,
+     tier_name:'Bronze Rewards Member',next_tier:'Silver Rewards Member',points_to_next:250,earned_this_year:0,balance:0,
+     rewards:[{name:'Free Dessert!',min_spend_cents:2500,expires_at:'2026-09-09',grant_id:'g3'}],history:[]}],
+  employees:[
+    {id:'e1',name:'Vinny Angeli',role:'owner',pos_number:'1',active:true,positions:['Manager'],pin_set:true},
+    {id:'e2',name:'Marco Ruiz',role:'manager',pos_number:'569',active:true,positions:['Manager','Bartender'],pin_set:true},
+    {id:'e3',name:'Jennifer Doyle',role:'server',pos_number:'7030',active:true,positions:['Server'],pin_set:true},
+    {id:'e4',name:'Priscilla Lagace',role:'server',pos_number:'7020',active:true,positions:['Server'],pin_set:true},
+    {id:'e5',name:'Angel Morales',role:'busser',pos_number:'56',active:true,positions:['Busser','Food Runner'],pin_set:false},
+    {id:'e6',name:'Cadence Doyle',role:'server',pos_number:'633',active:false,positions:['Server'],pin_set:false}],
+};
+function posDemoOn(){posS.demo=true;posS.crmResults=null;posS.crmMember=null;renderViewport()}
+function posDemoOff(){posS.demo=false;posS.crmResults=null;posS.crmMember=null;renderViewport()}
+const posDemoBanner=()=>`<div style="border:1px dashed #f59e0b;border-radius:10px;padding:9px 12px;margin-bottom:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+  <span style="font-size:13px;color:#f59e0b;font-weight:700">Sample data</span>
+  <span style="font-size:12px;color:var(--text-dim);flex:1">Invented records, for shaping the screen. None of it is real.</span>
+  <button onclick="posDemoOff()" style="${posBtn('#3f3f46')};padding:6px 11px;font-size:12px">Exit</button></div>`;
+const posDemoOffer=()=>`<button onclick="posDemoOn()" style="${posBtn('#3f3f46')}">Preview with sample data</button>`;
+
+// ---- Employees ---------------------------------------------------------------
+// Angeli's already has two rosters: the scheduler (who works here and when) and the
+// timesheet app's worker_ids list (Paychex IDs for 212 people). This is deliberately
+// NOT a third. It holds only what the POS itself has to know — who may sign in to a
+// register, and what they are allowed to do once they are there.
+const POS_ROLES={
+  owner:  {label:'Owner',   can:['Everything','Add and remove staff','Change permissions']},
+  manager:{label:'Manager', can:['Void a sent item','Adjust points and balances','Load a card with no check','Open the back office','Comp a check']},
+  server: {label:'Server',  can:['Ring in orders and fire courses','Take payment','Redeem a gift card or reward against a check']},
+  busser: {label:'Busser',  can:['Clock in and out']},
+};
+function posEmpRows(){return posS.demo?POS_SAMPLE.employees:(posS.emp||[])}
+function posEmployeesHTML(){
+  if(!posS.demo&&!posS.url)return `<div style="${posCardCss};max-width:620px">
+    <div style="font-weight:800;font-size:16px;margin-bottom:6px">Staff records live on the POS server</div>
+    <div style="color:var(--text-dim);font-size:13px;line-height:1.6;margin-bottom:12px">
+      Who can sign in to a register, and what they may do once they are there. PINs are stored hashed and are never displayed — not here, not anywhere.
+      <div style="margin-top:10px;color:var(--text-muted);font-size:12px">This is not a third roster. The <b>scheduler</b> stays the source of truth for who works here, and the <b>timesheet app</b> for Paychex IDs; this holds only the register's own permissions.</div>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">${posDemoOffer()}
+      <button onclick="posBoot()" style="${posBtn('#f59e0b')}">Look again</button></div></div>`;
+  const rows=posEmpRows();
+  const active=rows.filter(e=>e.active),inactive=rows.filter(e=>!e.active);
+  const card=(e)=>`<div style="display:flex;gap:10px;align-items:baseline;padding:9px 0;border-top:1px solid var(--border);font-size:14px;flex-wrap:wrap;${e.active?'':'opacity:.55'}">
+      <span style="flex:1;min-width:150px;font-weight:600">${esc(e.name)}
+        <div style="font-size:11px;color:var(--text-muted)">${esc((e.positions||[]).join(' · '))}</div></span>
+      <span style="width:110px"><span style="font-size:11px;font-weight:700;color:${e.role==='owner'||e.role==='manager'?'#f59e0b':'var(--text-dim)'};border:1px solid currentColor;border-radius:6px;padding:1px 6px">${esc((POS_ROLES[e.role]||{}).label||e.role)}</span></span>
+      <span style="width:80px;font-variant-numeric:tabular-nums;color:var(--text-dim);font-size:13px">#${esc(String(e.pos_number||'—'))}</span>
+      <span style="width:90px;font-size:12px;color:${e.pin_set?'var(--text-dim)':'#ef4444'}">${e.pin_set?'PIN set':'no PIN'}</span>
+    </div>`;
+  return `${posS.demo?posDemoBanner():''}
+  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+    ${posStat('On the register',String(active.length),'can sign in today')}
+    ${posStat('Managers',String(active.filter(e=>e.role==='manager'||e.role==='owner').length),'can void and comp')}
+    ${posStat('No PIN yet',String(active.filter(e=>!e.pin_set).length),'cannot sign in')}
+    ${posStat('Inactive',String(inactive.length),'kept for the record')}
+  </div>
+  <div style="${posCardCss};margin-bottom:14px">
+    <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:4px">
+      <span style="font-weight:800;font-size:15px">Who can use the register</span>
+      <span style="margin-left:auto;font-size:12px;color:var(--text-muted)">PINs are hashed — never shown, only replaced</span>
+    </div>
+    <div style="display:flex;gap:10px;padding:6px 0;font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px">
+      <span style="flex:1;min-width:150px">Name</span><span style="width:110px">Role</span><span style="width:80px">POS #</span><span style="width:90px">Sign-in</span></div>
+    ${active.map(card).join('')}
+    ${inactive.length?`<div style="margin-top:14px;font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">No longer working</div>${inactive.map(card).join('')}`:''}
+  </div>
+  <div style="${posCardCss};margin-bottom:14px">
+    <div style="font-weight:800;font-size:15px;margin-bottom:4px">What each role may do</div>
+    <div style="color:var(--text-dim);font-size:12px;margin-bottom:10px">These are enforced by the server, not by hiding buttons — a void without a manager is refused even if someone finds the screen.</div>
+    ${Object.entries(POS_ROLES).map(([k,r])=>`<div style="padding:8px 0;border-top:1px solid var(--border);font-size:14px">
+      <div style="font-weight:700;margin-bottom:2px">${esc(r.label)}</div>
+      <div style="color:var(--text-dim);font-size:13px">${r.can.map(esc).join(' · ')}</div></div>`).join('')}
+  </div>
+  <div style="${posCardCss}">
+    <div style="font-weight:800;font-size:15px;margin-bottom:4px">Where these names come from</div>
+    <div style="color:var(--text-dim);font-size:13px;line-height:1.6">
+      The <b>scheduler</b> stays the source of truth for who works here — it already exposes the active roster, and the POS should read it rather than keep a second list that drifts.
+      The <b>timesheet app</b> owns Paychex worker IDs. This screen adds only what the register needs: a PIN and a permission level.
+      <div style="margin-top:8px;color:var(--text-muted);font-size:12px">The POS # column is the number that shows up beside a transaction — the same kind of id that appears on gift card history in AppSuite today.</div>
+    </div>
+  </div>`;
+}
+
 // ---- Grazie (gift cards + customers, via the CRM portal) --------------------
 async function posBoot(){
   if(!posS.url&&!posMixed()){await posFindLocal('portal')}
@@ -6192,6 +6300,11 @@ async function posFindCust(){const q=((document.getElementById('pos-cust')||{}).
   const r=await posApi('/api/customer?q='+encodeURIComponent(q));posS.cust=r.body;renderViewport()}
 
 function posGrazieHTML(){
+  if(posS.demo){
+    const S=POS_SAMPLE;
+    posS.dash={...S.dash,review:S.review};
+    return posDemoBanner()+posCrmBodyHTML(posS.dash);
+  }
   if(!posS.url)return `<div style="${posCardCss};max-width:620px">
     <div style="font-weight:800;font-size:16px;margin-bottom:6px">The portal isn't running</div>
     <div style="color:var(--text-dim);font-size:13px;line-height:1.6;margin-bottom:12px">
@@ -6204,6 +6317,7 @@ function posGrazieHTML(){
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap">
       <button onclick="posBoot()" style="${posBtn('#f59e0b')}">Look again</button>
+      ${posDemoOffer()}
       <button onclick="posToggleConn()" style="${posBtn('#3f3f46')}">Enter an address</button>
     </div></div>`;
   if(posMixed())return `<div style="${posCardCss};max-width:560px"><div style="font-weight:800;margin-bottom:6px">That address can't be reached from here</div>
@@ -6223,7 +6337,11 @@ function posGrazieHTML(){
       <input id="pos-pass" type="password" autocomplete="current-password" placeholder="password" style="${posInput}" onkeydown="if(event.key==='Enter')posLogin()">
       <button onclick="posLogin()" style="${posBtn('#f59e0b')}" ${posS.busy?'disabled':''}>${posS.busy?'…':'Sign in'}</button>
       ${posS.err?`<div style="color:#ef4444;font-size:13px">${esc(posS.err)}</div>`:''}</div></div>`;
-  const d=posS.dash||{},L=d.liability||{},T=d.today||{},rev=d.review||[];
+  return posCrmBodyHTML(posS.dash||{});
+}
+
+function posCrmBodyHTML(d){
+  const L=d.liability||{},T=d.today||{},rev=d.review||[];
   return `
   <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
     ${posStat('Gift card liability',posMoney(L.total_cents),`${L.cards_with_balance||0} of ${L.cards_total||0} cards carry a balance`)}
@@ -6265,11 +6383,19 @@ async function posCrmSearch(){
   const q=((document.getElementById('pos-crm-q')||{}).value||'').trim();
   posS.crmQ=q;posS.crmMember=null;
   if(!q){posS.crmResults=null;renderViewport();return}
+  if(posS.demo){
+    const t=q.toLowerCase(),d=t.replace(/\D/g,'');
+    const hits=POS_SAMPLE.members.filter(m=>`${m.first} ${m.last}`.toLowerCase().includes(t)
+      ||(m.email||'').toLowerCase().includes(t)||(d.length>=3&&m.phone.includes(d)));
+    posS.crmResults={count:hits.length,shown:hits.length,customers:hits};renderViewport();return;
+  }
   const r=await posApi('/api/customers?q='+encodeURIComponent(q));
   posS.crmResults=r.ok?r.body:{count:0,customers:[],error:r.body.error};
   renderViewport();
 }
 async function posCrmOpen(id){
+  if(posS.demo){const m=POS_SAMPLE.members.find(x=>x.id===id);
+    posS.crmMember=m?{customer:m,...m}:null;renderViewport();return}
   const r=await posApi('/api/customers/detail?id='+encodeURIComponent(id));
   posS.crmMember=r.ok?r.body:null;
   if(!r.ok)posS.err=r.body.error||'could not load that member';
@@ -6349,7 +6475,7 @@ function posResultHTML(r,kind){
 }
 
 // ---- shell ------------------------------------------------------------------
-const POS_SECTIONS=[['items','Menu items'],['printers','Printers'],['reports','Reports'],['grazie','CRM']];
+const POS_SECTIONS=[['items','Menu items'],['printers','Printers'],['reports','Reports'],['grazie','CRM'],['employees','Employees']];
 function posConnHTML(){
   return `<div style="${posCardCss};margin-bottom:14px">
     <div style="font-weight:800;font-size:15px;margin-bottom:6px">Connections</div>
@@ -6365,7 +6491,7 @@ function posConnHTML(){
 function posHTML(){
   const nav=POS_SECTIONS.map(([k,l])=>`<button onclick="posSec('${k}')" style="${posBtn(posS.sec===k?'#f59e0b':'#3f3f46')};padding:9px 15px;font-size:14px">${l}</button>`).join('');
   const who=(posS.me&&posS.health==='ok'&&posS.sec==='grazie')?`<span style="font-size:13px;color:var(--text-dim)">${esc(posS.me.username)}</span><button onclick="posLogout()" style="${posBtn('#3f3f46')};padding:7px 12px;font-size:13px">Sign out</button>`:'';
-  const body=posS.sec==='items'?posItemsHTML():posS.sec==='printers'?posPrintersHTML():posS.sec==='reports'?posReportsHTML():posGrazieHTML();
+  const body=posS.sec==='items'?posItemsHTML():posS.sec==='printers'?posPrintersHTML():posS.sec==='reports'?posReportsHTML():posS.sec==='employees'?posEmployeesHTML():posGrazieHTML();
   // #viewport is fixed and overflow:hidden, so every tab brings its own scroller —
   // without one, anything past the fold is simply clipped.
   return `<div style="height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch">
