@@ -6178,6 +6178,25 @@ function posReportsHTML(){
 // here is invented; the banner says so on every screen that uses it, because a demo
 // number that gets mistaken for a real one is worse than no number at all.
 const POS_SAMPLE={
+  campaigns:{
+    due_today_total:4, to_notify_today:3,
+    multipliers:[{id:'double_tuesday',name:'Double Point Tuesdays',weekday:2,multiplier:2,active_today:true}],
+    campaigns:[
+      {id:'birthday',name:'Happy Birthday!',trigger:{type:'before_birthday',days:7},days_valid:14,offer_id:'bday_10_off',
+       offer:{name:'Happy Birthday! $10.00 OFF',kind:'amount_off',value_cents:1000,min_spend_cents:0},missing_offer:false,due_today:2},
+      {id:'anniversary',name:'Happy Anniversary',trigger:{type:'before_anniversary',days:7},days_valid:14,offer_id:'anniv_dessert',
+       offer:{name:'Free Dessert (Happy Anniversary)',kind:'free_item',item:'Any dessert',min_spend_cents:0},missing_offer:false,due_today:0},
+      {id:'drip1',name:'Drip 1 — welcome',trigger:{type:'after_signup',days:1},days_valid:14,offer_id:'welcome_dessert',
+       offer:{name:'Free Dessert!',kind:'free_item',item:'Any dessert',min_spend_cents:2500},missing_offer:false,due_today:1},
+      {id:'drip5',name:'Drip 5 — 30 days',trigger:{type:'lapsed',days:30},days_valid:10,offer_id:'five_off',
+       offer:{name:'$5 Off on us',kind:'amount_off',value_cents:500,min_spend_cents:0},missing_offer:false,due_today:1},
+      {id:'drip6',name:'Drip 6 — miss you (45 days)',trigger:{type:'lapsed',days:45},days_valid:10,offer_id:'five_off',
+       offer:{name:'$5 Off on us',kind:'amount_off',value_cents:500,min_spend_cents:0},missing_offer:false,due_today:0},
+      {id:'drip7',name:'Drip 7 — miss you (60 days)',trigger:{type:'lapsed',days:60},days_valid:14,offer_id:'ten_off',
+       offer:{name:'$10 off',kind:'amount_off',value_cents:1000,min_spend_cents:0},missing_offer:false,due_today:0}],
+    catalog:[{id:'off10',name:'$10 Reward',cost_points:100},
+             {id:'bday_10_off',name:'Happy Birthday! $10.00 OFF',cost_points:0}]
+  },
   dash:{liability:{total_cents:1284750,cards_with_balance:214,cards_total:906},
     today:{loaded_cents:35000,redeemed_cents:12500,count:9},customers:1347},
   review:[{amount_cents:-2500,kind:'adjust',reason:'card demagnetized, moved balance to new card',who:'Vinny',when:'2026-08-29'},
@@ -6292,7 +6311,7 @@ async function posBoot(){
   }catch(e){posS.health='down';posS.err=String(e&&e.message||e)}
   renderViewport();
 }
-async function posLoadDash(){const d=await posApi('/api/dashboard');if(d.ok)posS.dash=d.body}
+async function posLoadDash(){const d=await posApi('/api/dashboard');if(d.ok){posS.dash=d.body;posLoadCampaigns()}}
 async function posLogin(){
   const u=(document.getElementById('pos-user')||{}).value||'';
   const p=(document.getElementById('pos-pass')||{}).value||'';
@@ -6313,6 +6332,7 @@ function posGrazieHTML(){
   if(posS.demo){
     const S=POS_SAMPLE;
     posS.dash={...S.dash,review:S.review};
+    posS.campaigns=S.campaigns;
     return posDemoBanner()+posCrmBodyHTML(posS.dash);
   }
   if(!posS.url)return `<div style="${posCardCss};max-width:620px">
@@ -6378,11 +6398,76 @@ function posCrmBodyHTML(d){
         <span style="color:var(--text-muted);font-size:12px">${esc((t.who||'')+' · '+String(t.when||'').slice(0,10))}</span>
       </div>`).join(''):'<div style="color:var(--text-dim);font-size:14px">Nothing flagged.</div>'}
   </div>
+  ${posCampaignsHTML()}
   <div style="${posCardCss}">
     <div style="font-weight:800;font-size:15px;margin-bottom:8px">Look up a gift card</div>
-    <div style="display:flex;gap:8px;max-width:420px"><input id="pos-card" placeholder="last 4–6 digits" style="${posInput};flex:1" onkeydown="if(event.key==='Enter')posFindCard()"><button onclick="posFindCard()" style="${posBtn('#3f3f46')}">Find</button></div>
+    <div style="display:flex;gap:8px;max-width:420px"><input id="pos-card" placeholder="last 7 digits" style="${posInput};flex:1" onkeydown="if(event.key==='Enter')posFindCard()"><button onclick="posFindCard()" style="${posBtn('#3f3f46')}">Find</button></div>
+    <div style="color:var(--text-dim);font-size:12px;margin-top:6px">Seven digits never collides across the 6,441 live cards. Fewer works — it asks for more when two cards match.</div>
     ${posS.card?posResultHTML(posS.card,'card'):''}
   </div>`;
+}
+
+// ---- offers & campaigns ------------------------------------------------------
+// What is actually running, read from the CRM. AppSuite lists thirteen campaigns; only
+// these six fire on a trigger. The rest were all-member announcements with no offer, plus
+// three tier campaigns pointing at thresholds that were never configured.
+const posTrigWords={before_birthday:'7 days before a birthday',before_anniversary:'7 days before an anniversary',
+  after_signup:'the day after signing up',lapsed:'lapsed since last visit'};
+function posTrigger(t){
+  const w=posTrigWords[t.type]||t.type;
+  return t.type==='lapsed' ? `${t.days} days since last visit` : w;
+}
+function posOfferWorth(o){
+  if(!o) return '—';
+  if(o.kind==='amount_off') return posMoney(o.value_cents);
+  if(o.kind==='percent_off') return (o.percent||0)+'% off';
+  return o.item||'free item';
+}
+function posCampaignsHTML(){
+  const C=posS.campaigns;
+  if(!C) return `<div style="${posCardCss};margin-bottom:14px">
+    <div style="font-weight:800;font-size:15px;margin-bottom:4px">Offers &amp; campaigns</div>
+    <div style="color:var(--text-dim);font-size:13px">Loading…</div></div>`;
+  const mult=(C.multipliers||[]).filter(m=>m.active_today);
+  return `<div style="${posCardCss};margin-bottom:14px">
+    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px">
+      <div style="font-weight:800;font-size:15px">Offers &amp; campaigns</div>
+      ${mult.length?`<span style="font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:5px;background:rgba(245,158,11,.15);color:#f59e0b">${esc(mult[0].name)} — active today</span>`:''}
+    </div>
+    <div style="color:var(--text-dim);font-size:12px;margin-bottom:10px">
+      ${(C.campaigns||[]).length} campaigns fire on a trigger. ${C.due_today_total||0} member${C.due_today_total===1?'':'s'} qualify today${C.to_notify_today?`, ${C.to_notify_today} opted in to email`:''}.
+    </div>
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;min-width:520px">
+      <thead><tr style="text-align:left;color:var(--text-muted);font-size:11px;letter-spacing:.06em;text-transform:uppercase">
+        <th style="padding:6px 8px 6px 0">Campaign</th><th style="padding:6px 8px">Fires</th>
+        <th style="padding:6px 8px">Offer</th><th style="padding:6px 8px">Worth</th>
+        <th style="padding:6px 8px;text-align:right">Good for</th><th style="padding:6px 0;text-align:right">Due today</th></tr></thead>
+      <tbody>${(C.campaigns||[]).map(c=>`<tr style="border-top:1px solid var(--border)">
+        <td style="padding:8px 8px 8px 0;font-weight:700">${esc(c.name)}</td>
+        <td style="padding:8px;color:var(--text-dim)">${esc(posTrigger(c.trigger))}</td>
+        <td style="padding:8px">${esc(c.offer?c.offer.name:c.offer_id)}${c.missing_offer?' <span style="color:#ef4444;font-weight:800">offer missing</span>':''}${c.offer&&c.offer.min_spend_cents?`<div style="color:var(--text-muted);font-size:11px">min ${posMoney(c.offer.min_spend_cents)}</div>`:''}</td>
+        <td style="padding:8px;font-variant-numeric:tabular-nums">${esc(posOfferWorth(c.offer))}</td>
+        <td style="padding:8px;text-align:right;color:var(--text-dim)">${c.days_valid}d</td>
+        <td style="padding:8px 0;text-align:right;font-weight:800;font-variant-numeric:tabular-nums;${c.due_today?'color:#f59e0b':'color:var(--text-muted)'}">${c.due_today||0}</td></tr>`).join('')}</tbody>
+    </table></div>
+    <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:10px">
+      <div style="font-weight:700;font-size:13px;margin-bottom:6px">Points catalogue</div>
+      ${(C.catalog||[]).filter(r=>r.cost_points>0).map(r=>`<div style="display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:4px 0">
+        <span>${esc(r.name)}</span><span style="color:var(--text-dim);font-variant-numeric:tabular-nums">${r.cost_points} pts</span></div>`).join('')
+        ||'<div style="color:var(--text-dim);font-size:13px">Nothing members can spend points on yet.</div>'}
+    </div>
+    <div style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px;color:var(--text-muted);font-size:12px;line-height:1.6">
+      Not carried over from AppSuite: <b>3 tier campaigns</b> (Silver/Gold/Platinum — their thresholds were never configured there)
+      and <b>11 offers</b> no campaign used. Wine Wednesdays, Half Priced apps and the 30-year celebration are marketing messages,
+      not things the register enforces.
+    </div>
+  </div>`;
+}
+async function posLoadCampaigns(){
+  if(posS.demo){posS.campaigns=POS_SAMPLE.campaigns;return renderViewport()}
+  try{ const r=await posApi('/api/campaigns'); posS.campaigns = r.ok ? r.body : {campaigns:[],catalog:[],multipliers:[]}; }
+  catch(e){ posS.campaigns={campaigns:[],catalog:[],multipliers:[]}; }
+  renderViewport();
 }
 
 // ---- members ----------------------------------------------------------------
