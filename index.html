@@ -6032,7 +6032,9 @@ function posItemsBodyHTML(){
   for(const r of shown){const k=r.cat||'—';if(!byCat.has(k)){byCat.set(k,[]);groups.push(k)}byCat.get(k).push(r)}
   const rowHTML=r=>`<div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:14px;align-items:baseline">
       <span style="flex:1;min-width:150px">${esc(r.name)}${r.hidden?' <span style="color:var(--text-muted);font-size:11px">(hidden)</span>':''}${posGapTags(r.gaps)}
-        ${r.course?`<div style="font-size:11px;color:var(--text-muted)">course ${r.course}</div>`:''}</span>
+        ${r.source==='choice'
+          ? `<div style="font-size:11px;color:var(--text-muted)">${esc(r.prompt||'')} prompt${r.required?' · required':''}${(r.usedBy||[]).length>1?` · on ${r.usedBy.length} items`:(r.usedBy&&r.usedBy[0]?` · on ${esc(r.usedBy[0])}`:'')}</div>`
+          : r.course?`<div style="font-size:11px;color:var(--text-muted)">course ${r.course}</div>`:''}</span>
       <span style="width:70px;text-align:right;font-variant-numeric:tabular-nums">${r.cents?posMoney(r.cents):'<span style="color:var(--text-muted)">—</span>'}</span>
       <span style="width:150px;font-size:12px;color:var(--text-dim)">${esc((r.printers||[]).join(', ')||'—')}<div style="font-size:11px;color:var(--text-muted)">${esc(r.printClassLabel||'')}</div></span>
       <span style="width:70px;font-variant-numeric:tabular-nums;font-size:13px;color:${r.num?'var(--text)':'var(--text-muted)'}">${esc(String(r.num||'—'))}</span>
