@@ -6024,13 +6024,27 @@ function posItemsBodyHTML(){
   const head=`<div style="display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px">
     <span style="flex:1;min-width:150px">Item</span><span style="width:70px;text-align:right">Price</span>
     <span style="width:150px">Prints at</span><span style="width:70px">Micros #</span></div>`;
-  const body=shown.map(r=>`<div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:14px;align-items:baseline">
+  // Grouped under category headings rather than run together as one long list. The
+  // menu HAS a shape — appetizers, then pasta, then the bar — and a flat list of 776
+  // rows hides it. The heading carries the count and how many rows in it still need
+  // data, so a category with gaps is visible without opening it.
+  const groups=[],byCat=new Map();
+  for(const r of shown){const k=r.cat||'—';if(!byCat.has(k)){byCat.set(k,[]);groups.push(k)}byCat.get(k).push(r)}
+  const rowHTML=r=>`<div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:14px;align-items:baseline">
       <span style="flex:1;min-width:150px">${esc(r.name)}${r.hidden?' <span style="color:var(--text-muted);font-size:11px">(hidden)</span>':''}${posGapTags(r.gaps)}
-        <div style="font-size:11px;color:var(--text-muted)">${esc(r.cat||'')}${r.course?' · course '+r.course:''}</div></span>
+        ${r.course?`<div style="font-size:11px;color:var(--text-muted)">course ${r.course}</div>`:''}</span>
       <span style="width:70px;text-align:right;font-variant-numeric:tabular-nums">${r.cents?posMoney(r.cents):'<span style="color:var(--text-muted)">—</span>'}</span>
       <span style="width:150px;font-size:12px;color:var(--text-dim)">${esc((r.printers||[]).join(', ')||'—')}<div style="font-size:11px;color:var(--text-muted)">${esc(r.printClassLabel||'')}</div></span>
       <span style="width:70px;font-variant-numeric:tabular-nums;font-size:13px;color:${r.num?'var(--text)':'var(--text-muted)'}">${esc(String(r.num||'—'))}</span>
-    </div>`).join('');
+    </div>`;
+  const catHeader=(k,list)=>{
+    const gaps=list.filter(r=>(r.gaps||[]).length).length;
+    return `<div style="display:flex;align-items:baseline;gap:8px;margin:16px 0 2px;padding-bottom:5px;border-bottom:2px solid var(--border)">
+      <span style="font-size:13px;font-weight:800;letter-spacing:.4px;text-transform:uppercase">${esc(k)}</span>
+      <span style="font-size:12px;color:var(--text-muted)">${list.length} item${list.length===1?'':'s'}</span>
+      ${gaps?`<span style="font-size:11px;font-weight:700;color:#f59e0b;margin-left:auto">${gaps} need data</span>`:''}</div>`;
+  };
+  const body=groups.map(k=>catHeader(k,byCat.get(k))+byCat.get(k).map(rowHTML).join('')).join('');
   // Never let a cap look like the whole answer.
   const more=rows.length>shown.length?`<div style="padding:10px 0;color:var(--text-dim);font-size:13px">Showing ${shown.length} of ${rows.length} matches — narrow the search to see the rest.</div>`:
     `<div style="padding:10px 0;color:var(--text-muted);font-size:12px">${rows.length} item${rows.length===1?'':'s'}</div>`;
@@ -6043,7 +6057,7 @@ function posItemsHTML(){
   const cats=[...new Set(c.items.map(i=>i.cat))].sort();
   return `
   <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
-    ${posStat('Items',String(s.total||0),'menu + condiments')}
+    ${posStat('Items',String(s.total||0),'menu + food mods')}
     ${posStat('No price',String(s.noPrice||0),'priced items still at $0')}
     ${posStat('No Micros #',String(s.noNumber||0),'needed for the export')}
     ${posStat('No printer',String(s.noPrinter||0),'would print nowhere')}
