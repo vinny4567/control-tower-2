@@ -6162,26 +6162,26 @@ function posItemsBodyHTML(){
   if(posS.catFilter===POS_GROUPS_CAT)return posGroupsHTML();
   const rows=posItemRows();
   const shown=rows.slice(0,POS_ITEM_CAP);
-  const head=`<div style="display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px">
-    <span style="flex:1;min-width:150px">Item</span><span style="width:88px;text-align:right">Price</span>
-    <span style="width:186px">Prints at</span></div>`;
+  const head=`<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;max-width:600px">
+    <span style="width:300px">Item</span><span style="width:82px;text-align:right">Price</span>
+    <span style="width:186px;padding-left:14px">Prints at</span></div>`;
   // Grouped under category headings rather than run together as one long list. The
   // menu HAS a shape — appetizers, then pasta, then the bar — and a flat list of 776
   // rows hides it. The heading carries the count and how many rows in it still need
   // data, so a category with gaps is visible without opening it.
   const groups=[],byCat=new Map();
   for(const r of shown){const k=r.cat||'—';if(!byCat.has(k)){byCat.set(k,[]);groups.push(k)}byCat.get(k).push(r)}
-  const rowHTML=r=>`<div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:14px;align-items:baseline">
-      <span style="flex:1;min-width:150px">${esc(r.name)}${r.hidden?' <span style="color:var(--text-muted);font-size:11px">(hidden)</span>':''}${posGapTags(posRowGaps(r))}
+  const rowHTML=r=>`<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:14px;align-items:baseline;max-width:600px">
+      <span style="width:300px">${esc(r.name)}${r.hidden?' <span style="color:var(--text-muted);font-size:11px">(hidden)</span>':''}${posGapTags(posRowGaps(r))}
         ${r.source==='choice'
           ? `<div style="font-size:11px;color:var(--text-muted)">${esc(r.prompt||'')} prompt${r.required?' · required':''}${(r.usedBy||[]).length>1?` · on ${r.usedBy.length} items`:(r.usedBy&&r.usedBy[0]?` · on ${esc(r.usedBy[0])}`:'')}</div>`
           : r.course?`<div style="font-size:11px;color:var(--text-muted)">course ${r.course}</div>`:''}</span>
-      <span style="width:88px;text-align:right">${posPriceCell(r)}</span>
-      <span style="width:186px">${posRouteCell(r)}</span>
+      <span style="width:82px;text-align:right">${posPriceCell(r)}</span>
+      <span style="width:186px;padding-left:14px">${posRouteCell(r)}</span>
     </div>`;
   const catHeader=(k,list)=>{
     const gaps=list.filter(r=>posRowGaps(r).length).length;
-    return `<div style="display:flex;align-items:baseline;gap:8px;margin:16px 0 2px;padding-bottom:5px;border-bottom:2px solid var(--border)">
+    return `<div style="display:flex;align-items:baseline;gap:8px;margin:14px 0 2px;padding-bottom:5px;border-bottom:2px solid var(--border);max-width:600px">
       <span style="font-size:13px;font-weight:800;letter-spacing:.4px;text-transform:uppercase">${esc(k)}</span>
       <span style="font-size:12px;color:var(--text-muted)">${list.length} item${list.length===1?'':'s'}</span>
       ${gaps?`<span style="font-size:11px;font-weight:700;color:#f59e0b;margin-left:auto">${gaps} need data</span>`:''}</div>`;
@@ -6207,14 +6207,20 @@ function posItemsHTML(){
   <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
     ${posStat('Items',String(s.total||0),'menu + food mods')}
     ${posStat('No price',String(posNoPriceNow()),'priced items still at $0')}
-    ${posStat('Pending',String(posPendingCount()),'not live in the register yet')}
-    ${posStat('No printer',String(s.noPrinter||0),'would print nowhere')}
+
+    <button onclick="posCopyChanges()" title="Copy every change made here, to paste to Claude"
+      style="${posCardCss};padding:14px 16px;min-width:150px;flex:1;text-align:left;cursor:pointer;
+        font-family:inherit;border-color:${posPendingCount()?'#22c55e':'var(--border)'};
+        background:${posPendingCount()?'rgba(34,197,94,0.10)':'var(--surface)'}">
+      <div style="font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.6px">Copy for Claude</div>
+      <div style="font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;margin-top:4px;color:${posPendingCount()?'#22c55e':'var(--text-muted)'}">${posPendingCount()}</div>
+      <div id="pos-copy-note" style="font-size:12px;color:var(--text-dim);margin-top:2px">${posPendingCount()?'tap to copy, then paste to Claude':'nothing changed yet'}</div>
+    </button>
   </div>
   ${posPendingCount()?`<div style="border:1px solid #f59e0b;border-radius:12px;background:rgba(245,158,11,0.10);padding:12px 16px;margin-bottom:14px">
     <div style="font-weight:800;font-size:14px;color:#f59e0b">${posPendingCount()} change${posPendingCount()===1?'':'s'} made here are NOT live on the iPads</div>
     <div style="font-size:13px;color:var(--text-dim);margin-top:3px">Prices, print routing and mod groups are saved and synced across your devices, but the register still runs off the menu file.</div>
-    <button onclick="posCopyChanges()" style="${posBtn('#f59e0b')};margin-top:10px;font-size:13px;padding:8px 14px">Copy for Claude</button>
-    <span id="pos-copy-note" style="font-size:12px;color:var(--text-dim);margin-left:8px"></span>
+    <div style="font-size:12px;color:var(--text-muted);margin-top:6px">Use <b>Copy for Claude</b> below, then paste it into the chat.</div>
   </div>`:''}
   <div style="${posCardCss}">
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
@@ -6267,6 +6273,8 @@ function posPendingCount(){
 // Getting everything typed here into the build. No token changes hands — the page
 // puts a plain list on the clipboard, Vinny pastes it, it goes into the code.
 function posCopyChanges(){
+  const note=()=>document.getElementById('pos-copy-note');
+  if(!posPendingCount()){const n=note();if(n)n.textContent='nothing changed yet';return;}
   const c=posS.cat||{items:[]};
   const byKey={};for(const r of c.items)byKey[r.key]=r;
   const L=[];
@@ -6290,8 +6298,7 @@ function posCopyChanges(){
       const bits=[...a.cats.map(x=>'all '+x),...a.items];
       L.push(`  ${g?g.name:k}: ${bits.join(', ')}`);}}
   const text='WATCH TOWER — PENDING POS CHANGES\n'+L.join('\n');
-  const note=document.getElementById('pos-copy-note');
-  const done=(ok)=>{if(note)note.textContent=ok?'copied — paste it to Claude':'could not copy';};
+  const done=(ok)=>{const n=note();if(n)n.textContent=ok?'copied — paste it to Claude':'could not copy';};
   if(navigator.clipboard&&navigator.clipboard.writeText){
     navigator.clipboard.writeText(text).then(()=>done(true)).catch(()=>done(false));
   }else done(false);
