@@ -6073,17 +6073,18 @@ async function posLoadPrices(){
   // Fetch everything, compare it to what is already on screen, and only redraw when
   // something actually differs. A reload that changes nothing now changes nothing.
   const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
-  const [r,g,ng,at,rt,pc,nm,gn,gd,ml,dm,cc,mn]=await Promise.all([
+  const [r,g,ng,at,rt,pc,nm,gn,gd,ml,dm,cc,mn,dg]=await Promise.all([
     kvGet('ct_pos_prices'),kvGet('ct_pos_group_mods'),kvGet('ct_pos_new_groups'),
     kvGet('ct_pos_group_attach'),kvGet('ct_pos_routing'),kvGet('ct_pos_print_classes'),
     kvGet('ct_pos_new_mods'),kvGet('ct_pos_group_names'),kvGet('ct_pos_group_detach'),
     kvGet('ct_pos_mod_letters'),kvGet('ct_pos_deleted_mods'),kvGet('ct_pos_choice_cuts'),
-    kvGet('ct_pos_mod_names')]);
+    kvGet('ct_pos_mod_names'),kvGet('ct_pos_deleted_groups')]);
   const next={
     prices:(r&&r.v)||{}, mods:(g&&g.v)||{}, groups:(ng&&ng.v)||[], attach:(at&&at.v)||{},
     routing:(rt&&rt.v)||{}, classes:(pc&&pc.v)||[], newMods:(nm&&nm.v)||[],
     names:(gn&&gn.v)||{}, detach:(gd&&gd.v)||{}, letters:(ml&&ml.v)||{},
     deleted:(dm&&dm.v)||[], cuts:(cc&&cc.v)||{}, modNames:(mn&&mn.v)||{},
+    delGroups:(dg&&dg.v)||[],
   };
   const changed=!same(next.prices,posPrices)||!same(next.mods,posGroupMods)
     ||!same(next.groups,posNewGroups)||!same(next.attach,posGroupAttach)
@@ -6091,12 +6092,12 @@ async function posLoadPrices(){
     ||!same(next.newMods,posNewMods)||!same(next.names,posGroupNames)
     ||!same(next.detach,posGroupDetach)||!same(next.letters,posModLetters)
     ||!same(next.deleted,posDeletedMods)||!same(next.cuts,posChoiceCuts)
-    ||!same(next.modNames,posModNames);
+    ||!same(next.modNames,posModNames)||!same(next.delGroups,posDeletedGroups);
   posPrices=next.prices; posGroupMods=next.mods; posNewGroups=next.groups;
   posGroupAttach=next.attach; posRouting=next.routing; posNewClasses=next.classes;
   posNewMods=next.newMods; posGroupNames=next.names; posGroupDetach=next.detach;
   posModLetters=next.letters; posDeletedMods=next.deleted; posChoiceCuts=next.cuts;
-  posModNames=next.modNames;
+  posModNames=next.modNames; posDeletedGroups=next.delGroups;
   posPruneOrphans();   // redraws itself only if it actually drops something
   if(changed)posRedraw();
 }
@@ -6142,6 +6143,23 @@ let posChoiceCuts={};     // groupKey -> [choiceName]
 // sausag', '$frsh clams', stray capitals and truncations — and they print on the
 // kitchen ticket exactly as written, so a bad one is a bad one in front of a cook.
 let posModNames={};       // oldName -> newName
+// Mod groups marked for deletion. A group lives in the register's menu files and is
+// attached to real items, so deleting one here records it and marks the card — it is
+// still asking a server for an answer until Claude applies it.
+let posDeletedGroups=[];  // [groupKey]
+function posDeleteGroup(encKey,encName,used){
+  const k=decodeURIComponent(encKey), name=decodeURIComponent(encName);
+  if(posDeletedGroups.includes(k)){
+    posDeletedGroups=posDeletedGroups.filter(x=>x!==k);
+  }else{
+    const n=Number(used)||0;
+    const warn=n?`\n\nIt is on ${n} item${n===1?'':'s'} — they will stop asking it.`:'';
+    if(!confirm(`Delete the \u201c${name}\u201d group?${warn}\n\nIt stays on the iPads until Claude applies this.`))return;
+    posDeletedGroups=[...posDeletedGroups,k];
+  }
+  kvPush('ct_pos_deleted_groups',posDeletedGroups,Date.now());
+  posRedraw();
+}
 const posRowLabel=(r)=>posModNames[r.key]||r.name;
 function posRenameMod(encKey,encName){
   const key=decodeURIComponent(encKey), name=decodeURIComponent(encName);
@@ -6280,6 +6298,11 @@ function posPruneOrphans(){
     const orig=it.printers||[];
     if(ps.length===orig.length&&ps.every(p=>orig.includes(p)))drop(posRouting,k,'ct_pos_routing');
   }
+  // groups already gone from the register
+  const stillThere=posDeletedGroups.filter(k=>known.has(k));
+  if(stillThere.length!==posDeletedGroups.length){
+    posDeletedGroups=stillThere; dirty.add('ct_pos_deleted_groups');
+  }
   // renames the register has already taken — the row is gone, or already reads the
   // new name
   for(const [k,n] of Object.entries(posModNames)){
@@ -6294,7 +6317,8 @@ function posPruneOrphans(){
   const stores={ct_pos_group_names:posGroupNames,ct_pos_group_detach:posGroupDetach,
     ct_pos_group_mods:posGroupMods,ct_pos_group_attach:posGroupAttach,
     ct_pos_prices:posPrices,ct_pos_routing:posRouting,ct_pos_new_mods:posNewMods,
-    ct_pos_choice_cuts:posChoiceCuts,ct_pos_mod_names:posModNames};
+    ct_pos_choice_cuts:posChoiceCuts,ct_pos_mod_names:posModNames,
+    ct_pos_deleted_groups:posDeletedGroups};
   for(const k of dirty)kvPush(k,stores[k],Date.now());
   if(dirty.size)posRedraw();
 }
@@ -6692,7 +6716,8 @@ function posPendingCount(){
     +Object.keys(posGroupMods).length+posNewGroups.length+Object.keys(posGroupAttach).length
     +posNewClasses.length+posNewMods.length+Object.keys(posGroupNames).length
     +Object.keys(posGroupDetach).length+Object.keys(posModLetters).length+posDeletedMods.length
-    +Object.keys(posChoiceCuts).length+Object.keys(posModNames).length;
+    +Object.keys(posChoiceCuts).length+Object.keys(posModNames).length
+    +posDeletedGroups.length;
 }
 
 // Getting everything typed here into the build. No token changes hands — the page
@@ -6706,13 +6731,14 @@ function posClearChanges(){
   if(n>=5&&!confirm(`Really discard all ${n}? Copy them for Claude first if you want them applied.`))return;
   posPrices={};posRouting={};posGroupMods={};posNewGroups=[];posGroupAttach={};
   posNewClasses=[];posNewMods=[];posGroupNames={};posGroupDetach={};
-  posChoiceCuts={};posModLetters={};posDeletedMods=[];posModNames={};
+  posChoiceCuts={};posModLetters={};posDeletedMods=[];posModNames={};posDeletedGroups=[];
   for(const k of ['ct_pos_prices','ct_pos_routing','ct_pos_group_mods','ct_pos_new_groups',
                   'ct_pos_group_attach','ct_pos_print_classes','ct_pos_new_mods',
                   'ct_pos_group_names','ct_pos_group_detach','ct_pos_choice_cuts',
-                  'ct_pos_mod_letters','ct_pos_deleted_mods','ct_pos_mod_names'])
+                  'ct_pos_mod_letters','ct_pos_deleted_mods','ct_pos_mod_names',
+                  'ct_pos_deleted_groups'])
     kvPush(k,(k==='ct_pos_new_groups'||k==='ct_pos_print_classes'||k==='ct_pos_new_mods'
-              ||k==='ct_pos_deleted_mods')?[]:{},Date.now());
+              ||k==='ct_pos_deleted_mods'||k==='ct_pos_deleted_groups')?[]:{},Date.now());
   posRedraw();
 }
 
@@ -6728,6 +6754,10 @@ function posCopyChanges(){
   const R=Object.entries(posRouting);
   if(R.length){L.push('','PRINT ROUTING');for(const [k,ps] of R.sort()){const r=byKey[k];
     L.push(`  ${r?r.cat:'?'} | ${r?r.name:k} | ${ps.length?ps.join(', '):'(nowhere)'}`);}}
+  if(posDeletedGroups.length){L.push('','MOD GROUPS TO DELETE');
+    for(const k of posDeletedGroups){const g=posNewGroups.find(x=>x.key===k)
+      ||(c.mod_groups||[]).find(x=>String(x.num)===k||('n:'+x.name)===k);
+      L.push(`  ${g?g.name:k}${g&&g.used_by?` (on ${g.used_by.length} items)`:''}`);}}
   const MN=Object.entries(posModNames);
   if(MN.length){L.push('','RENAMED');
     for(const [k,n] of MN){const r=byKey[k];
@@ -7145,7 +7175,8 @@ function posGroupsHTML(){
   const money=(x)=>x?`<span style="color:var(--accent,#f59e0b)"> +$${(x/100).toFixed(2)}</span>`:'';
   if(noMatch&&!posNewGroups.some(g=>g.name.toLowerCase().includes(q)))
     return datalist+newBtn+'<div style="padding:14px 0;color:var(--text-dim)">No mod group matches.</div>';
-  return datalist+newBtn+newCards+gs.map(g=>`<div style="${posCardCss};margin-bottom:12px">
+  return datalist+newBtn+newCards+gs.map(g=>`<div style="${posCardCss};margin-bottom:12px${
+    posDeletedGroups.includes(posGroupKey(g))?';border-color:#ef4444;background:rgba(239,68,68,0.06)':''}">
     <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
       <span style="font-size:13px;font-weight:800;color:var(--text-dim);font-variant-numeric:tabular-nums">${g.num!=null?g.num:'—'}</span>
       <span style="font-size:17px;font-weight:700;color:${posGroupNames[posGroupKey(g)]?'#22c55e':'var(--text)'}">${esc(posGroupLabel(g))}</span>
@@ -7156,6 +7187,9 @@ function posGroupsHTML(){
       ${g.micros?'<span style="font-size:11px;color:var(--text-muted)">from the Configurator</span>':''}
       ${g.inline?'<span style="font-size:11px;color:var(--text-muted)">declared on the item</span>':''}
       ${g.variants>1?`<span style="font-size:11px;font-weight:700;color:#f59e0b" title="Items using this name do not all offer the same choices">${g.variants} versions</span>`:''}
+      <button onclick="posDeleteGroup('${encodeURIComponent(posGroupKey(g))}','${encodeURIComponent(g.name)}',${(g.used_by||[]).length})"
+        style="border:none;background:transparent;cursor:pointer;font-family:inherit;font-size:12px;
+          color:${posDeletedGroups.includes(posGroupKey(g))?'#ef4444':'var(--text-muted)'}">${posDeletedGroups.includes(posGroupKey(g))?'undo':'delete'}</button>
       <span style="margin-left:auto;font-size:12px;color:${g.used_by.length?'var(--text-dim)':'#f59e0b'}">${g.used_by.length?g.used_by.length+' item'+(g.used_by.length===1?'':'s'):'not attached to anything'}</span>
     </div>
     ${posGroupModsHTML(g)}
