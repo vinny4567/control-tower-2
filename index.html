@@ -6034,6 +6034,7 @@ async function posLoadPrices(){
   const at=await kvGet('ct_pos_group_attach');posGroupAttach=(at&&at.v)||{};
   const rt=await kvGet('ct_pos_routing');posRouting=(rt&&rt.v)||{};
   const pc=await kvGet('ct_pos_print_classes');posNewClasses=(pc&&pc.v)||[];
+  const nm=await kvGet('ct_pos_new_mods');posNewMods=(nm&&nm.v)||[];
   renderViewport();
 }
 // A group is either one from the catalog (key = its number) or one created here
@@ -6049,6 +6050,27 @@ let posRouting={};        // itemKey -> ['Main','Pizza']
 // Print classes created here. Same deal as everything else on this page: saved and
 // synced, offered in the routing dropdown, but not live on the iPads until applied.
 let posNewClasses=[];     // [{key:'pc:1', name, printers:[]}]
+// Food mods invented here rather than picked from the Configurator's list. They join
+// the vocabulary immediately — autocomplete offers them, groups can hold them — and
+// travel to the register in the same paste as everything else.
+let posNewMods=[];        // [{name, cents}]
+function posSaveMods(){kvPush('ct_pos_new_mods',posNewMods,Date.now());renderViewport()}
+function posModExists(name){
+  const norm=(x)=>String(x).trim().toLowerCase();
+  return ((posS.cat&&posS.cat.items)||[]).find(i=>i.cat==='Food Mods'&&norm(i.name)===norm(name))
+    ||posNewMods.find(m=>norm(m.name)===norm(name))||null;
+}
+function posCreateMod(enc,encName){
+  const name=decodeURIComponent(encName).trim(); if(!name)return;
+  if(posModExists(name)){posAddGroupMod(enc,name);return;}
+  const el=document.getElementById('gmp-'+enc);
+  const raw=el?String(el.value).replace(/[^0-9.]/g,''):'';
+  const cents=raw?Math.round(parseFloat(raw)*100):0;
+  posNewMods.push({name,cents:isFinite(cents)&&cents>0?cents:0});
+  kvPush('ct_pos_new_mods',posNewMods,Date.now());
+  if(el)el.value='';
+  posAddGroupMod(enc,name);
+}
 function posSaveClasses(){kvPush('ct_pos_print_classes',posNewClasses,Date.now());renderViewport()}
 function posNewClass(){
   const name=prompt('Name the print class (e.g. "Main / Salad", "Bar / Expo")');
@@ -6119,12 +6141,17 @@ function posAttachFromInput(enc,kind){
 }
 function posAddGroupMod(enc,name){
   const k=decodeURIComponent(enc);
-  name=String(name||'').trim(); if(!name)return;
+  const typed=String(name||'').trim(); if(!typed)return;
   const list=posAddedTo(k);
   // The catalog is the vocabulary — refuse a typo rather than inventing a modifier
-  // that exists nowhere.
-  const known=((posS.cat&&posS.cat.items)||[]).some(i=>i.cat==='Food Mods'&&i.name===name);
-  if(!known){alert('No food mod called "'+name+'". Pick one from the list.');return;}
+  // that exists nowhere. But match LOOSELY and store the catalog's own spelling:
+  // Micros condiment names carry leading spaces and odd capitals verbatim (' mushrooms'
+  // really does start with a space), so trimming what was typed used to stop it
+  // matching the record it came from.
+  const norm=(x)=>String(x).trim().toLowerCase();
+  const hit=posModExists(typed);
+  if(!hit){alert('No food mod called "'+typed+'". Pick it from the list, or use + Create.');return;}
+  name=hit.name;
   if(list.includes(name))return;
   posGroupMods[k]=[...list,name];
   posSaveGroups();
@@ -6137,7 +6164,13 @@ function posRemoveGroupMod(encK,encN){
 }
 function posAddFromInput(enc){
   const el=document.getElementById('gm-'+enc);
-  if(!el)return; posAddGroupMod(enc,el.value); el.value='';
+  if(!el)return;
+  const typed=String(el.value).trim(); if(!typed)return;
+  // Add doubles as Create — a name that is not in the vocabulary yet becomes one,
+  // which is how new mods get made.
+  if(posModExists(typed))posAddGroupMod(enc,typed);
+  else posCreateMod(enc,encodeURIComponent(typed));
+  el.value='';
 }
 function posSetPrice(enc,str){
   const key=decodeURIComponent(enc);
@@ -6282,7 +6315,7 @@ function posCatOptions(cats){
 function posPendingCount(){
   return Object.keys(posPrices).length+Object.keys(posRouting).length
     +Object.keys(posGroupMods).length+posNewGroups.length+Object.keys(posGroupAttach).length
-    +posNewClasses.length;
+    +posNewClasses.length+posNewMods.length;
 }
 
 // Getting everything typed here into the build. No token changes hands — the page
@@ -6299,6 +6332,8 @@ function posCopyChanges(){
   const R=Object.entries(posRouting);
   if(R.length){L.push('','PRINT ROUTING');for(const [k,ps] of R.sort()){const r=byKey[k];
     L.push(`  ${r?r.cat:'?'} | ${r?r.name:k} | ${ps.length?ps.join(', '):'(nowhere)'}`);}}
+  if(posNewMods.length){L.push('','NEW FOOD MODS');
+    for(const m of posNewMods)L.push(`  ${m.name} | ${m.cents?(m.cents/100).toFixed(2):'free'}`);}
   if(posNewClasses.length){L.push('','NEW PRINT CLASSES');
     for(const pc of posNewClasses)L.push(`  ${pc.name} | ${pc.printers.join(', ')||'(no printers picked)'}`);}
   if(posNewGroups.length){L.push('','NEW GROUPS');
@@ -6400,54 +6435,72 @@ function posPriceCell(r){
 //
 // ⚠️ Added here, NOT live on the iPads — same as prices. Rendered green and outlined
 // so it never reads as one of the group's real choices.
-function posGroupAddHTML(g){
-  const k=g.key!==undefined?g.key:String(g.num);
-  const enc=encodeURIComponent(k);
-  const added=posAddedTo(k), att=posAttachOf(k);
-  const byName={};
-  for(const i of ((posS.cat&&posS.cat.items)||[]))if(i.cat==='Food Mods')byName[i.name]=i;
-  const money=(x)=>x?` +$${(x/100).toFixed(2)}`:'';
-  const chip=(label,onRemove,colour)=>`<span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;padding:3px 6px 3px 9px;border-radius:7px;background:rgba(34,197,94,0.10);border:1px solid ${colour};color:${colour}">
-      ${label}<button onclick="${onRemove}" title="remove" style="border:none;background:transparent;color:${colour};cursor:pointer;font-size:15px;line-height:1;padding:0 2px">×</button></span>`;
-
-  const modChips=added.map(n=>chip(
-    esc(n)+money(byName[n]?byName[n].cents:0),
-    `posRemoveGroupMod('${enc}','${encodeURIComponent(n)}')`,'#22c55e')).join('');
-  const catChips=att.cats.map(cName=>chip(
-    'all '+esc(cName), `posAttachRemove('${enc}','cat','${encodeURIComponent(cName)}')`,'#60a5fa')).join('');
-  const itemChips=att.items.map(iName=>chip(
-    esc(iName), `posAttachRemove('${enc}','item','${encodeURIComponent(iName)}')`,'#60a5fa')).join('');
-
-  return `<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)">
-    <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">Food mods in this group</div>
-    ${added.length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 8px">${modChips}</div>`:''}
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
-      <input id="gm-${enc}" list="pos-modnames" placeholder="add a food mod…"
-        onkeydown="if(event.key==='Enter'){posAddFromInput('${enc}');event.preventDefault()}"
-        style="${posInput};flex:1;min-width:180px;font-size:14px;padding:8px 11px">
-      <button onclick="posAddFromInput('${enc}')" style="${posBtn('#3f3f46')};font-size:13px;padding:8px 14px">Add</button>
-    </div>
-
-    <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-top:14px">Attach this group to</div>
-    ${(att.cats.length||att.items.length)?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 8px">${catChips}${itemChips}</div>`:''}
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
-      <input id="ga-c-${enc}" list="pos-catnames" placeholder="a whole category…"
-        onkeydown="if(event.key==='Enter'){posAttachFromInput('${enc}','cat');event.preventDefault()}"
-        style="${posInput};flex:1;min-width:150px;font-size:14px;padding:8px 11px">
-      <button onclick="posAttachFromInput('${enc}','cat')" style="${posBtn('#3f3f46')};font-size:13px;padding:8px 14px">Add category</button>
-      <input id="ga-i-${enc}" list="pos-itemnames" placeholder="or one item…"
-        onkeydown="if(event.key==='Enter'){posAttachFromInput('${enc}','item');event.preventDefault()}"
-        style="${posInput};flex:1;min-width:150px;font-size:14px;padding:8px 11px">
-      <button onclick="posAttachFromInput('${enc}','item')" style="${posBtn('#3f3f46')};font-size:13px;padding:8px 14px">Add item</button>
-    </div>
-  </div>`;
+// Autocomplete, hand-rolled.
+//
+// <datalist> looked like the cheap answer and is not: matching differs by browser,
+// iPad Safari is prefix-ish and unreliable, and a list that quietly shows nothing is
+// worse than no list at all. This filters case-insensitively on any part of the name
+// and updates the menu in place — never through renderViewport, which would blow
+// away the field being typed into.
+const POS_AUTO_SRC={
+  mods:()=>[...new Set(((posS.cat&&posS.cat.items)||[]).filter(i=>i.cat==='Food Mods').map(i=>i.name)
+    .concat(posNewMods.map(m=>m.name)))].sort(),
+  cat:()=>[...new Set(((posS.cat&&posS.cat.items)||[]).map(i=>i.cat))].sort(),
+  item:()=>[...new Set(((posS.cat&&posS.cat.items)||[]).filter(i=>i.cat!=='Food Mods').map(i=>i.name))].sort(),
+};
+function posAutoBox(inputId){
+  let box=document.getElementById(inputId+'-menu');
+  if(!box){
+    const el=document.getElementById(inputId); if(!el)return null;
+    el.parentElement.style.position='relative';
+    box=document.createElement('div'); box.id=inputId+'-menu';
+    box.style.cssText='position:absolute;z-index:40;left:0;right:0;top:100%;margin-top:2px;'
+      +'max-height:230px;overflow:auto;border:1px solid var(--border);border-radius:10px;'
+      +'background:var(--surface);box-shadow:0 10px 26px rgba(0,0,0,.45);display:none';
+    el.parentElement.appendChild(box);
+  }
+  return box;
+}
+function posAuto(kind,enc,inputId){
+  const el=document.getElementById(inputId), box=posAutoBox(inputId);
+  if(!el||!box)return;
+  const q=el.value.toLowerCase().trim();
+  if(!q){box.style.display='none';return;}
+  const all=POS_AUTO_SRC[kind]();
+  const hits=all.filter(n=>n.toLowerCase().includes(q)).slice(0,12);
+  // Creating is offered inline rather than behind a dialog, and only when nothing
+  // matches exactly — so a typo shows itself as "no match, create?" instead of
+  // silently becoming a new modifier nobody meant.
+  const exact=all.some(n=>n.trim().toLowerCase()===q);
+  const create=(kind==='mods'&&!exact)
+    ? `<button onclick="posCreateMod('${enc}','${encodeURIComponent(el.value.trim())}')"
+        style="display:block;width:100%;text-align:left;border:none;background:transparent;color:#22c55e;
+          font-family:inherit;font-size:14px;font-weight:700;padding:9px 12px;cursor:pointer;
+          border-bottom:1px solid var(--border)">+ Create “${esc(el.value.trim())}”</button>` : '';
+  if(!hits.length&&!create){
+    box.innerHTML='<div style="padding:9px 12px;color:var(--text-muted);font-size:13px">no match</div>';
+    box.style.display='block';return;
+  }
+  box.innerHTML=create+hits.map(n=>`<button onclick="posAutoChoose('${kind}','${enc}','${encodeURIComponent(n)}')"
+    style="display:block;width:100%;text-align:left;border:none;background:transparent;color:var(--text);
+      font-family:inherit;font-size:14px;padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--border)"
+    onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background='transparent'"
+    >${esc(n)}</button>`).join('');
+  box.style.display='block';
+}
+function posAutoChoose(kind,enc,encName){
+  const name=decodeURIComponent(encName);
+  if(kind==='mods')posAddGroupMod(enc,name);
+  else posAttachAdd(enc,kind,name);
 }
 
-// Print classes: the ones the register knows, plus any created here.
-//
-// A class is a NAME and the set of printers it hits. 108 Main / Pizza being one class
-// that reaches two printers is the whole point of the idea — it is why a shared prep
-// item can land on two lines from a single setting on the item.
+// The mods in a group — the ones it already has and the ones added here, shown
+// together because to a reader they are one list. The input sits directly under them
+// rather than in a section of its own: adding a mod is the main thing this card is
+// for, so it should not be somewhere you scroll to.
+// Print classes: the ones the register knows, plus any created here. A class is a
+// NAME and the set of printers it hits — 108 Main / Pizza being one class that
+// reaches two printers is the whole point of the idea.
 function posClassesHTML(){
   const c=posS.cat; if(!c)return '<div style="color:var(--text-dim)">Loading…</div>';
   const chip=(p,on,onClick)=>`<button ${onClick?`onclick="${onClick}"`:'disabled'}
@@ -6484,6 +6537,67 @@ function posClassesHTML(){
     + mine + built;
 }
 
+function posGroupModsHTML(g){
+  const k=g.key!==undefined?g.key:String(g.num);
+  const enc=encodeURIComponent(k);
+  const added=posAddedTo(k);
+  const byName={};
+  for(const i of ((posS.cat&&posS.cat.items)||[]))if(i.cat==='Food Mods')byName[i.name]=i;
+  for(const m of posNewMods)byName[m.name]=m;
+  const money=(x)=>x?`<span style="opacity:.85"> +$${(x/100).toFixed(2)}</span>`:'';
+
+  const own=(g.choices||[]).map(ch=>
+    `<span style="font-size:13px;padding:3px 9px;border-radius:7px;background:var(--surface2);border:1px solid var(--border)">${esc(ch.name)}${money(ch.cents)}</span>`).join('');
+  const mine=added.map(n=>{
+    const row=byName[n];
+    return `<span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;padding:3px 6px 3px 9px;border-radius:7px;background:rgba(34,197,94,0.10);border:1px solid #22c55e;color:#22c55e">
+      ${esc(n)}${money(row?row.cents:0)}
+      <button onclick="posRemoveGroupMod('${enc}','${encodeURIComponent(n)}')" title="remove"
+        style="border:none;background:transparent;color:#22c55e;cursor:pointer;font-size:15px;line-height:1;padding:0 2px">×</button></span>`;
+  }).join('');
+
+  if(g.screen)return `<div style="margin-top:8px;font-size:13px;color:var(--text-dim)">Opens the FOOD MODS screen — the whole condiment table, not a fixed list.</div>`;
+
+  return `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">${own}${mine}</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px">
+      <input id="gm-${enc}" placeholder="add or create a food mod…" autocomplete="off"
+        oninput="posAuto('mods','${enc}','gm-${enc}')"
+        onkeydown="if(event.key==='Enter'){posAddFromInput('${enc}');event.preventDefault()}"
+        style="${posInput};flex:1;min-width:200px;font-size:14px;padding:8px 11px">
+      <input id="gmp-${enc}" placeholder="$ price" inputmode="decimal" autocomplete="off"
+        title="Leave blank for a free mod"
+        style="${posInput};width:96px;font-size:14px;padding:8px 11px;text-align:right">
+      <button onclick="posAddFromInput('${enc}')" style="${posBtn('#3f3f46')};font-size:13px;padding:8px 14px">Add</button>
+    </div>
+    <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Leave the price blank for a free mod. A name that is not in the list yet offers <b style="color:#22c55e">+ Create</b>.</div>`;
+}
+
+function posGroupAttachHTML(g){
+  const k=g.key!==undefined?g.key:String(g.num);
+  const enc=encodeURIComponent(k);
+  const att=posAttachOf(k);
+  const chip=(label,onRemove)=>`<span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;padding:3px 6px 3px 9px;border-radius:7px;background:rgba(96,165,250,0.10);border:1px solid #60a5fa;color:#60a5fa">
+      ${label}<button onclick="${onRemove}" title="remove" style="border:none;background:transparent;color:#60a5fa;cursor:pointer;font-size:15px;line-height:1;padding:0 2px">×</button></span>`;
+  const catChips=att.cats.map(c=>chip('all '+esc(c),`posAttachRemove('${enc}','cat','${encodeURIComponent(c)}')`)).join('');
+  const itemChips=att.items.map(i=>chip(esc(i),`posAttachRemove('${enc}','item','${encodeURIComponent(i)}')`)).join('');
+  return `<div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--border)">
+    <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">Attach this group to</div>
+    ${(att.cats.length||att.items.length)?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 8px">${catChips}${itemChips}</div>`:''}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
+      <input id="ga-c-${enc}" placeholder="a whole category…" autocomplete="off"
+        oninput="posAuto('cat','${enc}','ga-c-${enc}')"
+        onkeydown="if(event.key==='Enter'){posAttachFromInput('${enc}','cat');event.preventDefault()}"
+        style="${posInput};flex:1;min-width:150px;font-size:14px;padding:8px 11px">
+      <button onclick="posAttachFromInput('${enc}','cat')" style="${posBtn('#3f3f46')};font-size:13px;padding:8px 14px">Add category</button>
+      <input id="ga-i-${enc}" placeholder="or one item…" autocomplete="off"
+        oninput="posAuto('item','${enc}','ga-i-${enc}')"
+        onkeydown="if(event.key==='Enter'){posAttachFromInput('${enc}','item');event.preventDefault()}"
+        style="${posInput};flex:1;min-width:150px;font-size:14px;padding:8px 11px">
+      <button onclick="posAttachFromInput('${enc}','item')" style="${posBtn('#3f3f46')};font-size:13px;padding:8px 14px">Add item</button>
+    </div>
+  </div>`;
+}
+
 function posGroupsHTML(){
   const c=posS.cat; if(!c) return '<div style="color:var(--text-dim)">Loading…</div>';
   const q=(posS.q||'').toLowerCase().trim();
@@ -6494,12 +6608,7 @@ function posGroupsHTML(){
     ||(g.choices||[]).some(ch=>ch.name.toLowerCase().includes(q))
     ||(g.used_by||[]).some(n=>n.toLowerCase().includes(q)));
   const noMatch=q&&!gs.length;
-  const names=[...new Set(((c.items)||[]).filter(i=>i.cat==='Food Mods').map(i=>i.name))].sort();
-  const cats=[...new Set(((c.items)||[]).map(i=>i.cat))].sort();
-  const itemNames=[...new Set(((c.items)||[]).filter(i=>i.cat!=='Food Mods').map(i=>i.name))].sort();
-  const datalist=`<datalist id="pos-modnames">${names.map(n=>`<option value="${esc(n)}"></option>`).join('')}</datalist>`
-    +`<datalist id="pos-catnames">${cats.map(n=>`<option value="${esc(n)}"></option>`).join('')}</datalist>`
-    +`<datalist id="pos-itemnames">${itemNames.map(n=>`<option value="${esc(n)}"></option>`).join('')}</datalist>`;
+  const datalist='';   // replaced by posAuto — see the autocomplete note above
 
   // Groups created here render alongside the built-in ones, marked as new.
   const mine=posNewGroups.filter(g=>!q
@@ -6512,7 +6621,8 @@ function posGroupsHTML(){
       <span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;border:1px solid currentColor;color:${g.required?'#ef4444':'var(--text-muted)'}">${g.required?'required':'optional'}</span>
       <button onclick="posDeleteNewGroup('${encodeURIComponent(g.key)}')" style="margin-left:auto;border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-size:13px">delete</button>
     </div>
-    ${posGroupAddHTML(g)}
+    ${posGroupModsHTML(g)}
+    ${posGroupAttachHTML(g)}
   </div>`).join('');
 
   const newBtn=`<button onclick="posNewGroup()" style="${posBtn('#22c55e')};margin-bottom:14px">+ New group</button>`;
@@ -6528,11 +6638,8 @@ function posGroupsHTML(){
       ${g.micros?'<span style="font-size:11px;color:var(--text-muted)">from the Configurator</span>':''}
       <span style="margin-left:auto;font-size:12px;color:${g.used_by.length?'var(--text-dim)':'#f59e0b'}">${g.used_by.length?g.used_by.length+' item'+(g.used_by.length===1?'':'s'):'not attached to anything'}</span>
     </div>
-    ${g.screen?`<div style="margin-top:8px;font-size:13px;color:var(--text-dim)">Opens the FOOD MODS screen — the whole condiment table, not a fixed list.</div>`:
-      `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">
-        ${g.choices.map(ch=>`<span style="font-size:13px;padding:3px 9px;border-radius:7px;background:var(--surface2);border:1px solid var(--border)">${esc(ch.name)}${money(ch.cents)}</span>`).join('')}
-      </div>`}
-    ${posGroupAddHTML(g)}
+    ${posGroupModsHTML(g)}
+    ${posGroupAttachHTML(g)}
     ${g.used_by.length?`<div style="margin-top:8px;font-size:12px;color:var(--text-muted)">${g.used_by.slice(0,8).map(esc).join(' · ')}${g.used_by.length>8?` … +${g.used_by.length-8} more`:''}</div>`:''}
   </div>`).join('');
 }
@@ -7067,7 +7174,7 @@ function posHTML(){
     <div style="max-width:1000px;margin:0 auto;padding:4px 4px 56px">
     <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px">
       <h2 style="margin:0;font-size:24px;font-weight:800">🍽️ POS</h2>
-      <span style="font-size:13px;color:var(--text-dim)">The back office — read-only from here.</span>
+      <span style="font-size:13px;color:var(--text-dim)">The back office. Changes here reach the iPads when Claude applies them.</span>
       <span style="margin-left:auto;display:flex;gap:10px;align-items:center">${who}
         <button onclick="posToggleConn()" style="${posBtn('#3f3f46')};padding:7px 12px;font-size:13px">Connections</button></span>
     </div>
