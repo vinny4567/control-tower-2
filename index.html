@@ -6431,8 +6431,15 @@ function posItemGroupsHTML(r){
   }
   if(!live.length&&!pending.length)
     return '<div style="font-size:11px;color:var(--text-muted);opacity:.6">no mod groups</div>';
+  // A deferred group is marked, because it does NOT appear when the item is rung —
+  // it waits for SEND. Listing it plainly made an entrée look like it had a broken
+  // attachment when the delay was deliberate.
+  const defer=r.deferredGroups||[];
+  const label=(n)=>defer.includes(n)
+    ? `${esc(n)} <span style="opacity:.75">(at send)</span>`
+    : esc(n);
   return `<div style="font-size:11px;color:var(--text-muted)">`
-    +live.map(esc).join(' · ')
+    +live.map(label).join(' · ')
     +(pending.length?`${live.length?' · ':''}<span style="color:#22c55e;font-weight:700">${pending.map(esc).join(' · ')}</span>`:'')
     +`</div>`;
 }
