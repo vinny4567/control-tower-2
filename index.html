@@ -6967,8 +6967,23 @@ function posPriceCell(r){
 // and updates the menu in place — never through renderViewport, which would blow
 // away the field being typed into.
 const POS_AUTO_SRC={
-  mods:()=>[...new Set(((posS.cat&&posS.cat.items)||[]).filter(i=>i.cat==='Food Mods').map(i=>i.name)
-    .concat(posNewMods.map(m=>m.name)))].sort(),
+  // Names alone were not enough to pick with: half a dozen garlics come back on
+  // "garlic" and the one you want is the one that costs the right money. So the price
+  // rides along, and two mods that share a name at different prices stay two rows
+  // rather than collapsing into whichever sorted first.
+  mods:()=>{
+    const seen=new Map();
+    for(const r of ((posS.cat&&posS.cat.items)||[]).filter(i=>i.cat==='Food Mods')){
+      const cents=posPriceOf(r);
+      const k=r.name+'|'+(cents||0);
+      if(!seen.has(k))seen.set(k,{name:r.name,cents});
+    }
+    for(const m of posNewMods){
+      const k=m.name+'|'+(m.cents||0);
+      if(!seen.has(k))seen.set(k,{name:m.name,cents:m.cents||0,isNew:true});
+    }
+    return [...seen.values()].sort((a,b)=>a.name.localeCompare(b.name));
+  },
   cat:()=>[...new Set(((posS.cat&&posS.cat.items)||[]).map(i=>i.cat))].sort(),
   item:()=>[...new Set(((posS.cat&&posS.cat.items)||[]).filter(i=>i.cat!=='Food Mods').map(i=>i.name))].sort(),
 };
@@ -6990,8 +7005,9 @@ function posAuto(kind,enc,inputId){
   if(!el||!box)return;
   const q=el.value.toLowerCase().trim();
   if(!q){box.style.display='none';return;}
-  const all=POS_AUTO_SRC[kind]();
-  const hits=all.filter(n=>n.toLowerCase().includes(q)).slice(0,12);
+  // cat/item still come back as plain names; mods come back priced.
+  const all=POS_AUTO_SRC[kind]().map(x=>typeof x==='string'?{name:x}:x);
+  const hits=all.filter(x=>x.name.toLowerCase().includes(q)).slice(0,12);
   // Creating is offered inline rather than behind a dialog, and only when nothing
   // matches exactly — so a typo shows itself as "no match, create?" instead of
   // silently becoming a new modifier nobody meant.
@@ -7003,11 +7019,13 @@ function posAuto(kind,enc,inputId){
     box.innerHTML='<div style="padding:9px 12px;color:var(--text-muted);font-size:13px">no match</div>';
     box.style.display='block';return;
   }
-  box.innerHTML=create+hits.map(n=>`<button onclick="posAutoChoose('${kind}','${enc}','${encodeURIComponent(n)}')"
-    style="display:block;width:100%;text-align:left;border:none;background:transparent;color:var(--text);
+  box.innerHTML=create+hits.map(x=>`<button onclick="posAutoChoose('${kind}','${enc}','${encodeURIComponent(x.name)}')"
+    style="display:flex;align-items:baseline;gap:10px;width:100%;text-align:left;border:none;background:transparent;color:var(--text);
       font-family:inherit;font-size:14px;padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--border)"
     onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background='transparent'"
-    >${esc(n)}</button>`).join('');
+    ><span>${esc(x.name)}</span>${x.isNew?'<span style="font-size:10px;font-weight:800;color:#22c55e;letter-spacing:.4px">NEW</span>':''}
+    <span style="margin-left:auto;font-variant-numeric:tabular-nums;font-size:13px;color:${x.cents?'var(--text-dim)':'var(--text-muted)'}"
+      >${x.cents==null?'':(x.cents?posMoney(x.cents):'free')}</span></button>`).join('');
   box.style.display='block';
 }
 function posAutoChoose(kind,enc,encName){
