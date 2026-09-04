@@ -5980,14 +5980,25 @@ function posToggleConn(){posS.showConn=!posS.showConn;renderViewport()}
 // ---- the catalog snapshot (no server involved) -------------------------------
 async function posLoadCatalog(){
   posLoadPrices();
-  if(posS.cat||posS.catErr)return;
+  if(posS.cat||posS.catErr||posS.catLoading)return;
+  // 300KB over a phone connection is not instant, and a hung fetch used to leave
+  // "Loading the item database…" on screen for ever with no way out but a reload.
+  // Time it out, say so, and offer the retry.
+  posS.catLoading=true;renderViewport();
+  const ac=('AbortController' in window)?new AbortController():null;
+  const timer=setTimeout(()=>{try{ac&&ac.abort()}catch(e){}},20000);
   try{
-    const r=await fetch('pos-catalog.json',{cache:'no-cache'});
-    if(!r.ok)throw new Error('pos-catalog.json '+r.status);
+    const r=await fetch('pos-catalog.json',{cache:'no-cache',signal:ac?ac.signal:undefined});
+    if(!r.ok)throw new Error('pos-catalog.json returned '+r.status);
     posS.cat=await r.json();
-  }catch(e){posS.catErr=String(e&&e.message||e)}
-  renderViewport();
+  }catch(e){
+    posS.catErr=(e&&e.name==='AbortError')
+      ?'timed out after 20s — the connection may be slow'
+      :String(e&&e.message||e);
+  }
+  clearTimeout(timer);posS.catLoading=false;renderViewport();
 }
+function posRetryCatalog(){posS.cat=null;posS.catErr=null;posS.catLoading=false;posLoadCatalog()}
 function posItemRows(){
   const c=posS.cat;if(!c)return[];
   const q=(posS.q||'').toLowerCase().trim();
@@ -6079,8 +6090,14 @@ function posItemsBodyHTML(){
   return head+(shown.length?body:'<div style="padding:14px 0;color:var(--text-dim)">Nothing matches.</div>')+more;
 }
 function posItemsHTML(){
-  if(posS.catErr)return `<div style="${posCardCss}">Couldn't load <code>pos-catalog.json</code>: ${esc(posS.catErr)}<div style="color:var(--text-dim);font-size:13px;margin-top:8px">Regenerate it with <code>node pos/tools/export-catalog.mjs</code> in the angelis-pos repo.</div></div>`;
-  if(!posS.cat)return '<div style="color:var(--text-dim)">Loading the item database…</div>';
+  if(posS.catErr)return `<div style="${posCardCss}">
+    <div style="font-weight:700">Couldn't load the item database</div>
+    <div style="color:var(--text-dim);font-size:13px;margin-top:4px">${esc(posS.catErr)}</div>
+    <button onclick="posRetryCatalog()" style="${posBtn('#f59e0b')};margin-top:12px">Try again</button>
+    <div style="color:var(--text-muted);font-size:12px;margin-top:10px">If it keeps failing, the snapshot may be missing — regenerate it with <code>npm run catalog</code> in the angelis-pos repo.</div></div>`;
+  if(!posS.cat)return `<div style="${posCardCss}">
+    <div style="color:var(--text-dim)">Loading the item database…</div>
+    <button onclick="posRetryCatalog()" style="${posBtn('#3f3f46')};margin-top:12px;font-size:13px">Stuck? Try again</button></div>`;
   const c=posS.cat,s=c.summary||{};
   const cats=[...new Set(c.items.map(i=>i.cat))].sort();
   return `
