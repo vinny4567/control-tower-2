@@ -6065,20 +6065,37 @@ let posPrices={};
 // go stale inside a group.
 let posGroupMods={};
 async function posLoadPrices(){
-  const r=await kvGet('ct_pos_prices');posPrices=(r&&r.v)||{};
-  const g=await kvGet('ct_pos_group_mods');posGroupMods=(g&&g.v)||{};
-  const ng=await kvGet('ct_pos_new_groups');posNewGroups=(ng&&ng.v)||[];
-  const at=await kvGet('ct_pos_group_attach');posGroupAttach=(at&&at.v)||{};
-  const rt=await kvGet('ct_pos_routing');posRouting=(rt&&rt.v)||{};
-  const pc=await kvGet('ct_pos_print_classes');posNewClasses=(pc&&pc.v)||[];
-  const nm=await kvGet('ct_pos_new_mods');posNewMods=(nm&&nm.v)||[];
-  const gn=await kvGet('ct_pos_group_names');posGroupNames=(gn&&gn.v)||{};
-  posPruneOrphans();
-  const gd=await kvGet('ct_pos_group_detach');posGroupDetach=(gd&&gd.v)||{};
-  const ml=await kvGet('ct_pos_mod_letters');posModLetters=(ml&&ml.v)||{};
-  const dm=await kvGet('ct_pos_deleted_mods');posDeletedMods=(dm&&dm.v)||[];
-  const cc=await kvGet('ct_pos_choice_cuts');posChoiceCuts=(cc&&cc.v)||{};
-  renderViewport();
+  // Ten sequential KV reads, then a redraw. That redraw used to fire unconditionally,
+  // a second or two after the page appeared — right as a hand was reaching for the
+  // category dropdown — and rebuilding the toolbar mid-tap ate the tap. Hence having
+  // to click Mod groups twice.
+  //
+  // Fetch everything, compare it to what is already on screen, and only redraw when
+  // something actually differs. A reload that changes nothing now changes nothing.
+  const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+  const [r,g,ng,at,rt,pc,nm,gn,gd,ml,dm,cc]=await Promise.all([
+    kvGet('ct_pos_prices'),kvGet('ct_pos_group_mods'),kvGet('ct_pos_new_groups'),
+    kvGet('ct_pos_group_attach'),kvGet('ct_pos_routing'),kvGet('ct_pos_print_classes'),
+    kvGet('ct_pos_new_mods'),kvGet('ct_pos_group_names'),kvGet('ct_pos_group_detach'),
+    kvGet('ct_pos_mod_letters'),kvGet('ct_pos_deleted_mods'),kvGet('ct_pos_choice_cuts')]);
+  const next={
+    prices:(r&&r.v)||{}, mods:(g&&g.v)||{}, groups:(ng&&ng.v)||[], attach:(at&&at.v)||{},
+    routing:(rt&&rt.v)||{}, classes:(pc&&pc.v)||[], newMods:(nm&&nm.v)||[],
+    names:(gn&&gn.v)||{}, detach:(gd&&gd.v)||{}, letters:(ml&&ml.v)||{},
+    deleted:(dm&&dm.v)||[], cuts:(cc&&cc.v)||{},
+  };
+  const changed=!same(next.prices,posPrices)||!same(next.mods,posGroupMods)
+    ||!same(next.groups,posNewGroups)||!same(next.attach,posGroupAttach)
+    ||!same(next.routing,posRouting)||!same(next.classes,posNewClasses)
+    ||!same(next.newMods,posNewMods)||!same(next.names,posGroupNames)
+    ||!same(next.detach,posGroupDetach)||!same(next.letters,posModLetters)
+    ||!same(next.deleted,posDeletedMods)||!same(next.cuts,posChoiceCuts);
+  posPrices=next.prices; posGroupMods=next.mods; posNewGroups=next.groups;
+  posGroupAttach=next.attach; posRouting=next.routing; posNewClasses=next.classes;
+  posNewMods=next.newMods; posGroupNames=next.names; posGroupDetach=next.detach;
+  posModLetters=next.letters; posDeletedMods=next.deleted; posChoiceCuts=next.cuts;
+  posPruneOrphans();   // redraws itself only if it actually drops something
+  if(changed)posRedraw();
 }
 // A group is either one from the catalog (key = its number) or one created here
 // (key = 'new:<n>'). Everything below is keyed the same way so the two behave alike.
