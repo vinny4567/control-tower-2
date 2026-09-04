@@ -6416,15 +6416,34 @@ function posNewModRowHTML(){
     <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">New food mod</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <input id="nm-name" placeholder="name it…" autocomplete="off"
+        oninput="posSyncNewModLetter()"
         onkeydown="if(event.key==='Enter'){posAddStandaloneMod();event.preventDefault()}"
         style="${posInput};flex:1;min-width:180px;font-size:14px;padding:8px 11px">
       <input id="nm-price" placeholder="$ price" inputmode="decimal" autocomplete="off"
         title="Leave blank for a free mod"
         style="${posInput};width:96px;font-size:14px;padding:8px 11px;text-align:right">
+      <select id="nm-letter" title="Which letter page it lives on"
+        onchange="this.dataset.forName=(document.getElementById('nm-name')||{}).value||''"
+        style="${posInput};width:110px;font-size:14px;padding:8px 9px">
+        ${'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map(L=>`<option value="${L}">${L}</option>`).join('')}
+      </select>
       <button onclick="posAddStandaloneMod()" style="${posBtn('#22c55e')};font-size:13px;padding:8px 16px">Add</button>
     </div>
-    <div style="font-size:11px;color:var(--text-muted);margin-top:6px">Blank price means free. It joins the list here and goes to the register with the next Copy for Claude.</div>
+    <div style="font-size:11px;color:var(--text-muted);margin-top:6px">Blank price means free. The letter follows the name unless you change it — '$ 1 pc chk' belongs under C, not P.</div>
   </div>`;
+}
+// The picker tracks the name as it is typed, so the common case needs no thought.
+// Touching it stops the tracking — an explicit choice should not be overwritten by
+// the next keystroke.
+function posSyncNewModLetter(){
+  const sel=document.getElementById('nm-letter'), n=document.getElementById('nm-name');
+  if(!sel||!n)return;
+  // A hand-picked letter belongs to the name it was picked for. Type a different
+  // name and it goes back to following along — otherwise a choice made for one mod
+  // silently files the next one somewhere nobody asked for.
+  if(sel.dataset.forName&&sel.dataset.forName===n.value)return;
+  const L=posModLetter(n.value);
+  if(/[A-Z]/.test(L))sel.value=L;
 }
 function posAddStandaloneMod(){
   const n=document.getElementById('nm-name'), p=document.getElementById('nm-price');
@@ -6432,9 +6451,20 @@ function posAddStandaloneMod(){
   if(posModExists(name)){alert('“'+name+'” already exists.');return;}
   const raw=p?String(p.value).replace(/[^0-9.]/g,''):'';
   const cents=raw?Math.round(parseFloat(raw)*100):0;
+  const sel=document.getElementById('nm-letter');
+  // Only honour the picker if it was set for THIS name.
+  const chosen=sel&&sel.dataset.forName===name;
+  const L=chosen?String(sel.value).toUpperCase().charAt(0):'';
   posNewMods.push({name,cents:isFinite(cents)&&cents>0?cents:0});
   kvPush('ct_pos_new_mods',posNewMods,Date.now());
+  // Only record a letter when it differs from what the name would give — otherwise
+  // every new mod would carry a pointless override into the paste.
+  if(/[A-Z]/.test(L)&&L!==posModLetter(name)){
+    posModLetters[name]=L;
+    kvPush('ct_pos_mod_letters',posModLetters,Date.now());
+  }
   if(n)n.value=''; if(p)p.value='';
+  if(sel)sel.dataset.forName='';
   posS.openLetters=posS.openLetters||{};
   posS.openLetters[posModLetters[name]||posModLetter(name)]=true;   // open where it landed
   posRedraw();
@@ -6497,15 +6527,13 @@ function posItemsBodyHTML(){
       const A='#3b82f6';
       return `<div onclick="posToggleLetter('${L}')" style="display:flex;align-items:baseline;gap:10px;cursor:pointer;
           margin:${open?'14px 0 0':'10px 0 2px'};padding:${open?'8px 12px':'0 0 5px'};max-width:630px;
-          ${open?`background:rgba(59,130,246,0.14);border:1px solid ${A};border-bottom:none;border-radius:10px 10px 0 0`
+          ${open?`background:rgba(59,130,246,0.14);border:1px solid ${A};border-radius:8px`
                 :'border-bottom:2px solid var(--border)'}">
           <span style="font-size:15px;font-weight:800;width:22px;color:${open?A:'var(--text)'}">${L}</span>
           <span style="font-size:12px;color:${open?A:'var(--text-muted)'}">${list.length} mod${list.length===1?'':'s'}</span>
           ${gaps?`<span style="font-size:11px;font-weight:700;color:#f59e0b">${gaps} need data</span>`:''}
           <span style="margin-left:auto;font-size:13px;color:${open?A:'var(--text-dim)'}">${open?'hide ▲':'show ▼'}</span>
-        </div>`+(open?`<div style="background:rgba(59,130,246,0.05);border:1px solid ${A};border-top:none;
-          border-radius:0 0 10px 10px;padding:2px 12px 8px;max-width:630px;margin-bottom:6px">
-          ${list.map(rowHTML).join('')}</div>`:'');
+        </div>`+(open?list.map(rowHTML).join(''):'');
     }).join('');
   }else{
     body=groups.map(k=>catHeader(k,byCat.get(k))+byCat.get(k).map(rowHTML).join('')).join('');
