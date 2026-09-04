@@ -6120,22 +6120,78 @@ function posToggleUsedBy(enc){
   posRerenderList();   // only the list changes, so the scroller survives untouched
 }
 const posGroupLabel=(g)=>posGroupNames[posGroupKey(g)]||g.name;
-// Drop saved changes that point at no group any more — junk left by the rename bug,
-// and anything attached to a group that has since been removed. Silently carrying
-// them would put nonsense in the paste that goes to Claude.
+// Drop saved changes that no longer change anything.
+//
+// Two kinds. ORPHANS point at a group that does not exist — junk from the rename bug,
+// or a group since removed. APPLIED ones have already landed in the register: a
+// rename to the name the group now has, a detach for an item the group is no longer
+// on, an attach for one it already covers, a price equal to the catalog's.
+//
+// Without this the pending list never empties. Vinny applies a change, the paste
+// still lists it, and he sends the same edits back for ever — "Type → Type".
 function posPruneOrphans(){
-  const known=new Set();
-  for(const g of ((posS.cat&&posS.cat.mod_groups)||[]))
-    known.add(g.num!=null?String(g.num):'n:'+g.name);
-  for(const g of posNewGroups)known.add(g.key);
-  if(!known.size)return;   // catalog not loaded yet — do not prune on nothing
-  let changed=false;
-  for(const map of [['ct_pos_group_names',posGroupNames],['ct_pos_group_detach',posGroupDetach],
-                    ['ct_pos_group_mods',posGroupMods],['ct_pos_group_attach',posGroupAttach]]){
-    for(const k of Object.keys(map[1]))
-      if(!known.has(k)){delete map[1][k];changed=true;kvPush(map[0],map[1],Date.now());}
+  const cat=posS.cat; if(!cat||!(cat.mod_groups||[]).length)return;   // never prune on an empty catalog
+  const byKey={};
+  for(const g of cat.mod_groups)byKey[g.num!=null?String(g.num):'n:'+g.name]=g;
+  const mine=new Set(posNewGroups.map(g=>g.key));
+  const known=new Set([...Object.keys(byKey),...mine]);
+  const byItem={}; for(const i of (cat.items||[]))byItem[i.key]=i;
+  const dirty=new Set();
+  const drop=(store,key,which)=>{delete store[key];dirty.add(which)};
+
+  // orphans
+  for(const [which,store] of [['ct_pos_group_names',posGroupNames],['ct_pos_group_detach',posGroupDetach],
+                              ['ct_pos_group_mods',posGroupMods],['ct_pos_group_attach',posGroupAttach]])
+    for(const k of Object.keys(store))if(!known.has(k))drop(store,k,which);
+
+  // renames that match what the group is already called
+  for(const [k,v] of Object.entries(posGroupNames)){
+    const g=byKey[k]; if(g&&g.name===v)drop(posGroupNames,k,'ct_pos_group_names');
   }
-  if(changed)posRedraw();
+  // detaches for items the group is no longer on
+  for(const [k,items] of Object.entries(posGroupDetach)){
+    const g=byKey[k]; if(!g)continue;
+    const left=items.filter(n=>(g.used_by||[]).includes(n));
+    if(left.length===items.length)continue;
+    if(left.length)posGroupDetach[k]=left; else delete posGroupDetach[k];
+    dirty.add('ct_pos_group_detach');
+  }
+  // attaches the register already has
+  for(const [k,a] of Object.entries(posGroupAttach)){
+    const g=byKey[k]; if(!g)continue;
+    const items=(a.items||[]).filter(n=>!(g.used_by||[]).includes(n));
+    if(items.length===(a.items||[]).length)continue;
+    if(items.length||(a.cats||[]).length)posGroupAttach[k]={cats:a.cats||[],items};
+    else delete posGroupAttach[k];
+    dirty.add('ct_pos_group_attach');
+  }
+  // mods the group already holds
+  for(const [k,mods] of Object.entries(posGroupMods)){
+    const g=byKey[k]; if(!g)continue;
+    const left=mods.filter(m=>!(g.choices||[]).some(c=>c.name===m));
+    if(left.length===mods.length)continue;
+    if(left.length)posGroupMods[k]=left; else delete posGroupMods[k];
+    dirty.add('ct_pos_group_mods');
+  }
+  // prices and routing the catalog now matches
+  for(const [k,cents] of Object.entries(posPrices)){
+    const it=byItem[k]; if(it&&it.cents===cents)drop(posPrices,k,'ct_pos_prices');
+  }
+  for(const [k,ps] of Object.entries(posRouting)){
+    const it=byItem[k]; if(!it)continue;
+    const orig=it.printers||[];
+    if(ps.length===orig.length&&ps.every(p=>orig.includes(p)))drop(posRouting,k,'ct_pos_routing');
+  }
+  // food mods that now exist for real
+  const before=posNewMods.length;
+  posNewMods=posNewMods.filter(m=>!(cat.items||[]).some(i=>i.cat==='Food Mods'&&i.name===m.name));
+  if(posNewMods.length!==before)dirty.add('ct_pos_new_mods');
+
+  const stores={ct_pos_group_names:posGroupNames,ct_pos_group_detach:posGroupDetach,
+    ct_pos_group_mods:posGroupMods,ct_pos_group_attach:posGroupAttach,
+    ct_pos_prices:posPrices,ct_pos_routing:posRouting,ct_pos_new_mods:posNewMods};
+  for(const k of dirty)kvPush(k,stores[k],Date.now());
+  if(dirty.size)posRedraw();
 }
 
 function posRenameGroup(enc,encCurrent){
