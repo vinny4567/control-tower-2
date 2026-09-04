@@ -6381,10 +6381,35 @@ function posSaveGroups(){
   kvPush('ct_pos_group_attach',posGroupAttach,Date.now());
   posRedraw();
 }
-function posNewGroup(){
+// The browser's own confirm() is stuck with OK and Cancel, and "OK = required,
+// Cancel = optional" is a legend you have to read to answer a yes/no question. This
+// is the same dialog with the answer written on the buttons.
+function posAsk(question,yesLabel,noLabel){
+  return new Promise((resolve)=>{
+    const wrap=document.createElement('div');
+    wrap.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:20px';
+    wrap.innerHTML='<div style="background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:12px;max-width:420px;width:100%;padding:20px 20px 16px;box-shadow:0 18px 50px rgba(0,0,0,.35)">'
+      +'<div style="font-size:15px;line-height:1.45;margin-bottom:18px">'+question+'</div>'
+      +'<div style="display:flex;gap:10px;justify-content:flex-end">'
+      +'<button data-a="no" style="padding:9px 18px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer">'+noLabel+'</button>'
+      +'<button data-a="yes" style="padding:9px 18px;border-radius:8px;border:1px solid var(--accent);background:var(--accent);color:#fff;font-size:14px;font-weight:700;cursor:pointer">'+yesLabel+'</button>'
+      +'</div></div>';
+    const done=(v)=>{wrap.remove();document.removeEventListener('keydown',onKey);resolve(v);};
+    const onKey=(e)=>{if(e.key==='Escape')done(false);if(e.key==='Enter')done(true);};
+    wrap.addEventListener('click',(e)=>{
+      const b=e.target.closest('button[data-a]');
+      if(b)done(b.dataset.a==='yes');
+      else if(e.target===wrap)done(false);
+    });
+    document.addEventListener('keydown',onKey);
+    document.body.appendChild(wrap);
+    wrap.querySelector('button[data-a="yes"]').focus();
+  });
+}
+async function posNewGroup(){
   const name=prompt('Name the group (e.g. "Steak Prep", "Pizza Toppings")');
   if(!name||!name.trim())return;
-  const req=confirm('Is this group REQUIRED?\n\nOK = required (the server must answer it)\nCancel = optional');
+  const req=await posAsk('Is this group <b>required</b>?<br><br>Yes &mdash; the server has to answer it before the item rings in.<br>No &mdash; they can skip it.','Yes','No');
   const n=posNewGroups.reduce((m,g)=>Math.max(m,Number(String(g.key).split(':')[1]||0)),0)+1;
   posNewGroups.push({key:'new:'+n,name:name.trim(),required:req});
   posSaveGroups();
