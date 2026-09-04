@@ -6142,14 +6142,14 @@ let posChoiceCuts={};     // groupKey -> [choiceName]
 // sausag', '$frsh clams', stray capitals and truncations — and they print on the
 // kitchen ticket exactly as written, so a bad one is a bad one in front of a cook.
 let posModNames={};       // oldName -> newName
-const posModLabel=(n)=>posModNames[n]||n;
-function posRenameMod(encName){
-  const name=decodeURIComponent(encName);
-  const next=prompt('Rename this food mod\n\nIt prints on the kitchen ticket exactly as written.',
-    posModNames[name]||name);
+const posRowLabel=(r)=>posModNames[r.key]||r.name;
+function posRenameMod(encKey,encName){
+  const key=decodeURIComponent(encKey), name=decodeURIComponent(encName);
+  const next=prompt('Rename this\n\nThis is the button a server reads and what prints on the kitchen ticket.',
+    posModNames[key]||name);
   if(next===null)return;
   const v=String(next).trim();
-  if(!v||v===name)delete posModNames[name]; else posModNames[name]=v;
+  if(!v||v===name)delete posModNames[key]; else posModNames[key]=v;
   kvPush('ct_pos_mod_names',posModNames,Date.now());
   posRedraw();
 }
@@ -6280,11 +6280,12 @@ function posPruneOrphans(){
     const orig=it.printers||[];
     if(ps.length===orig.length&&ps.every(p=>orig.includes(p)))drop(posRouting,k,'ct_pos_routing');
   }
-  // renames the register has already taken
-  for(const [o,n] of Object.entries(posModNames))
-    if(!(cat.items||[]).some(i=>i.cat==='Food Mods'&&i.name===o)
-       ||(cat.items||[]).some(i=>i.cat==='Food Mods'&&i.name===n))
-      drop(posModNames,o,'ct_pos_mod_names');
+  // renames the register has already taken — the row is gone, or already reads the
+  // new name
+  for(const [k,n] of Object.entries(posModNames)){
+    const row=byItem[k];
+    if(!row||row.name===n)drop(posModNames,k,'ct_pos_mod_names');
+  }
   // food mods that now exist for real
   const before=posNewMods.length;
   posNewMods=posNewMods.filter(m=>!(cat.items||[]).some(i=>i.cat==='Food Mods'&&i.name===m.name));
@@ -6550,11 +6551,11 @@ function posItemsBodyHTML(){
   for(const r of shown){const k=r.cat||'—';if(!byCat.has(k)){byCat.set(k,[]);groups.push(k)}byCat.get(k).push(r)}
   const rowHTML=r=>`<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:14px;align-items:baseline;max-width:${r.cat==='Food Mods'?'740px':'630px'}">
       <span style="width:300px;${posDeletedMods.includes(r.name)?'text-decoration:line-through;color:#ef4444':''}">${
-        r.cat==='Food Mods'
-          ? `<span onclick="posRenameMod('${encodeURIComponent(r.name)}')" title="Rename — it prints on the ticket exactly as written"
-              style="cursor:pointer;border-bottom:1px dotted var(--text-muted);${posModNames[r.name]?'color:#22c55e;font-weight:700':''}">${esc(posModLabel(r.name))}</span>${
-              posModNames[r.name]?`<span style="font-size:11px;color:var(--text-muted)"> was ${esc(r.name)}</span>`:''}`
-          : esc(r.name)}${r.isNew?' <span style="color:#22c55e;font-size:11px;font-weight:700">new</span>':''}${r.hidden?' <span style="color:var(--text-muted);font-size:11px">(hidden)</span>':''}${posGapTags(posRowGaps(r))}
+        `<span onclick="posRenameMod('${encodeURIComponent(r.key)}','${encodeURIComponent(r.name)}')"
+            title="Rename — this is the button a server reads and what prints on the ticket"
+            style="cursor:pointer;border-bottom:1px dotted var(--text-muted);${posModNames[r.key]?'color:#22c55e;font-weight:700':''}">${esc(posRowLabel(r))}</span>${
+            posModNames[r.key]?`<span style="font-size:11px;color:var(--text-muted)"> was ${esc(r.name)}</span>`:''}`
+        }${r.isNew?' <span style="color:#22c55e;font-size:11px;font-weight:700">new</span>':''}${r.hidden?' <span style="color:var(--text-muted);font-size:11px">(hidden)</span>':''}${posGapTags(posRowGaps(r))}
         ${r.source==='choice'
           ? `<div style="font-size:11px;color:var(--text-muted)">${esc(r.prompt||'')} prompt${r.required?' · required':''}${(r.usedBy||[]).length>1?` · on ${r.usedBy.length} items`:(r.usedBy&&r.usedBy[0]?` · on ${esc(r.usedBy[0])}`:'')}</div>`
           : posItemGroupsHTML(r)}</span>
@@ -6728,8 +6729,9 @@ function posCopyChanges(){
   if(R.length){L.push('','PRINT ROUTING');for(const [k,ps] of R.sort()){const r=byKey[k];
     L.push(`  ${r?r.cat:'?'} | ${r?r.name:k} | ${ps.length?ps.join(', '):'(nowhere)'}`);}}
   const MN=Object.entries(posModNames);
-  if(MN.length){L.push('','FOOD MODS RENAMED');
-    for(const [o,n] of MN)L.push(`  ${o} → ${n}`);}
+  if(MN.length){L.push('','RENAMED');
+    for(const [k,n] of MN){const r=byKey[k];
+      L.push(`  ${r?r.cat:'?'} | ${r?r.name:k} → ${n}`);}}
   const CC=Object.entries(posChoiceCuts);
   if(CC.length){L.push('','CHOICES REMOVED FROM GROUPS');
     for(const [k,names] of CC){const g=posNewGroups.find(x=>x.key===k)
