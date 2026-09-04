@@ -5916,7 +5916,7 @@ function renderViewport(){if(activeTab===WED){document.getElementById('viewport'
 const POS='pos';
 const POS_URL_KEY='ct_pos_url';      // CRM portal (gift cards, customers)
 const POS_SRV_KEY='ct_pos_srv';      // POS server (checks, reports)
-let posS={sec:'items',showGroups:false,url:localStorage.getItem(POS_URL_KEY)||'',srv:localStorage.getItem(POS_SRV_KEY)||'',
+let posS={sec:'items',url:localStorage.getItem(POS_URL_KEY)||'',srv:localStorage.getItem(POS_SRV_KEY)||'',
   health:'unknown',me:null,dash:null,err:'',card:null,cust:null,busy:false,
   cat:null,catErr:'',q:'',catFilter:'all',gapsOnly:false,crmQ:'',crmResults:null,crmMember:null,demo:false,emp:null,
   rep:null,repDays:1,repErr:'',repBusy:false,showConn:false};
@@ -6012,7 +6012,6 @@ function posItemRows(){
 function posSetQ(v){posS.q=v;posRerenderList()}
 function posSetCat(v){posS.catFilter=v;posRerenderList()}
 function posToggleGaps(){posS.gapsOnly=!posS.gapsOnly;renderViewport()}
-function posToggleGroups(){posS.showGroups=!posS.showGroups;renderViewport()}
 
 // PRICES TYPED HERE ARE NOT LIVE IN THE REGISTER.
 //
@@ -6057,6 +6056,7 @@ function posGapTags(gaps){return (gaps||[]).map(g=>`<span style="font-size:11px;
 // ---- Items ------------------------------------------------------------------
 const POS_ITEM_CAP=250;
 function posItemsBodyHTML(){
+  if(posS.catFilter===POS_GROUPS_CAT)return posGroupsHTML();
   const rows=posItemRows();
   const shown=rows.slice(0,POS_ITEM_CAP);
   const head=`<div style="display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px">
@@ -6117,12 +6117,11 @@ function posItemsHTML(){
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
       <input id="pos-q" value="${esc(posS.q)}" placeholder="search name or category…" style="${posInput};flex:1;min-width:200px" oninput="posSetQ(this.value)">
       <select onchange="posSetCat(this.value)" style="${posInput}"><option value="all">every category</option>
-        ${cats.map(x=>`<option value="${esc(x)}" ${posS.catFilter===x?'selected':''}>${esc(x)}</option>`).join('')}</select>
+        ${posCatOptions(cats)}</select>
       <button onclick="posToggleGaps()" style="${posBtn(posS.gapsOnly?'#f59e0b':'#3f3f46')}">${posS.gapsOnly?'Gaps only':'Show gaps only'}</button>
     </div>
     <div id="pos-items-body">${posItemsBodyHTML()}</div>
   </div>
-  ${posGroupsSectionHTML()}
   <div style="color:var(--text-muted);font-size:12px;margin-top:10px">Snapshot generated ${esc(String(c.generated_at||'').slice(0,10))} from the register's own menu files. Re-run the exporter after a menu change.</div>`;
 }
 
@@ -6157,6 +6156,22 @@ function posCopyPrices(){
   }else{done(false)}
 }
 
+// Mod groups sits in the category picker directly under Food Mods, because that is
+// what it is — the groups those mods are organised into. It is not a real category
+// on any item, so it gets a sentinel value and its own body.
+const POS_GROUPS_CAT='__groups';
+function posCatOptions(cats){
+  const out=[];
+  const opt=(v,label)=>`<option value="${esc(v)}" ${posS.catFilter===v?'selected':''}>${esc(label)}</option>`;
+  for(const c of cats){
+    out.push(opt(c,c));
+    if(c==='Food Mods')out.push(opt(POS_GROUPS_CAT,'Mod groups'));
+  }
+  // If there were no Food Mods rows to anchor it to, still offer it.
+  if(!cats.includes('Food Mods'))out.push(opt(POS_GROUPS_CAT,'Mod groups'));
+  return out.join('');
+}
+
 function posNoPriceNow(){
   const c=posS.cat; if(!c)return 0;
   return c.items.filter(r=>(r.gaps||[]).includes('price')&&!posEntered(r)).length;
@@ -6177,24 +6192,16 @@ function posPriceCell(r){
       color:${v?(entered?'#22c55e':'var(--text)'):'var(--text-muted)'}">`;
 }
 
-function posGroupsSectionHTML(){
-  const c=posS.cat; const gs=(c&&c.mod_groups)||[];
-  if(!gs.length) return '';
-  const loose=gs.filter(g=>!g.used_by.length).length;
-  return `<div style="${posCardCss};margin-top:14px">
-    <div onclick="posToggleGroups()" style="display:flex;align-items:center;gap:10px;cursor:pointer">
-      <span style="font-size:15px;font-weight:700">Mod groups</span>
-      <span style="font-size:12px;color:var(--text-muted)">${gs.length} groups</span>
-      ${loose?`<span style="font-size:11px;font-weight:700;color:#f59e0b">${loose} attached to nothing</span>`:''}
-      <span style="margin-left:auto;font-size:13px;color:var(--text-dim)">${posS.showGroups?'hide ▲':'show ▼'}</span>
-    </div>
-    ${posS.showGroups?`<div style="margin-top:12px">${posGroupsHTML()}</div>`:''}
-  </div>`;
-}
-
 function posGroupsHTML(){
   const c=posS.cat; if(!c) return '<div style="color:var(--text-dim)">Loading…</div>';
-  const gs=c.mod_groups||[];
+  const q=(posS.q||'').toLowerCase().trim();
+  // Searching matches the group name, anything inside it, or an item that uses it —
+  // "chowder" should find Which Soup, and "filet" should find Meat Temp.
+  let gs=c.mod_groups||[];
+  if(q)gs=gs.filter(g=>g.name.toLowerCase().includes(q)
+    ||(g.choices||[]).some(ch=>ch.name.toLowerCase().includes(q))
+    ||(g.used_by||[]).some(n=>n.toLowerCase().includes(q)));
+  if(q&&!gs.length)return '<div style="padding:14px 0;color:var(--text-dim)">No mod group matches.</div>';
   if(!gs.length) return `<div style="${posCardCss}">This catalog predates mod groups — re-run <code>npm run catalog</code>.</div>`;
   const money=(x)=>x?`<span style="color:var(--accent,#f59e0b)"> +$${(x/100).toFixed(2)}</span>`:'';
   return gs.map(g=>`<div style="${posCardCss};margin-bottom:12px">
