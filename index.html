@@ -6073,27 +6073,30 @@ async function posLoadPrices(){
   // Fetch everything, compare it to what is already on screen, and only redraw when
   // something actually differs. A reload that changes nothing now changes nothing.
   const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
-  const [r,g,ng,at,rt,pc,nm,gn,gd,ml,dm,cc]=await Promise.all([
+  const [r,g,ng,at,rt,pc,nm,gn,gd,ml,dm,cc,mn]=await Promise.all([
     kvGet('ct_pos_prices'),kvGet('ct_pos_group_mods'),kvGet('ct_pos_new_groups'),
     kvGet('ct_pos_group_attach'),kvGet('ct_pos_routing'),kvGet('ct_pos_print_classes'),
     kvGet('ct_pos_new_mods'),kvGet('ct_pos_group_names'),kvGet('ct_pos_group_detach'),
-    kvGet('ct_pos_mod_letters'),kvGet('ct_pos_deleted_mods'),kvGet('ct_pos_choice_cuts')]);
+    kvGet('ct_pos_mod_letters'),kvGet('ct_pos_deleted_mods'),kvGet('ct_pos_choice_cuts'),
+    kvGet('ct_pos_mod_names')]);
   const next={
     prices:(r&&r.v)||{}, mods:(g&&g.v)||{}, groups:(ng&&ng.v)||[], attach:(at&&at.v)||{},
     routing:(rt&&rt.v)||{}, classes:(pc&&pc.v)||[], newMods:(nm&&nm.v)||[],
     names:(gn&&gn.v)||{}, detach:(gd&&gd.v)||{}, letters:(ml&&ml.v)||{},
-    deleted:(dm&&dm.v)||[], cuts:(cc&&cc.v)||{},
+    deleted:(dm&&dm.v)||[], cuts:(cc&&cc.v)||{}, modNames:(mn&&mn.v)||{},
   };
   const changed=!same(next.prices,posPrices)||!same(next.mods,posGroupMods)
     ||!same(next.groups,posNewGroups)||!same(next.attach,posGroupAttach)
     ||!same(next.routing,posRouting)||!same(next.classes,posNewClasses)
     ||!same(next.newMods,posNewMods)||!same(next.names,posGroupNames)
     ||!same(next.detach,posGroupDetach)||!same(next.letters,posModLetters)
-    ||!same(next.deleted,posDeletedMods)||!same(next.cuts,posChoiceCuts);
+    ||!same(next.deleted,posDeletedMods)||!same(next.cuts,posChoiceCuts)
+    ||!same(next.modNames,posModNames);
   posPrices=next.prices; posGroupMods=next.mods; posNewGroups=next.groups;
   posGroupAttach=next.attach; posRouting=next.routing; posNewClasses=next.classes;
   posNewMods=next.newMods; posGroupNames=next.names; posGroupDetach=next.detach;
   posModLetters=next.letters; posDeletedMods=next.deleted; posChoiceCuts=next.cuts;
+  posModNames=next.modNames;
   posPruneOrphans();   // redraws itself only if it actually drops something
   if(changed)posRedraw();
 }
@@ -6135,6 +6138,21 @@ let posDeletedMods=[];    // [modName]
 // until Claude applies it, and hiding it would have the page disagree with what a
 // server sees.
 let posChoiceCuts={};     // groupKey -> [choiceName]
+// Renamed food mods. The Micros names are verbatim and often awful — 'SLCD itl
+// sausag', '$frsh clams', stray capitals and truncations — and they print on the
+// kitchen ticket exactly as written, so a bad one is a bad one in front of a cook.
+let posModNames={};       // oldName -> newName
+const posModLabel=(n)=>posModNames[n]||n;
+function posRenameMod(encName){
+  const name=decodeURIComponent(encName);
+  const next=prompt('Rename this food mod\n\nIt prints on the kitchen ticket exactly as written.',
+    posModNames[name]||name);
+  if(next===null)return;
+  const v=String(next).trim();
+  if(!v||v===name)delete posModNames[name]; else posModNames[name]=v;
+  kvPush('ct_pos_mod_names',posModNames,Date.now());
+  posRedraw();
+}
 const posCutsFor=(k)=>posChoiceCuts[String(k)]||[];
 function posCutChoice(enc,encName){
   const k=decodeURIComponent(enc), name=decodeURIComponent(encName);
@@ -6262,6 +6280,11 @@ function posPruneOrphans(){
     const orig=it.printers||[];
     if(ps.length===orig.length&&ps.every(p=>orig.includes(p)))drop(posRouting,k,'ct_pos_routing');
   }
+  // renames the register has already taken
+  for(const [o,n] of Object.entries(posModNames))
+    if(!(cat.items||[]).some(i=>i.cat==='Food Mods'&&i.name===o)
+       ||(cat.items||[]).some(i=>i.cat==='Food Mods'&&i.name===n))
+      drop(posModNames,o,'ct_pos_mod_names');
   // food mods that now exist for real
   const before=posNewMods.length;
   posNewMods=posNewMods.filter(m=>!(cat.items||[]).some(i=>i.cat==='Food Mods'&&i.name===m.name));
@@ -6270,7 +6293,7 @@ function posPruneOrphans(){
   const stores={ct_pos_group_names:posGroupNames,ct_pos_group_detach:posGroupDetach,
     ct_pos_group_mods:posGroupMods,ct_pos_group_attach:posGroupAttach,
     ct_pos_prices:posPrices,ct_pos_routing:posRouting,ct_pos_new_mods:posNewMods,
-    ct_pos_choice_cuts:posChoiceCuts};
+    ct_pos_choice_cuts:posChoiceCuts,ct_pos_mod_names:posModNames};
   for(const k of dirty)kvPush(k,stores[k],Date.now());
   if(dirty.size)posRedraw();
 }
@@ -6526,7 +6549,12 @@ function posItemsBodyHTML(){
   const groups=[],byCat=new Map();
   for(const r of shown){const k=r.cat||'—';if(!byCat.has(k)){byCat.set(k,[]);groups.push(k)}byCat.get(k).push(r)}
   const rowHTML=r=>`<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:14px;align-items:baseline;max-width:${r.cat==='Food Mods'?'740px':'630px'}">
-      <span style="width:300px;${posDeletedMods.includes(r.name)?'text-decoration:line-through;color:#ef4444':''}">${esc(r.name)}${r.isNew?' <span style="color:#22c55e;font-size:11px;font-weight:700">new</span>':''}${r.hidden?' <span style="color:var(--text-muted);font-size:11px">(hidden)</span>':''}${posGapTags(posRowGaps(r))}
+      <span style="width:300px;${posDeletedMods.includes(r.name)?'text-decoration:line-through;color:#ef4444':''}">${
+        r.cat==='Food Mods'
+          ? `<span onclick="posRenameMod('${encodeURIComponent(r.name)}')" title="Rename — it prints on the ticket exactly as written"
+              style="cursor:pointer;border-bottom:1px dotted var(--text-muted);${posModNames[r.name]?'color:#22c55e;font-weight:700':''}">${esc(posModLabel(r.name))}</span>${
+              posModNames[r.name]?`<span style="font-size:11px;color:var(--text-muted)"> was ${esc(r.name)}</span>`:''}`
+          : esc(r.name)}${r.isNew?' <span style="color:#22c55e;font-size:11px;font-weight:700">new</span>':''}${r.hidden?' <span style="color:var(--text-muted);font-size:11px">(hidden)</span>':''}${posGapTags(posRowGaps(r))}
         ${r.source==='choice'
           ? `<div style="font-size:11px;color:var(--text-muted)">${esc(r.prompt||'')} prompt${r.required?' · required':''}${(r.usedBy||[]).length>1?` · on ${r.usedBy.length} items`:(r.usedBy&&r.usedBy[0]?` · on ${esc(r.usedBy[0])}`:'')}</div>`
           : posItemGroupsHTML(r)}</span>
@@ -6663,7 +6691,7 @@ function posPendingCount(){
     +Object.keys(posGroupMods).length+posNewGroups.length+Object.keys(posGroupAttach).length
     +posNewClasses.length+posNewMods.length+Object.keys(posGroupNames).length
     +Object.keys(posGroupDetach).length+Object.keys(posModLetters).length+posDeletedMods.length
-    +Object.keys(posChoiceCuts).length;
+    +Object.keys(posChoiceCuts).length+Object.keys(posModNames).length;
 }
 
 // Getting everything typed here into the build. No token changes hands — the page
@@ -6677,11 +6705,11 @@ function posClearChanges(){
   if(n>=5&&!confirm(`Really discard all ${n}? Copy them for Claude first if you want them applied.`))return;
   posPrices={};posRouting={};posGroupMods={};posNewGroups=[];posGroupAttach={};
   posNewClasses=[];posNewMods=[];posGroupNames={};posGroupDetach={};
-  posChoiceCuts={};posModLetters={};posDeletedMods=[];
+  posChoiceCuts={};posModLetters={};posDeletedMods=[];posModNames={};
   for(const k of ['ct_pos_prices','ct_pos_routing','ct_pos_group_mods','ct_pos_new_groups',
                   'ct_pos_group_attach','ct_pos_print_classes','ct_pos_new_mods',
                   'ct_pos_group_names','ct_pos_group_detach','ct_pos_choice_cuts',
-                  'ct_pos_mod_letters','ct_pos_deleted_mods'])
+                  'ct_pos_mod_letters','ct_pos_deleted_mods','ct_pos_mod_names'])
     kvPush(k,(k==='ct_pos_new_groups'||k==='ct_pos_print_classes'||k==='ct_pos_new_mods'
               ||k==='ct_pos_deleted_mods')?[]:{},Date.now());
   posRedraw();
@@ -6699,6 +6727,9 @@ function posCopyChanges(){
   const R=Object.entries(posRouting);
   if(R.length){L.push('','PRINT ROUTING');for(const [k,ps] of R.sort()){const r=byKey[k];
     L.push(`  ${r?r.cat:'?'} | ${r?r.name:k} | ${ps.length?ps.join(', '):'(nowhere)'}`);}}
+  const MN=Object.entries(posModNames);
+  if(MN.length){L.push('','FOOD MODS RENAMED');
+    for(const [o,n] of MN)L.push(`  ${o} → ${n}`);}
   const CC=Object.entries(posChoiceCuts);
   if(CC.length){L.push('','CHOICES REMOVED FROM GROUPS');
     for(const [k,names] of CC){const g=posNewGroups.find(x=>x.key===k)
@@ -6784,8 +6815,10 @@ function posRouteCell(r){
   // A modifier prints on the ticket of the item it modifies. It has no routing of
   // its own, so it gets no dropdown — and must not be shouted at in red for having
   // no printer, which is the correct state for it.
-  if(r.cat==='Food Mods')
-    return '<span style="font-size:12px;color:var(--text-muted)">prints with its item</span>';
+  // Food mods have no routing of their own — they print with the item they modify.
+  // Saying so on all 456 rows was 456 repetitions of one fact, so the column is just
+  // empty for them.
+  if(r.cat==='Food Mods')return '';
   const enc=encodeURIComponent(r.key);
   const on=posRoutedTo(r), changed=posRerouted(r);
   const sel=posRouteIdFor(on);
