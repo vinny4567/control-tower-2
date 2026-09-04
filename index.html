@@ -5999,11 +5999,25 @@ async function posLoadCatalog(){
   clearTimeout(timer);posS.catLoading=false;renderViewport();
 }
 function posRetryCatalog(){posS.cat=null;posS.catErr=null;posS.catLoading=false;posLoadCatalog()}
+// Mods created on this page are not in the snapshot, so they had no row and vanished
+// the moment they were made — you could add one and not see it anywhere. They join
+// the list as rows of their own, marked new.
+function posAllRows(){
+  const c=posS.cat; if(!c)return[];
+  if(!posNewMods.length)return c.items;
+  return c.items.concat(posNewMods.map(m=>({
+    key:'nm:'+m.name, name:m.name, cat:'Food Mods', page:'mods', hidden:false,
+    cents:m.cents||0, itemClass:m.cents?502:501, printClass:null, printers:[],
+    station:null, course:null, prompts:0, taxExempt:false, source:'newmod',
+    isNew:true, groups:[], deferredGroups:[], gaps:[],
+  })));
+}
+
 function posItemRows(){
   const c=posS.cat;if(!c)return[];
   if(posS.catFilter===POS_CLASSES_CAT)posS.catFilter='all';   // moved to Printers
   const q=(posS.q||'').toLowerCase().trim();
-  return c.items.filter(r=>{
+  return posAllRows().filter(r=>{
     if(posS.catFilter!=='all'&&r.cat!==posS.catFilter)return false;
     if(posS.gapsOnly&&!posRowGaps(r).length)return false;
     if(q&&!(r.name||'').toLowerCase().includes(q)&&!String(r.num||'').includes(q))return false;
@@ -6204,6 +6218,46 @@ function posGapTags(gaps){return (gaps||[]).map(g=>`<span style="font-size:11px;
 
 // ---- Items ------------------------------------------------------------------
 const POS_ITEM_CAP=250;
+// Food Mods is 250 rows of a flat alphabet — the same shape as the register's
+// letter pages, so it reads the same way here: collapsed sections per letter,
+// opened one at a time. The leading '$', '*' and spaces are Micros formatting, not
+// the name, so they are stripped before deciding which letter a mod lives under.
+const posModLetter=(name)=>{
+  const c=String(name).replace(/^[^A-Za-z0-9]+/,'').charAt(0).toUpperCase();
+  return /[A-Z]/.test(c)?c:'#';
+};
+function posToggleLetter(L){posS.openLetters=posS.openLetters||{};
+  posS.openLetters[L]=!posS.openLetters[L];posRerenderList()}
+
+function posNewModRowHTML(){
+  return `<div style="${posCardCss};margin-bottom:12px;max-width:630px">
+    <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">New food mod</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <input id="nm-name" placeholder="name it…" autocomplete="off"
+        onkeydown="if(event.key==='Enter'){posAddStandaloneMod();event.preventDefault()}"
+        style="${posInput};flex:1;min-width:180px;font-size:14px;padding:8px 11px">
+      <input id="nm-price" placeholder="$ price" inputmode="decimal" autocomplete="off"
+        title="Leave blank for a free mod"
+        style="${posInput};width:96px;font-size:14px;padding:8px 11px;text-align:right">
+      <button onclick="posAddStandaloneMod()" style="${posBtn('#22c55e')};font-size:13px;padding:8px 16px">Add</button>
+    </div>
+    <div style="font-size:11px;color:var(--text-muted);margin-top:6px">Blank price means free. It joins the list here and goes to the register with the next Copy for Claude.</div>
+  </div>`;
+}
+function posAddStandaloneMod(){
+  const n=document.getElementById('nm-name'), p=document.getElementById('nm-price');
+  const name=n?String(n.value).trim():''; if(!name)return;
+  if(posModExists(name)){alert('“'+name+'” already exists.');return;}
+  const raw=p?String(p.value).replace(/[^0-9.]/g,''):'';
+  const cents=raw?Math.round(parseFloat(raw)*100):0;
+  posNewMods.push({name,cents:isFinite(cents)&&cents>0?cents:0});
+  kvPush('ct_pos_new_mods',posNewMods,Date.now());
+  if(n)n.value=''; if(p)p.value='';
+  posS.openLetters=posS.openLetters||{};
+  posS.openLetters[posModLetter(name)]=true;   // open where it landed, so it is visible
+  renderViewport();
+}
+
 function posItemsBodyHTML(){
   if(posS.catFilter===POS_GROUPS_CAT)return posGroupsHTML();
   const rows=posItemRows();
@@ -6218,7 +6272,7 @@ function posItemsBodyHTML(){
   const groups=[],byCat=new Map();
   for(const r of shown){const k=r.cat||'—';if(!byCat.has(k)){byCat.set(k,[]);groups.push(k)}byCat.get(k).push(r)}
   const rowHTML=r=>`<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:14px;align-items:baseline;max-width:630px">
-      <span style="width:300px">${esc(r.name)}${r.hidden?' <span style="color:var(--text-muted);font-size:11px">(hidden)</span>':''}${posGapTags(posRowGaps(r))}
+      <span style="width:300px">${esc(r.name)}${r.isNew?' <span style="color:#22c55e;font-size:11px;font-weight:700">new</span>':''}${r.hidden?' <span style="color:var(--text-muted);font-size:11px">(hidden)</span>':''}${posGapTags(posRowGaps(r))}
         ${r.source==='choice'
           ? `<div style="font-size:11px;color:var(--text-muted)">${esc(r.prompt||'')} prompt${r.required?' · required':''}${(r.usedBy||[]).length>1?` · on ${r.usedBy.length} items`:(r.usedBy&&r.usedBy[0]?` · on ${esc(r.usedBy[0])}`:'')}</div>`
           : posItemGroupsHTML(r)}</span>
@@ -6232,9 +6286,34 @@ function posItemsBodyHTML(){
       <span style="font-size:12px;color:var(--text-muted)">${list.length} item${list.length===1?'':'s'}</span>
       ${gaps?`<span style="font-size:11px;font-weight:700;color:#f59e0b;margin-left:auto">${gaps} need data</span>`:''}</div>`;
   };
-  const body=groups.map(k=>catHeader(k,byCat.get(k))+byCat.get(k).map(rowHTML).join('')).join('');
+  let body;
+  if(posS.catFilter==='Food Mods'&&!posS.q){
+    posS.openLetters=posS.openLetters||{};
+    const byLetter=new Map();
+    // The whole list, not the capped slice. The cap exists so a flat 900-row table
+    // does not choke the page; collapsed sections render nothing, so applying it
+    // here only chopped the end off the alphabet — a mod added under Z landed
+    // somewhere the page could not show.
+    for(const r of rows){const L=posModLetter(r.name);
+      if(!byLetter.has(L))byLetter.set(L,[]);byLetter.get(L).push(r)}
+    const letters=[...byLetter.keys()].sort();
+    body=posNewModRowHTML()+letters.map(L=>{
+      const list=byLetter.get(L), open=!!posS.openLetters[L];
+      const gaps=list.filter(r=>posRowGaps(r).length).length;
+      return `<div onclick="posToggleLetter('${L}')" style="display:flex;align-items:baseline;gap:10px;cursor:pointer;
+          margin:10px 0 2px;padding-bottom:5px;border-bottom:2px solid var(--border);max-width:630px">
+          <span style="font-size:15px;font-weight:800;width:22px">${L}</span>
+          <span style="font-size:12px;color:var(--text-muted)">${list.length} mod${list.length===1?'':'s'}</span>
+          ${gaps?`<span style="font-size:11px;font-weight:700;color:#f59e0b">${gaps} need data</span>`:''}
+          <span style="margin-left:auto;font-size:13px;color:var(--text-dim)">${open?'hide ▲':'show ▼'}</span>
+        </div>`+(open?list.map(rowHTML).join(''):'');
+    }).join('');
+  }else{
+    body=groups.map(k=>catHeader(k,byCat.get(k))+byCat.get(k).map(rowHTML).join('')).join('');
+  }
   // Never let a cap look like the whole answer.
-  const more=rows.length>shown.length?`<div style="padding:10px 0;color:var(--text-dim);font-size:13px">Showing ${shown.length} of ${rows.length} matches — narrow the search to see the rest.</div>`:
+  const capped=posS.catFilter==='Food Mods'&&!posS.q?false:rows.length>shown.length;
+  const more=capped?`<div style="padding:10px 0;color:var(--text-dim);font-size:13px">Showing ${shown.length} of ${rows.length} matches — narrow the search to see the rest.</div>`:
     `<div style="padding:10px 0;color:var(--text-muted);font-size:12px">${rows.length} item${rows.length===1?'':'s'}</div>`;
   return head+(shown.length?body:'<div style="padding:14px 0;color:var(--text-dim)">Nothing matches.</div>')+more;
 }
@@ -6251,7 +6330,7 @@ function posItemsHTML(){
   const cats=[...new Set(c.items.map(i=>i.cat))].sort();
   return `
   <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
-    ${posStat('Items',String(s.total||0),'menu + food mods')}
+    ${posStat('Items',String((s.total||0)+posNewMods.length),'menu + food mods')}
     ${posStat('No price',String(posNoPriceNow()),'priced items still at $0')}
 
     <button onclick="posCopyChanges()" title="Copy every change made here, to paste to Claude"
@@ -6566,8 +6645,10 @@ function posClassesHTML(){
     + mine + built;
 }
 
+const posGroupKey=(g)=>g.key!==undefined?g.key:(g.num!=null?String(g.num):'n:'+g.name);
+
 function posGroupModsHTML(g){
-  const k=g.key!==undefined?g.key:String(g.num);
+  const k=posGroupKey(g);
   const enc=encodeURIComponent(k);
   const added=posAddedTo(k);
   const byName={};
@@ -6602,7 +6683,7 @@ function posGroupModsHTML(g){
 }
 
 function posGroupAttachHTML(g){
-  const k=g.key!==undefined?g.key:String(g.num);
+  const k=posGroupKey(g);
   const enc=encodeURIComponent(k);
   const att=posAttachOf(k);
   const chip=(label,onRemove)=>`<span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;padding:3px 6px 3px 9px;border-radius:7px;background:rgba(96,165,250,0.10);border:1px solid #60a5fa;color:#60a5fa">
@@ -6661,10 +6742,12 @@ function posGroupsHTML(){
     return datalist+newBtn+'<div style="padding:14px 0;color:var(--text-dim)">No mod group matches.</div>';
   return datalist+newBtn+newCards+gs.map(g=>`<div style="${posCardCss};margin-bottom:12px">
     <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
-      <span style="font-size:13px;font-weight:800;color:var(--text-dim);font-variant-numeric:tabular-nums">${g.num}</span>
+      <span style="font-size:13px;font-weight:800;color:var(--text-dim);font-variant-numeric:tabular-nums">${g.num!=null?g.num:'—'}</span>
       <span style="font-size:17px;font-weight:700">${esc(g.name)}</span>
       <span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;border:1px solid currentColor;color:${g.required?'#ef4444':'var(--text-muted)'}">${g.required?'required':'optional'}</span>
       ${g.micros?'<span style="font-size:11px;color:var(--text-muted)">from the Configurator</span>':''}
+      ${g.inline?'<span style="font-size:11px;color:var(--text-muted)">declared on the item</span>':''}
+      ${g.variants>1?`<span style="font-size:11px;font-weight:700;color:#f59e0b" title="Items using this name do not all offer the same choices">${g.variants} versions</span>`:''}
       <span style="margin-left:auto;font-size:12px;color:${g.used_by.length?'var(--text-dim)':'#f59e0b'}">${g.used_by.length?g.used_by.length+' item'+(g.used_by.length===1?'':'s'):'not attached to anything'}</span>
     </div>
     ${posGroupModsHTML(g)}
