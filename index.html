@@ -6473,14 +6473,18 @@ function posItemsHTML(){
     ${posStat('Items',String((s.total||0)+posNewMods.length),'menu + food mods')}
     ${posStat('No price',String(posNoPriceNow()),'priced items still at $0')}
 
-    <button onclick="posCopyChanges()" title="Copy every change made here, to paste to Claude"
-      style="${posCardCss};padding:14px 16px;min-width:150px;flex:1;text-align:left;cursor:pointer;
-        font-family:inherit;border-color:${posPendingCount()?'#22c55e':'var(--border)'};
+    <div style="${posCardCss};padding:14px 16px;min-width:150px;flex:1;position:relative;
+        border-color:${posPendingCount()?'#22c55e':'var(--border)'};
         background:${posPendingCount()?'rgba(34,197,94,0.10)':'var(--surface)'}">
-      <div style="font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.6px">Copy for Claude</div>
-      <div style="font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;margin-top:4px;color:${posPendingCount()?'#22c55e':'var(--text-muted)'}">${posPendingCount()}</div>
-      <div id="pos-copy-note" style="font-size:12px;color:var(--text-dim);margin-top:2px">${posPendingCount()?'tap to copy, then paste to Claude':'nothing changed yet'}</div>
-    </button>
+      <div onclick="posCopyChanges()" title="Copy every change made here, to paste to Claude" style="cursor:pointer">
+        <div style="font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.6px">Copy for Claude</div>
+        <div style="font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;margin-top:4px;color:${posPendingCount()?'#22c55e':'var(--text-muted)'}">${posPendingCount()}</div>
+        <div id="pos-copy-note" style="font-size:12px;color:var(--text-dim);margin-top:2px">${posPendingCount()?'tap to copy, then paste to Claude':'nothing changed yet'}</div>
+      </div>
+      ${posPendingCount()?`<button onclick="event.stopPropagation();posClearChanges()" title="Throw away every pending change"
+        style="position:absolute;top:10px;right:12px;border:1px solid var(--border);background:transparent;
+          color:var(--text-muted);border-radius:7px;padding:3px 9px;font-family:inherit;font-size:12px;cursor:pointer">clear</button>`:''}
+    </div>
   </div>
   ${posPendingCount()?`<div style="border:1px solid #f59e0b;border-radius:12px;background:rgba(245,158,11,0.10);padding:12px 16px;margin-bottom:14px">
     <div style="font-weight:800;font-size:14px;color:#f59e0b">${posPendingCount()===1?'1 change made here is':posPendingCount()+' changes made here are'} NOT live on the iPads</div>
@@ -6540,6 +6544,22 @@ function posPendingCount(){
 
 // Getting everything typed here into the build. No token changes hands — the page
 // puts a plain list on the clipboard, Vinny pastes it, it goes into the code.
+// Throwing the lot away. Changes here are not in the register yet, so clearing them
+// loses work that exists nowhere else — hence the count in the confirm, and a second
+// look when there is a lot to lose.
+function posClearChanges(){
+  const n=posPendingCount(); if(!n)return;
+  if(!confirm(`Throw away ${n} pending change${n===1?'':'s'}?\n\nThey have not reached the iPads, so this cannot be undone.`))return;
+  if(n>=5&&!confirm(`Really discard all ${n}? Copy them for Claude first if you want them applied.`))return;
+  posPrices={};posRouting={};posGroupMods={};posNewGroups=[];posGroupAttach={};
+  posNewClasses=[];posNewMods=[];posGroupNames={};posGroupDetach={};
+  for(const k of ['ct_pos_prices','ct_pos_routing','ct_pos_group_mods','ct_pos_new_groups',
+                  'ct_pos_group_attach','ct_pos_print_classes','ct_pos_new_mods',
+                  'ct_pos_group_names','ct_pos_group_detach'])
+    kvPush(k,(k==='ct_pos_new_groups'||k==='ct_pos_print_classes'||k==='ct_pos_new_mods')?[]:{},Date.now());
+  posRedraw();
+}
+
 function posCopyChanges(){
   const note=()=>document.getElementById('pos-copy-note');
   if(!posPendingCount()){const n=note();if(n)n.textContent='nothing changed yet';return;}
