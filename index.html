@@ -6077,6 +6077,7 @@ async function posLoadPrices(){
   const gd=await kvGet('ct_pos_group_detach');posGroupDetach=(gd&&gd.v)||{};
   const ml=await kvGet('ct_pos_mod_letters');posModLetters=(ml&&ml.v)||{};
   const dm=await kvGet('ct_pos_deleted_mods');posDeletedMods=(dm&&dm.v)||[];
+  const cc=await kvGet('ct_pos_choice_cuts');posChoiceCuts=(cc&&cc.v)||{};
   renderViewport();
 }
 // A group is either one from the catalog (key = its number) or one created here
@@ -6112,6 +6113,20 @@ let posModLetters={};     // modName -> 'C'
 // Mods marked for deletion. A Micros condiment cannot be deleted from here, so it is
 // recorded and shown struck through; one created here is simply dropped.
 let posDeletedMods=[];    // [modName]
+// Choices taken OUT of a group. These live in the register's menu files, so removing
+// one here records the removal and strikes it through — it is still on the iPads
+// until Claude applies it, and hiding it would have the page disagree with what a
+// server sees.
+let posChoiceCuts={};     // groupKey -> [choiceName]
+const posCutsFor=(k)=>posChoiceCuts[String(k)]||[];
+function posCutChoice(enc,encName){
+  const k=decodeURIComponent(enc), name=decodeURIComponent(encName);
+  const list=posCutsFor(k);
+  posChoiceCuts[k]=list.includes(name)?list.filter(x=>x!==name):[...list,name];
+  if(!posChoiceCuts[k].length)delete posChoiceCuts[k];
+  kvPush('ct_pos_choice_cuts',posChoiceCuts,Date.now());
+  posRedraw();
+}
 function posSetModLetter(encName){
   const name=decodeURIComponent(encName);
   const cur=posModLetters[name]||posModLetter(name);
@@ -6180,7 +6195,8 @@ function posPruneOrphans(){
 
   // orphans
   for(const [which,store] of [['ct_pos_group_names',posGroupNames],['ct_pos_group_detach',posGroupDetach],
-                              ['ct_pos_group_mods',posGroupMods],['ct_pos_group_attach',posGroupAttach]])
+                              ['ct_pos_group_mods',posGroupMods],['ct_pos_group_attach',posGroupAttach],
+                              ['ct_pos_choice_cuts',posChoiceCuts]])
     for(const k of Object.keys(store))if(!known.has(k))drop(store,k,which);
 
   // renames that match what the group is already called
@@ -6203,6 +6219,14 @@ function posPruneOrphans(){
     if(items.length||(a.cats||[]).length)posGroupAttach[k]={cats:a.cats||[],items};
     else delete posGroupAttach[k];
     dirty.add('ct_pos_group_attach');
+  }
+  // choices already taken out of the group
+  for(const [k,names] of Object.entries(posChoiceCuts)){
+    const g=byKey[k]; if(!g)continue;
+    const left=names.filter(n=>(g.choices||[]).some(c=>c.name===n));
+    if(left.length===names.length)continue;
+    if(left.length)posChoiceCuts[k]=left; else delete posChoiceCuts[k];
+    dirty.add('ct_pos_choice_cuts');
   }
   // mods the group already holds
   for(const [k,mods] of Object.entries(posGroupMods)){
@@ -6228,7 +6252,8 @@ function posPruneOrphans(){
 
   const stores={ct_pos_group_names:posGroupNames,ct_pos_group_detach:posGroupDetach,
     ct_pos_group_mods:posGroupMods,ct_pos_group_attach:posGroupAttach,
-    ct_pos_prices:posPrices,ct_pos_routing:posRouting,ct_pos_new_mods:posNewMods};
+    ct_pos_prices:posPrices,ct_pos_routing:posRouting,ct_pos_new_mods:posNewMods,
+    ct_pos_choice_cuts:posChoiceCuts};
   for(const k of dirty)kvPush(k,stores[k],Date.now());
   if(dirty.size)posRedraw();
 }
@@ -6626,7 +6651,8 @@ function posPendingCount(){
   return Object.keys(posPrices).length+Object.keys(posRouting).length
     +Object.keys(posGroupMods).length+posNewGroups.length+Object.keys(posGroupAttach).length
     +posNewClasses.length+posNewMods.length+Object.keys(posGroupNames).length
-    +Object.keys(posGroupDetach).length+Object.keys(posModLetters).length+posDeletedMods.length;
+    +Object.keys(posGroupDetach).length+Object.keys(posModLetters).length+posDeletedMods.length
+    +Object.keys(posChoiceCuts).length;
 }
 
 // Getting everything typed here into the build. No token changes hands — the page
@@ -6640,10 +6666,13 @@ function posClearChanges(){
   if(n>=5&&!confirm(`Really discard all ${n}? Copy them for Claude first if you want them applied.`))return;
   posPrices={};posRouting={};posGroupMods={};posNewGroups=[];posGroupAttach={};
   posNewClasses=[];posNewMods=[];posGroupNames={};posGroupDetach={};
+  posChoiceCuts={};posModLetters={};posDeletedMods=[];
   for(const k of ['ct_pos_prices','ct_pos_routing','ct_pos_group_mods','ct_pos_new_groups',
                   'ct_pos_group_attach','ct_pos_print_classes','ct_pos_new_mods',
-                  'ct_pos_group_names','ct_pos_group_detach'])
-    kvPush(k,(k==='ct_pos_new_groups'||k==='ct_pos_print_classes'||k==='ct_pos_new_mods')?[]:{},Date.now());
+                  'ct_pos_group_names','ct_pos_group_detach','ct_pos_choice_cuts',
+                  'ct_pos_mod_letters','ct_pos_deleted_mods'])
+    kvPush(k,(k==='ct_pos_new_groups'||k==='ct_pos_print_classes'||k==='ct_pos_new_mods'
+              ||k==='ct_pos_deleted_mods')?[]:{},Date.now());
   posRedraw();
 }
 
@@ -6659,6 +6688,11 @@ function posCopyChanges(){
   const R=Object.entries(posRouting);
   if(R.length){L.push('','PRINT ROUTING');for(const [k,ps] of R.sort()){const r=byKey[k];
     L.push(`  ${r?r.cat:'?'} | ${r?r.name:k} | ${ps.length?ps.join(', '):'(nowhere)'}`);}}
+  const CC=Object.entries(posChoiceCuts);
+  if(CC.length){L.push('','CHOICES REMOVED FROM GROUPS');
+    for(const [k,names] of CC){const g=posNewGroups.find(x=>x.key===k)
+      ||(c.mod_groups||[]).find(x=>String(x.num)===k||('n:'+x.name)===k);
+      L.push(`  ${g?g.name:k}: ${names.join(', ')}`);}}
   if(posDeletedMods.length){L.push('','FOOD MODS TO DELETE');
     for(const n of posDeletedMods)L.push('  '+n);}
   const ML=Object.entries(posModLetters);
@@ -6930,8 +6964,20 @@ function posGroupModsHTML(g){
   for(const m of posNewMods)byName[m.name]=m;
   const money=(x)=>x?`<span style="opacity:.85"> +$${(x/100).toFixed(2)}</span>`:'';
 
-  const own=(g.choices||[]).map(ch=>
-    `<span style="font-size:13px;padding:3px 9px;border-radius:7px;background:var(--surface2);border:1px solid var(--border)">${esc(ch.name)}${money(ch.cents)}</span>`).join('');
+  const cuts=posCutsFor(k);
+  const own=(g.choices||[]).map(ch=>{
+    const gone=cuts.includes(ch.name);
+    return `<span style="display:inline-flex;align-items:center;gap:5px;font-size:13px;
+      padding:3px 5px 3px 9px;border-radius:7px;
+      background:${gone?'rgba(239,68,68,0.10)':'var(--surface2)'};
+      border:1px solid ${gone?'#ef4444':'var(--border)'};
+      color:${gone?'#ef4444':'var(--text)'};${gone?'text-decoration:line-through':''}">
+      ${esc(ch.name)}${money(ch.cents)}
+      <button onclick="posCutChoice('${enc}','${encodeURIComponent(ch.name)}')"
+        title="${gone?'put it back':'take this choice out of the group'}"
+        style="border:none;background:transparent;color:${gone?'#ef4444':'var(--text-muted)'};
+          cursor:pointer;font-size:14px;line-height:1;padding:0 2px;text-decoration:none">${gone?'↺':'×'}</button></span>`;
+  }).join('');
   const mine=added.map(n=>{
     const row=byName[n];
     return `<span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;padding:3px 6px 3px 9px;border-radius:7px;background:rgba(34,197,94,0.10);border:1px solid #22c55e;color:#22c55e">
