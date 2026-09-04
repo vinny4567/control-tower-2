@@ -6032,6 +6032,7 @@ async function posLoadPrices(){
   const ng=await kvGet('ct_pos_new_groups');posNewGroups=(ng&&ng.v)||[];
   const at=await kvGet('ct_pos_group_attach');posGroupAttach=(at&&at.v)||{};
   const rt=await kvGet('ct_pos_routing');posRouting=(rt&&rt.v)||{};
+  const pc=await kvGet('ct_pos_print_classes');posNewClasses=(pc&&pc.v)||[];
   renderViewport();
 }
 // A group is either one from the catalog (key = its number) or one created here
@@ -6044,6 +6045,30 @@ let posGroupAttach={};    // key -> {cats:[], items:[]}
 // printers, which is how a shared prep item reaches both lines.
 const POS_PRINTERS=['Bar','Expo','Salad','Main','Pizza'];
 let posRouting={};        // itemKey -> ['Main','Pizza']
+// Print classes created here. Same deal as everything else on this page: saved and
+// synced, offered in the routing dropdown, but not live on the iPads until applied.
+let posNewClasses=[];     // [{key:'pc:1', name, printers:[]}]
+function posSaveClasses(){kvPush('ct_pos_print_classes',posNewClasses,Date.now());renderViewport()}
+function posNewClass(){
+  const name=prompt('Name the print class (e.g. "Main / Salad", "Bar / Expo")');
+  if(!name||!name.trim())return;
+  const n=posNewClasses.reduce((m,c)=>Math.max(m,Number(String(c.key).split(':')[1]||0)),0)+1;
+  posNewClasses.push({key:'pc:'+n,name:name.trim(),printers:[]});
+  posSaveClasses();
+}
+function posDeleteClass(enc){
+  const k=decodeURIComponent(enc);
+  const used=Object.values(posRouting).length;
+  if(!confirm('Delete this print class?'+(used?'\n\nItems already routed to it keep their printers.':'')))return;
+  posNewClasses=posNewClasses.filter(c=>c.key!==k);
+  posSaveClasses();
+}
+function posClassTogglePrinter(enc,printer){
+  const k=decodeURIComponent(enc);
+  const c=posNewClasses.find(x=>x.key===k); if(!c)return;
+  c.printers=c.printers.includes(printer)?c.printers.filter(p=>p!==printer):[...c.printers,printer];
+  posSaveClasses();
+}
 const posRoutedTo=(r)=>Object.prototype.hasOwnProperty.call(posRouting,r.key)
   ?posRouting[r.key]:(r.printers||[]);
 const posRerouted=(r)=>Object.prototype.hasOwnProperty.call(posRouting,r.key);
@@ -6147,6 +6172,7 @@ function posGapTags(gaps){return (gaps||[]).map(g=>`<span style="font-size:11px;
 const POS_ITEM_CAP=250;
 function posItemsBodyHTML(){
   if(posS.catFilter===POS_GROUPS_CAT)return posGroupsHTML();
+  if(posS.catFilter===POS_CLASSES_CAT)return posClassesHTML();
   const rows=posItemRows();
   const shown=rows.slice(0,POS_ITEM_CAP);
   const head=`<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;max-width:630px">
@@ -6241,20 +6267,28 @@ function posRowGaps(r){
 // what it is — the groups those mods are organised into. It is not a real category
 // on any item, so it gets a sentinel value and its own body.
 const POS_GROUPS_CAT='__groups';
+const POS_CLASSES_CAT='__classes';
 function posCatOptions(cats){
   const out=[];
   const opt=(v,label)=>`<option value="${esc(v)}" ${posS.catFilter===v?'selected':''}>${esc(label)}</option>`;
   for(const c of cats){
     out.push(opt(c,c));
-    if(c==='Food Mods')out.push(opt(POS_GROUPS_CAT,'Mod groups'));
+    if(c==='Food Mods'){
+      out.push(opt(POS_GROUPS_CAT,'Mod groups'));
+      out.push(opt(POS_CLASSES_CAT,'Print classes'));
+    }
   }
-  if(!cats.includes('Food Mods'))out.push(opt(POS_GROUPS_CAT,'Mod groups'));
+  if(!cats.includes('Food Mods')){
+    out.push(opt(POS_GROUPS_CAT,'Mod groups'));
+    out.push(opt(POS_CLASSES_CAT,'Print classes'));
+  }
   return out.join('');
 }
 
 function posPendingCount(){
   return Object.keys(posPrices).length+Object.keys(posRouting).length
-    +Object.keys(posGroupMods).length+posNewGroups.length+Object.keys(posGroupAttach).length;
+    +Object.keys(posGroupMods).length+posNewGroups.length+Object.keys(posGroupAttach).length
+    +posNewClasses.length;
 }
 
 // Getting everything typed here into the build. No token changes hands — the page
@@ -6271,6 +6305,8 @@ function posCopyChanges(){
   const R=Object.entries(posRouting);
   if(R.length){L.push('','PRINT ROUTING');for(const [k,ps] of R.sort()){const r=byKey[k];
     L.push(`  ${r?r.cat:'?'} | ${r?r.name:k} | ${ps.length?ps.join(', '):'(nowhere)'}`);}}
+  if(posNewClasses.length){L.push('','NEW PRINT CLASSES');
+    for(const pc of posNewClasses)L.push(`  ${pc.name} | ${pc.printers.join(', ')||'(no printers picked)'}`);}
   if(posNewGroups.length){L.push('','NEW GROUPS');
     for(const g of posNewGroups)L.push(`  ${g.name} | ${g.required?'required':'optional'}`);}
   const M=Object.entries(posGroupMods);
@@ -6307,6 +6343,8 @@ function posRouteOptions(){
     label:pc.num+' '+pc.name+(pc.red?' · red':''),
     printers:pc.printers||[],
   }));
+  for(const c of posNewClasses)
+    if(c.printers.length)out.push({id:c.key,label:c.name+' (new)',printers:c.printers});
   for(const p of POS_PRINTERS)out.push({id:'s'+p,label:p+' only',printers:[p]});
   out.push({id:'none',label:'— prints nowhere —',printers:[]});
   return out;
@@ -6327,6 +6365,11 @@ function posSetRoute(enc,id){
   posRerenderList();renderViewport();
 }
 function posRouteCell(r){
+  // A modifier prints on the ticket of the item it modifies. It has no routing of
+  // its own, so it gets no dropdown — and must not be shouted at in red for having
+  // no printer, which is the correct state for it.
+  if(r.cat==='Food Mods')
+    return '<span style="font-size:12px;color:var(--text-muted)">prints with its item</span>';
   const enc=encodeURIComponent(r.key);
   const on=posRoutedTo(r), changed=posRerouted(r);
   const sel=posRouteIdFor(on);
@@ -6404,6 +6447,47 @@ function posGroupAddHTML(g){
       <button onclick="posAttachFromInput('${enc}','item')" style="${posBtn('#3f3f46')};font-size:13px;padding:8px 14px">Add item</button>
     </div>
   </div>`;
+}
+
+// Print classes: the ones the register knows, plus any created here.
+//
+// A class is a NAME and the set of printers it hits. 108 Main / Pizza being one class
+// that reaches two printers is the whole point of the idea — it is why a shared prep
+// item can land on two lines from a single setting on the item.
+function posClassesHTML(){
+  const c=posS.cat; if(!c)return '<div style="color:var(--text-dim)">Loading…</div>';
+  const chip=(p,on,onClick)=>`<button ${onClick?`onclick="${onClick}"`:'disabled'}
+    style="border:1px solid ${on?'#22c55e':'var(--border)'};
+      background:${on?'rgba(34,197,94,0.14)':'transparent'};
+      color:${on?'#22c55e':'var(--text-muted)'};border-radius:7px;padding:4px 10px;
+      margin-right:5px;font-size:13px;font-weight:700;font-family:inherit;
+      cursor:${onClick?'pointer':'default'};opacity:${onClick?1:0.75}">${p}</button>`;
+
+  const built=(c.print_classes||[]).map(pc=>`<div style="${posCardCss};margin-bottom:10px">
+    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+      <span style="font-size:13px;font-weight:800;color:var(--text-dim);font-variant-numeric:tabular-nums">${pc.num}</span>
+      <span style="font-size:16px;font-weight:700">${esc(pc.name)}</span>
+      <span style="margin-left:auto;font-size:12px;color:var(--text-muted)">in the register</span>
+    </div>
+    <div style="margin-top:8px">${POS_PRINTERS.map(p=>chip(p,(pc.printers||[]).includes(p),null)).join('')}</div>
+  </div>`).join('');
+
+  const mine=posNewClasses.map(pc=>{
+    const enc=encodeURIComponent(pc.key);
+    return `<div style="${posCardCss};margin-bottom:10px;border-color:#22c55e">
+      <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+        <span style="font-size:11px;font-weight:800;color:#22c55e;text-transform:uppercase;letter-spacing:.5px">new</span>
+        <span style="font-size:16px;font-weight:700">${esc(pc.name)}</span>
+        <button onclick="posDeleteClass('${enc}')" style="margin-left:auto;border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-size:13px">delete</button>
+      </div>
+      <div style="margin-top:8px">${POS_PRINTERS.map(p=>chip(p,pc.printers.includes(p),`posClassTogglePrinter('${enc}','${p}')`)).join('')}</div>
+      <div style="margin-top:6px;font-size:12px;color:${pc.printers.length?'var(--text-muted)':'#f59e0b'}">
+        ${pc.printers.length?esc(pc.printers.join(', ')):'pick at least one printer — until then it will not be offered on an item'}</div>
+    </div>`;
+  }).join('');
+
+  return `<button onclick="posNewClass()" style="${posBtn('#22c55e')};margin-bottom:14px">+ New print class</button>`
+    + mine + built;
 }
 
 function posGroupsHTML(){
