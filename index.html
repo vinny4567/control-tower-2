@@ -6377,7 +6377,7 @@ function posRouteCell(r){
       border:1px solid ${changed?'#22c55e':'var(--border)'};
       background:${changed?'rgba(34,197,94,0.10)':'var(--surface2)'};
       color:${on.length?(changed?'#22c55e':'var(--text)'):'#ef4444'}">${custom}${opts}</select>
-    <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${on.length?esc(on.join(', ')):'<span style="color:#ef4444">prints nowhere</span>'}</div>`;
+    ${on.length?'':'<div style="font-size:11px;color:#ef4444;margin-top:2px">prints nowhere</div>'}`;
 }
 
 function posPriceCell(r){
