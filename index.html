@@ -6028,6 +6028,29 @@ function posSetQ(v){posS.q=v;posRerenderList()}
 function posSetCat(v){posS.catFilter=v;posRerenderList()}
 function posToggleGaps(){posS.gapsOnly=!posS.gapsOnly;renderViewport()}
 
+// Re-rendering the tab throws away the scroll position, because the element that
+// actually scrolls lives INSIDE #viewport and is destroyed with it. Clicking "show
+// all 36" on a group two thirds down the page snapped back to the top, which makes
+// a long list unusable. Save where we were, re-render, put it back.
+function posScroller(){
+  for(const e of document.querySelectorAll('#viewport *')){
+    const cs=getComputedStyle(e);
+    if(/auto|scroll/.test(cs.overflowY)&&e.scrollHeight>e.clientHeight+4)return e;
+  }
+  return null;
+}
+function posRedraw(){
+  const el=posScroller();
+  const y=el?el.scrollTop:0;
+  renderViewport();
+  if(!y)return;
+  // Synchronously, before anything else gets a turn. Deferring to rAF was too late —
+  // something in between put it back to the top, and the restore then had no effect.
+  const n=posScroller(); if(n)n.scrollTop=y;
+  // Belt and braces for a render that finishes settling a frame later.
+  requestAnimationFrame(()=>{const m=posScroller();if(m&&m.scrollTop!==y)m.scrollTop=y;});
+}
+
 // PRICES TYPED HERE ARE NOT LIVE IN THE REGISTER.
 //
 // The register runs off menu.js in the angelis-pos repo; this page reads a snapshot
@@ -6088,12 +6111,13 @@ function posDetachItem(enc,encItem){
   posGroupDetach[k]=list.includes(item)?list.filter(x=>x!==item):[...list,item];
   if(!posGroupDetach[k].length)delete posGroupDetach[k];
   kvPush('ct_pos_group_detach',posGroupDetach,Date.now());
-  renderViewport();
+  posRedraw();
 }
 function posToggleUsedBy(enc){
   posS.openUsedBy=posS.openUsedBy||{};
   const k=decodeURIComponent(enc);
-  posS.openUsedBy[k]=!posS.openUsedBy[k];renderViewport();
+  posS.openUsedBy[k]=!posS.openUsedBy[k];
+  posRerenderList();   // only the list changes, so the scroller survives untouched
 }
 const posGroupLabel=(g)=>posGroupNames[posGroupKey(g)]||g.name;
 // Drop saved changes that point at no group any more — junk left by the rename bug,
@@ -6111,7 +6135,7 @@ function posPruneOrphans(){
     for(const k of Object.keys(map[1]))
       if(!known.has(k)){delete map[1][k];changed=true;kvPush(map[0],map[1],Date.now());}
   }
-  if(changed)renderViewport();
+  if(changed)posRedraw();
 }
 
 function posRenameGroup(enc,encCurrent){
@@ -6121,9 +6145,9 @@ function posRenameGroup(enc,encCurrent){
   const v=String(next).trim();
   if(!v||v===current)delete posGroupNames[k]; else posGroupNames[k]=v;
   kvPush('ct_pos_group_names',posGroupNames,Date.now());
-  renderViewport();
+  posRedraw();
 }
-function posSaveMods(){kvPush('ct_pos_new_mods',posNewMods,Date.now());renderViewport()}
+function posSaveMods(){kvPush('ct_pos_new_mods',posNewMods,Date.now());posRedraw()}
 function posModExists(name){
   const norm=(x)=>String(x).trim().toLowerCase();
   return ((posS.cat&&posS.cat.items)||[]).find(i=>i.cat==='Food Mods'&&norm(i.name)===norm(name))
@@ -6140,7 +6164,7 @@ function posCreateMod(enc,encName){
   if(el)el.value='';
   posAddGroupMod(enc,name);
 }
-function posSaveClasses(){kvPush('ct_pos_print_classes',posNewClasses,Date.now());renderViewport()}
+function posSaveClasses(){kvPush('ct_pos_print_classes',posNewClasses,Date.now());posRedraw()}
 function posNewClass(){
   const name=prompt('Name the print class (e.g. "Main / Salad", "Bar / Expo")');
   if(!name||!name.trim())return;
@@ -6170,7 +6194,7 @@ function posSaveGroups(){
   kvPush('ct_pos_group_mods',posGroupMods,Date.now());
   kvPush('ct_pos_new_groups',posNewGroups,Date.now());
   kvPush('ct_pos_group_attach',posGroupAttach,Date.now());
-  renderViewport();
+  posRedraw();
 }
 function posNewGroup(){
   const name=prompt('Name the group (e.g. "Steak Prep", "Pizza Toppings")');
@@ -6278,8 +6302,16 @@ const posModLetter=(name)=>{
   const c=String(name).replace(/^[^A-Za-z0-9]+/,'').charAt(0).toUpperCase();
   return /[A-Z]/.test(c)?c:'#';
 };
-function posToggleLetter(L){posS.openLetters=posS.openLetters||{};
-  posS.openLetters[L]=!posS.openLetters[L];posRerenderList()}
+function posToggleLetter(L){
+  posS.openLetters=posS.openLetters||{};
+  posS.openLetters[L]=!posS.openLetters[L];
+  // Opening a section changes the height of the list under the cursor, which is
+  // enough to move the scroll on its own — hold it where it was.
+  const el=posScroller(), y=el?el.scrollTop:0;
+  posRerenderList();
+  if(el&&document.contains(el))el.scrollTop=y;
+  else{const n=posScroller();if(n)n.scrollTop=y;}
+}
 
 function posNewModRowHTML(){
   return `<div style="${posCardCss};margin-bottom:12px;max-width:630px">
@@ -6307,7 +6339,7 @@ function posAddStandaloneMod(){
   if(n)n.value=''; if(p)p.value='';
   posS.openLetters=posS.openLetters||{};
   posS.openLetters[posModLetter(name)]=true;   // open where it landed, so it is visible
-  renderViewport();
+  posRedraw();
 }
 
 function posItemsBodyHTML(){
