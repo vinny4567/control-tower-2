@@ -6221,7 +6221,7 @@ function posItemsBodyHTML(){
       <span style="width:300px">${esc(r.name)}${r.hidden?' <span style="color:var(--text-muted);font-size:11px">(hidden)</span>':''}${posGapTags(posRowGaps(r))}
         ${r.source==='choice'
           ? `<div style="font-size:11px;color:var(--text-muted)">${esc(r.prompt||'')} prompt${r.required?' · required':''}${(r.usedBy||[]).length>1?` · on ${r.usedBy.length} items`:(r.usedBy&&r.usedBy[0]?` · on ${esc(r.usedBy[0])}`:'')}</div>`
-          : r.course?`<div style="font-size:11px;color:var(--text-muted)">course ${r.course}</div>`:''}</span>
+          : posItemGroupsHTML(r)}</span>
       <span style="width:82px;text-align:right">${posPriceCell(r)}</span>
       <span style="width:210px;padding-left:14px">${posRouteCell(r)}</span>
     </div>`;
@@ -6413,6 +6413,28 @@ function posRouteCell(r){
       background:${changed?'rgba(34,197,94,0.10)':'var(--surface2)'};
       color:${on.length?(changed?'#22c55e':'var(--text)'):'#ef4444'}">${custom}${opts}</select>
     ${on.length?'':'<div style="font-size:11px;color:#ef4444;margin-top:2px">prints nowhere</div>'}`;
+}
+
+// What a row asks when it is rung — the mod groups attached to it. More use than
+// the course number, which never changed and nobody looked at. Groups attached from
+// this page but not yet applied show green, so pending work is visible on the item
+// rather than only on the group.
+function posItemGroupsHTML(r){
+  if(r.cat==='Food Mods')return '';
+  const live=r.groups||[];
+  const pending=[];
+  for(const [k,a] of Object.entries(posGroupAttach)){
+    if(!a.cats.includes(r.cat)&&!a.items.includes(r.name))continue;
+    const g=posNewGroups.find(x=>x.key===k)
+      ||((posS.cat&&posS.cat.mod_groups)||[]).find(x=>String(x.num)===k);
+    if(g&&!live.includes(g.name))pending.push(g.name);
+  }
+  if(!live.length&&!pending.length)
+    return '<div style="font-size:11px;color:var(--text-muted);opacity:.6">no mod groups</div>';
+  return `<div style="font-size:11px;color:var(--text-muted)">`
+    +live.map(esc).join(' · ')
+    +(pending.length?`${live.length?' · ':''}<span style="color:#22c55e;font-weight:700">${pending.map(esc).join(' · ')}</span>`:'')
+    +`</div>`;
 }
 
 function posPriceCell(r){
