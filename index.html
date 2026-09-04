@@ -6700,21 +6700,21 @@ function posGroupAttachHTML(g){
   const att=posAttachOf(k);
   const chip=(label,onRemove)=>`<span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;padding:3px 6px 3px 9px;border-radius:7px;background:rgba(96,165,250,0.10);border:1px solid #60a5fa;color:#60a5fa">
       ${label}<button onclick="${onRemove}" title="remove" style="border:none;background:transparent;color:#60a5fa;cursor:pointer;font-size:15px;line-height:1;padding:0 2px">×</button></span>`;
+  // Item by item only. Attaching to a whole category was too blunt to be safe —
+  // 'all Pasta' quietly covers the half orders and the build-your-own button too,
+  // and a group landing somewhere nobody looked is how a prompt appears mid-service
+  // that nobody meant to add. Any category chips already saved still render, so an
+  // earlier one can be taken off.
   const catChips=att.cats.map(c=>chip('all '+esc(c),`posAttachRemove('${enc}','cat','${encodeURIComponent(c)}')`)).join('');
   const itemChips=att.items.map(i=>chip(esc(i),`posAttachRemove('${enc}','item','${encodeURIComponent(i)}')`)).join('');
   return `<div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--border)">
     <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">Attach this group to</div>
     ${(att.cats.length||att.items.length)?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 8px">${catChips}${itemChips}</div>`:''}
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
-      <input id="ga-c-${enc}" placeholder="a whole category…" autocomplete="off"
-        oninput="posAuto('cat','${enc}','ga-c-${enc}')"
-        onkeydown="if(event.key==='Enter'){posAttachFromInput('${enc}','cat');event.preventDefault()}"
-        style="${posInput};flex:1;min-width:150px;font-size:14px;padding:8px 11px">
-      <button onclick="posAttachFromInput('${enc}','cat')" style="${posBtn('#3f3f46')};font-size:13px;padding:8px 14px">Add category</button>
-      <input id="ga-i-${enc}" placeholder="or one item…" autocomplete="off"
+      <input id="ga-i-${enc}" placeholder="an item…" autocomplete="off"
         oninput="posAuto('item','${enc}','ga-i-${enc}')"
         onkeydown="if(event.key==='Enter'){posAttachFromInput('${enc}','item');event.preventDefault()}"
-        style="${posInput};flex:1;min-width:150px;font-size:14px;padding:8px 11px">
+        style="${posInput};flex:1;min-width:200px;font-size:14px;padding:8px 11px">
       <button onclick="posAttachFromInput('${enc}','item')" style="${posBtn('#3f3f46')};font-size:13px;padding:8px 14px">Add item</button>
     </div>
   </div>`;
