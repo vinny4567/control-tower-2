@@ -6546,18 +6546,12 @@ function posItemsBodyHTML(){
     body=posNewModRowHTML()+letters.map(L=>{
       const list=byLetter.get(L), open=!!posS.openLetters[L];
       const gaps=list.filter(r=>posRowGaps(r).length).length;
-      // An open section is tinted and ruled in blue down its left edge, so with three
-      // open at once it is obvious which rows belong to which letter — the header
-      // alone scrolls off and leaves you guessing.
-      const A='#3b82f6';
       return `<div onclick="posToggleLetter('${L}')" style="display:flex;align-items:baseline;gap:10px;cursor:pointer;
-          margin:${open?'14px 0 0':'10px 0 2px'};padding:${open?'8px 12px':'0 0 5px'};max-width:630px;
-          ${open?`background:rgba(59,130,246,0.14);border:1px solid ${A};border-radius:8px`
-                :'border-bottom:2px solid var(--border)'}">
-          <span style="font-size:15px;font-weight:800;width:22px;color:${open?A:'var(--text)'}">${L}</span>
-          <span style="font-size:12px;color:${open?A:'var(--text-muted)'}">${list.length} mod${list.length===1?'':'s'}</span>
+          margin:10px 0 2px;padding-bottom:5px;border-bottom:2px solid var(--border);max-width:630px">
+          <span style="font-size:15px;font-weight:800;width:22px">${L}</span>
+          <span style="font-size:12px;color:var(--text-muted)">${list.length} mod${list.length===1?'':'s'}</span>
           ${gaps?`<span style="font-size:11px;font-weight:700;color:#f59e0b">${gaps} need data</span>`:''}
-          <span style="margin-left:auto;font-size:13px;color:${open?A:'var(--text-dim)'}">${open?'hide ▲':'show ▼'}</span>
+          <span style="margin-left:auto;font-size:13px;color:var(--text-dim)">${open?'hide ▲':'show ▼'}</span>
         </div>`+(open?list.map(rowHTML).join(''):'');
     }).join('');
   }else{
