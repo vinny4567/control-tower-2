@@ -11,8 +11,8 @@
   <meta name="theme-color" content="#0a0b0f">
   <title>The Watch Tower</title>
   <style>
-    :root{--bg:#0a0b0f;--surface:#12161f;--surface2:#1b2130;--border:#2b3346;--accent:#ffb300;--accent2:#22d3ee;--text:#eef2f8;--text-dim:#c3ccdb;--text-muted:#8791a3;--ph-bg:#0e121b;--header-h:54px;--ph-h:40px}
-    body.light{--bg:#f5f6fa;--surface:#ffffff;--surface2:#eef0f5;--border:#d8dce8;--accent:#6c63ff;--accent2:#10b981;--text:#1a1d2e;--text-dim:#5a6178;--text-muted:#9ba3b8;--ph-bg:#f0f1f6}
+    :root{--bg:#0a0b0f;--surface:#12161f;--surface2:#1b2130;--border:#2b3346;--accent:#ffb300;--accent2:#22d3ee;--text:#eef2f8;--text-dim:#c3ccdb;--text-muted:#9aa5ba;--ph-bg:#0e121b;--header-h:54px;--ph-h:40px}
+    body.light{--bg:#f5f6fa;--surface:#ffffff;--surface2:#eef0f5;--border:#d8dce8;--accent:#6c63ff;--accent2:#10b981;--text:#1a1d2e;--text-dim:#5a6178;--text-muted:#5d6577;--ph-bg:#f0f1f6}
     body.light #app-header{box-shadow:0 1px 8px rgba(0,0,0,.08)}
     body.light #grid{background:var(--border)}
     body.light .launcher{background:var(--bg)}
@@ -131,7 +131,7 @@
     .email-sender{font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .email-subject{font-size:13px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .email-subject strong{color:var(--text);font-weight:600}
-    .email-time{font-size:11px;color:var(--text-muted);font-weight:500;white-space:nowrap}
+    .email-time{font-size:12px;color:var(--text-muted);font-weight:500;white-space:nowrap}
     .email-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-right:4px;vertical-align:middle}
     .email-empty{padding:34px 18px;text-align:center;color:var(--text-muted);font-size:13px}
     .email-signin{padding:30px 18px 34px;display:flex;flex-direction:column;align-items:center;gap:14px;color:var(--text-dim)}
@@ -140,7 +140,7 @@
     .signin-btn:hover{box-shadow:0 4px 14px rgba(0,0,0,.24)}
     .signin-btn:active{transform:translateY(1px)}
     .signin-btn::before{content:'';width:18px;height:18px;flex-shrink:0;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cpath fill='%23EA4335' d='M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z'/%3E%3Cpath fill='%234285F4' d='M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z'/%3E%3Cpath fill='%23FBBC05' d='M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z'/%3E%3Cpath fill='%2334A853' d='M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z'/%3E%3C/svg%3E");background-size:contain;background-repeat:no-repeat}
-    .signout-link{font-size:11px;color:var(--text-muted);cursor:pointer;text-decoration:underline;padding:8px 18px;text-align:right;display:block}
+    .signout-link{font-size:12px;color:var(--text-muted);cursor:pointer;text-decoration:underline;padding:8px 18px;text-align:right;display:block}
     .signout-link:hover{color:var(--text-dim)}
     /* Gmail tab mailbox */
     .gmail-mailbox{width:100%;height:100%;display:flex;flex-direction:column;background:var(--bg)}
@@ -285,7 +285,7 @@
     #wed-mailer label{display:block;font-size:11px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--text-muted);margin:10px 0 4px}
     #wed-mailer input,#wed-mailer select,#wed-mailer textarea{width:100%;background:#0a0b0f;border:1px solid var(--border);border-radius:7px;color:var(--text);font-size:13.5px;padding:9px 10px;font-family:inherit}
     #wed-mailer textarea{resize:vertical;line-height:1.5}
-    #wed-mailer .wm-hint{font-size:11px;color:var(--text-muted);margin-top:5px}
+    #wed-mailer .wm-hint{font-size:12px;color:var(--text-muted);margin-top:5px}
     #wed-mailer .wm-foot{display:flex;align-items:center;gap:9px;justify-content:flex-end;padding:12px 16px;border-top:1px solid var(--border)}
     #wed-mailer #wm-status{flex:1;font-size:12px;font-weight:700;color:var(--text-muted)}
     #wed-mailer #wm-status.bad{color:#e5484d}
@@ -294,7 +294,7 @@
     @media(max-width:600px){.mail-compose-btn{padding:9px 11px}}
     /* User chip in toolbar */
     .gmail-user{font-size:12px;color:var(--text-muted);padding:4px 10px;background:var(--bg);border:1px solid var(--border);border-radius:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}
-    .gmail-live{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--text-muted);margin-left:8px;font-weight:500}
+    .gmail-live{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--text-muted);margin-left:8px;font-weight:500}
     .gmail-live::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--accent2);box-shadow:0 0 6px var(--accent2);animation:livepulse 1.6s ease-in-out infinite}
     @keyframes livepulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.85)}}
     .panel{display:flex;flex-direction:column;background:var(--bg);overflow:hidden;min-width:0;min-height:0}
@@ -312,7 +312,7 @@
     .launcher .l-ico{font-size:54px;line-height:1;pointer-events:none}
     .launcher .l-name{font-size:17px;font-weight:700;color:var(--text);pointer-events:none}
     .launcher .l-btn{display:flex;align-items:center;gap:8px;padding:13px 32px;background:var(--accent);border:none;border-radius:12px;color:#fff;font-size:15px;font-weight:700;cursor:pointer;pointer-events:none;box-shadow:0 4px 16px rgba(108,99,255,.35)}
-    .launcher .l-hint{font-size:11px;color:var(--text-muted);pointer-events:none}
+    .launcher .l-hint{font-size:12px;color:var(--text-muted);pointer-events:none}
     .empty-state{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--text-muted)}
     .empty-state .e-ico{font-size:30px;opacity:.4}
     .empty-state p{font-size:12px}
@@ -381,7 +381,7 @@
     .docs-item:hover{background:var(--surface2)}
     .docs-item.active{background:var(--surface2);box-shadow:inset 3px 0 0 var(--accent)}
     .docs-item-title{font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:22px}
-    .docs-item-date{font-size:11px;color:var(--text-muted);margin-top:3px}
+    .docs-item-date{font-size:12px;color:var(--text-muted);margin-top:3px}
     .docs-item-del{position:absolute;top:9px;right:8px;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;padding:2px 6px;border-radius:5px;opacity:0;transition:opacity .12s}
     .docs-item:hover .docs-item-del{opacity:1}
     .docs-item-del:hover{color:#f87171;background:rgba(248,113,113,.14)}
@@ -395,7 +395,7 @@
     .doc-tb.wide{padding:0 12px;font-size:13px;gap:5px}
     .doc-tb-sep{width:1px;height:22px;background:var(--border);margin:0 4px}
     .doc-sel{height:34px;background:var(--surface);border:1px solid var(--border);border-radius:7px;color:var(--text);font-size:13px;padding:0 6px;font-family:inherit;cursor:pointer;outline:none}
-    .docs-status{font-size:11px;color:var(--text-muted);margin-left:auto;white-space:nowrap;padding-left:8px}
+    .docs-status{font-size:12px;color:var(--text-muted);margin-left:auto;white-space:nowrap;padding-left:8px}
     .docs-editor-wrap{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:24px;display:flex;justify-content:center;align-items:flex-start;background:var(--bg)}
     .docs-editor{position:relative;width:100%;max-width:820px;min-height:calc(100% - 0px);background:#f7f5ef;color:#161512;caret-color:#c47f00;border-radius:5px;padding:52px 62px;font-size:16px;line-height:1.7;font-family:Georgia,'Times New Roman',serif;outline:none;box-shadow:0 8px 34px rgba(0,0,0,.45);border:1px solid #00000030}
     /* Dropped images float free — grab and drag them anywhere on the page */
@@ -411,7 +411,7 @@
     @media(max-width:720px){.docs-side{width:140px}.docs-editor{padding:26px 20px}.docs-toolbar{gap:3px}}
     .gmail-thread-count{display:inline-block;background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:9px;padding:0 7px;font-size:10.5px;margin-left:6px;vertical-align:1px}
     .mail-attach{border-top:1px solid var(--border);padding:10px 14px 12px;background:var(--surface)}
-    .mail-attach-hd{font-size:11px;color:var(--text-muted);letter-spacing:.05em;margin-bottom:7px}
+    .mail-attach-hd{font-size:12px;color:var(--text-muted);letter-spacing:.05em;margin-bottom:7px}
     .mail-attach-row{display:flex;flex-wrap:wrap;gap:8px}
     .mail-attach-chip{display:flex;align-items:center;gap:8px;max-width:260px;background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:7px 11px;text-decoration:none;color:var(--text);font-size:12.5px}
     .mail-attach-chip:hover{border-color:var(--accent);color:var(--accent)}
@@ -452,7 +452,7 @@
     .tk-tog{font-size:12.5px;border:1px solid var(--border);border-radius:999px;padding:5px 11px;color:var(--text-muted);cursor:pointer}
     .tk-tog.on{border-color:var(--accent);color:var(--accent)}
     .tk-tog input{accent-color:var(--accent);margin:0}
-    .tk-tier{font-size:11px;color:var(--text-muted)}
+    .tk-tier{font-size:12px;color:var(--text-muted)}
     .tk-scroll{flex:1;overflow-y:auto;padding:14px}
     .tk-table{width:100%;border-collapse:collapse;font-size:16px;max-width:1050px}
     .tk-table th{position:sticky;top:-14px;background:var(--surface);color:var(--text-dim);text-align:left;padding:9px 10px;border-bottom:1px solid var(--border);font-size:12.5px;letter-spacing:.05em}
@@ -495,7 +495,7 @@
     .liq-name{font-size:17px;font-weight:800;color:var(--text);padding-right:76px;overflow-wrap:anywhere}
     .liq-launch{color:var(--accent);font-weight:800;margin-left:4px}
     .liq-note{font-size:12px;color:var(--text-dim);margin-top:6px}
-    .liq-url{font-size:11px;color:var(--text-muted);margin-top:10px;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .liq-url{font-size:12px;color:var(--text-muted);margin-top:10px;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .liq-card{overflow-wrap:anywhere}
     .liq-actions{position:absolute;top:12px;right:12px;display:flex;gap:6px;opacity:.55}
     .liq-card:hover .liq-actions{opacity:1}
@@ -522,9 +522,9 @@
     .liq-tbl th.liq-num{text-align:right}
     .liq-sec td{background:var(--surface2);font-weight:800;font-size:11px;letter-spacing:1px;color:var(--accent);padding:7px 10px;position:sticky;top:33px;z-index:1}
     .liq-nm{font-weight:600;color:var(--text);min-width:180px}
-    .liq-sz{display:block;font-size:11px;color:var(--text-muted);font-weight:400;margin-top:1px}
-    .liq-sup{font-size:11px;color:var(--text-muted);white-space:nowrap}
-    .liq-src{font-size:11px;color:var(--text-muted)}
+    .liq-sz{display:block;font-size:12px;color:var(--text-muted);font-weight:400;margin-top:1px}
+    .liq-sup{font-size:12px;color:var(--text-muted);white-space:nowrap}
+    .liq-src{font-size:12px;color:var(--text-muted)}
     .liq-in{background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:6px 8px;font-family:inherit;font-size:13px;text-align:right;width:66px}
     .liq-in:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px rgba(255,179,0,.18)}
     .liq-oh{font-weight:800;color:var(--accent);width:72px}
@@ -595,7 +595,7 @@
     .wed-lbl.editing{outline:2px solid var(--accent);background:rgba(0,0,0,.6);padding:2px 8px;border-radius:5px;min-width:50px;color:var(--text);cursor:text;letter-spacing:normal}
     .wed-sel{box-shadow:0 0 0 3px var(--accent),0 0 18px rgba(255,179,0,.5);z-index:5}
     .wed-tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:6px 12px;background:var(--surface);border-top:1px solid var(--border);flex-shrink:0}
-    .wed-tools .hint{font-size:11px;color:var(--text-muted);margin-right:4px}
+    .wed-tools .hint{font-size:12px;color:var(--text-muted);margin-right:4px}
     /* event view — sidebar + content pane */
     .wed-event{flex:1;display:flex;min-height:0}
     .wed-side{width:230px;flex-shrink:0;border-right:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;gap:8px;padding:14px 12px;overflow-y:auto}
@@ -686,7 +686,7 @@
       <button class="btn-secondary" style="width:100%;padding:11px;display:flex;align-items:center;justify-content:center;gap:8px" onclick="reloadAppHard()">
         🔄 Reload App (clear cache &amp; refresh)
       </button>
-      <div style="font-size:11px;color:var(--text-muted);margin-top:6px;line-height:1.5;text-align:center">
+      <div style="font-size:12px;color:var(--text-muted);margin-top:6px;line-height:1.5;text-align:center">
         Use this if The Watch Tower looks outdated or seems stuck on old data.<br>
         <span id="build-stamp" style="opacity:.75"></span>
       </div>
@@ -4210,7 +4210,7 @@ function wedSheetPaneHTML(fe){
   return `<div class="wed-main wed-main-col">
     <div class="wed-bar" style="border-bottom:1px solid var(--border)">
       <span style="font-weight:800;font-size:14px">📋 Event Sheet</span>
-      <span style="font-size:11px;color:var(--text-muted)">saves + syncs as you pick</span>
+      <span style="font-size:12px;color:var(--text-muted)">saves + syncs as you pick</span>
       <span style="flex:1"></span>
       <button class="wed-btn amber" onclick="wedChefPrint()">👨‍🍳 Print Chef Ticket</button>
       <button class="wed-btn" onclick="wedSheetPrint()">🖨 Proposal</button>
@@ -5166,7 +5166,7 @@ function wedListHTML(){const d=wedLoad();const feed=wed.feed||wedFeedCache();con
   return `<div id="wed-root">
     <div class="wed-bar">
       <span style="font-weight:800;font-size:15px">💍 Weddings & Events</span>
-      <span style="font-size:11px;color:var(--text-muted)">from the schedule app</span>
+      <span style="font-size:12px;color:var(--text-muted)">from the schedule app</span>
       <span style="flex:1"></span>
     </div>
     <div id="wed-list">
@@ -5185,7 +5185,7 @@ function wedPlanChrome(embedded){const ev=wedCur();if(!ev)return '';
   return `<div class="wed-bar">
       ${embedded?'':'<button class="wed-btn" onclick="wedBack()">‹ Events</button>'}
       <input type="text" id="wed-name" value="${esc(ev.name||'')}" placeholder="Layout name" oninput="wedRename(this.value)">
-      ${ev.sched?'<span style="font-size:11px;color:var(--text-muted);white-space:nowrap">linked to schedule</span>':''}
+      ${ev.sched?'<span style="font-size:12px;color:var(--text-muted);white-space:nowrap">linked to schedule</span>':''}
       ${ev.tpl?'<span style="font-size:11px;color:var(--accent);white-space:nowrap">this is your room template — press “Save as template” when done</span>':''}
       <select id="wed-venue" onchange="wedVenuePicked(this)">
         <option value="">📐 Venue / room…</option>
@@ -5226,7 +5226,7 @@ function wedEventHTML(){const fe=wedFeedEvent(wed.evId);if(!fe){wed.view='list';
     <div class="wed-bar">
       <button class="wed-btn" onclick="wedBackToList()">‹ Events</button>
       <span style="font-weight:800;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(wedName(fe))} · ${esc(wedPrettyDate(fe.date))}</span><button class="wed-btn" onclick="wedRenameEvent()" title="Rename this event">✎</button>
-      <span style="font-size:11px;color:var(--text-muted);white-space:nowrap">${fe.time?esc(fe.time)+' · ':''}staff ${fe.signupCount}/${fe.maxSignups}</span>
+      <span style="font-size:12px;color:var(--text-muted);white-space:nowrap">${fe.time?esc(fe.time)+' · ':''}staff ${fe.signupCount}/${fe.maxSignups}</span>
     </div>
     <div class="wed-event">
       <div class="wed-side">
@@ -6503,7 +6503,7 @@ function posToggleLetter(L){
 
 function posNewModRowHTML(){
   return `<div style="${posCardCss};margin-bottom:12px;max-width:630px">
-    <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">New food mod</div>
+    <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">New food mod</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <input id="nm-name" placeholder="name it…" autocomplete="off"
         oninput="posSyncNewModLetter()"
@@ -6519,7 +6519,7 @@ function posNewModRowHTML(){
       </select>
       <button onclick="posAddStandaloneMod()" style="${posBtn('#22c55e')};font-size:13px;padding:8px 16px">Add</button>
     </div>
-    <div style="font-size:11px;color:var(--text-muted);margin-top:6px">Blank price means free. The letter follows the name unless you change it — '$ 1 pc chk' belongs under C, not P.</div>
+    <div style="font-size:12px;color:var(--text-muted);margin-top:6px">Blank price means free. The letter follows the name unless you change it — '$ 1 pc chk' belongs under C, not P.</div>
   </div>`;
 }
 // The picker tracks the name as it is typed, so the common case needs no thought.
@@ -6578,10 +6578,10 @@ function posItemsBodyHTML(){
         `<span onclick="posRenameMod('${encodeURIComponent(r.key)}','${encodeURIComponent(r.name)}')"
             title="Rename — this is the button a server reads and what prints on the ticket"
             style="cursor:pointer;border-bottom:1px dotted var(--text-muted);${posModNames[r.key]?'color:#22c55e;font-weight:700':''}">${esc(posRowLabel(r))}</span>${
-            posModNames[r.key]?`<span style="font-size:11px;color:var(--text-muted)"> was ${esc(r.name)}</span>`:''}`
+            posModNames[r.key]?`<span style="font-size:12px;color:var(--text-muted)"> was ${esc(r.name)}</span>`:''}`
         }${r.isNew?' <span style="color:#22c55e;font-size:11px;font-weight:700">new</span>':''}${r.hidden?' <span style="color:var(--text-muted);font-size:11px">(hidden)</span>':''}${posGapTags(posRowGaps(r))}
         ${r.source==='choice'
-          ? `<div style="font-size:11px;color:var(--text-muted)">${esc(r.prompt||'')} prompt${r.required?' · required':''}${(r.usedBy||[]).length>1?` · on ${r.usedBy.length} items`:(r.usedBy&&r.usedBy[0]?` · on ${esc(r.usedBy[0])}`:'')}</div>`
+          ? `<div style="font-size:12px;color:var(--text-muted)">${esc(r.prompt||'')} prompt${r.required?' · required':''}${(r.usedBy||[]).length>1?` · on ${r.usedBy.length} items`:(r.usedBy&&r.usedBy[0]?` · on ${esc(r.usedBy[0])}`:'')}</div>`
           : posItemGroupsHTML(r)}</span>
       <span style="width:82px;text-align:right">${posPriceCell(r)}</span>
       <span style="width:210px;padding-left:14px">${posRouteCell(r)}</span>
@@ -7077,7 +7077,7 @@ function posGroupModsHTML(g){
         style="${posInput};flex:1;min-width:200px;font-size:14px;padding:8px 11px">
       <button onclick="posAddFromInput('${enc}')" style="${posBtn('#3f3f46')};font-size:13px;padding:8px 14px">Add</button>
     </div>
-    <div style="font-size:11px;color:var(--text-muted);margin-top:4px">New mods are made on the <b>Food Mods</b> page — this only attaches ones that already exist.</div>`;
+    <div style="font-size:12px;color:var(--text-muted);margin-top:4px">New mods are made on the <b>Food Mods</b> page — this only attaches ones that already exist.</div>`;
 }
 
 // The items a group is already on, as chips you can take it off. The attachment is
@@ -7105,7 +7105,7 @@ function posUsedByHTML(g){
           cursor:pointer;font-size:14px;line-height:1;padding:0 2px;text-decoration:none">${gone?'↺':'×'}</button></span>`;
   };
   return `<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)">
-    <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">
+    <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">
       On these items${off.length?` <span style="color:#ef4444">· ${off.length} being removed</span>`:''}</div>
     <div style="display:flex;flex-wrap:wrap;gap:5px">${shown.map(chip).join('')}</div>
     ${items.length>CAP?`<button onclick="posToggleUsedBy('${enc}')"
@@ -7128,7 +7128,7 @@ function posGroupAttachHTML(g){
   const catChips=att.cats.map(c=>chip('all '+esc(c),`posAttachRemove('${enc}','cat','${encodeURIComponent(c)}')`)).join('');
   const itemChips=att.items.map(i=>chip(esc(i),`posAttachRemove('${enc}','item','${encodeURIComponent(i)}')`)).join('');
   return `<div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--border)">
-    <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">Attach this group to</div>
+    <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">Attach this group to</div>
     ${(att.cats.length||att.items.length)?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 8px">${catChips}${itemChips}</div>`:''}
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
       <input id="ga-i-${enc}" placeholder="an item…" autocomplete="off"
@@ -7160,7 +7160,7 @@ function posGroupsHTML(){
     <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
       <span style="font-size:11px;font-weight:800;color:#22c55e;text-transform:uppercase;letter-spacing:.5px">new</span>
       <span style="font-size:17px;font-weight:700;color:${posGroupNames[posGroupKey(g)]?'#22c55e':'var(--text)'}">${esc(posGroupLabel(g))}</span>
-      ${posGroupNames[posGroupKey(g)]?`<span style="font-size:11px;color:var(--text-muted)">was ${esc(g.name)}</span>`:''}
+      ${posGroupNames[posGroupKey(g)]?`<span style="font-size:12px;color:var(--text-muted)">was ${esc(g.name)}</span>`:''}
       <button onclick="posRenameGroup('${encodeURIComponent(posGroupKey(g))}','${encodeURIComponent(g.name)}')"
         style="border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-size:12px;font-family:inherit">rename</button>
       <span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;border:1px solid currentColor;color:${g.required?'#ef4444':'var(--text-muted)'}">${g.required?'required':'optional'}</span>
@@ -7180,13 +7180,13 @@ function posGroupsHTML(){
     <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
       <span style="font-size:13px;font-weight:800;color:var(--text-dim);font-variant-numeric:tabular-nums">${g.num!=null?g.num:'—'}</span>
       <span style="font-size:17px;font-weight:700;color:${posGroupNames[posGroupKey(g)]?'#22c55e':'var(--text)'}">${esc(posGroupLabel(g))}</span>
-      ${posGroupNames[posGroupKey(g)]?`<span style="font-size:11px;color:var(--text-muted)">was ${esc(g.name)}</span>`:''}
+      ${posGroupNames[posGroupKey(g)]?`<span style="font-size:12px;color:var(--text-muted)">was ${esc(g.name)}</span>`:''}
       <button onclick="posRenameGroup('${encodeURIComponent(posGroupKey(g))}','${encodeURIComponent(g.name)}')"
         style="border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-size:12px;font-family:inherit">rename</button>
       <span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;border:1px solid currentColor;color:${g.required?'#ef4444':'var(--text-muted)'}">${g.required?'required':'optional'}</span>
-      ${g.micros?'<span style="font-size:11px;color:var(--text-muted)">from the Configurator</span>':''}
+      ${g.micros?'<span style="font-size:12px;color:var(--text-muted)">from the Configurator</span>':''}
       ${g.declared?'<span style="font-size:11px;color:#f59e0b;font-weight:700" title="It exists and keeps its prices, but no item asks it">defined, not in use</span>'
-        :g.inline?'<span style="font-size:11px;color:var(--text-muted)">declared on the item</span>':''}
+        :g.inline?'<span style="font-size:12px;color:var(--text-muted)">declared on the item</span>':''}
       ${g.variants>1?`<span style="font-size:11px;font-weight:700;color:#f59e0b" title="Items using this name do not all offer the same choices">${g.variants} versions</span>`:''}
       <button onclick="posDeleteGroup('${encodeURIComponent(posGroupKey(g))}','${encodeURIComponent(g.name)}',${(g.used_by||[]).length})"
         style="border:none;background:transparent;cursor:pointer;font-family:inherit;font-size:12px;
@@ -7303,7 +7303,7 @@ function posReportsHTML(){
       <div style="color:var(--text-dim);font-size:12px;margin-bottom:8px">${v.count||0} worth ${posMoney(v.total_cents||0)} — food that left without being paid for.</div>
       ${(v.voids||[]).slice(0,10).map(x=>`<div style="display:flex;gap:8px;padding:6px 0;border-top:1px solid var(--border);font-size:14px">
         <span style="width:70px;font-variant-numeric:tabular-nums">${posMoney(x.amount_cents)}</span>
-        <span style="flex:1">${esc(x.name)}<div style="font-size:11px;color:var(--text-muted)">${esc(x.reason||'')}</div></span>
+        <span style="flex:1">${esc(x.name)}<div style="font-size:12px;color:var(--text-muted)">${esc(x.reason||'')}</div></span>
         <span style="color:var(--text-dim);font-size:12px">${esc(x.by||'')}</span></div>`).join('')||'<div style="color:var(--text-dim);font-size:14px">None.</div>'}
     </div>
   </div>`;
@@ -7396,7 +7396,7 @@ function posEmployeesHTML(){
   const active=rows.filter(e=>e.active),inactive=rows.filter(e=>!e.active);
   const card=(e)=>`<div style="display:flex;gap:10px;align-items:baseline;padding:9px 0;border-top:1px solid var(--border);font-size:14px;flex-wrap:wrap;${e.active?'':'opacity:.55'}">
       <span style="flex:1;min-width:150px;font-weight:600">${esc(e.name)}
-        <div style="font-size:11px;color:var(--text-muted)">${esc((e.positions||[]).join(' · '))}</div></span>
+        <div style="font-size:12px;color:var(--text-muted)">${esc((e.positions||[]).join(' · '))}</div></span>
       <span style="width:110px"><span style="font-size:11px;font-weight:700;color:${e.role==='owner'||e.role==='manager'?'#f59e0b':'var(--text-dim)'};border:1px solid currentColor;border-radius:6px;padding:1px 6px">${esc((POS_ROLES[e.role]||{}).label||e.role)}</span></span>
       <span style="width:80px;font-variant-numeric:tabular-nums;color:var(--text-dim);font-size:13px">#${esc(String(e.pos_number||'—'))}</span>
       <span style="width:90px;font-size:12px;color:${e.pin_set?'var(--text-dim)':'#ef4444'}">${e.pin_set?'PIN set':'no PIN'}</span>
