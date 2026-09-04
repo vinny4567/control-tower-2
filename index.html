@@ -6075,6 +6075,8 @@ async function posLoadPrices(){
   const gn=await kvGet('ct_pos_group_names');posGroupNames=(gn&&gn.v)||{};
   posPruneOrphans();
   const gd=await kvGet('ct_pos_group_detach');posGroupDetach=(gd&&gd.v)||{};
+  const ml=await kvGet('ct_pos_mod_letters');posModLetters=(ml&&ml.v)||{};
+  const dm=await kvGet('ct_pos_deleted_mods');posDeletedMods=(dm&&dm.v)||[];
   renderViewport();
 }
 // A group is either one from the catalog (key = its number) or one created here
@@ -6103,6 +6105,43 @@ let posGroupNames={};     // groupKey -> new name
 // rest. Until then the item shows the group struck through rather than gone, so it
 // is obvious the change has not reached the iPads yet.
 let posGroupDetach={};    // groupKey -> [itemName]
+// Where a mod is filed, when its own name puts it in the wrong place. '$ 1 pc chk'
+// starts with a quantity, so the first letter is 'p' and it lands under P — miles
+// from the chicken a server is looking for. An override says C and it stays there.
+let posModLetters={};     // modName -> 'C'
+// Mods marked for deletion. A Micros condiment cannot be deleted from here, so it is
+// recorded and shown struck through; one created here is simply dropped.
+let posDeletedMods=[];    // [modName]
+function posSetModLetter(encName){
+  const name=decodeURIComponent(encName);
+  const cur=posModLetters[name]||posModLetter(name);
+  const v=prompt(`File “${name}” under which letter?`,cur);
+  if(v===null)return;
+  const L=String(v).trim().toUpperCase().charAt(0);
+  if(!/[A-Z]/.test(L))return;
+  if(L===posModLetter(name))delete posModLetters[name]; else posModLetters[name]=L;
+  kvPush('ct_pos_mod_letters',posModLetters,Date.now());
+  posS.openLetters=posS.openLetters||{}; posS.openLetters[L]=true;
+  posRedraw();
+}
+function posDeleteMod(encName){
+  const name=decodeURIComponent(encName);
+  const mine=posNewMods.some(m=>m.name===name);
+  if(mine){
+    if(!confirm(`Delete “${name}”?`))return;
+    posNewMods=posNewMods.filter(m=>m.name!==name);
+    kvPush('ct_pos_new_mods',posNewMods,Date.now());
+    posRedraw();return;
+  }
+  if(posDeletedMods.includes(name)){
+    posDeletedMods=posDeletedMods.filter(n=>n!==name);
+  }else{
+    if(!confirm(`Mark “${name}” for deletion?\n\nIt stays on the iPads until Claude applies it.`))return;
+    posDeletedMods=[...posDeletedMods,name];
+  }
+  kvPush('ct_pos_deleted_mods',posDeletedMods,Date.now());
+  posRedraw();
+}
 const posDetachedFrom=(k)=>posGroupDetach[String(k)]||[];
 const posIsDetached=(k,item)=>posDetachedFrom(k).includes(item);
 function posDetachItem(enc,encItem){
@@ -6355,8 +6394,11 @@ const POS_ITEM_CAP=250;
 // opened one at a time. The leading '$', '*' and spaces are Micros formatting, not
 // the name, so they are stripped before deciding which letter a mod lives under.
 const posModLetter=(name)=>{
-  const c=String(name).replace(/^[^A-Za-z0-9]+/,'').charAt(0).toUpperCase();
-  return /[A-Z]/.test(c)?c:'#';
+  // The FIRST LETTER, wherever it is. Micros names carry '$', '*', digits and
+  // brackets as formatting — '$ almonds', '**ALLERGY**', '(6) Grilled Shrimp' — and
+  // filing those under '#' or '6' buries them somewhere nobody would look for them.
+  const m=String(name).match(/[A-Za-z]/);
+  return m?m[0].toUpperCase():'#';
 };
 function posToggleLetter(L){
   posS.openLetters=posS.openLetters||{};
@@ -6394,7 +6436,7 @@ function posAddStandaloneMod(){
   kvPush('ct_pos_new_mods',posNewMods,Date.now());
   if(n)n.value=''; if(p)p.value='';
   posS.openLetters=posS.openLetters||{};
-  posS.openLetters[posModLetter(name)]=true;   // open where it landed, so it is visible
+  posS.openLetters[posModLetters[name]||posModLetter(name)]=true;   // open where it landed
   posRedraw();
 }
 
@@ -6411,13 +6453,19 @@ function posItemsBodyHTML(){
   // data, so a category with gaps is visible without opening it.
   const groups=[],byCat=new Map();
   for(const r of shown){const k=r.cat||'—';if(!byCat.has(k)){byCat.set(k,[]);groups.push(k)}byCat.get(k).push(r)}
-  const rowHTML=r=>`<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:14px;align-items:baseline;max-width:630px">
-      <span style="width:300px">${esc(r.name)}${r.isNew?' <span style="color:#22c55e;font-size:11px;font-weight:700">new</span>':''}${r.hidden?' <span style="color:var(--text-muted);font-size:11px">(hidden)</span>':''}${posGapTags(posRowGaps(r))}
+  const rowHTML=r=>`<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:14px;align-items:baseline;max-width:${r.cat==='Food Mods'?'740px':'630px'}">
+      <span style="width:300px;${posDeletedMods.includes(r.name)?'text-decoration:line-through;color:#ef4444':''}">${esc(r.name)}${r.isNew?' <span style="color:#22c55e;font-size:11px;font-weight:700">new</span>':''}${r.hidden?' <span style="color:var(--text-muted);font-size:11px">(hidden)</span>':''}${posGapTags(posRowGaps(r))}
         ${r.source==='choice'
           ? `<div style="font-size:11px;color:var(--text-muted)">${esc(r.prompt||'')} prompt${r.required?' · required':''}${(r.usedBy||[]).length>1?` · on ${r.usedBy.length} items`:(r.usedBy&&r.usedBy[0]?` · on ${esc(r.usedBy[0])}`:'')}</div>`
           : posItemGroupsHTML(r)}</span>
       <span style="width:82px;text-align:right">${posPriceCell(r)}</span>
       <span style="width:210px;padding-left:14px">${posRouteCell(r)}</span>
+      ${r.cat==='Food Mods'?`<span style="width:96px;text-align:right;white-space:nowrap">
+        <button onclick="posSetModLetter('${encodeURIComponent(r.name)}')" title="File it under a different letter"
+          style="border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-family:inherit;font-size:12px;padding:2px 5px">move</button>
+        <button onclick="posDeleteMod('${encodeURIComponent(r.name)}')" title="${posDeletedMods.includes(r.name)?'keep it after all':'delete this mod'}"
+          style="border:none;background:transparent;color:${posDeletedMods.includes(r.name)?'#ef4444':'var(--text-muted)'};cursor:pointer;font-family:inherit;font-size:12px;padding:2px 5px">${posDeletedMods.includes(r.name)?'undo':'delete'}</button>
+      </span>`:''}
     </div>`;
   const catHeader=(k,list)=>{
     const gaps=list.filter(r=>posRowGaps(r).length).length;
@@ -6434,19 +6482,30 @@ function posItemsBodyHTML(){
     // does not choke the page; collapsed sections render nothing, so applying it
     // here only chopped the end off the alphabet — a mod added under Z landed
     // somewhere the page could not show.
-    for(const r of rows){const L=posModLetter(r.name);
+    // The letter Micros itself files it under wins. Only when there is none — a mod
+    // created here, or one whose SLU was never captured — is it worked out from the
+    // name, and an override beats both.
+    for(const r of rows){const L=posModLetters[r.name]||r.letter||posModLetter(r.name);
       if(!byLetter.has(L))byLetter.set(L,[]);byLetter.get(L).push(r)}
     const letters=[...byLetter.keys()].sort();
     body=posNewModRowHTML()+letters.map(L=>{
       const list=byLetter.get(L), open=!!posS.openLetters[L];
       const gaps=list.filter(r=>posRowGaps(r).length).length;
+      // An open section is tinted and ruled in blue down its left edge, so with three
+      // open at once it is obvious which rows belong to which letter — the header
+      // alone scrolls off and leaves you guessing.
+      const A='#3b82f6';
       return `<div onclick="posToggleLetter('${L}')" style="display:flex;align-items:baseline;gap:10px;cursor:pointer;
-          margin:10px 0 2px;padding-bottom:5px;border-bottom:2px solid var(--border);max-width:630px">
-          <span style="font-size:15px;font-weight:800;width:22px">${L}</span>
-          <span style="font-size:12px;color:var(--text-muted)">${list.length} mod${list.length===1?'':'s'}</span>
+          margin:${open?'14px 0 0':'10px 0 2px'};padding:${open?'8px 12px':'0 0 5px'};max-width:630px;
+          ${open?`background:rgba(59,130,246,0.14);border:1px solid ${A};border-bottom:none;border-radius:10px 10px 0 0`
+                :'border-bottom:2px solid var(--border)'}">
+          <span style="font-size:15px;font-weight:800;width:22px;color:${open?A:'var(--text)'}">${L}</span>
+          <span style="font-size:12px;color:${open?A:'var(--text-muted)'}">${list.length} mod${list.length===1?'':'s'}</span>
           ${gaps?`<span style="font-size:11px;font-weight:700;color:#f59e0b">${gaps} need data</span>`:''}
-          <span style="margin-left:auto;font-size:13px;color:var(--text-dim)">${open?'hide ▲':'show ▼'}</span>
-        </div>`+(open?list.map(rowHTML).join(''):'');
+          <span style="margin-left:auto;font-size:13px;color:${open?A:'var(--text-dim)'}">${open?'hide ▲':'show ▼'}</span>
+        </div>`+(open?`<div style="background:rgba(59,130,246,0.05);border:1px solid ${A};border-top:none;
+          border-radius:0 0 10px 10px;padding:2px 12px 8px;max-width:630px;margin-bottom:6px">
+          ${list.map(rowHTML).join('')}</div>`:'');
     }).join('');
   }else{
     body=groups.map(k=>catHeader(k,byCat.get(k))+byCat.get(k).map(rowHTML).join('')).join('');
@@ -6539,7 +6598,7 @@ function posPendingCount(){
   return Object.keys(posPrices).length+Object.keys(posRouting).length
     +Object.keys(posGroupMods).length+posNewGroups.length+Object.keys(posGroupAttach).length
     +posNewClasses.length+posNewMods.length+Object.keys(posGroupNames).length
-    +Object.keys(posGroupDetach).length;
+    +Object.keys(posGroupDetach).length+Object.keys(posModLetters).length+posDeletedMods.length;
 }
 
 // Getting everything typed here into the build. No token changes hands — the page
@@ -6572,6 +6631,11 @@ function posCopyChanges(){
   const R=Object.entries(posRouting);
   if(R.length){L.push('','PRINT ROUTING');for(const [k,ps] of R.sort()){const r=byKey[k];
     L.push(`  ${r?r.cat:'?'} | ${r?r.name:k} | ${ps.length?ps.join(', '):'(nowhere)'}`);}}
+  if(posDeletedMods.length){L.push('','FOOD MODS TO DELETE');
+    for(const n of posDeletedMods)L.push('  '+n);}
+  const ML=Object.entries(posModLetters);
+  if(ML.length){L.push('','FILED UNDER A DIFFERENT LETTER');
+    for(const [n,v] of ML)L.push(`  ${n} → ${v}`);}
   const DT=Object.entries(posGroupDetach);
   if(DT.length){L.push('','GROUPS REMOVED FROM');
     for(const [k,items] of DT){const g=posNewGroups.find(x=>x.key===k)
