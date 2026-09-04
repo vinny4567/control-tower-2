@@ -6050,6 +6050,7 @@ async function posLoadPrices(){
   const pc=await kvGet('ct_pos_print_classes');posNewClasses=(pc&&pc.v)||[];
   const nm=await kvGet('ct_pos_new_mods');posNewMods=(nm&&nm.v)||[];
   const gn=await kvGet('ct_pos_group_names');posGroupNames=(gn&&gn.v)||{};
+  posPruneOrphans();
   const gd=await kvGet('ct_pos_group_detach');posGroupDetach=(gd&&gd.v)||{};
   renderViewport();
 }
@@ -6095,8 +6096,26 @@ function posToggleUsedBy(enc){
   posS.openUsedBy[k]=!posS.openUsedBy[k];renderViewport();
 }
 const posGroupLabel=(g)=>posGroupNames[posGroupKey(g)]||g.name;
-function posRenameGroup(enc,current){
-  const k=decodeURIComponent(enc);
+// Drop saved changes that point at no group any more — junk left by the rename bug,
+// and anything attached to a group that has since been removed. Silently carrying
+// them would put nonsense in the paste that goes to Claude.
+function posPruneOrphans(){
+  const known=new Set();
+  for(const g of ((posS.cat&&posS.cat.mod_groups)||[]))
+    known.add(g.num!=null?String(g.num):'n:'+g.name);
+  for(const g of posNewGroups)known.add(g.key);
+  if(!known.size)return;   // catalog not loaded yet — do not prune on nothing
+  let changed=false;
+  for(const map of [['ct_pos_group_names',posGroupNames],['ct_pos_group_detach',posGroupDetach],
+                    ['ct_pos_group_mods',posGroupMods],['ct_pos_group_attach',posGroupAttach]]){
+    for(const k of Object.keys(map[1]))
+      if(!known.has(k)){delete map[1][k];changed=true;kvPush(map[0],map[1],Date.now());}
+  }
+  if(changed)renderViewport();
+}
+
+function posRenameGroup(enc,encCurrent){
+  const k=decodeURIComponent(enc), current=decodeURIComponent(encCurrent);
   const next=prompt('Rename this mod group', posGroupNames[k]||current);
   if(next===null)return;
   const v=String(next).trim();
@@ -6815,7 +6834,7 @@ function posGroupsHTML(){
       <span style="font-size:11px;font-weight:800;color:#22c55e;text-transform:uppercase;letter-spacing:.5px">new</span>
       <span style="font-size:17px;font-weight:700;color:${posGroupNames[posGroupKey(g)]?'#22c55e':'var(--text)'}">${esc(posGroupLabel(g))}</span>
       ${posGroupNames[posGroupKey(g)]?`<span style="font-size:11px;color:var(--text-muted)">was ${esc(g.name)}</span>`:''}
-      <button onclick="posRenameGroup('${'${encodeURIComponent(posGroupKey(g))}'}','${'${esc(g.name)}'}')"
+      <button onclick="posRenameGroup('${encodeURIComponent(posGroupKey(g))}','${encodeURIComponent(g.name)}')"
         style="border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-size:12px;font-family:inherit">rename</button>
       <span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;border:1px solid currentColor;color:${g.required?'#ef4444':'var(--text-muted)'}">${g.required?'required':'optional'}</span>
       <button onclick="posDeleteNewGroup('${encodeURIComponent(g.key)}')" style="margin-left:auto;border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-size:13px">delete</button>
@@ -6834,7 +6853,7 @@ function posGroupsHTML(){
       <span style="font-size:13px;font-weight:800;color:var(--text-dim);font-variant-numeric:tabular-nums">${g.num!=null?g.num:'—'}</span>
       <span style="font-size:17px;font-weight:700;color:${posGroupNames[posGroupKey(g)]?'#22c55e':'var(--text)'}">${esc(posGroupLabel(g))}</span>
       ${posGroupNames[posGroupKey(g)]?`<span style="font-size:11px;color:var(--text-muted)">was ${esc(g.name)}</span>`:''}
-      <button onclick="posRenameGroup('${'${encodeURIComponent(posGroupKey(g))}'}','${'${esc(g.name)}'}')"
+      <button onclick="posRenameGroup('${encodeURIComponent(posGroupKey(g))}','${encodeURIComponent(g.name)}')"
         style="border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-size:12px;font-family:inherit">rename</button>
       <span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;border:1px solid currentColor;color:${g.required?'#ef4444':'var(--text-muted)'}">${g.required?'required':'optional'}</span>
       ${g.micros?'<span style="font-size:11px;color:var(--text-muted)">from the Configurator</span>':''}
