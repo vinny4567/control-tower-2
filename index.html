@@ -6022,7 +6022,110 @@ function posToggleGaps(){posS.gapsOnly=!posS.gapsOnly;renderViewport()}
 // in one go. The UI has to SAY that, or a price typed here looks like a price that
 // is being charged.
 let posPrices={};
-async function posLoadPrices(){const r=await kvGet('ct_pos_prices');posPrices=(r&&r.v)||{};}
+// Mods added to a group here, as {groupNum: [modName, ...]}. Names only — the price
+// is read from the catalog row at render time, so a mod whose price changes does not
+// go stale inside a group.
+let posGroupMods={};
+async function posLoadPrices(){
+  const r=await kvGet('ct_pos_prices');posPrices=(r&&r.v)||{};
+  const g=await kvGet('ct_pos_group_mods');posGroupMods=(g&&g.v)||{};
+  const ng=await kvGet('ct_pos_new_groups');posNewGroups=(ng&&ng.v)||[];
+  const at=await kvGet('ct_pos_group_attach');posGroupAttach=(at&&at.v)||{};
+  const rt=await kvGet('ct_pos_routing');posRouting=(rt&&rt.v)||{};
+  renderViewport();
+}
+// A group is either one from the catalog (key = its number) or one created here
+// (key = 'new:<n>'). Everything below is keyed the same way so the two behave alike.
+let posNewGroups=[];      // [{key,name,required}]
+let posGroupAttach={};    // key -> {cats:[], items:[]}
+// Where an item prints. Most rows say "(inferred)" — the station was read off the
+// menu build, not a real Micros print class — so this is where that gets corrected.
+// An item CAN print in more than one place: 108 Main / Pizza is one class hitting two
+// printers, which is how a shared prep item reaches both lines.
+const POS_PRINTERS=['Bar','Expo','Salad','Main','Pizza'];
+let posRouting={};        // itemKey -> ['Main','Pizza']
+const posRoutedTo=(r)=>Object.prototype.hasOwnProperty.call(posRouting,r.key)
+  ?posRouting[r.key]:(r.printers||[]);
+const posRerouted=(r)=>Object.prototype.hasOwnProperty.call(posRouting,r.key);
+function posTogglePrinter(enc,printer){
+  const key=decodeURIComponent(enc);
+  const row=((posS.cat&&posS.cat.items)||[]).find(i=>i.key===key); if(!row)return;
+  const cur=posRoutedTo(row);
+  const next=cur.includes(printer)?cur.filter(p=>p!==printer):[...cur,printer];
+  // Same original set as the build? Then it is not an override, drop it.
+  const orig=(row.printers||[]);
+  const same=next.length===orig.length&&next.every(p=>orig.includes(p));
+  if(same)delete posRouting[key]; else posRouting[key]=next;
+  kvPush('ct_pos_routing',posRouting,Date.now());
+  posRerenderList();renderViewport();
+}
+
+const posAddedTo=(k)=>posGroupMods[String(k)]||[];
+const posAttachOf=(k)=>posGroupAttach[String(k)]||{cats:[],items:[]};
+function posSaveGroups(){
+  kvPush('ct_pos_group_mods',posGroupMods,Date.now());
+  kvPush('ct_pos_new_groups',posNewGroups,Date.now());
+  kvPush('ct_pos_group_attach',posGroupAttach,Date.now());
+  renderViewport();
+}
+function posNewGroup(){
+  const name=prompt('Name the group (e.g. "Steak Prep", "Pizza Toppings")');
+  if(!name||!name.trim())return;
+  const req=confirm('Is this group REQUIRED?\n\nOK = required (the server must answer it)\nCancel = optional');
+  const n=posNewGroups.reduce((m,g)=>Math.max(m,Number(String(g.key).split(':')[1]||0)),0)+1;
+  posNewGroups.push({key:'new:'+n,name:name.trim(),required:req});
+  posSaveGroups();
+}
+function posDeleteNewGroup(enc){
+  const k=decodeURIComponent(enc);
+  if(!confirm('Delete this group and everything set on it?'))return;
+  posNewGroups=posNewGroups.filter(g=>g.key!==k);
+  delete posGroupMods[k];delete posGroupAttach[k];
+  posSaveGroups();
+}
+function posAttachAdd(enc,kind,value){
+  const k=decodeURIComponent(enc);
+  value=String(value||'').trim(); if(!value)return;
+  const a=posAttachOf(k);
+  const list=kind==='cat'?a.cats:a.items;
+  if(list.includes(value))return;
+  posGroupAttach[k]={cats:kind==='cat'?[...a.cats,value]:a.cats,
+                     items:kind==='item'?[...a.items,value]:a.items};
+  posSaveGroups();
+}
+function posAttachRemove(enc,kind,encV){
+  const k=decodeURIComponent(enc),v=decodeURIComponent(encV),a=posAttachOf(k);
+  posGroupAttach[k]={cats:kind==='cat'?a.cats.filter(x=>x!==v):a.cats,
+                     items:kind==='item'?a.items.filter(x=>x!==v):a.items};
+  if(!posGroupAttach[k].cats.length&&!posGroupAttach[k].items.length)delete posGroupAttach[k];
+  posSaveGroups();
+}
+function posAttachFromInput(enc,kind){
+  const el=document.getElementById((kind==='cat'?'ga-c-':'ga-i-')+enc);
+  if(!el)return; posAttachAdd(enc,kind,el.value); el.value='';
+}
+function posAddGroupMod(enc,name){
+  const k=decodeURIComponent(enc);
+  name=String(name||'').trim(); if(!name)return;
+  const list=posAddedTo(k);
+  // The catalog is the vocabulary — refuse a typo rather than inventing a modifier
+  // that exists nowhere.
+  const known=((posS.cat&&posS.cat.items)||[]).some(i=>i.cat==='Food Mods'&&i.name===name);
+  if(!known){alert('No food mod called "'+name+'". Pick one from the list.');return;}
+  if(list.includes(name))return;
+  posGroupMods[k]=[...list,name];
+  posSaveGroups();
+}
+function posRemoveGroupMod(encK,encN){
+  const k=decodeURIComponent(encK),name=decodeURIComponent(encN);
+  posGroupMods[k]=posAddedTo(k).filter(n=>n!==name);
+  if(!posGroupMods[k].length)delete posGroupMods[k];
+  posSaveGroups();
+}
+function posAddFromInput(enc){
+  const el=document.getElementById('gm-'+enc);
+  if(!el)return; posAddGroupMod(enc,el.value); el.value='';
+}
 function posSetPrice(enc,str){
   const key=decodeURIComponent(enc);
   const raw=String(str).replace(/[^0-9.]/g,'');
@@ -6061,7 +6164,7 @@ function posItemsBodyHTML(){
   const shown=rows.slice(0,POS_ITEM_CAP);
   const head=`<div style="display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px">
     <span style="flex:1;min-width:150px">Item</span><span style="width:88px;text-align:right">Price</span>
-    <span style="width:150px">Prints at</span></div>`;
+    <span style="width:186px">Prints at</span></div>`;
   // Grouped under category headings rather than run together as one long list. The
   // menu HAS a shape — appetizers, then pasta, then the bar — and a flat list of 776
   // rows hides it. The heading carries the count and how many rows in it still need
@@ -6074,7 +6177,7 @@ function posItemsBodyHTML(){
           ? `<div style="font-size:11px;color:var(--text-muted)">${esc(r.prompt||'')} prompt${r.required?' · required':''}${(r.usedBy||[]).length>1?` · on ${r.usedBy.length} items`:(r.usedBy&&r.usedBy[0]?` · on ${esc(r.usedBy[0])}`:'')}</div>`
           : r.course?`<div style="font-size:11px;color:var(--text-muted)">course ${r.course}</div>`:''}</span>
       <span style="width:88px;text-align:right">${posPriceCell(r)}</span>
-      <span style="width:150px;font-size:12px;color:var(--text-dim)">${esc((r.printers||[]).join(', ')||'—')}<div style="font-size:11px;color:var(--text-muted)">${esc(r.printClassLabel||'')}</div></span>
+      <span style="width:186px">${posRouteCell(r)}</span>
     </div>`;
   const catHeader=(k,list)=>{
     const gaps=list.filter(r=>posRowGaps(r).length).length;
@@ -6104,13 +6207,13 @@ function posItemsHTML(){
   <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
     ${posStat('Items',String(s.total||0),'menu + food mods')}
     ${posStat('No price',String(posNoPriceNow()),'priced items still at $0')}
-    ${posStat('Entered here',String(Object.keys(posPrices).length),'not live in the register yet')}
+    ${posStat('Pending',String(posPendingCount()),'not live in the register yet')}
     ${posStat('No printer',String(s.noPrinter||0),'would print nowhere')}
   </div>
-  ${Object.keys(posPrices).length?`<div style="border:1px solid #f59e0b;border-radius:12px;background:rgba(245,158,11,0.10);padding:12px 16px;margin-bottom:14px">
-    <div style="font-weight:800;font-size:14px;color:#f59e0b">${Object.keys(posPrices).length} price${Object.keys(posPrices).length===1?'':'s'} typed here are NOT live on the iPads</div>
-    <div style="font-size:13px;color:var(--text-dim);margin-top:3px">They are saved and synced across your devices, but the register still runs off the menu file.</div>
-    <button onclick="posCopyPrices()" style="${posBtn('#f59e0b')};margin-top:10px;font-size:13px;padding:8px 14px">Copy for Claude</button>
+  ${posPendingCount()?`<div style="border:1px solid #f59e0b;border-radius:12px;background:rgba(245,158,11,0.10);padding:12px 16px;margin-bottom:14px">
+    <div style="font-weight:800;font-size:14px;color:#f59e0b">${posPendingCount()} change${posPendingCount()===1?'':'s'} made here are NOT live on the iPads</div>
+    <div style="font-size:13px;color:var(--text-dim);margin-top:3px">Prices, print routing and mod groups are saved and synced across your devices, but the register still runs off the menu file.</div>
+    <button onclick="posCopyChanges()" style="${posBtn('#f59e0b')};margin-top:10px;font-size:13px;padding:8px 14px">Copy for Claude</button>
     <span id="pos-copy-note" style="font-size:12px;color:var(--text-dim);margin-left:8px"></span>
   </div>`:''}
   <div style="${posCardCss}">
@@ -6141,21 +6244,6 @@ function posRowGaps(r){
 
 // Getting the typed prices into the build. No token changes hands — the page puts
 // the list on the clipboard, Vinny pastes it, and it goes into menu.js in one go.
-function posCopyPrices(){
-  const c=posS.cat||{items:[]};
-  const byKey={};for(const r of c.items)byKey[r.key]=r;
-  const lines=Object.entries(posPrices).map(([k,cents])=>{
-    const r=byKey[k];
-    return `${r?r.cat:'?'} | ${r?r.name:k} | ${(cents/100).toFixed(2)}`;
-  }).sort();
-  const text='PRICES ENTERED IN THE WATCH TOWER\n'+lines.join('\n');
-  const note=document.getElementById('pos-copy-note');
-  const done=(ok)=>{if(note)note.textContent=ok?`${lines.length} copied — paste them to Claude`:'could not copy — select the list manually';};
-  if(navigator.clipboard&&navigator.clipboard.writeText){
-    navigator.clipboard.writeText(text).then(()=>done(true)).catch(()=>done(false));
-  }else{done(false)}
-}
-
 // Mod groups sits in the category picker directly under Food Mods, because that is
 // what it is — the groups those mods are organised into. It is not a real category
 // on any item, so it gets a sentinel value and its own body.
@@ -6167,14 +6255,67 @@ function posCatOptions(cats){
     out.push(opt(c,c));
     if(c==='Food Mods')out.push(opt(POS_GROUPS_CAT,'Mod groups'));
   }
-  // If there were no Food Mods rows to anchor it to, still offer it.
   if(!cats.includes('Food Mods'))out.push(opt(POS_GROUPS_CAT,'Mod groups'));
   return out.join('');
+}
+
+function posPendingCount(){
+  return Object.keys(posPrices).length+Object.keys(posRouting).length
+    +Object.keys(posGroupMods).length+posNewGroups.length+Object.keys(posGroupAttach).length;
+}
+
+// Getting everything typed here into the build. No token changes hands — the page
+// puts a plain list on the clipboard, Vinny pastes it, it goes into the code.
+function posCopyChanges(){
+  const c=posS.cat||{items:[]};
+  const byKey={};for(const r of c.items)byKey[r.key]=r;
+  const L=[];
+  const P=Object.entries(posPrices);
+  if(P.length){L.push('PRICES');for(const [k,cents] of P.sort()){const r=byKey[k];
+    L.push(`  ${r?r.cat:'?'} | ${r?r.name:k} | ${(cents/100).toFixed(2)}`);}}
+  const R=Object.entries(posRouting);
+  if(R.length){L.push('','PRINT ROUTING');for(const [k,ps] of R.sort()){const r=byKey[k];
+    L.push(`  ${r?r.cat:'?'} | ${r?r.name:k} | ${ps.length?ps.join(', '):'(nowhere)'}`);}}
+  if(posNewGroups.length){L.push('','NEW GROUPS');
+    for(const g of posNewGroups)L.push(`  ${g.name} | ${g.required?'required':'optional'}`);}
+  const M=Object.entries(posGroupMods);
+  if(M.length){L.push('','MODS ADDED TO GROUPS');
+    for(const [k,mods] of M){const g=posNewGroups.find(x=>x.key===k)
+      ||(c.mod_groups||[]).find(x=>String(x.num)===k);
+      L.push(`  ${g?g.name:k}: ${mods.join(', ')}`);}}
+  const A=Object.entries(posGroupAttach);
+  if(A.length){L.push('','GROUPS ATTACHED TO');
+    for(const [k,a] of A){const g=posNewGroups.find(x=>x.key===k)
+      ||(c.mod_groups||[]).find(x=>String(x.num)===k);
+      const bits=[...a.cats.map(x=>'all '+x),...a.items];
+      L.push(`  ${g?g.name:k}: ${bits.join(', ')}`);}}
+  const text='WATCH TOWER — PENDING POS CHANGES\n'+L.join('\n');
+  const note=document.getElementById('pos-copy-note');
+  const done=(ok)=>{if(note)note.textContent=ok?'copied — paste it to Claude':'could not copy';};
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(()=>done(true)).catch(()=>done(false));
+  }else done(false);
 }
 
 function posNoPriceNow(){
   const c=posS.cat; if(!c)return 0;
   return c.items.filter(r=>(r.gaps||[]).includes('price')&&!posEntered(r)).length;
+}
+
+function posRouteCell(r){
+  const enc=encodeURIComponent(r.key);
+  const on=posRoutedTo(r), changed=posRerouted(r);
+  const btns=POS_PRINTERS.map(p=>{
+    const active=on.includes(p);
+    return `<button onclick="posTogglePrinter('${enc}','${p}')" title="${p}"
+      style="border:1px solid ${active?(changed?'#22c55e':'var(--border)'):'transparent'};
+        background:${active?(changed?'rgba(34,197,94,0.14)':'var(--surface2)'):'transparent'};
+        color:${active?(changed?'#22c55e':'var(--text)'):'var(--text-muted)'};
+        border-radius:6px;padding:2px 6px;margin-right:3px;font-size:11px;font-weight:700;
+        cursor:pointer;font-family:inherit">${p.slice(0,2).toUpperCase()}</button>`;
+  }).join('');
+  return `<div>${btns}</div>
+    <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${on.length?esc(on.join(', ')):'<span style="color:#ef4444">prints nowhere</span>'}</div>`;
 }
 
 function posPriceCell(r){
@@ -6192,6 +6333,54 @@ function posPriceCell(r){
       color:${v?(entered?'#22c55e':'var(--text)'):'var(--text-muted)'}">`;
 }
 
+// Adding a food mod to a group. The <datalist> is the whole Food Mods vocabulary, so
+// typing filters it natively and nothing has to be scrolled on an iPad.
+//
+// ⚠️ Added here, NOT live on the iPads — same as prices. Rendered green and outlined
+// so it never reads as one of the group's real choices.
+function posGroupAddHTML(g){
+  const k=g.key!==undefined?g.key:String(g.num);
+  const enc=encodeURIComponent(k);
+  const added=posAddedTo(k), att=posAttachOf(k);
+  const byName={};
+  for(const i of ((posS.cat&&posS.cat.items)||[]))if(i.cat==='Food Mods')byName[i.name]=i;
+  const money=(x)=>x?` +$${(x/100).toFixed(2)}`:'';
+  const chip=(label,onRemove,colour)=>`<span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;padding:3px 6px 3px 9px;border-radius:7px;background:rgba(34,197,94,0.10);border:1px solid ${colour};color:${colour}">
+      ${label}<button onclick="${onRemove}" title="remove" style="border:none;background:transparent;color:${colour};cursor:pointer;font-size:15px;line-height:1;padding:0 2px">×</button></span>`;
+
+  const modChips=added.map(n=>chip(
+    esc(n)+money(byName[n]?byName[n].cents:0),
+    `posRemoveGroupMod('${enc}','${encodeURIComponent(n)}')`,'#22c55e')).join('');
+  const catChips=att.cats.map(cName=>chip(
+    'all '+esc(cName), `posAttachRemove('${enc}','cat','${encodeURIComponent(cName)}')`,'#60a5fa')).join('');
+  const itemChips=att.items.map(iName=>chip(
+    esc(iName), `posAttachRemove('${enc}','item','${encodeURIComponent(iName)}')`,'#60a5fa')).join('');
+
+  return `<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)">
+    <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">Food mods in this group</div>
+    ${added.length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 8px">${modChips}</div>`:''}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
+      <input id="gm-${enc}" list="pos-modnames" placeholder="add a food mod…"
+        onkeydown="if(event.key==='Enter'){posAddFromInput('${enc}');event.preventDefault()}"
+        style="${posInput};flex:1;min-width:180px;font-size:14px;padding:8px 11px">
+      <button onclick="posAddFromInput('${enc}')" style="${posBtn('#3f3f46')};font-size:13px;padding:8px 14px">Add</button>
+    </div>
+
+    <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-top:14px">Attach this group to</div>
+    ${(att.cats.length||att.items.length)?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 8px">${catChips}${itemChips}</div>`:''}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
+      <input id="ga-c-${enc}" list="pos-catnames" placeholder="a whole category…"
+        onkeydown="if(event.key==='Enter'){posAttachFromInput('${enc}','cat');event.preventDefault()}"
+        style="${posInput};flex:1;min-width:150px;font-size:14px;padding:8px 11px">
+      <button onclick="posAttachFromInput('${enc}','cat')" style="${posBtn('#3f3f46')};font-size:13px;padding:8px 14px">Add category</button>
+      <input id="ga-i-${enc}" list="pos-itemnames" placeholder="or one item…"
+        onkeydown="if(event.key==='Enter'){posAttachFromInput('${enc}','item');event.preventDefault()}"
+        style="${posInput};flex:1;min-width:150px;font-size:14px;padding:8px 11px">
+      <button onclick="posAttachFromInput('${enc}','item')" style="${posBtn('#3f3f46')};font-size:13px;padding:8px 14px">Add item</button>
+    </div>
+  </div>`;
+}
+
 function posGroupsHTML(){
   const c=posS.cat; if(!c) return '<div style="color:var(--text-dim)">Loading…</div>';
   const q=(posS.q||'').toLowerCase().trim();
@@ -6201,10 +6390,34 @@ function posGroupsHTML(){
   if(q)gs=gs.filter(g=>g.name.toLowerCase().includes(q)
     ||(g.choices||[]).some(ch=>ch.name.toLowerCase().includes(q))
     ||(g.used_by||[]).some(n=>n.toLowerCase().includes(q)));
-  if(q&&!gs.length)return '<div style="padding:14px 0;color:var(--text-dim)">No mod group matches.</div>';
+  const noMatch=q&&!gs.length;
+  const names=[...new Set(((c.items)||[]).filter(i=>i.cat==='Food Mods').map(i=>i.name))].sort();
+  const cats=[...new Set(((c.items)||[]).map(i=>i.cat))].sort();
+  const itemNames=[...new Set(((c.items)||[]).filter(i=>i.cat!=='Food Mods').map(i=>i.name))].sort();
+  const datalist=`<datalist id="pos-modnames">${names.map(n=>`<option value="${esc(n)}"></option>`).join('')}</datalist>`
+    +`<datalist id="pos-catnames">${cats.map(n=>`<option value="${esc(n)}"></option>`).join('')}</datalist>`
+    +`<datalist id="pos-itemnames">${itemNames.map(n=>`<option value="${esc(n)}"></option>`).join('')}</datalist>`;
+
+  // Groups created here render alongside the built-in ones, marked as new.
+  const mine=posNewGroups.filter(g=>!q
+    ||g.name.toLowerCase().includes(q)
+    ||posAddedTo(g.key).some(n=>n.toLowerCase().includes(q)));
+  const newCards=mine.map(g=>`<div style="${posCardCss};margin-bottom:12px;border-color:#22c55e">
+    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+      <span style="font-size:11px;font-weight:800;color:#22c55e;text-transform:uppercase;letter-spacing:.5px">new</span>
+      <span style="font-size:17px;font-weight:700">${esc(g.name)}</span>
+      <span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;border:1px solid currentColor;color:${g.required?'#ef4444':'var(--text-muted)'}">${g.required?'required':'optional'}</span>
+      <button onclick="posDeleteNewGroup('${encodeURIComponent(g.key)}')" style="margin-left:auto;border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-size:13px">delete</button>
+    </div>
+    ${posGroupAddHTML(g)}
+  </div>`).join('');
+
+  const newBtn=`<button onclick="posNewGroup()" style="${posBtn('#22c55e')};margin-bottom:14px">+ New group</button>`;
   if(!gs.length) return `<div style="${posCardCss}">This catalog predates mod groups — re-run <code>npm run catalog</code>.</div>`;
   const money=(x)=>x?`<span style="color:var(--accent,#f59e0b)"> +$${(x/100).toFixed(2)}</span>`:'';
-  return gs.map(g=>`<div style="${posCardCss};margin-bottom:12px">
+  if(noMatch&&!posNewGroups.some(g=>g.name.toLowerCase().includes(q)))
+    return datalist+newBtn+'<div style="padding:14px 0;color:var(--text-dim)">No mod group matches.</div>';
+  return datalist+newBtn+newCards+gs.map(g=>`<div style="${posCardCss};margin-bottom:12px">
     <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
       <span style="font-size:13px;font-weight:800;color:var(--text-dim);font-variant-numeric:tabular-nums">${g.num}</span>
       <span style="font-size:17px;font-weight:700">${esc(g.name)}</span>
@@ -6216,6 +6429,7 @@ function posGroupsHTML(){
       `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">
         ${g.choices.map(ch=>`<span style="font-size:13px;padding:3px 9px;border-radius:7px;background:var(--surface2);border:1px solid var(--border)">${esc(ch.name)}${money(ch.cents)}</span>`).join('')}
       </div>`}
+    ${posGroupAddHTML(g)}
     ${g.used_by.length?`<div style="margin-top:8px;font-size:12px;color:var(--text-muted)">${g.used_by.slice(0,8).map(esc).join(' · ')}${g.used_by.length>8?` … +${g.used_by.length-8} more`:''}</div>`:''}
   </div>`).join('');
 }
