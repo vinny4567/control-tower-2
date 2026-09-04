@@ -5970,7 +5970,7 @@ function posSaveConn(){
   renderViewport();posBoot();
 }
 function posSec(s){posS.sec=s;renderViewport();
-  if(s==='items'||s==='printers')posLoadCatalog();
+  if(s==='items'||s==='groups'||s==='printers')posLoadCatalog();
   if(s==='employees'&&!posS.demo&&!posS.url)posBoot();
   if(s==='reports')posLoadReports();
   if(s==='grazie')posBoot();
@@ -6023,7 +6023,7 @@ function posItemsBodyHTML(){
   const shown=rows.slice(0,POS_ITEM_CAP);
   const head=`<div style="display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px">
     <span style="flex:1;min-width:150px">Item</span><span style="width:70px;text-align:right">Price</span>
-    <span style="width:150px">Prints at</span><span style="width:70px">Micros #</span></div>`;
+    <span style="width:150px">Prints at</span></div>`;
   // Grouped under category headings rather than run together as one long list. The
   // menu HAS a shape — appetizers, then pasta, then the bar — and a flat list of 776
   // rows hides it. The heading carries the count and how many rows in it still need
@@ -6037,7 +6037,6 @@ function posItemsBodyHTML(){
           : r.course?`<div style="font-size:11px;color:var(--text-muted)">course ${r.course}</div>`:''}</span>
       <span style="width:70px;text-align:right;font-variant-numeric:tabular-nums">${r.cents?posMoney(r.cents):'<span style="color:var(--text-muted)">—</span>'}</span>
       <span style="width:150px;font-size:12px;color:var(--text-dim)">${esc((r.printers||[]).join(', ')||'—')}<div style="font-size:11px;color:var(--text-muted)">${esc(r.printClassLabel||'')}</div></span>
-      <span style="width:70px;font-variant-numeric:tabular-nums;font-size:13px;color:${r.num?'var(--text)':'var(--text-muted)'}">${esc(String(r.num||'—'))}</span>
     </div>`;
   const catHeader=(k,list)=>{
     const gaps=list.filter(r=>(r.gaps||[]).length).length;
@@ -6061,7 +6060,6 @@ function posItemsHTML(){
   <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
     ${posStat('Items',String(s.total||0),'menu + food mods')}
     ${posStat('No price',String(s.noPrice||0),'priced items still at $0')}
-    ${posStat('No Micros #',String(s.noNumber||0),'needed for the export')}
     ${posStat('No printer',String(s.noPrinter||0),'would print nowhere')}
   </div>
   <div style="${posCardCss}">
@@ -6074,6 +6072,32 @@ function posItemsHTML(){
     <div id="pos-items-body">${posItemsBodyHTML()}</div>
   </div>
   <div style="color:var(--text-muted);font-size:12px;margin-top:10px">Snapshot generated ${esc(String(c.generated_at||'').slice(0,10))} from the register's own menu files. Re-run the exporter after a menu change.</div>`;
+}
+
+// ---- Mod groups -------------------------------------------------------------
+//
+// The Micros model: an item points at numbered condiment groups rather than carrying
+// its own list. Define "Meat Temp" once, attach it to every steak. This shows what
+// each group holds and what is using it, so a group nobody attaches is visible.
+function posGroupsHTML(){
+  const c=posS.cat; if(!c) return '<div style="color:var(--text-dim)">Loading…</div>';
+  const gs=c.mod_groups||[];
+  if(!gs.length) return `<div style="${posCardCss}">This catalog predates mod groups — re-run <code>npm run catalog</code>.</div>`;
+  const money=(x)=>x?`<span style="color:var(--accent,#f59e0b)"> +$${(x/100).toFixed(2)}</span>`:'';
+  return gs.map(g=>`<div style="${posCardCss};margin-bottom:12px">
+    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+      <span style="font-size:13px;font-weight:800;color:var(--text-dim);font-variant-numeric:tabular-nums">${g.num}</span>
+      <span style="font-size:17px;font-weight:700">${esc(g.name)}</span>
+      <span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;border:1px solid currentColor;color:${g.required?'#ef4444':'var(--text-muted)'}">${g.required?'required':'optional'}</span>
+      ${g.micros?'<span style="font-size:11px;color:var(--text-muted)">from the Configurator</span>':''}
+      <span style="margin-left:auto;font-size:12px;color:${g.used_by.length?'var(--text-dim)':'#f59e0b'}">${g.used_by.length?g.used_by.length+' item'+(g.used_by.length===1?'':'s'):'not attached to anything'}</span>
+    </div>
+    ${g.screen?`<div style="margin-top:8px;font-size:13px;color:var(--text-dim)">Opens the FOOD MODS screen — the whole condiment table, not a fixed list.</div>`:
+      `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">
+        ${g.choices.map(ch=>`<span style="font-size:13px;padding:3px 9px;border-radius:7px;background:var(--surface2);border:1px solid var(--border)">${esc(ch.name)}${money(ch.cents)}</span>`).join('')}
+      </div>`}
+    ${g.used_by.length?`<div style="margin-top:8px;font-size:12px;color:var(--text-muted)">${g.used_by.slice(0,8).map(esc).join(' · ')}${g.used_by.length>8?` … +${g.used_by.length-8} more`:''}</div>`:''}
+  </div>`).join('');
 }
 
 // ---- Printers ---------------------------------------------------------------
@@ -6586,7 +6610,7 @@ function posResultHTML(r,kind){
 }
 
 // ---- shell ------------------------------------------------------------------
-const POS_SECTIONS=[['items','Menu items'],['printers','Printers'],['reports','Reports'],['grazie','CRM'],['employees','Employees']];
+const POS_SECTIONS=[['items','Menu items'],['groups','Mod groups'],['printers','Printers'],['reports','Reports'],['grazie','CRM'],['employees','Employees']];
 function posConnHTML(){
   return `<div style="${posCardCss};margin-bottom:14px">
     <div style="font-weight:800;font-size:15px;margin-bottom:6px">Connections</div>
@@ -6602,7 +6626,7 @@ function posConnHTML(){
 function posHTML(){
   const nav=POS_SECTIONS.map(([k,l])=>`<button onclick="posSec('${k}')" style="${posBtn(posS.sec===k?'#f59e0b':'#3f3f46')};padding:9px 15px;font-size:14px">${l}</button>`).join('');
   const who=(posS.me&&posS.health==='ok'&&posS.sec==='grazie')?`<span style="font-size:13px;color:var(--text-dim)">${esc(posS.me.username)}</span><button onclick="posLogout()" style="${posBtn('#3f3f46')};padding:7px 12px;font-size:13px">Sign out</button>`:'';
-  const body=posS.sec==='items'?posItemsHTML():posS.sec==='printers'?posPrintersHTML():posS.sec==='reports'?posReportsHTML():posS.sec==='employees'?posEmployeesHTML():posGrazieHTML();
+  const body=posS.sec==='items'?posItemsHTML():posS.sec==='groups'?posGroupsHTML():posS.sec==='printers'?posPrintersHTML():posS.sec==='reports'?posReportsHTML():posS.sec==='employees'?posEmployeesHTML():posGrazieHTML();
   // #viewport is fixed and overflow:hidden, so every tab brings its own scroller —
   // without one, anything past the fold is simply clipped.
   return `<div style="height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch">
