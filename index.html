@@ -6050,6 +6050,7 @@ async function posLoadPrices(){
   const pc=await kvGet('ct_pos_print_classes');posNewClasses=(pc&&pc.v)||[];
   const nm=await kvGet('ct_pos_new_mods');posNewMods=(nm&&nm.v)||[];
   const gn=await kvGet('ct_pos_group_names');posGroupNames=(gn&&gn.v)||{};
+  const gd=await kvGet('ct_pos_group_detach');posGroupDetach=(gd&&gd.v)||{};
   renderViewport();
 }
 // A group is either one from the catalog (key = its number) or one created here
@@ -6073,6 +6074,26 @@ let posNewMods=[];        // [{name, cents}]
 // name is a group nobody maintains. Keyed like everything else, applied with the
 // rest of the pending changes.
 let posGroupNames={};     // groupKey -> new name
+// Items taken OFF a group. The attachment lives in the register's menu files, so it
+// cannot be deleted from here — it is recorded as a removal and applied with the
+// rest. Until then the item shows the group struck through rather than gone, so it
+// is obvious the change has not reached the iPads yet.
+let posGroupDetach={};    // groupKey -> [itemName]
+const posDetachedFrom=(k)=>posGroupDetach[String(k)]||[];
+const posIsDetached=(k,item)=>posDetachedFrom(k).includes(item);
+function posDetachItem(enc,encItem){
+  const k=decodeURIComponent(enc), item=decodeURIComponent(encItem);
+  const list=posDetachedFrom(k);
+  posGroupDetach[k]=list.includes(item)?list.filter(x=>x!==item):[...list,item];
+  if(!posGroupDetach[k].length)delete posGroupDetach[k];
+  kvPush('ct_pos_group_detach',posGroupDetach,Date.now());
+  renderViewport();
+}
+function posToggleUsedBy(enc){
+  posS.openUsedBy=posS.openUsedBy||{};
+  const k=decodeURIComponent(enc);
+  posS.openUsedBy[k]=!posS.openUsedBy[k];renderViewport();
+}
 const posGroupLabel=(g)=>posGroupNames[posGroupKey(g)]||g.name;
 function posRenameGroup(enc,current){
   const k=decodeURIComponent(enc);
@@ -6406,7 +6427,8 @@ function posCatOptions(cats){
 function posPendingCount(){
   return Object.keys(posPrices).length+Object.keys(posRouting).length
     +Object.keys(posGroupMods).length+posNewGroups.length+Object.keys(posGroupAttach).length
-    +posNewClasses.length+posNewMods.length+Object.keys(posGroupNames).length;
+    +posNewClasses.length+posNewMods.length+Object.keys(posGroupNames).length
+    +Object.keys(posGroupDetach).length;
 }
 
 // Getting everything typed here into the build. No token changes hands — the page
@@ -6423,6 +6445,11 @@ function posCopyChanges(){
   const R=Object.entries(posRouting);
   if(R.length){L.push('','PRINT ROUTING');for(const [k,ps] of R.sort()){const r=byKey[k];
     L.push(`  ${r?r.cat:'?'} | ${r?r.name:k} | ${ps.length?ps.join(', '):'(nowhere)'}`);}}
+  const DT=Object.entries(posGroupDetach);
+  if(DT.length){L.push('','GROUPS REMOVED FROM');
+    for(const [k,items] of DT){const g=posNewGroups.find(x=>x.key===k)
+      ||(c.mod_groups||[]).find(x=>String(x.num)===k||('n:'+x.name)===k);
+      L.push(`  ${g?g.name:k}: ${items.join(', ')}`);}}
   const RN=Object.entries(posGroupNames);
   if(RN.length){L.push('','RENAMED GROUPS');
     for(const [k,v] of RN){const g=posNewGroups.find(x=>x.key===k)
@@ -6518,6 +6545,16 @@ function posRouteCell(r){
 function posItemGroupsHTML(r){
   if(r.cat==='Food Mods')return '';
   const live=r.groups||[];
+  // A group being taken off this item still shows, struck through — it is still on
+  // the iPads until the change is applied, and pretending otherwise would have the
+  // page disagree with the register.
+  const offNames=[];
+  for(const [k,items] of Object.entries(posGroupDetach)){
+    if(!items.includes(r.name))continue;
+    const g=posNewGroups.find(x=>x.key===k)
+      ||((posS.cat&&posS.cat.mod_groups)||[]).find(x=>String(x.num)===k||('n:'+x.name)===k);
+    if(g)offNames.push(g.name);
+  }
   const pending=[];
   for(const [k,a] of Object.entries(posGroupAttach)){
     if(!a.cats.includes(r.cat)&&!a.items.includes(r.name))continue;
@@ -6531,9 +6568,12 @@ function posItemGroupsHTML(r){
   // it waits for SEND. Listing it plainly made an entrée look like it had a broken
   // attachment when the delay was deliberate.
   const defer=r.deferredGroups||[];
-  const label=(n)=>defer.includes(n)
-    ? `${esc(n)} <span style="opacity:.75">(at send)</span>`
-    : esc(n);
+  const label=(n)=>{
+    const body=defer.includes(n)?`${esc(n)} <span style="opacity:.75">(at send)</span>`:esc(n);
+    return offNames.includes(n)
+      ? `<span style="text-decoration:line-through;color:#ef4444">${body}</span>`
+      : body;
+  };
   return `<div style="font-size:11px;color:var(--text-muted)">`
     +live.map(label).join(' · ')
     +(pending.length?`${live.length?' · ':''}<span style="color:#22c55e;font-weight:700">${pending.map(esc).join(' · ')}</span>`:'')
@@ -6694,6 +6734,40 @@ function posGroupModsHTML(g){
     <div style="font-size:11px;color:var(--text-muted);margin-top:4px">New mods are made on the <b>Food Mods</b> page — this only attaches ones that already exist.</div>`;
 }
 
+// The items a group is already on, as chips you can take it off. The attachment is
+// in the register's menu files, so removing it here records a removal rather than
+// deleting anything — a struck-through chip is a change that has not landed yet.
+function posUsedByHTML(g){
+  const k=posGroupKey(g), enc=encodeURIComponent(k);
+  const items=g.used_by||[];
+  if(!items.length)return '';
+  posS.openUsedBy=posS.openUsedBy||{};
+  const open=!!posS.openUsedBy[k];
+  const CAP=12;
+  const shown=open?items:items.slice(0,CAP);
+  const off=posDetachedFrom(k);
+  const chip=(n)=>{
+    const gone=off.includes(n);
+    return `<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;
+      padding:2px 5px 2px 8px;border-radius:6px;border:1px solid ${gone?'#ef4444':'var(--border)'};
+      background:${gone?'rgba(239,68,68,0.10)':'transparent'};
+      color:${gone?'#ef4444':'var(--text-muted)'};${gone?'text-decoration:line-through':''}">
+      ${esc(n)}
+      <button onclick="posDetachItem('${enc}','${encodeURIComponent(n)}')"
+        title="${gone?'put it back':'take this group off '+esc(n)}"
+        style="border:none;background:transparent;color:${gone?'#ef4444':'var(--text-muted)'};
+          cursor:pointer;font-size:14px;line-height:1;padding:0 2px;text-decoration:none">${gone?'↺':'×'}</button></span>`;
+  };
+  return `<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)">
+    <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">
+      On these items${off.length?` <span style="color:#ef4444">· ${off.length} being removed</span>`:''}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:5px">${shown.map(chip).join('')}</div>
+    ${items.length>CAP?`<button onclick="posToggleUsedBy('${enc}')"
+      style="border:none;background:transparent;color:var(--text-dim);cursor:pointer;
+        font-family:inherit;font-size:12px;padding:6px 0">${open?'show fewer':`show all ${items.length}`}</button>`:''}
+  </div>`;
+}
+
 function posGroupAttachHTML(g){
   const k=posGroupKey(g);
   const enc=encodeURIComponent(k);
@@ -6770,7 +6844,7 @@ function posGroupsHTML(){
     </div>
     ${posGroupModsHTML(g)}
     ${posGroupAttachHTML(g)}
-    ${g.used_by.length?`<div style="margin-top:8px;font-size:12px;color:var(--text-muted)">${g.used_by.slice(0,8).map(esc).join(' · ')}${g.used_by.length>8?` … +${g.used_by.length-8} more`:''}</div>`:''}
+    ${posUsedByHTML(g)}
   </div>`).join('');
 }
 
