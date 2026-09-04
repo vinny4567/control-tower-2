@@ -6049,6 +6049,7 @@ async function posLoadPrices(){
   const rt=await kvGet('ct_pos_routing');posRouting=(rt&&rt.v)||{};
   const pc=await kvGet('ct_pos_print_classes');posNewClasses=(pc&&pc.v)||[];
   const nm=await kvGet('ct_pos_new_mods');posNewMods=(nm&&nm.v)||[];
+  const gn=await kvGet('ct_pos_group_names');posGroupNames=(gn&&gn.v)||{};
   renderViewport();
 }
 // A group is either one from the catalog (key = its number) or one created here
@@ -6068,6 +6069,20 @@ let posNewClasses=[];     // [{key:'pc:1', name, printers:[]}]
 // the vocabulary immediately — autocomplete offers them, groups can hold them — and
 // travel to the register in the same paste as everything else.
 let posNewMods=[];        // [{name, cents}]
+// Renamed groups. 'Which one' says nothing about what it asks; a group nobody can
+// name is a group nobody maintains. Keyed like everything else, applied with the
+// rest of the pending changes.
+let posGroupNames={};     // groupKey -> new name
+const posGroupLabel=(g)=>posGroupNames[posGroupKey(g)]||g.name;
+function posRenameGroup(enc,current){
+  const k=decodeURIComponent(enc);
+  const next=prompt('Rename this mod group', posGroupNames[k]||current);
+  if(next===null)return;
+  const v=String(next).trim();
+  if(!v||v===current)delete posGroupNames[k]; else posGroupNames[k]=v;
+  kvPush('ct_pos_group_names',posGroupNames,Date.now());
+  renderViewport();
+}
 function posSaveMods(){kvPush('ct_pos_new_mods',posNewMods,Date.now());renderViewport()}
 function posModExists(name){
   const norm=(x)=>String(x).trim().toLowerCase();
@@ -6164,7 +6179,7 @@ function posAddGroupMod(enc,name){
   // matching the record it came from.
   const norm=(x)=>String(x).trim().toLowerCase();
   const hit=posModExists(typed);
-  if(!hit){alert('No food mod called "'+typed+'". Pick it from the list, or use + Create.');return;}
+  if(!hit){alert('No food mod called "'+typed+'".\n\nMake it on the Food Mods page first, then attach it here.');return;}
   name=hit.name;
   if(list.includes(name))return;
   posGroupMods[k]=[...list,name];
@@ -6180,10 +6195,7 @@ function posAddFromInput(enc){
   const el=document.getElementById('gm-'+enc);
   if(!el)return;
   const typed=String(el.value).trim(); if(!typed)return;
-  // Add doubles as Create — a name that is not in the vocabulary yet becomes one,
-  // which is how new mods get made.
-  if(posModExists(typed))posAddGroupMod(enc,typed);
-  else posCreateMod(enc,encodeURIComponent(typed));
+  posAddGroupMod(enc,typed);   // refuses anything not already in the vocabulary
   el.value='';
 }
 function posSetPrice(enc,str){
@@ -6394,7 +6406,7 @@ function posCatOptions(cats){
 function posPendingCount(){
   return Object.keys(posPrices).length+Object.keys(posRouting).length
     +Object.keys(posGroupMods).length+posNewGroups.length+Object.keys(posGroupAttach).length
-    +posNewClasses.length+posNewMods.length;
+    +posNewClasses.length+posNewMods.length+Object.keys(posGroupNames).length;
 }
 
 // Getting everything typed here into the build. No token changes hands — the page
@@ -6411,6 +6423,11 @@ function posCopyChanges(){
   const R=Object.entries(posRouting);
   if(R.length){L.push('','PRINT ROUTING');for(const [k,ps] of R.sort()){const r=byKey[k];
     L.push(`  ${r?r.cat:'?'} | ${r?r.name:k} | ${ps.length?ps.join(', '):'(nowhere)'}`);}}
+  const RN=Object.entries(posGroupNames);
+  if(RN.length){L.push('','RENAMED GROUPS');
+    for(const [k,v] of RN){const g=posNewGroups.find(x=>x.key===k)
+      ||(c.mod_groups||[]).find(x=>String(x.num)===k||('n:'+x.name)===k);
+      L.push(`  ${g?g.name:k} → ${v}`);}}
   if(posNewMods.length){L.push('','NEW FOOD MODS');
     for(const m of posNewMods)L.push(`  ${m.name} | ${m.cents?(m.cents/100).toFixed(2):'free'}`);}
   if(posNewClasses.length){L.push('','NEW PRINT CLASSES');
@@ -6579,12 +6596,10 @@ function posAuto(kind,enc,inputId){
   // Creating is offered inline rather than behind a dialog, and only when nothing
   // matches exactly — so a typo shows itself as "no match, create?" instead of
   // silently becoming a new modifier nobody meant.
-  const exact=all.some(n=>n.trim().toLowerCase()===q);
-  const create=(kind==='mods'&&!exact)
-    ? `<button onclick="posCreateMod('${enc}','${encodeURIComponent(el.value.trim())}')"
-        style="display:block;width:100%;text-align:left;border:none;background:transparent;color:#22c55e;
-          font-family:inherit;font-size:14px;font-weight:700;padding:9px 12px;cursor:pointer;
-          border-bottom:1px solid var(--border)">+ Create “${esc(el.value.trim())}”</button>` : '';
+  // No + Create here any more. Making a food mod happens in one place — the Food
+  // Mods page — so a name that does not exist is a typo to fix rather than a new
+  // modifier invented halfway through attaching something.
+  const create='';
   if(!hits.length&&!create){
     box.innerHTML='<div style="padding:9px 12px;color:var(--text-muted);font-size:13px">no match</div>';
     box.style.display='block';return;
@@ -6670,16 +6685,13 @@ function posGroupModsHTML(g){
 
   return `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">${own}${mine}</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px">
-      <input id="gm-${enc}" placeholder="add or create a food mod…" autocomplete="off"
+      <input id="gm-${enc}" placeholder="add an existing food mod…" autocomplete="off"
         oninput="posAuto('mods','${enc}','gm-${enc}')"
         onkeydown="if(event.key==='Enter'){posAddFromInput('${enc}');event.preventDefault()}"
         style="${posInput};flex:1;min-width:200px;font-size:14px;padding:8px 11px">
-      <input id="gmp-${enc}" placeholder="$ price" inputmode="decimal" autocomplete="off"
-        title="Leave blank for a free mod"
-        style="${posInput};width:96px;font-size:14px;padding:8px 11px;text-align:right">
       <button onclick="posAddFromInput('${enc}')" style="${posBtn('#3f3f46')};font-size:13px;padding:8px 14px">Add</button>
     </div>
-    <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Leave the price blank for a free mod. A name that is not in the list yet offers <b style="color:#22c55e">+ Create</b>.</div>`;
+    <div style="font-size:11px;color:var(--text-muted);margin-top:4px">New mods are made on the <b>Food Mods</b> page — this only attaches ones that already exist.</div>`;
 }
 
 function posGroupAttachHTML(g){
@@ -6727,7 +6739,10 @@ function posGroupsHTML(){
   const newCards=mine.map(g=>`<div style="${posCardCss};margin-bottom:12px;border-color:#22c55e">
     <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
       <span style="font-size:11px;font-weight:800;color:#22c55e;text-transform:uppercase;letter-spacing:.5px">new</span>
-      <span style="font-size:17px;font-weight:700">${esc(g.name)}</span>
+      <span style="font-size:17px;font-weight:700;color:${posGroupNames[posGroupKey(g)]?'#22c55e':'var(--text)'}">${esc(posGroupLabel(g))}</span>
+      ${posGroupNames[posGroupKey(g)]?`<span style="font-size:11px;color:var(--text-muted)">was ${esc(g.name)}</span>`:''}
+      <button onclick="posRenameGroup('${'${encodeURIComponent(posGroupKey(g))}'}','${'${esc(g.name)}'}')"
+        style="border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-size:12px;font-family:inherit">rename</button>
       <span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;border:1px solid currentColor;color:${g.required?'#ef4444':'var(--text-muted)'}">${g.required?'required':'optional'}</span>
       <button onclick="posDeleteNewGroup('${encodeURIComponent(g.key)}')" style="margin-left:auto;border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-size:13px">delete</button>
     </div>
@@ -6743,7 +6758,10 @@ function posGroupsHTML(){
   return datalist+newBtn+newCards+gs.map(g=>`<div style="${posCardCss};margin-bottom:12px">
     <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
       <span style="font-size:13px;font-weight:800;color:var(--text-dim);font-variant-numeric:tabular-nums">${g.num!=null?g.num:'—'}</span>
-      <span style="font-size:17px;font-weight:700">${esc(g.name)}</span>
+      <span style="font-size:17px;font-weight:700;color:${posGroupNames[posGroupKey(g)]?'#22c55e':'var(--text)'}">${esc(posGroupLabel(g))}</span>
+      ${posGroupNames[posGroupKey(g)]?`<span style="font-size:11px;color:var(--text-muted)">was ${esc(g.name)}</span>`:''}
+      <button onclick="posRenameGroup('${'${encodeURIComponent(posGroupKey(g))}'}','${'${esc(g.name)}'}')"
+        style="border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-size:12px;font-family:inherit">rename</button>
       <span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;border:1px solid currentColor;color:${g.required?'#ef4444':'var(--text-muted)'}">${g.required?'required':'optional'}</span>
       ${g.micros?'<span style="font-size:11px;color:var(--text-muted)">from the Configurator</span>':''}
       ${g.inline?'<span style="font-size:11px;color:var(--text-muted)">declared on the item</span>':''}
