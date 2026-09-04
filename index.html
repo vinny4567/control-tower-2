@@ -5916,7 +5916,7 @@ function renderViewport(){if(activeTab===WED){document.getElementById('viewport'
 const POS='pos';
 const POS_URL_KEY='ct_pos_url';      // CRM portal (gift cards, customers)
 const POS_SRV_KEY='ct_pos_srv';      // POS server (checks, reports)
-let posS={sec:'items',url:localStorage.getItem(POS_URL_KEY)||'',srv:localStorage.getItem(POS_SRV_KEY)||'',
+let posS={sec:'items',showGroups:false,url:localStorage.getItem(POS_URL_KEY)||'',srv:localStorage.getItem(POS_SRV_KEY)||'',
   health:'unknown',me:null,dash:null,err:'',card:null,cust:null,busy:false,
   cat:null,catErr:'',q:'',catFilter:'all',gapsOnly:false,crmQ:'',crmResults:null,crmMember:null,demo:false,emp:null,
   rep:null,repDays:1,repErr:'',repBusy:false,showConn:false};
@@ -5970,7 +5970,7 @@ function posSaveConn(){
   renderViewport();posBoot();
 }
 function posSec(s){posS.sec=s;renderViewport();
-  if(s==='items'||s==='groups'||s==='printers')posLoadCatalog();
+  if(s==='items'||s==='printers')posLoadCatalog();
   if(s==='employees'&&!posS.demo&&!posS.url)posBoot();
   if(s==='reports')posLoadReports();
   if(s==='grazie')posBoot();
@@ -5979,6 +5979,7 @@ function posToggleConn(){posS.showConn=!posS.showConn;renderViewport()}
 
 // ---- the catalog snapshot (no server involved) -------------------------------
 async function posLoadCatalog(){
+  posLoadPrices();
   if(posS.cat||posS.catErr)return;
   try{
     const r=await fetch('pos-catalog.json',{cache:'no-cache'});
@@ -5992,7 +5993,7 @@ function posItemRows(){
   const q=(posS.q||'').toLowerCase().trim();
   return c.items.filter(r=>{
     if(posS.catFilter!=='all'&&r.cat!==posS.catFilter)return false;
-    if(posS.gapsOnly&&!(r.gaps||[]).length)return false;
+    if(posS.gapsOnly&&!posRowGaps(r).length)return false;
     if(q&&!(r.name||'').toLowerCase().includes(q)&&!String(r.num||'').includes(q))return false;
     return true;
   });
@@ -6000,6 +6001,32 @@ function posItemRows(){
 function posSetQ(v){posS.q=v;posRerenderList()}
 function posSetCat(v){posS.catFilter=v;posRerenderList()}
 function posToggleGaps(){posS.gapsOnly=!posS.gapsOnly;renderViewport()}
+function posToggleGroups(){posS.showGroups=!posS.showGroups;renderViewport()}
+
+// PRICES TYPED HERE ARE NOT LIVE IN THE REGISTER.
+//
+// The register runs off menu.js in the angelis-pos repo; this page reads a snapshot
+// of it. There is no write path from here to the iPads yet — that arrives with the
+// mini. Until then this is a collection sheet: type the 275 missing prices wherever
+// you are, they sync through KV like the tip sheet, and they get applied to the menu
+// in one go. The UI has to SAY that, or a price typed here looks like a price that
+// is being charged.
+let posPrices={};
+async function posLoadPrices(){const r=await kvGet('ct_pos_prices');posPrices=(r&&r.v)||{};}
+function posSetPrice(enc,str){
+  const key=decodeURIComponent(enc);
+  const raw=String(str).replace(/[^0-9.]/g,'');
+  if(!raw){delete posPrices[key];}
+  else{
+    const cents=Math.round(parseFloat(raw)*100);
+    if(!isFinite(cents)||cents<0)return;
+    posPrices[key]=cents;
+  }
+  kvPush('ct_pos_prices',posPrices,Date.now());
+  posRerenderList();renderViewport();
+}
+const posEntered=(r)=>Object.prototype.hasOwnProperty.call(posPrices,r.key);
+const posPriceOf=(r)=>posEntered(r)?posPrices[r.key]:r.cents;
 // Re-render only the list so typing in the search box never loses focus.
 function posRerenderList(){const el=document.getElementById('pos-items-body');if(el)el.innerHTML=posItemsBodyHTML();else renderViewport()}
 
@@ -6022,7 +6049,7 @@ function posItemsBodyHTML(){
   const rows=posItemRows();
   const shown=rows.slice(0,POS_ITEM_CAP);
   const head=`<div style="display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px">
-    <span style="flex:1;min-width:150px">Item</span><span style="width:70px;text-align:right">Price</span>
+    <span style="flex:1;min-width:150px">Item</span><span style="width:88px;text-align:right">Price</span>
     <span style="width:150px">Prints at</span></div>`;
   // Grouped under category headings rather than run together as one long list. The
   // menu HAS a shape — appetizers, then pasta, then the bar — and a flat list of 776
@@ -6031,15 +6058,15 @@ function posItemsBodyHTML(){
   const groups=[],byCat=new Map();
   for(const r of shown){const k=r.cat||'—';if(!byCat.has(k)){byCat.set(k,[]);groups.push(k)}byCat.get(k).push(r)}
   const rowHTML=r=>`<div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:14px;align-items:baseline">
-      <span style="flex:1;min-width:150px">${esc(r.name)}${r.hidden?' <span style="color:var(--text-muted);font-size:11px">(hidden)</span>':''}${posGapTags(r.gaps)}
+      <span style="flex:1;min-width:150px">${esc(r.name)}${r.hidden?' <span style="color:var(--text-muted);font-size:11px">(hidden)</span>':''}${posGapTags(posRowGaps(r))}
         ${r.source==='choice'
           ? `<div style="font-size:11px;color:var(--text-muted)">${esc(r.prompt||'')} prompt${r.required?' · required':''}${(r.usedBy||[]).length>1?` · on ${r.usedBy.length} items`:(r.usedBy&&r.usedBy[0]?` · on ${esc(r.usedBy[0])}`:'')}</div>`
           : r.course?`<div style="font-size:11px;color:var(--text-muted)">course ${r.course}</div>`:''}</span>
-      <span style="width:70px;text-align:right;font-variant-numeric:tabular-nums">${r.cents?posMoney(r.cents):'<span style="color:var(--text-muted)">—</span>'}</span>
+      <span style="width:88px;text-align:right">${posPriceCell(r)}</span>
       <span style="width:150px;font-size:12px;color:var(--text-dim)">${esc((r.printers||[]).join(', ')||'—')}<div style="font-size:11px;color:var(--text-muted)">${esc(r.printClassLabel||'')}</div></span>
     </div>`;
   const catHeader=(k,list)=>{
-    const gaps=list.filter(r=>(r.gaps||[]).length).length;
+    const gaps=list.filter(r=>posRowGaps(r).length).length;
     return `<div style="display:flex;align-items:baseline;gap:8px;margin:16px 0 2px;padding-bottom:5px;border-bottom:2px solid var(--border)">
       <span style="font-size:13px;font-weight:800;letter-spacing:.4px;text-transform:uppercase">${esc(k)}</span>
       <span style="font-size:12px;color:var(--text-muted)">${list.length} item${list.length===1?'':'s'}</span>
@@ -6059,18 +6086,26 @@ function posItemsHTML(){
   return `
   <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
     ${posStat('Items',String(s.total||0),'menu + food mods')}
-    ${posStat('No price',String(s.noPrice||0),'priced items still at $0')}
+    ${posStat('No price',String(posNoPriceNow()),'priced items still at $0')}
+    ${posStat('Entered here',String(Object.keys(posPrices).length),'not live in the register yet')}
     ${posStat('No printer',String(s.noPrinter||0),'would print nowhere')}
   </div>
+  ${Object.keys(posPrices).length?`<div style="border:1px solid #f59e0b;border-radius:12px;background:rgba(245,158,11,0.10);padding:12px 16px;margin-bottom:14px">
+    <div style="font-weight:800;font-size:14px;color:#f59e0b">${Object.keys(posPrices).length} price${Object.keys(posPrices).length===1?'':'s'} typed here are NOT live on the iPads</div>
+    <div style="font-size:13px;color:var(--text-dim);margin-top:3px">They are saved and synced across your devices, but the register still runs off the menu file.</div>
+    <button onclick="posCopyPrices()" style="${posBtn('#f59e0b')};margin-top:10px;font-size:13px;padding:8px 14px">Copy for Claude</button>
+    <span id="pos-copy-note" style="font-size:12px;color:var(--text-dim);margin-left:8px"></span>
+  </div>`:''}
   <div style="${posCardCss}">
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
-      <input id="pos-q" value="${esc(posS.q)}" placeholder="search name or number…" style="${posInput};flex:1;min-width:200px" oninput="posSetQ(this.value)">
+      <input id="pos-q" value="${esc(posS.q)}" placeholder="search name or category…" style="${posInput};flex:1;min-width:200px" oninput="posSetQ(this.value)">
       <select onchange="posSetCat(this.value)" style="${posInput}"><option value="all">every category</option>
         ${cats.map(x=>`<option value="${esc(x)}" ${posS.catFilter===x?'selected':''}>${esc(x)}</option>`).join('')}</select>
       <button onclick="posToggleGaps()" style="${posBtn(posS.gapsOnly?'#f59e0b':'#3f3f46')}">${posS.gapsOnly?'Gaps only':'Show gaps only'}</button>
     </div>
     <div id="pos-items-body">${posItemsBodyHTML()}</div>
   </div>
+  ${posGroupsSectionHTML()}
   <div style="color:var(--text-muted);font-size:12px;margin-top:10px">Snapshot generated ${esc(String(c.generated_at||'').slice(0,10))} from the register's own menu files. Re-run the exporter after a menu change.</div>`;
 }
 
@@ -6079,6 +6114,67 @@ function posItemsHTML(){
 // The Micros model: an item points at numbered condiment groups rather than carrying
 // its own list. Define "Meat Temp" once, attach it to every steak. This shows what
 // each group holds and what is using it, so a group nobody attaches is visible.
+// A price typed here fills the gap for counting purposes — otherwise the "needs
+// data" figure never moves while he works through the list, which is the one bit of
+// feedback that makes a 275-row job finishable.
+function posRowGaps(r){
+  const g=(r.gaps||[]).filter(x=>x!=='price');
+  if((r.gaps||[]).includes('price')&&!posEntered(r))g.push('price');
+  return g;
+}
+
+// Getting the typed prices into the build. No token changes hands — the page puts
+// the list on the clipboard, Vinny pastes it, and it goes into menu.js in one go.
+function posCopyPrices(){
+  const c=posS.cat||{items:[]};
+  const byKey={};for(const r of c.items)byKey[r.key]=r;
+  const lines=Object.entries(posPrices).map(([k,cents])=>{
+    const r=byKey[k];
+    return `${r?r.cat:'?'} | ${r?r.name:k} | ${(cents/100).toFixed(2)}`;
+  }).sort();
+  const text='PRICES ENTERED IN THE WATCH TOWER\n'+lines.join('\n');
+  const note=document.getElementById('pos-copy-note');
+  const done=(ok)=>{if(note)note.textContent=ok?`${lines.length} copied — paste them to Claude`:'could not copy — select the list manually';};
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(()=>done(true)).catch(()=>done(false));
+  }else{done(false)}
+}
+
+function posNoPriceNow(){
+  const c=posS.cat; if(!c)return 0;
+  return c.items.filter(r=>(r.gaps||[]).includes('price')&&!posEntered(r)).length;
+}
+
+function posPriceCell(r){
+  const enc=encodeURIComponent(r.key);
+  const v=posPriceOf(r);
+  const entered=posEntered(r);
+  const shown=v?(v/100).toFixed(2):'';
+  return `<input value="${shown}" placeholder="—" inputmode="decimal"
+    onchange="posSetPrice('${enc}',this.value)"
+    onkeydown="if(event.key==='Enter')this.blur()"
+    style="width:100%;text-align:right;font-variant-numeric:tabular-nums;font-size:14px;
+      padding:3px 6px;border-radius:6px;font-family:inherit;
+      border:1px solid ${entered?'#22c55e':'transparent'};
+      background:${entered?'rgba(34,197,94,0.10)':'transparent'};
+      color:${v?(entered?'#22c55e':'var(--text)'):'var(--text-muted)'}">`;
+}
+
+function posGroupsSectionHTML(){
+  const c=posS.cat; const gs=(c&&c.mod_groups)||[];
+  if(!gs.length) return '';
+  const loose=gs.filter(g=>!g.used_by.length).length;
+  return `<div style="${posCardCss};margin-top:14px">
+    <div onclick="posToggleGroups()" style="display:flex;align-items:center;gap:10px;cursor:pointer">
+      <span style="font-size:15px;font-weight:700">Mod groups</span>
+      <span style="font-size:12px;color:var(--text-muted)">${gs.length} groups</span>
+      ${loose?`<span style="font-size:11px;font-weight:700;color:#f59e0b">${loose} attached to nothing</span>`:''}
+      <span style="margin-left:auto;font-size:13px;color:var(--text-dim)">${posS.showGroups?'hide ▲':'show ▼'}</span>
+    </div>
+    ${posS.showGroups?`<div style="margin-top:12px">${posGroupsHTML()}</div>`:''}
+  </div>`;
+}
+
 function posGroupsHTML(){
   const c=posS.cat; if(!c) return '<div style="color:var(--text-dim)">Loading…</div>';
   const gs=c.mod_groups||[];
@@ -6610,7 +6706,7 @@ function posResultHTML(r,kind){
 }
 
 // ---- shell ------------------------------------------------------------------
-const POS_SECTIONS=[['items','Menu items'],['groups','Mod groups'],['printers','Printers'],['reports','Reports'],['grazie','CRM'],['employees','Employees']];
+const POS_SECTIONS=[['items','Menu items'],['printers','Printers'],['reports','Reports'],['grazie','CRM'],['employees','Employees']];
 function posConnHTML(){
   return `<div style="${posCardCss};margin-bottom:14px">
     <div style="font-weight:800;font-size:15px;margin-bottom:6px">Connections</div>
@@ -6626,7 +6722,7 @@ function posConnHTML(){
 function posHTML(){
   const nav=POS_SECTIONS.map(([k,l])=>`<button onclick="posSec('${k}')" style="${posBtn(posS.sec===k?'#f59e0b':'#3f3f46')};padding:9px 15px;font-size:14px">${l}</button>`).join('');
   const who=(posS.me&&posS.health==='ok'&&posS.sec==='grazie')?`<span style="font-size:13px;color:var(--text-dim)">${esc(posS.me.username)}</span><button onclick="posLogout()" style="${posBtn('#3f3f46')};padding:7px 12px;font-size:13px">Sign out</button>`:'';
-  const body=posS.sec==='items'?posItemsHTML():posS.sec==='groups'?posGroupsHTML():posS.sec==='printers'?posPrintersHTML():posS.sec==='reports'?posReportsHTML():posS.sec==='employees'?posEmployeesHTML():posGrazieHTML();
+  const body=posS.sec==='items'?posItemsHTML():posS.sec==='printers'?posPrintersHTML():posS.sec==='reports'?posReportsHTML():posS.sec==='employees'?posEmployeesHTML():posGrazieHTML();
   // #viewport is fixed and overflow:hidden, so every tab brings its own scroller —
   // without one, anything past the fold is simply clipped.
   return `<div style="height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch">
