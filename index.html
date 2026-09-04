@@ -6395,9 +6395,9 @@ function posItemsHTML(){
     </button>
   </div>
   ${posPendingCount()?`<div style="border:1px solid #f59e0b;border-radius:12px;background:rgba(245,158,11,0.10);padding:12px 16px;margin-bottom:14px">
-    <div style="font-weight:800;font-size:14px;color:#f59e0b">${posPendingCount()} change${posPendingCount()===1?'':'s'} made here are NOT live on the iPads</div>
+    <div style="font-weight:800;font-size:14px;color:#f59e0b">${posPendingCount()===1?'1 change made here is':posPendingCount()+' changes made here are'} NOT live on the iPads</div>
     <div style="font-size:13px;color:var(--text-dim);margin-top:3px">Prices, print routing and mod groups are saved and synced across your devices, but the register still runs off the menu file.</div>
-    <div style="font-size:12px;color:var(--text-muted);margin-top:6px">Use <b>Copy for Claude</b> below, then paste it into the chat.</div>
+    <div style="font-size:12px;color:var(--text-muted);margin-top:6px">Tap <b>Copy for Claude</b> above, then paste it into the chat.</div>
   </div>`:''}
   <div style="${posCardCss}">
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
