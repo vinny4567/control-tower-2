@@ -6047,19 +6047,6 @@ let posRouting={};        // itemKey -> ['Main','Pizza']
 const posRoutedTo=(r)=>Object.prototype.hasOwnProperty.call(posRouting,r.key)
   ?posRouting[r.key]:(r.printers||[]);
 const posRerouted=(r)=>Object.prototype.hasOwnProperty.call(posRouting,r.key);
-function posTogglePrinter(enc,printer){
-  const key=decodeURIComponent(enc);
-  const row=((posS.cat&&posS.cat.items)||[]).find(i=>i.key===key); if(!row)return;
-  const cur=posRoutedTo(row);
-  const next=cur.includes(printer)?cur.filter(p=>p!==printer):[...cur,printer];
-  // Same original set as the build? Then it is not an override, drop it.
-  const orig=(row.printers||[]);
-  const same=next.length===orig.length&&next.every(p=>orig.includes(p));
-  if(same)delete posRouting[key]; else posRouting[key]=next;
-  kvPush('ct_pos_routing',posRouting,Date.now());
-  posRerenderList();renderViewport();
-}
-
 const posAddedTo=(k)=>posGroupMods[String(k)]||[];
 const posAttachOf=(k)=>posGroupAttach[String(k)]||{cats:[],items:[]};
 function posSaveGroups(){
@@ -6162,26 +6149,26 @@ function posItemsBodyHTML(){
   if(posS.catFilter===POS_GROUPS_CAT)return posGroupsHTML();
   const rows=posItemRows();
   const shown=rows.slice(0,POS_ITEM_CAP);
-  const head=`<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;max-width:600px">
+  const head=`<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;max-width:630px">
     <span style="width:300px">Item</span><span style="width:82px;text-align:right">Price</span>
-    <span style="width:186px;padding-left:14px">Prints at</span></div>`;
+    <span style="width:210px;padding-left:14px">Prints at</span></div>`;
   // Grouped under category headings rather than run together as one long list. The
   // menu HAS a shape — appetizers, then pasta, then the bar — and a flat list of 776
   // rows hides it. The heading carries the count and how many rows in it still need
   // data, so a category with gaps is visible without opening it.
   const groups=[],byCat=new Map();
   for(const r of shown){const k=r.cat||'—';if(!byCat.has(k)){byCat.set(k,[]);groups.push(k)}byCat.get(k).push(r)}
-  const rowHTML=r=>`<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:14px;align-items:baseline;max-width:600px">
+  const rowHTML=r=>`<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:14px;align-items:baseline;max-width:630px">
       <span style="width:300px">${esc(r.name)}${r.hidden?' <span style="color:var(--text-muted);font-size:11px">(hidden)</span>':''}${posGapTags(posRowGaps(r))}
         ${r.source==='choice'
           ? `<div style="font-size:11px;color:var(--text-muted)">${esc(r.prompt||'')} prompt${r.required?' · required':''}${(r.usedBy||[]).length>1?` · on ${r.usedBy.length} items`:(r.usedBy&&r.usedBy[0]?` · on ${esc(r.usedBy[0])}`:'')}</div>`
           : r.course?`<div style="font-size:11px;color:var(--text-muted)">course ${r.course}</div>`:''}</span>
       <span style="width:82px;text-align:right">${posPriceCell(r)}</span>
-      <span style="width:186px;padding-left:14px">${posRouteCell(r)}</span>
+      <span style="width:210px;padding-left:14px">${posRouteCell(r)}</span>
     </div>`;
   const catHeader=(k,list)=>{
     const gaps=list.filter(r=>posRowGaps(r).length).length;
-    return `<div style="display:flex;align-items:baseline;gap:8px;margin:14px 0 2px;padding-bottom:5px;border-bottom:2px solid var(--border);max-width:600px">
+    return `<div style="display:flex;align-items:baseline;gap:8px;margin:14px 0 2px;padding-bottom:5px;border-bottom:2px solid var(--border);max-width:630px">
       <span style="font-size:13px;font-weight:800;letter-spacing:.4px;text-transform:uppercase">${esc(k)}</span>
       <span style="font-size:12px;color:var(--text-muted)">${list.length} item${list.length===1?'':'s'}</span>
       ${gaps?`<span style="font-size:11px;font-weight:700;color:#f59e0b;margin-left:auto">${gaps} need data</span>`:''}</div>`;
@@ -6309,19 +6296,50 @@ function posNoPriceNow(){
   return c.items.filter(r=>(r.gaps||[]).includes('price')&&!posEntered(r)).length;
 }
 
+// One dropdown, because a print CLASS is the real unit — 108 Main / Pizza is a single
+// class that hits two printers, not two separate decisions. The list is the classes
+// the Configurator actually has, plus the single-printer routes for the many items
+// whose station was inferred from the menu build rather than read off a class.
+function posRouteOptions(){
+  const c=posS.cat||{};
+  const out=(c.print_classes||[]).map(pc=>({
+    id:'c'+pc.num,
+    label:pc.num+' '+pc.name+(pc.red?' · red':''),
+    printers:pc.printers||[],
+  }));
+  for(const p of POS_PRINTERS)out.push({id:'s'+p,label:p+' only',printers:[p]});
+  out.push({id:'none',label:'— prints nowhere —',printers:[]});
+  return out;
+}
+const posSameSet=(a,b)=>a.length===b.length&&a.every(x=>b.includes(x));
+function posRouteIdFor(printers){
+  const hit=posRouteOptions().find(o=>posSameSet(o.printers,printers));
+  return hit?hit.id:'';
+}
+function posSetRoute(enc,id){
+  const key=decodeURIComponent(enc);
+  const row=((posS.cat&&posS.cat.items)||[]).find(i=>i.key===key); if(!row)return;
+  const opt=posRouteOptions().find(o=>o.id===id); if(!opt)return;
+  const orig=row.printers||[];
+  if(posSameSet(opt.printers,orig))delete posRouting[key];
+  else posRouting[key]=opt.printers;
+  kvPush('ct_pos_routing',posRouting,Date.now());
+  posRerenderList();renderViewport();
+}
 function posRouteCell(r){
   const enc=encodeURIComponent(r.key);
   const on=posRoutedTo(r), changed=posRerouted(r);
-  const btns=POS_PRINTERS.map(p=>{
-    const active=on.includes(p);
-    return `<button onclick="posTogglePrinter('${enc}','${p}')" title="${p}"
-      style="border:1px solid ${active?(changed?'#22c55e':'var(--border)'):'transparent'};
-        background:${active?(changed?'rgba(34,197,94,0.14)':'var(--surface2)'):'transparent'};
-        color:${active?(changed?'#22c55e':'var(--text)'):'var(--text-muted)'};
-        border-radius:6px;padding:2px 6px;margin-right:3px;font-size:11px;font-weight:700;
-        cursor:pointer;font-family:inherit">${p.slice(0,2).toUpperCase()}</button>`;
-  }).join('');
-  return `<div>${btns}</div>
+  const sel=posRouteIdFor(on);
+  const opts=posRouteOptions().map(o=>
+    `<option value="${o.id}" ${o.id===sel?'selected':''}>${esc(o.label)}</option>`).join('');
+  // A set that matches no class at all still has to be selectable-away-from, so it
+  // shows as its own option rather than silently snapping to the first entry.
+  const custom=sel?'':`<option value="" selected>${esc(on.join(', ')||'—')}</option>`;
+  return `<select onchange="posSetRoute('${enc}',this.value)"
+    style="width:100%;font-family:inherit;font-size:12.5px;padding:3px 5px;border-radius:6px;
+      border:1px solid ${changed?'#22c55e':'var(--border)'};
+      background:${changed?'rgba(34,197,94,0.10)':'var(--surface2)'};
+      color:${on.length?(changed?'#22c55e':'var(--text)'):'#ef4444'}">${custom}${opts}</select>
     <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${on.length?esc(on.join(', ')):'<span style="color:#ef4444">prints nowhere</span>'}</div>`;
 }
 
