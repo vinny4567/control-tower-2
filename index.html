@@ -7185,7 +7185,8 @@ function posGroupsHTML(){
         style="border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-size:12px;font-family:inherit">rename</button>
       <span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;border:1px solid currentColor;color:${g.required?'#ef4444':'var(--text-muted)'}">${g.required?'required':'optional'}</span>
       ${g.micros?'<span style="font-size:11px;color:var(--text-muted)">from the Configurator</span>':''}
-      ${g.inline?'<span style="font-size:11px;color:var(--text-muted)">declared on the item</span>':''}
+      ${g.declared?'<span style="font-size:11px;color:#f59e0b;font-weight:700" title="It exists and keeps its prices, but no item asks it">defined, not in use</span>'
+        :g.inline?'<span style="font-size:11px;color:var(--text-muted)">declared on the item</span>':''}
       ${g.variants>1?`<span style="font-size:11px;font-weight:700;color:#f59e0b" title="Items using this name do not all offer the same choices">${g.variants} versions</span>`:''}
       <button onclick="posDeleteGroup('${encodeURIComponent(posGroupKey(g))}','${encodeURIComponent(g.name)}',${(g.used_by||[]).length})"
         style="border:none;background:transparent;cursor:pointer;font-family:inherit;font-size:12px;
