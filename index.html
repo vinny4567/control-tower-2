@@ -6516,6 +6516,26 @@ function posAttachFromInput(enc,kind){
   const el=document.getElementById((kind==='cat'?'ga-c-':'ga-i-')+enc);
   if(!el)return; posAttachAdd(enc,kind,el.value); el.value='';
 }
+// EDITING A CHOICE. Clicking a chip loads it into the fields below; the Add button
+// becomes Save.
+//
+// A choice that came from the register is not edited in place — it cannot be, the
+// change has not been applied yet. It is recorded as the old one coming out and the
+// new one going in, which is exactly what I will do to the file.
+function posEditChoice(enc,encName,cents){
+  const k=decodeURIComponent(enc), name=decodeURIComponent(encName);
+  posS.editChoice=posS.editChoice||{};
+  if(posS.editChoice[k]&&posS.editChoice[k].name===name)delete posS.editChoice[k];
+  else posS.editChoice[k]={name,cents:Number(cents)||0};
+  posRedraw();
+}
+function posCancelEdit(enc){
+  const k=decodeURIComponent(enc);
+  if(posS.editChoice)delete posS.editChoice[k];
+  posRedraw();
+}
+const posEditingIn=(k)=>(posS.editChoice||{})[String(k)]||null;
+
 function posAddGroupMod(enc,name,cents){
   const k=decodeURIComponent(enc);
   const nm=String(name||'').trim(); if(!nm)return;
@@ -6532,13 +6552,38 @@ function posRemoveGroupMod(encK,encN){
   posSaveGroups();
 }
 function posAddFromInput(enc){
+  const k=decodeURIComponent(enc);
   const el=document.getElementById('gm-'+enc);
   const pl=document.getElementById('gp-'+enc);
   if(!el)return;
   const typed=String(el.value).trim(); if(!typed)return;
   const raw=pl?String(pl.value).replace(/[^0-9.]/g,''):'';
-  const cents=raw?Math.round(parseFloat(raw)*100):0;
-  posAddGroupMod(enc,typed,isFinite(cents)&&cents>0?cents:0);
+  const n=raw?Math.round(parseFloat(raw)*100):0;
+  const cents=isFinite(n)&&n>0?n:0;
+
+  const edit=posEditingIn(k);
+  if(edit){
+    const list=posGroupMods[k]||[];
+    const at=list.findIndex(m=>(typeof m==='string'?m:m.name)===edit.name);
+    if(at>=0){
+      // One added here — change it where it sits, so it keeps its place in the row.
+      list[at]={name:typed,cents};
+      posGroupMods[k]=list;
+    }else{
+      // One the register already has: take the old out, put the new in.
+      if(typed!==edit.name||cents!==edit.cents){
+        posChoiceCuts[k]=[...new Set([...(posChoiceCuts[k]||[]),edit.name])];
+        kvPush('ct_pos_choice_cuts',posChoiceCuts,Date.now());
+        posGroupMods[k]=[...list,{name:typed,cents}];
+      }
+    }
+    delete posS.editChoice[k];
+    el.value=''; if(pl)pl.value='';
+    posSaveGroups();
+    return;
+  }
+
+  posAddGroupMod(enc,typed,cents);
   el.value=''; if(pl)pl.value='';
   el.focus();
 }
@@ -7170,22 +7215,26 @@ function posGroupModsHTML(g){
   const money=(x)=>x?`<span style="opacity:.85"> +$${(x/100).toFixed(2)}</span>`:'';
 
   const cuts=posCutsFor(k);
+  const ed=posEditingIn(k);
+  const ring=(n)=>ed&&ed.name===n?'box-shadow:0 0 0 2px var(--accent);':'';
   const own=(g.choices||[]).map(ch=>{
     const gone=cuts.includes(ch.name);
     return `<span style="display:inline-flex;align-items:center;gap:5px;font-size:13px;
       padding:3px 5px 3px 9px;border-radius:7px;
       background:${gone?'rgba(239,68,68,0.10)':'var(--surface2)'};
       border:1px solid ${gone?'#ef4444':'var(--border)'};
-      color:${gone?'#ef4444':'var(--text)'};${gone?'text-decoration:line-through':''}">
-      ${esc(ch.name)}${money(ch.cents)}
+      color:${gone?'#ef4444':'var(--text)'};${gone?'text-decoration:line-through':''};${ring(ch.name)}">
+      <span onclick="posEditChoice('${enc}','${encodeURIComponent(ch.name)}',${ch.cents||0})"
+        title="edit the name or the price" style="cursor:pointer">${esc(ch.name)}${money(ch.cents)}</span>
       <button onclick="posCutChoice('${enc}','${encodeURIComponent(ch.name)}')"
         title="${gone?'put it back':'take this choice out of the group'}"
         style="border:none;background:transparent;color:${gone?'#ef4444':'var(--text-muted)'};
           cursor:pointer;font-size:14px;line-height:1;padding:0 2px;text-decoration:none">${gone?'↺':'×'}</button></span>`;
   }).join('');
   // The price comes off the entry itself now, not from a food mod of the same name.
-  const mine=added.map(m=>`<span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;padding:3px 6px 3px 9px;border-radius:7px;background:rgba(34,197,94,0.10);border:1px solid #22c55e;color:#22c55e">
-      ${esc(m.name)}${money(m.cents)}
+  const mine=added.map(m=>`<span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;padding:3px 6px 3px 9px;border-radius:7px;background:rgba(34,197,94,0.10);border:1px solid #22c55e;color:#22c55e;${ring(m.name)}">
+      <span onclick="posEditChoice('${enc}','${encodeURIComponent(m.name)}',${m.cents||0})"
+        title="edit the name or the price" style="cursor:pointer">${esc(m.name)}${money(m.cents)}</span>
       <button onclick="posRemoveGroupMod('${enc}','${encodeURIComponent(m.name)}')" title="remove"
         style="border:none;background:transparent;color:#22c55e;cursor:pointer;font-size:15px;line-height:1;padding:0 2px">×</button></span>`
   ).join('');
@@ -7195,13 +7244,18 @@ function posGroupModsHTML(g){
   return `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">${own}${mine}</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px">
       <input id="gm-${enc}" placeholder="a choice for this group…" autocomplete="off"
-        onkeydown="if(event.key==='Enter'){posAddFromInput('${enc}');event.preventDefault()}"
+        value="${ed?esc(ed.name):''}"
+        onkeydown="if(event.key==='Enter'){posAddFromInput('${enc}');event.preventDefault()}
+                   if(event.key==='Escape')posCancelEdit('${enc}')"
         style="${posInput};flex:1;min-width:170px;font-size:14px;padding:8px 11px">
       <input id="gp-${enc}" placeholder="$" inputmode="decimal" autocomplete="off"
         title="leave blank if it does not charge"
-        onkeydown="if(event.key==='Enter'){posAddFromInput('${enc}');event.preventDefault()}"
+        value="${ed&&ed.cents?(ed.cents/100).toFixed(2):''}"
+        onkeydown="if(event.key==='Enter'){posAddFromInput('${enc}');event.preventDefault()}
+                   if(event.key==='Escape')posCancelEdit('${enc}')"
         style="${posInput};width:74px;text-align:right;font-size:14px;padding:8px 11px">
-      <button onclick="posAddFromInput('${enc}')" style="${posBtn('#3f3f46')};font-size:13px;padding:8px 14px">Add</button>
+      <button onclick="posAddFromInput('${enc}')" style="${posBtn(ed?'#2563eb':'#3f3f46')};font-size:13px;padding:8px 14px">${ed?'Save':'Add'}</button>
+      ${ed?`<button onclick="posCancelEdit('${enc}')" style="border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-family:inherit;font-size:13px">cancel</button>`:''}
     </div>
     <div style="font-size:12px;color:var(--text-muted);margin-top:4px">These belong to this group only. The <b>Food Mods</b> page is a separate list — the condiments a server reaches from the letter pages.</div>`;
 }
