@@ -6078,18 +6078,18 @@ async function posLoadPrices(){
   // Fetch everything, compare it to what is already on screen, and only redraw when
   // something actually differs. A reload that changes nothing now changes nothing.
   const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
-  const [r,g,ng,at,rt,pc,nm,gn,gd,ml,dm,cc,mn,dg]=await Promise.all([
+  const [r,g,ng,at,rt,pc,nm,gn,gd,ml,dm,cc,mn,dg,ce]=await Promise.all([
     kvGet('ct_pos_prices'),kvGet('ct_pos_group_mods'),kvGet('ct_pos_new_groups'),
     kvGet('ct_pos_group_attach'),kvGet('ct_pos_routing'),kvGet('ct_pos_print_classes'),
     kvGet('ct_pos_new_mods'),kvGet('ct_pos_group_names'),kvGet('ct_pos_group_detach'),
     kvGet('ct_pos_mod_letters'),kvGet('ct_pos_deleted_mods'),kvGet('ct_pos_choice_cuts'),
-    kvGet('ct_pos_mod_names'),kvGet('ct_pos_deleted_groups')]);
+    kvGet('ct_pos_mod_names'),kvGet('ct_pos_deleted_groups'),kvGet('ct_pos_choice_edits')]);
   const next={
     prices:(r&&r.v)||{}, mods:(g&&g.v)||{}, groups:(ng&&ng.v)||[], attach:(at&&at.v)||{},
     routing:(rt&&rt.v)||{}, classes:(pc&&pc.v)||[], newMods:(nm&&nm.v)||[],
     names:(gn&&gn.v)||{}, detach:(gd&&gd.v)||{}, letters:(ml&&ml.v)||{},
     deleted:(dm&&dm.v)||[], cuts:(cc&&cc.v)||{}, modNames:(mn&&mn.v)||{},
-    delGroups:(dg&&dg.v)||[],
+    delGroups:(dg&&dg.v)||[], choiceEdits:(ce&&ce.v)||{},
   };
   const changed=!same(next.prices,posPrices)||!same(next.mods,posGroupMods)
     ||!same(next.groups,posNewGroups)||!same(next.attach,posGroupAttach)
@@ -6097,17 +6097,24 @@ async function posLoadPrices(){
     ||!same(next.newMods,posNewMods)||!same(next.names,posGroupNames)
     ||!same(next.detach,posGroupDetach)||!same(next.letters,posModLetters)
     ||!same(next.deleted,posDeletedMods)||!same(next.cuts,posChoiceCuts)
-    ||!same(next.modNames,posModNames)||!same(next.delGroups,posDeletedGroups);
+    ||!same(next.modNames,posModNames)||!same(next.delGroups,posDeletedGroups)
+    ||!same(next.choiceEdits,posChoiceEdits);
   posPrices=next.prices; posGroupMods=next.mods; posNewGroups=next.groups;
   posGroupAttach=next.attach; posRouting=next.routing; posNewClasses=next.classes;
   posNewMods=next.newMods; posGroupNames=next.names; posGroupDetach=next.detach;
   posModLetters=next.letters; posDeletedMods=next.deleted; posChoiceCuts=next.cuts;
   posModNames=next.modNames; posDeletedGroups=next.delGroups;
+  posChoiceEdits=next.choiceEdits;
   posPruneOrphans();   // redraws itself only if it actually drops something
   if(changed)posRedraw();
 }
 // A group is either one from the catalog (key = its number) or one created here
 // (key = 'new:<n>'). Everything below is keyed the same way so the two behave alike.
+// Renaming or repricing a choice the register already has. It is NOT a delete plus an
+// add — that is only how it would have to be written into the file, and reading
+// "CHOICES REMOVED FROM GROUPS: rotini" after correcting a capital letter is alarming
+// for no reason. groupKey -> { oldName: {name, cents} }.
+let posChoiceEdits={};
 let posNewGroups=[];      // [{key,name,required}]
 let posGroupAttach={};    // key -> {cats:[], items:[]}
 // Where an item prints. Most rows say "(inferred)" — the station was read off the
@@ -6318,7 +6325,7 @@ function posPruneOrphans(){
   // orphans
   for(const [which,store] of [['ct_pos_group_names',posGroupNames],['ct_pos_group_detach',posGroupDetach],
                               ['ct_pos_group_mods',posGroupMods],['ct_pos_group_attach',posGroupAttach],
-                              ['ct_pos_choice_cuts',posChoiceCuts]])
+                              ['ct_pos_choice_cuts',posChoiceCuts],['ct_pos_choice_edits',posChoiceEdits]])
     for(const k of Object.keys(store))if(!known.has(k))drop(store,k,which);
 
   // renames that match what the group is already called
@@ -6341,6 +6348,14 @@ function posPruneOrphans(){
     if(items.length||(a.cats||[]).length)posGroupAttach[k]={cats:a.cats||[],items};
     else delete posGroupAttach[k];
     dirty.add('ct_pos_group_attach');
+  }
+  // edits the register has taken — the group is gone, or no longer has that choice
+  // under its old name
+  for(const [k,map] of Object.entries(posChoiceEdits)){
+    const g=byKey[k]; if(!g)continue;
+    for(const was of Object.keys(map))
+      if(!(g.choices||[]).some(ch=>ch.name===was)){delete map[was];dirty.add('ct_pos_choice_edits')}
+    if(!Object.keys(map).length){delete posChoiceEdits[k];dirty.add('ct_pos_choice_edits')}
   }
   // choices already taken out of the group
   for(const [k,names] of Object.entries(posChoiceCuts)){
@@ -6387,7 +6402,8 @@ function posPruneOrphans(){
     ct_pos_group_mods:posGroupMods,ct_pos_group_attach:posGroupAttach,
     ct_pos_prices:posPrices,ct_pos_routing:posRouting,ct_pos_new_mods:posNewMods,
     ct_pos_choice_cuts:posChoiceCuts,ct_pos_mod_names:posModNames,
-    ct_pos_deleted_groups:posDeletedGroups,ct_pos_deleted_mods:posDeletedMods};
+    ct_pos_deleted_groups:posDeletedGroups,ct_pos_deleted_mods:posDeletedMods,
+    ct_pos_choice_edits:posChoiceEdits};
   for(const k of dirty)kvPush(k,stores[k],Date.now());
   if(dirty.size)posRedraw();
 }
@@ -6525,8 +6541,11 @@ function posAttachFromInput(enc,kind){
 function posEditChoice(enc,encName,cents){
   const k=decodeURIComponent(enc), name=decodeURIComponent(encName);
   posS.editChoice=posS.editChoice||{};
-  if(posS.editChoice[k]&&posS.editChoice[k].name===name)delete posS.editChoice[k];
-  else posS.editChoice[k]={name,cents:Number(cents)||0};
+  if(posS.editChoice[k]&&posS.editChoice[k].name===name){delete posS.editChoice[k];posRedraw();return;}
+  // `name` is the ORIGINAL — that is the key an edit is filed under. What goes in the
+  // box is the current reading, so a second edit starts from the first.
+  const e=(posChoiceEdits[String(k)]||{})[name];
+  posS.editChoice[k]={name,cents:Number(cents)||0,shown:e?e.name:name};
   posRedraw();
 }
 function posCancelEdit(enc){
@@ -6590,12 +6609,17 @@ function posAddFromInput(enc){
       list[at]={name:typed,cents};
       posGroupMods[k]=list;
     }else{
-      // One the register already has: take the old out, put the new in.
-      if(typed!==edit.name||cents!==edit.cents){
-        posChoiceCuts[k]=[...new Set([...(posChoiceCuts[k]||[]),edit.name])];
-        kvPush('ct_pos_choice_cuts',posChoiceCuts,Date.now());
-        posGroupMods[k]=[...list,{name:typed,cents}];
-      }
+      // One the register already has. Recorded as a CHANGE to that choice, not as a
+      // removal and a separate addition — same edit either way, but only one of the
+      // two reads like losing something.
+      const orig=((posS.cat&&posS.cat.mod_groups)||[])
+        .find(x=>String(x.num)===k||('n:'+x.name)===k);
+      const was=orig&&(orig.choices||[]).find(c=>c.name===edit.name);
+      posChoiceEdits[k]=posChoiceEdits[k]||{};
+      if(was&&typed===was.name&&cents===(was.cents||0))delete posChoiceEdits[k][edit.name];
+      else posChoiceEdits[k][edit.name]={name:typed,cents};
+      if(!Object.keys(posChoiceEdits[k]).length)delete posChoiceEdits[k];
+      kvPush('ct_pos_choice_edits',posChoiceEdits,Date.now());
     }
     delete posS.editChoice[k];
     el.value=''; if(pl)pl.value='';
@@ -6878,6 +6902,7 @@ function posPendingCount(){
     +Object.keys(posGroupMods).length+posNewGroups.length+Object.keys(posGroupAttach).length
     +posNewClasses.length+posNewMods.length+Object.keys(posGroupNames).length
     +Object.keys(posGroupDetach).length+Object.keys(posModLetters).length+posDeletedMods.length
+    +Object.values(posChoiceEdits).reduce((n,v)=>n+Object.keys(v).length,0)
     +Object.keys(posChoiceCuts).length+Object.keys(posModNames).length
     +posDeletedGroups.length;
 }
@@ -6894,11 +6919,12 @@ function posClearChanges(){
   posPrices={};posRouting={};posGroupMods={};posNewGroups=[];posGroupAttach={};
   posNewClasses=[];posNewMods=[];posGroupNames={};posGroupDetach={};
   posChoiceCuts={};posModLetters={};posDeletedMods=[];posModNames={};posDeletedGroups=[];
+  posChoiceEdits={};
   for(const k of ['ct_pos_prices','ct_pos_routing','ct_pos_group_mods','ct_pos_new_groups',
                   'ct_pos_group_attach','ct_pos_print_classes','ct_pos_new_mods',
                   'ct_pos_group_names','ct_pos_group_detach','ct_pos_choice_cuts',
                   'ct_pos_mod_letters','ct_pos_deleted_mods','ct_pos_mod_names',
-                  'ct_pos_deleted_groups'])
+                  'ct_pos_deleted_groups','ct_pos_choice_edits'])
     kvPush(k,(k==='ct_pos_new_groups'||k==='ct_pos_print_classes'||k==='ct_pos_new_mods'
               ||k==='ct_pos_deleted_mods'||k==='ct_pos_deleted_groups')?[]:{},Date.now());
   posRedraw();
@@ -6960,6 +6986,12 @@ function posCopyChanges(){
   if(posNewGroups.length){L.push('','NEW GROUPS');
     for(const g of posNewGroups)L.push(`  ${g.name} | ${g.required?'required':'optional'}`);}
   const M=Object.entries(posGroupMods);
+  const CE=Object.entries(posChoiceEdits).filter(([,v])=>Object.keys(v).length);
+  if(CE.length){L.push('','CHOICES CHANGED IN GROUPS');
+    for(const [k,map] of CE){const g=posNewGroups.find(x=>x.key===k)
+      ||(c.mod_groups||[]).find(x=>String(x.num)===k||('n:'+x.name)===k);
+      for(const [was,now] of Object.entries(map))
+        L.push(`  ${g?g.name:k}: ${was} → ${now.name}${now.cents?' | '+(now.cents/100).toFixed(2):' | free'}`);}}
   if(M.length){L.push('','CHOICES ADDED TO GROUPS');
     for(const [k] of M){const g=posNewGroups.find(x=>x.key===k)
       ||(c.mod_groups||[]).find(x=>String(x.num)===k);
@@ -7236,17 +7268,21 @@ function posGroupModsHTML(g){
 
   const cuts=posCutsFor(k);
   const ed=posEditingIn(k);
+  const edits=posChoiceEdits[String(k)]||{};
   const ring=(n)=>ed&&ed.name===n?'box-shadow:0 0 0 2px var(--accent);':'';
-  const own=(g.choices||[]).map(ch=>{
-    const gone=cuts.includes(ch.name);
+  const own=(g.choices||[]).map(orig=>{
+    const e=edits[orig.name];
+    const ch=e?{name:e.name,cents:e.cents}:orig;
+    const gone=cuts.includes(orig.name);
     return `<span style="display:inline-flex;align-items:center;gap:5px;font-size:13px;
       padding:3px 5px 3px 9px;border-radius:7px;
-      background:${gone?'rgba(239,68,68,0.10)':'var(--surface2)'};
-      border:1px solid ${gone?'#ef4444':'var(--border)'};
-      color:${gone?'#ef4444':'var(--text)'};${gone?'text-decoration:line-through':''};${ring(ch.name)}">
-      <span onclick="posEditChoice('${enc}','${encodeURIComponent(ch.name)}',${ch.cents||0})"
-        title="edit the name or the price" style="cursor:pointer">${esc(ch.name)}${money(ch.cents)}</span>
-      <button onclick="posCutChoice('${enc}','${encodeURIComponent(ch.name)}')"
+      background:${gone?'rgba(239,68,68,0.10)':e?'rgba(34,197,94,0.10)':'var(--surface2)'};
+      border:1px solid ${gone?'#ef4444':e?'#22c55e':'var(--border)'};
+      color:${gone?'#ef4444':e?'#22c55e':'var(--text)'};${gone?'text-decoration:line-through':''};${ring(orig.name)}">
+      <span onclick="posEditChoice('${enc}','${encodeURIComponent(orig.name)}',${ch.cents||0})"
+        title="edit the name or the price" style="cursor:pointer">${esc(ch.name)}${money(ch.cents)}${
+        e?`<span style="opacity:.7;font-size:11px"> was ${esc(orig.name)}</span>`:''}</span>
+      <button onclick="posCutChoice('${enc}','${encodeURIComponent(orig.name)}')"
         title="${gone?'put it back':'take this choice out of the group'}"
         style="border:none;background:transparent;color:${gone?'#ef4444':'var(--text-muted)'};
           cursor:pointer;font-size:14px;line-height:1;padding:0 2px;text-decoration:none">${gone?'↺':'×'}</button></span>`;
@@ -7264,7 +7300,7 @@ function posGroupModsHTML(g){
   return `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">${own}${mine}</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px">
       <input id="gm-${enc}" placeholder="a choice for this group…" autocomplete="off"
-        value="${ed?esc(ed.name):''}"
+        value="${ed?esc(ed.shown||ed.name):''}"
         onkeydown="if(event.key==='Enter'){posAddFromInput('${enc}');event.preventDefault()}
                    if(event.key==='Escape')posCancelEdit('${enc}')"
         style="${posInput};flex:1;min-width:170px;font-size:14px;padding:8px 11px">
