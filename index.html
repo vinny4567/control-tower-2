@@ -6832,8 +6832,10 @@ function posItemsBodyHTML(){
   if(posS.catFilter===POS_GROUPS_CAT)return posGroupsHTML();
   const rows=posItemRows();
   const shown=rows.slice(0,POS_ITEM_CAP);
-  const head=`<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;max-width:630px">
-    <span style="width:300px">Item</span><span style="width:82px;text-align:right">Price</span>
+  // Header columns must line up with the row columns below — the widths are the same
+  // three numbers in both places.
+  const head=`<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;max-width:690px">
+    <span style="width:330px">Item</span><span style="width:92px;text-align:right">Price</span>
     <span style="width:210px;padding-left:14px">Prints at</span></div>`;
   // Grouped under category headings rather than run together as one long list. The
   // menu HAS a shape — appetizers, then pasta, then the bar — and a flat list of 776
@@ -6843,17 +6845,17 @@ function posItemsBodyHTML(){
   for(const r of shown){const k=r.cat||'—';if(!byCat.has(k)){byCat.set(k,[]);groups.push(k)}byCat.get(k).push(r)}
   // "on 5 items" is a question, not a fact — WHICH five? So it opens. One item is
   // named outright, since a list of one is just the name with extra steps.
-  const rowHTML=r=>`<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:14px;align-items:baseline;max-width:${r.cat==='Food Mods'?'740px':'630px'}">
-      <span style="width:300px;${posModDeleted(r)?'text-decoration:line-through;color:#ef4444':''}">${
+  const rowHTML=r=>`<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:16px;align-items:baseline;max-width:${r.cat==='Food Mods'?'800px':'690px'}">
+      <span style="width:330px;${posModDeleted(r)?'text-decoration:line-through;color:#ef4444':''}">${
         `<span onclick="posRenameMod('${encodeURIComponent(r.key)}','${encodeURIComponent(r.name)}')"
             title="Rename — this is the button a server reads and what prints on the ticket"
             style="cursor:pointer;border-bottom:1px dotted var(--text-muted);${posModNames[r.key]?'color:#22c55e;font-weight:700':''}">${esc(posRowLabel(r))}</span>${
             posModNames[r.key]?`<span style="font-size:12px;color:var(--text-muted)"> was ${esc(r.name)}</span>`:''}`
         }${r.isNew?' <span style="color:#22c55e;font-size:11px;font-weight:700">new</span>':''}${r.hidden?' <span style="color:var(--text-muted);font-size:11px">(hidden)</span>':''}${posGapTags(posRowGaps(r))}
         ${r.source==='choice'
-          ? `<div style="font-size:12px;color:var(--text-muted)">${esc(posGroupNameFor(r))}${r.required?' · required':''}${posRowUsedByHTML(r)}</div>`
+          ? `<div style="font-size:13.5px;color:var(--text-muted)">${esc(posGroupNameFor(r))}${r.required?' · required':''}${posRowUsedByHTML(r)}</div>`
           : posItemGroupsHTML(r)}</span>
-      <span style="width:82px;text-align:right">${posPriceCell(r)}</span>
+      <span style="width:92px;text-align:right">${posPriceCell(r)}</span>
       <span style="width:210px;padding-left:14px">${posRouteCell(r)}</span>
       ${r.cat==='Food Mods'?`<span style="width:96px;text-align:right;white-space:nowrap">
         <button onclick="posSetModLetter('${encodeURIComponent(r.name)}')" title="File it under a different letter"
@@ -6865,8 +6867,8 @@ function posItemsBodyHTML(){
   const catHeader=(k,list)=>{
     const gaps=list.filter(r=>posRowGaps(r).length).length;
     return `<div style="display:flex;align-items:baseline;gap:8px;margin:14px 0 2px;padding-bottom:5px;border-bottom:2px solid var(--border);max-width:630px">
-      <span style="font-size:18px;font-weight:800;letter-spacing:.4px;text-transform:uppercase">${esc(k)}</span>
-      <span style="font-size:13px;color:var(--text-dim)">${list.length} item${list.length===1?'':'s'}</span>
+      <span style="font-size:20px;font-weight:800;letter-spacing:.4px;text-transform:uppercase">${esc(k)}</span>
+      <span style="font-size:14px;color:var(--text-dim)">${list.length} item${list.length===1?'':'s'}</span>
       ${gaps?`<span style="font-size:11px;font-weight:700;color:#f59e0b;margin-left:auto">${gaps} need data</span>`:''}</div>`;
   };
   let body;
@@ -7196,7 +7198,7 @@ function posItemGroupsHTML(r){
     // Quieter than a real group, but not so quiet you have to hunt for it — the
     // near-invisible version made scanning for the gaps harder than scanning for
     // the groups, which is backwards.
-    return '<div style="font-size:11px;color:var(--text-dim)">no mod groups</div>';
+    return '<div style="font-size:12.5px;color:var(--text-dim)">no mod groups</div>';
   // A deferred group is marked, because it does NOT appear when the item is rung —
   // it waits for SEND. Listing it plainly made an entrée look like it had a broken
   // attachment when the delay was deliberate.
@@ -7219,7 +7221,7 @@ function posItemGroupsHTML(r){
     const at=(x)=>{const i=ord.indexOf(x.n);return i<0?9999:i};
     all=all.map((x,i)=>[x,i]).sort((a,b)=>at(a[0])-at(b[0])||a[1]-b[1]).map(([x])=>x);
   }
-  return `<div id="ig-${enc}" style="font-size:11.5px;color:var(--text);font-weight:600;
+  return `<div id="ig-${enc}" style="font-size:13px;color:var(--text);font-weight:600;
       display:flex;flex-wrap:wrap;gap:4px;align-items:baseline">`
     +all.map((x,i)=>`${i?'<span class="ig-dot" style="opacity:.5">·</span>':''}<span data-ch="${encodeURIComponent(x.n)}"
         onpointerdown="posDragItemGroup(event,'${enc}')"
@@ -7237,7 +7239,7 @@ function posPriceCell(r){
   return `<input value="${shown}" placeholder="—" inputmode="decimal"
     onchange="posSetPrice('${enc}',this.value)"
     onkeydown="if(event.key==='Enter')this.blur()"
-    style="width:100%;text-align:right;font-variant-numeric:tabular-nums;font-size:14px;
+    style="width:100%;text-align:right;font-variant-numeric:tabular-nums;font-size:16px;
       padding:4px 7px;border-radius:6px;font-family:inherit;
       border:1px solid ${entered?'#22c55e':'var(--border)'};
       background:${entered?'rgba(34,197,94,0.10)':'var(--surface2)'};
