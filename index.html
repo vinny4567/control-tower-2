@@ -6118,6 +6118,27 @@ let posNewClasses=[];     // [{key:'pc:1', name, printers:[]}]
 // the vocabulary immediately — autocomplete offers them, groups can hold them — and
 // travel to the register in the same paste as everything else.
 let posNewMods=[];        // [{name, cents}]
+// Which "on N items" lines are open. Rows are rebuilt on every redraw, so this has to
+// live outside them or an open list would snap shut on the next click anywhere.
+let posUsedByOpen=new Set();
+function posToggleUsedBy(enc){
+  const k=decodeURIComponent(enc);
+  posUsedByOpen.has(k)?posUsedByOpen.delete(k):posUsedByOpen.add(k);
+  posRedraw();
+}
+function posUsedByHTML(r){
+  const u=r.usedBy||[];
+  if(!u.length)return '';
+  if(u.length===1)return ` · on ${esc(u[0])}`;
+  const k=String(r.key||r.name), enc=encodeURIComponent(k), open=posUsedByOpen.has(k);
+  return ` · <button onclick="posToggleUsedBy('${enc}')"
+      title="${open?'hide':'show'} the items this is on"
+      style="border:none;background:transparent;padding:0;font:inherit;color:var(--accent);
+        cursor:pointer;border-bottom:1px dotted var(--accent)">on ${u.length} items ${open?'▾':'▸'}</button>`
+    +(open?`<div style="margin:4px 0 2px;padding-left:10px;border-left:2px solid var(--border);
+        columns:2;column-gap:18px;font-size:12px;color:var(--text-dim)">${
+        u.map(n=>`<div style="break-inside:avoid;padding:1px 0">${esc(n)}</div>`).join('')}</div>`:'');
+}
 // Renamed groups. 'Which one' says nothing about what it asks; a group nobody can
 // name is a group nobody maintains. Keyed like everything else, applied with the
 // rest of the pending changes.
@@ -6598,6 +6619,8 @@ function posItemsBodyHTML(){
   // data, so a category with gaps is visible without opening it.
   const groups=[],byCat=new Map();
   for(const r of shown){const k=r.cat||'—';if(!byCat.has(k)){byCat.set(k,[]);groups.push(k)}byCat.get(k).push(r)}
+  // "on 5 items" is a question, not a fact — WHICH five? So it opens. One item is
+  // named outright, since a list of one is just the name with extra steps.
   const rowHTML=r=>`<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:14px;align-items:baseline;max-width:${r.cat==='Food Mods'?'740px':'630px'}">
       <span style="width:300px;${posDeletedMods.includes(r.name)?'text-decoration:line-through;color:#ef4444':''}">${
         `<span onclick="posRenameMod('${encodeURIComponent(r.key)}','${encodeURIComponent(r.name)}')"
@@ -6606,7 +6629,7 @@ function posItemsBodyHTML(){
             posModNames[r.key]?`<span style="font-size:12px;color:var(--text-muted)"> was ${esc(r.name)}</span>`:''}`
         }${r.isNew?' <span style="color:#22c55e;font-size:11px;font-weight:700">new</span>':''}${r.hidden?' <span style="color:var(--text-muted);font-size:11px">(hidden)</span>':''}${posGapTags(posRowGaps(r))}
         ${r.source==='choice'
-          ? `<div style="font-size:12px;color:var(--text-muted)">${esc(r.prompt||'')} prompt${r.required?' · required':''}${(r.usedBy||[]).length>1?` · on ${r.usedBy.length} items`:(r.usedBy&&r.usedBy[0]?` · on ${esc(r.usedBy[0])}`:'')}</div>`
+          ? `<div style="font-size:12px;color:var(--text-muted)">${esc(r.prompt||'')} prompt${r.required?' · required':''}${posUsedByHTML(r)}</div>`
           : posItemGroupsHTML(r)}</span>
       <span style="width:82px;text-align:right">${posPriceCell(r)}</span>
       <span style="width:210px;padding-left:14px">${posRouteCell(r)}</span>
