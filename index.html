@@ -6959,7 +6959,7 @@ function posItemsBodyHTML(){
             title="Rename — this is the button a server reads and what prints on the ticket"
             style="cursor:pointer;border-bottom:1px dotted var(--text-muted);${posModNames[r.key]?'color:#22c55e;font-weight:700':''}">${esc(posRowLabel(r))}</span>${
             posModNames[r.key]?`<span style="font-size:12px;color:var(--text-muted)"> was ${esc(r.name)}</span>`:''}`
-        }${r.isNew?' <span style="color:#22c55e;font-size:11px;font-weight:700">new</span>':''}${r.hidden?' <span style="color:var(--text-muted);font-size:11px">(hidden)</span>':''}${posGapTags(posRowGaps(r))}
+        }${r.special?` <span style="font-size:11px;font-weight:800;color:#b45309;background:rgba(245,158,11,0.14);border-radius:5px;padding:1px 6px">${esc(r.special)}</span>`:''}${r.isNew?' <span style="color:#22c55e;font-size:11px;font-weight:700">new</span>':''}${r.hidden?' <span style="color:var(--text-muted);font-size:11px">(hidden)</span>':''}${posGapTags(posRowGaps(r))}
         ${r.source==='choice'
           ? `<div style="font-size:13.5px;color:var(--text-muted)">${esc(posGroupNameFor(r))}${r.required?' · required':''}${posRowUsedByHTML(r)}</div>`
           : posItemGroupsHTML(r)}</span>
