@@ -6442,7 +6442,12 @@ function posClassTogglePrinter(enc,printer){
 const posRoutedTo=(r)=>Object.prototype.hasOwnProperty.call(posRouting,r.key)
   ?posRouting[r.key]:(r.printers||[]);
 const posRerouted=(r)=>Object.prototype.hasOwnProperty.call(posRouting,r.key);
-const posAddedTo=(k)=>posGroupMods[String(k)]||[];
+// A group's own choices, added here. Entries used to be bare NAMES borrowed from the
+// Food Mods vocabulary; they are {name,cents} of their own now — a group choice and a
+// condiment on a letter page are different things that happened to share a spelling.
+// Older saves hold strings, so they are read as a free choice.
+const posAddedTo=(k)=>(posGroupMods[String(k)]||[]).map(
+  m=>typeof m==='string'?{name:m,cents:0}:{name:m.name,cents:m.cents||0});
 const posAttachOf=(k)=>posGroupAttach[String(k)]||{cats:[],items:[]};
 function posSaveGroups(){
   kvPush('ct_pos_group_mods',posGroupMods,Date.now());
@@ -6511,35 +6516,31 @@ function posAttachFromInput(enc,kind){
   const el=document.getElementById((kind==='cat'?'ga-c-':'ga-i-')+enc);
   if(!el)return; posAttachAdd(enc,kind,el.value); el.value='';
 }
-function posAddGroupMod(enc,name){
+function posAddGroupMod(enc,name,cents){
   const k=decodeURIComponent(enc);
-  const typed=String(name||'').trim(); if(!typed)return;
+  const nm=String(name||'').trim(); if(!nm)return;
   const list=posAddedTo(k);
-  // The catalog is the vocabulary — refuse a typo rather than inventing a modifier
-  // that exists nowhere. But match LOOSELY and store the catalog's own spelling:
-  // Micros condiment names carry leading spaces and odd capitals verbatim (' mushrooms'
-  // really does start with a space), so trimming what was typed used to stop it
-  // matching the record it came from.
-  const norm=(x)=>String(x).trim().toLowerCase();
-  const hit=posModExists(typed);
-  if(!hit){alert('No food mod called "'+typed+'".\n\nMake it on the Food Mods page first, then attach it here.');return;}
-  name=hit.name;
-  if(list.includes(name))return;
-  posGroupMods[k]=[...list,name];
+  if(list.some(m=>m.name.toLowerCase()===nm.toLowerCase()))return;
+  posGroupMods[k]=[...(posGroupMods[k]||[]),{name:nm,cents:cents||0}];
   posSaveGroups();
 }
 function posRemoveGroupMod(encK,encN){
   const k=decodeURIComponent(encK),name=decodeURIComponent(encN);
-  posGroupMods[k]=posAddedTo(k).filter(n=>n!==name);
+  posGroupMods[k]=(posGroupMods[k]||[]).filter(
+    m=>(typeof m==='string'?m:m.name)!==name);
   if(!posGroupMods[k].length)delete posGroupMods[k];
   posSaveGroups();
 }
 function posAddFromInput(enc){
   const el=document.getElementById('gm-'+enc);
+  const pl=document.getElementById('gp-'+enc);
   if(!el)return;
   const typed=String(el.value).trim(); if(!typed)return;
-  posAddGroupMod(enc,typed);   // refuses anything not already in the vocabulary
-  el.value='';
+  const raw=pl?String(pl.value).replace(/[^0-9.]/g,''):'';
+  const cents=raw?Math.round(parseFloat(raw)*100):0;
+  posAddGroupMod(enc,typed,isFinite(cents)&&cents>0?cents:0);
+  el.value=''; if(pl)pl.value='';
+  el.focus();
 }
 function posSetPrice(enc,str){
   const key=decodeURIComponent(enc);
@@ -6894,10 +6895,13 @@ function posCopyChanges(){
   if(posNewGroups.length){L.push('','NEW GROUPS');
     for(const g of posNewGroups)L.push(`  ${g.name} | ${g.required?'required':'optional'}`);}
   const M=Object.entries(posGroupMods);
-  if(M.length){L.push('','MODS ADDED TO GROUPS');
-    for(const [k,mods] of M){const g=posNewGroups.find(x=>x.key===k)
+  if(M.length){L.push('','CHOICES ADDED TO GROUPS');
+    for(const [k] of M){const g=posNewGroups.find(x=>x.key===k)
       ||(c.mod_groups||[]).find(x=>String(x.num)===k);
-      L.push(`  ${g?g.name:k}: ${mods.join(', ')}`);}}
+      // Name and price, since a group's choices are its own now and the price does
+      // not come from a food mod of the same name any more.
+      const list=posAddedTo(k).map(m=>m.name+(m.cents?' | '+(m.cents/100).toFixed(2):''));
+      L.push(`  ${g?g.name:k}: ${list.join(', ')}`);}}
   const A=Object.entries(posGroupAttach);
   if(A.length){L.push('','GROUPS ATTACHED TO');
     for(const [k,a] of A){const g=posNewGroups.find(x=>x.key===k)
@@ -7163,9 +7167,6 @@ function posGroupModsHTML(g){
   const k=posGroupKey(g);
   const enc=encodeURIComponent(k);
   const added=posAddedTo(k);
-  const byName={};
-  for(const i of ((posS.cat&&posS.cat.items)||[]))if(i.cat==='Food Mods')byName[i.name]=i;
-  for(const m of posNewMods)byName[m.name]=m;
   const money=(x)=>x?`<span style="opacity:.85"> +$${(x/100).toFixed(2)}</span>`:'';
 
   const cuts=posCutsFor(k);
@@ -7182,25 +7183,27 @@ function posGroupModsHTML(g){
         style="border:none;background:transparent;color:${gone?'#ef4444':'var(--text-muted)'};
           cursor:pointer;font-size:14px;line-height:1;padding:0 2px;text-decoration:none">${gone?'↺':'×'}</button></span>`;
   }).join('');
-  const mine=added.map(n=>{
-    const row=byName[n];
-    return `<span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;padding:3px 6px 3px 9px;border-radius:7px;background:rgba(34,197,94,0.10);border:1px solid #22c55e;color:#22c55e">
-      ${esc(n)}${money(row?row.cents:0)}
-      <button onclick="posRemoveGroupMod('${enc}','${encodeURIComponent(n)}')" title="remove"
-        style="border:none;background:transparent;color:#22c55e;cursor:pointer;font-size:15px;line-height:1;padding:0 2px">×</button></span>`;
-  }).join('');
+  // The price comes off the entry itself now, not from a food mod of the same name.
+  const mine=added.map(m=>`<span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;padding:3px 6px 3px 9px;border-radius:7px;background:rgba(34,197,94,0.10);border:1px solid #22c55e;color:#22c55e">
+      ${esc(m.name)}${money(m.cents)}
+      <button onclick="posRemoveGroupMod('${enc}','${encodeURIComponent(m.name)}')" title="remove"
+        style="border:none;background:transparent;color:#22c55e;cursor:pointer;font-size:15px;line-height:1;padding:0 2px">×</button></span>`
+  ).join('');
 
   if(g.screen)return `<div style="margin-top:8px;font-size:13px;color:var(--text-dim)">Opens the FOOD MODS screen — the whole condiment table, not a fixed list.</div>`;
 
   return `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">${own}${mine}</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px">
-      <input id="gm-${enc}" placeholder="add an existing food mod…" autocomplete="off"
-        oninput="posAuto('mods','${enc}','gm-${enc}')"
+      <input id="gm-${enc}" placeholder="a choice for this group…" autocomplete="off"
         onkeydown="if(event.key==='Enter'){posAddFromInput('${enc}');event.preventDefault()}"
-        style="${posInput};flex:1;min-width:200px;font-size:14px;padding:8px 11px">
+        style="${posInput};flex:1;min-width:170px;font-size:14px;padding:8px 11px">
+      <input id="gp-${enc}" placeholder="$" inputmode="decimal" autocomplete="off"
+        title="leave blank if it does not charge"
+        onkeydown="if(event.key==='Enter'){posAddFromInput('${enc}');event.preventDefault()}"
+        style="${posInput};width:74px;text-align:right;font-size:14px;padding:8px 11px">
       <button onclick="posAddFromInput('${enc}')" style="${posBtn('#3f3f46')};font-size:13px;padding:8px 14px">Add</button>
     </div>
-    <div style="font-size:12px;color:var(--text-muted);margin-top:4px">New mods are made on the <b>Food Mods</b> page — this only attaches ones that already exist.</div>`;
+    <div style="font-size:12px;color:var(--text-muted);margin-top:4px">These belong to this group only. The <b>Food Mods</b> page is a separate list — the condiments a server reaches from the letter pages.</div>`;
 }
 
 // The items a group is already on, as chips you can take it off. The attachment is
