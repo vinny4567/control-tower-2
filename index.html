@@ -6038,22 +6038,40 @@ function posToggleGaps(){posS.gapsOnly=!posS.gapsOnly;renderViewport()}
 // all 36" on a group two thirds down the page snapped back to the top, which makes
 // a long list unusable. Save where we were, re-render, put it back.
 function posScroller(){
+  // Prefer one that is actually overflowing; fall back to the first scrollable pane,
+  // because immediately after a render the new one can measure as not-yet-overflowing
+  // and returning null there is what loses the position.
+  let fallback=null;
   for(const e of document.querySelectorAll('#viewport *')){
     const cs=getComputedStyle(e);
-    if(/auto|scroll/.test(cs.overflowY)&&e.scrollHeight>e.clientHeight+4)return e;
+    if(!/auto|scroll/.test(cs.overflowY))continue;
+    if(e.scrollHeight>e.clientHeight+4)return e;
+    if(!fallback)fallback=e;
   }
-  return null;
+  return fallback;
 }
 function posRedraw(){
+  // Two places the page can be scrolled: an inner pane inside #viewport, or the
+  // document itself. It used to only look for the inner one — and when the layout
+  // changed so the POS section no longer overflowed its pane, scrolling moved to the
+  // document, posScroller() came back null, and the restore quietly stopped
+  // happening. Both are saved now, so it does not matter which one is doing the
+  // scrolling today.
   const el=posScroller();
   const y=el?el.scrollTop:0;
+  const doc=document.scrollingElement||document.documentElement;
+  const dy=doc?doc.scrollTop:0;
   renderViewport();
-  if(!y)return;
+  if(!y&&!dy)return;
   // Synchronously, before anything else gets a turn. Deferring to rAF was too late —
   // something in between put it back to the top, and the restore then had no effect.
-  const n=posScroller(); if(n)n.scrollTop=y;
+  const put=()=>{
+    if(y){const n=posScroller(); if(n)n.scrollTop=y;}
+    if(dy&&doc)doc.scrollTop=dy;
+  };
+  put();
   // Belt and braces for a render that finishes settling a frame later.
-  requestAnimationFrame(()=>{const m=posScroller();if(m&&m.scrollTop!==y)m.scrollTop=y;});
+  requestAnimationFrame(put);
 }
 
 // PRICES TYPED HERE ARE NOT LIVE IN THE REGISTER.
