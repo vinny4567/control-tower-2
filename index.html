@@ -6143,7 +6143,7 @@ function posGroupNameFor(r){
   const g=posGroupOfRow(r);
   return g?posGroupLabel(g):(r.prompt||'');
 }
-function posUsedByHTML(r){
+function posRowUsedByHTML(r){
   const u=r.usedBy||[];
   if(!u.length)return '';
   if(u.length===1)return ` · on ${esc(u[0])}`;
@@ -6230,8 +6230,13 @@ function posSetModLetter(encName){
   posS.openLetters=posS.openLetters||{}; posS.openLetters[L]=true;
   posRedraw();
 }
-function posDeleteMod(encName){
-  const name=decodeURIComponent(encName);
+// Deleting is by ROW KEY, not by name.
+//
+// It used to be by name, and names repeat: GARLIC & OIL is the $12.95 pasta sauce
+// AND the free one on SD PASTA, so marking either struck through both and would have
+// taken out two buttons Vinny only meant to lose one of.
+function posDeleteMod(encKey,encName){
+  const key=decodeURIComponent(encKey), name=decodeURIComponent(encName||'');
   const mine=posNewMods.some(m=>m.name===name);
   if(mine){
     if(!confirm(`Delete “${name}”?`))return;
@@ -6239,15 +6244,30 @@ function posDeleteMod(encName){
     kvPush('ct_pos_new_mods',posNewMods,Date.now());
     posRedraw();return;
   }
-  if(posDeletedMods.includes(name)){
-    posDeletedMods=posDeletedMods.filter(n=>n!==name);
+  if(posDeletedMods.includes(key)){
+    posDeletedMods=posDeletedMods.filter(k=>k!==key);
   }else{
     if(!confirm(`Mark “${name}” for deletion?\n\nIt stays on the iPads until Claude applies it.`))return;
-    posDeletedMods=[...posDeletedMods,name];
+    posDeletedMods=[...posDeletedMods,key];
   }
   kvPush('ct_pos_deleted_mods',posDeletedMods,Date.now());
   posRedraw();
 }
+// Entries saved before the switch hold a NAME. Turn each into the keys of the rows
+// that carry it, once, so a deletion Vinny already marked is not silently dropped.
+function posMigrateDeleted(){
+  const items=(posS.cat&&posS.cat.items)||[]; if(!items.length)return;
+  const keys=new Set(items.map(i=>i.key));
+  if(posDeletedMods.every(x=>keys.has(x)))return;
+  const out=[];
+  for(const x of posDeletedMods){
+    if(keys.has(x)){out.push(x);continue}
+    for(const i of items)if(i.name===x)out.push(i.key);
+  }
+  posDeletedMods=[...new Set(out)];
+  kvPush('ct_pos_deleted_mods',posDeletedMods,Date.now());
+}
+const posModDeleted=(r)=>posDeletedMods.includes(r.key);
 const posDetachedFrom=(k)=>posGroupDetach[String(k)]||[];
 const posIsDetached=(k,item)=>posDetachedFrom(k).includes(item);
 function posDetachItem(enc,encItem){
@@ -6282,6 +6302,17 @@ function posPruneOrphans(){
   const known=new Set([...Object.keys(byKey),...mine]);
   const byItem={}; for(const i of (cat.items||[]))byItem[i.key]=i;
   const dirty=new Set();
+
+  // Legacy name entries become row keys before anything below judges them.
+  posMigrateDeleted();
+  // Deletions the register has already applied — the row is simply gone from the
+  // catalog, so holding the key would ask for it again every time.
+  {
+    const left=posDeletedMods.filter(k=>byItem[k]);
+    if(left.length!==posDeletedMods.length){
+      posDeletedMods=left; dirty.add('ct_pos_deleted_mods');
+    }
+  }
   const drop=(store,key,which)=>{delete store[key];dirty.add(which)};
 
   // orphans
@@ -6356,7 +6387,7 @@ function posPruneOrphans(){
     ct_pos_group_mods:posGroupMods,ct_pos_group_attach:posGroupAttach,
     ct_pos_prices:posPrices,ct_pos_routing:posRouting,ct_pos_new_mods:posNewMods,
     ct_pos_choice_cuts:posChoiceCuts,ct_pos_mod_names:posModNames,
-    ct_pos_deleted_groups:posDeletedGroups};
+    ct_pos_deleted_groups:posDeletedGroups,ct_pos_deleted_mods:posDeletedMods};
   for(const k of dirty)kvPush(k,stores[k],Date.now());
   if(dirty.size)posRedraw();
 }
@@ -6639,22 +6670,22 @@ function posItemsBodyHTML(){
   // "on 5 items" is a question, not a fact — WHICH five? So it opens. One item is
   // named outright, since a list of one is just the name with extra steps.
   const rowHTML=r=>`<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:14px;align-items:baseline;max-width:${r.cat==='Food Mods'?'740px':'630px'}">
-      <span style="width:300px;${posDeletedMods.includes(r.name)?'text-decoration:line-through;color:#ef4444':''}">${
+      <span style="width:300px;${posModDeleted(r)?'text-decoration:line-through;color:#ef4444':''}">${
         `<span onclick="posRenameMod('${encodeURIComponent(r.key)}','${encodeURIComponent(r.name)}')"
             title="Rename — this is the button a server reads and what prints on the ticket"
             style="cursor:pointer;border-bottom:1px dotted var(--text-muted);${posModNames[r.key]?'color:#22c55e;font-weight:700':''}">${esc(posRowLabel(r))}</span>${
             posModNames[r.key]?`<span style="font-size:12px;color:var(--text-muted)"> was ${esc(r.name)}</span>`:''}`
         }${r.isNew?' <span style="color:#22c55e;font-size:11px;font-weight:700">new</span>':''}${r.hidden?' <span style="color:var(--text-muted);font-size:11px">(hidden)</span>':''}${posGapTags(posRowGaps(r))}
         ${r.source==='choice'
-          ? `<div style="font-size:12px;color:var(--text-muted)">${esc(posGroupNameFor(r))}${r.required?' · required':''}${posUsedByHTML(r)}</div>`
+          ? `<div style="font-size:12px;color:var(--text-muted)">${esc(posGroupNameFor(r))}${r.required?' · required':''}${posRowUsedByHTML(r)}</div>`
           : posItemGroupsHTML(r)}</span>
       <span style="width:82px;text-align:right">${posPriceCell(r)}</span>
       <span style="width:210px;padding-left:14px">${posRouteCell(r)}</span>
       ${r.cat==='Food Mods'?`<span style="width:96px;text-align:right;white-space:nowrap">
         <button onclick="posSetModLetter('${encodeURIComponent(r.name)}')" title="File it under a different letter"
           style="border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-family:inherit;font-size:12px;padding:2px 5px">move</button>
-        <button onclick="posDeleteMod('${encodeURIComponent(r.name)}')" title="${posDeletedMods.includes(r.name)?'keep it after all':'delete this mod'}"
-          style="border:none;background:transparent;color:${posDeletedMods.includes(r.name)?'#ef4444':'var(--text-muted)'};cursor:pointer;font-family:inherit;font-size:12px;padding:2px 5px">${posDeletedMods.includes(r.name)?'undo':'delete'}</button>
+        <button onclick="posDeleteMod('${encodeURIComponent(r.key)}','${encodeURIComponent(r.name)}')" title="${posModDeleted(r)?'keep it after all':'delete this mod'}"
+          style="border:none;background:transparent;color:${posModDeleted(r)?'#ef4444':'var(--text-muted)'};cursor:pointer;font-family:inherit;font-size:12px;padding:2px 5px">${posModDeleted(r)?'undo':'delete'}</button>
       </span>`:''}
     </div>`;
   const catHeader=(k,list)=>{
@@ -6833,7 +6864,16 @@ function posCopyChanges(){
       ||(c.mod_groups||[]).find(x=>String(x.num)===k||('n:'+x.name)===k);
       L.push(`  ${g?g.name:k}: ${names.join(', ')}`);}}
   if(posDeletedMods.length){L.push('','FOOD MODS TO DELETE');
-    for(const n of posDeletedMods)L.push('  '+n);}
+    const byKey={};for(const i of ((posS.cat&&posS.cat.items)||[]))byKey[i.key]=i;
+    for(const k of posDeletedMods){
+      const i=byKey[k];
+      if(!i){L.push('  '+k);continue}
+      // A name is no longer enough to say which row — spell out where it lives.
+      const where=i.source==='choice'
+        ? `${i.prompt||'?'} group${i.cents?' · $'+(i.cents/100).toFixed(2):''}, on ${(i.usedBy||[]).join(', ')||'nothing'}`
+        : `letter ${i.letter||'—'}, micros #${i.num}`;
+      L.push('  '+i.name+'   ['+k+']   '+where);
+    }}
   const ML=Object.entries(posModLetters);
   if(ML.length){L.push('','FILED UNDER A DIFFERENT LETTER');
     for(const [n,v] of ML)L.push(`  ${n} → ${v}`);}
@@ -7168,21 +7208,29 @@ function posGroupModsHTML(g){
 // deleting anything — a struck-through chip is a change that has not landed yet.
 function posUsedByHTML(g){
   const k=posGroupKey(g), enc=encodeURIComponent(k);
-  const items=g.used_by||[];
+  const live=g.used_by||[];
+  // Items attached here but not yet applied to the register join the same list, at
+  // the end, looking like every other one. They used to sit in a highlighted row of
+  // their own above the input, which asked Vinny to hold two lists in his head to
+  // answer one question: what is this group on?
+  const pend=posAttachOf(k).items.filter(n=>!live.includes(n));
+  const items=[...live,...pend];
   if(!items.length)return '';
   posS.openUsedBy=posS.openUsedBy||{};
   const open=!!posS.openUsedBy[k];
   const CAP=12;
-  const shown=open?items:items.slice(0,CAP);
+  // A newly added item is never the one hidden behind "show all".
+  const shown=open?items:[...live.slice(0,CAP),...pend];
   const off=posDetachedFrom(k);
   const chip=(n)=>{
     const gone=off.includes(n);
+    const isPend=pend.includes(n);
     return `<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;
       padding:2px 5px 2px 8px;border-radius:6px;border:1px solid ${gone?'#ef4444':'var(--border)'};
       background:${gone?'rgba(239,68,68,0.10)':'transparent'};
       color:${gone?'#ef4444':'var(--text-muted)'};${gone?'text-decoration:line-through':''}">
       ${esc(n)}
-      <button onclick="posDetachItem('${enc}','${encodeURIComponent(n)}')"
+      <button onclick="${isPend?`posAttachRemove('${enc}','item','${encodeURIComponent(n)}')`:`posDetachItem('${enc}','${encodeURIComponent(n)}')`}"
         title="${gone?'put it back':'take this group off '+esc(n)}"
         style="border:none;background:transparent;color:${gone?'#ef4444':'var(--text-muted)'};
           cursor:pointer;font-size:14px;line-height:1;padding:0 2px;text-decoration:none">${gone?'↺':'×'}</button></span>`;
@@ -7191,7 +7239,7 @@ function posUsedByHTML(g){
     <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">
       On these items${off.length?` <span style="color:#ef4444">· ${off.length} being removed</span>`:''}</div>
     <div style="display:flex;flex-wrap:wrap;gap:5px">${shown.map(chip).join('')}</div>
-    ${items.length>CAP?`<button onclick="posToggleUsedBy('${enc}')"
+    ${live.length>CAP?`<button onclick="posToggleUsedBy('${enc}')"
       style="border:none;background:transparent;color:var(--text-dim);cursor:pointer;
         font-family:inherit;font-size:12px;padding:6px 0">${open?'show fewer':`show all ${items.length}`}</button>`:''}
   </div>`;
@@ -7209,10 +7257,11 @@ function posGroupAttachHTML(g){
   // that nobody meant to add. Any category chips already saved still render, so an
   // earlier one can be taken off.
   const catChips=att.cats.map(c=>chip('all '+esc(c),`posAttachRemove('${enc}','cat','${encodeURIComponent(c)}')`)).join('');
-  const itemChips=att.items.map(i=>chip(esc(i),`posAttachRemove('${enc}','item','${encodeURIComponent(i)}')`)).join('');
+  // Item chips are NOT rendered here any more — they show in "On these items" below
+  // with everything else the group is on.
   return `<div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--border)">
     <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">Attach this group to</div>
-    ${(att.cats.length||att.items.length)?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 8px">${catChips}${itemChips}</div>`:''}
+    ${att.cats.length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 8px">${catChips}</div>`:''}
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
       <input id="ga-i-${enc}" placeholder="an item…" autocomplete="off"
         oninput="posAuto('item','${enc}','ga-i-${enc}')"
