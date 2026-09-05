@@ -13,6 +13,11 @@
   <style>
     :root{--bg:#0a0b0f;--surface:#12161f;--surface2:#1b2130;--border:#2b3346;--accent:#ffb300;--accent2:#22d3ee;--text:#eef2f8;--text-dim:#c3ccdb;--text-muted:#9aa5ba;--ph-bg:#0e121b;--header-h:54px;--ph-h:40px}
     body.light{--bg:#f5f6fa;--surface:#ffffff;--surface2:#eef0f5;--border:#d8dce8;--accent:#6c63ff;--accent2:#10b981;--text:#1a1d2e;--text-dim:#5a6178;--text-muted:#5d6577;--ph-bg:#f0f1f6}
+    /* Mod groups, two across. A group is a small thing and eighteen of them stacked
+       left most of the screen empty on the right; below 900px two columns stop being
+       readable, so it drops to one. */
+    .pos-grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:stretch}
+    @media (max-width:900px){.pos-grid2{grid-template-columns:1fr}}
     body.light #app-header{box-shadow:0 1px 8px rgba(0,0,0,.08)}
     body.light #grid{background:var(--border)}
     body.light .launcher{background:var(--bg)}
@@ -7247,8 +7252,7 @@ function posGroupsHTML(){
   // bottom. Rows stretch to match so the cards line up as a grid instead of tiling
   // ragged, and it collapses to one column when the window is too narrow to keep
   // both readable.
-  const grid=(cards)=>`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(430px,1fr));
-    gap:12px;align-items:stretch">${cards}</div>`;
+  const grid=(cards)=>`<div class="pos-grid2">${cards}</div>`;
   return datalist+newBtn+grid(newCards+gs.map(g=>`<div style="${posCardCss}${
     posDeletedGroups.includes(posGroupKey(g))?';border-color:#ef4444;background:rgba(239,68,68,0.06)':''}">
     <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
