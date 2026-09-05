@@ -6131,6 +6131,18 @@ function posToggleUsedBy(enc){
   posUsedByOpen.has(k)?posUsedByOpen.delete(k):posUsedByOpen.add(k);
   posRedraw();
 }
+// The group a choice belongs to, as the Mod groups page names it — including a
+// rename made here but not yet applied. Matched on the group NUMBER when there is
+// one; only a group with no number falls back to its title, because two different
+// groups are called Sauce and a name would pick whichever sorted first.
+function posGroupOfRow(r){
+  const gs=(posS.cat&&posS.cat.mod_groups)||[];
+  return gs.find(g=>r.group!=null?g.num===r.group:(g.num==null&&g.name===r.prompt))||null;
+}
+function posGroupNameFor(r){
+  const g=posGroupOfRow(r);
+  return g?posGroupLabel(g):(r.prompt||'');
+}
 function posUsedByHTML(r){
   const u=r.usedBy||[];
   if(!u.length)return '';
@@ -6634,7 +6646,7 @@ function posItemsBodyHTML(){
             posModNames[r.key]?`<span style="font-size:12px;color:var(--text-muted)"> was ${esc(r.name)}</span>`:''}`
         }${r.isNew?' <span style="color:#22c55e;font-size:11px;font-weight:700">new</span>':''}${r.hidden?' <span style="color:var(--text-muted);font-size:11px">(hidden)</span>':''}${posGapTags(posRowGaps(r))}
         ${r.source==='choice'
-          ? `<div style="font-size:12px;color:var(--text-muted)">${esc(r.prompt||'')} prompt${r.required?' · required':''}${posUsedByHTML(r)}</div>`
+          ? `<div style="font-size:12px;color:var(--text-muted)">${esc(posGroupNameFor(r))}${r.required?' · required':''}${posUsedByHTML(r)}</div>`
           : posItemGroupsHTML(r)}</span>
       <span style="width:82px;text-align:right">${posPriceCell(r)}</span>
       <span style="width:210px;padding-left:14px">${posRouteCell(r)}</span>
