@@ -6078,18 +6078,18 @@ async function posLoadPrices(){
   // Fetch everything, compare it to what is already on screen, and only redraw when
   // something actually differs. A reload that changes nothing now changes nothing.
   const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
-  const [r,g,ng,at,rt,pc,nm,gn,gd,ml,dm,cc,mn,dg,ce,co,io]=await Promise.all([
+  const [r,g,ng,at,rt,pc,nm,gn,gd,ml,dm,cc,mn,dg,ce,co,io,di]=await Promise.all([
     kvGet('ct_pos_prices'),kvGet('ct_pos_group_mods'),kvGet('ct_pos_new_groups'),
     kvGet('ct_pos_group_attach'),kvGet('ct_pos_routing'),kvGet('ct_pos_print_classes'),
     kvGet('ct_pos_new_mods'),kvGet('ct_pos_group_names'),kvGet('ct_pos_group_detach'),
     kvGet('ct_pos_mod_letters'),kvGet('ct_pos_deleted_mods'),kvGet('ct_pos_choice_cuts'),
-    kvGet('ct_pos_mod_names'),kvGet('ct_pos_deleted_groups'),kvGet('ct_pos_choice_edits'),kvGet('ct_pos_choice_order'),kvGet('ct_pos_item_group_order')]);
+    kvGet('ct_pos_mod_names'),kvGet('ct_pos_deleted_groups'),kvGet('ct_pos_choice_edits'),kvGet('ct_pos_choice_order'),kvGet('ct_pos_item_group_order'),kvGet('ct_pos_deleted_items')]);
   const next={
     prices:(r&&r.v)||{}, mods:(g&&g.v)||{}, groups:(ng&&ng.v)||[], attach:(at&&at.v)||{},
     routing:(rt&&rt.v)||{}, classes:(pc&&pc.v)||[], newMods:(nm&&nm.v)||[],
     names:(gn&&gn.v)||{}, detach:(gd&&gd.v)||{}, letters:(ml&&ml.v)||{},
     deleted:(dm&&dm.v)||[], cuts:(cc&&cc.v)||{}, modNames:(mn&&mn.v)||{},
-    delGroups:(dg&&dg.v)||[], choiceEdits:(ce&&ce.v)||{}, choiceOrder:(co&&co.v)||{}, itemGroupOrder:(io&&io.v)||{},
+    delGroups:(dg&&dg.v)||[], choiceEdits:(ce&&ce.v)||{}, choiceOrder:(co&&co.v)||{}, itemGroupOrder:(io&&io.v)||{}, delItems:(di&&di.v)||[],
   };
   const changed=!same(next.prices,posPrices)||!same(next.mods,posGroupMods)
     ||!same(next.groups,posNewGroups)||!same(next.attach,posGroupAttach)
@@ -6099,13 +6099,13 @@ async function posLoadPrices(){
     ||!same(next.deleted,posDeletedMods)||!same(next.cuts,posChoiceCuts)
     ||!same(next.modNames,posModNames)||!same(next.delGroups,posDeletedGroups)
     ||!same(next.choiceEdits,posChoiceEdits)||!same(next.choiceOrder,posChoiceOrder)
-    ||!same(next.itemGroupOrder,posItemGroupOrder);
+    ||!same(next.itemGroupOrder,posItemGroupOrder)||!same(next.delItems,posDeletedItems);
   posPrices=next.prices; posGroupMods=next.mods; posNewGroups=next.groups;
   posGroupAttach=next.attach; posRouting=next.routing; posNewClasses=next.classes;
   posNewMods=next.newMods; posGroupNames=next.names; posGroupDetach=next.detach;
   posModLetters=next.letters; posDeletedMods=next.deleted; posChoiceCuts=next.cuts;
   posModNames=next.modNames; posDeletedGroups=next.delGroups;
-  posChoiceEdits=next.choiceEdits; posChoiceOrder=next.choiceOrder; posItemGroupOrder=next.itemGroupOrder;
+  posChoiceEdits=next.choiceEdits; posChoiceOrder=next.choiceOrder; posItemGroupOrder=next.itemGroupOrder; posDeletedItems=next.delItems;
   posPruneOrphans();   // redraws itself only if it actually drops something
   if(changed)posRedraw();
 }
@@ -6183,7 +6183,11 @@ let posGroupDetach={};    // groupKey -> [itemName]
 let posModLetters={};     // modName -> 'C'
 // Mods marked for deletion. A Micros condiment cannot be deleted from here, so it is
 // recorded and shown struck through; one created here is simply dropped.
-let posDeletedMods=[];    // [modName]
+let posDeletedMods=[];    // [row key]
+// Menu items marked for deletion. Keys, like the mods — two items can share a name
+// across categories (there is a House Salad on the golf menu as well as the dining
+// one) and a name would take both.
+let posDeletedItems=[];
 // Choices taken OUT of a group. These live in the register's menu files, so removing
 // one here records the removal and strikes it through — it is still on the iPads
 // until Claude applies it, and hiding it would have the page disagree with what a
@@ -6280,6 +6284,18 @@ function posMigrateDeleted(){
   kvPush('ct_pos_deleted_mods',posDeletedMods,Date.now());
 }
 const posModDeleted=(r)=>posDeletedMods.includes(r.key);
+const posItemDeleted=(r)=>posDeletedItems.includes(r.key);
+function posDeleteItem(encKey,encName){
+  const key=decodeURIComponent(encKey), name=decodeURIComponent(encName||'');
+  if(posDeletedItems.includes(key)){
+    posDeletedItems=posDeletedItems.filter(k=>k!==key);
+  }else{
+    if(!confirm(`Delete “${name}” from the menu?\n\nIt stays on the iPads until Claude applies it.`))return;
+    posDeletedItems=[...posDeletedItems,key];
+  }
+  kvPush('ct_pos_deleted_items',posDeletedItems,Date.now());
+  posRedraw();
+}
 const posDetachedFrom=(k)=>posGroupDetach[String(k)]||[];
 const posIsDetached=(k,item)=>posDetachedFrom(k).includes(item);
 function posDetachItem(enc,encItem){
@@ -6323,6 +6339,10 @@ function posPruneOrphans(){
     const left=posDeletedMods.filter(k=>byItem[k]);
     if(left.length!==posDeletedMods.length){
       posDeletedMods=left; dirty.add('ct_pos_deleted_mods');
+    }
+    const li=posDeletedItems.filter(k=>byItem[k]);
+    if(li.length!==posDeletedItems.length){
+      posDeletedItems=li; dirty.add('ct_pos_deleted_items');
     }
   }
   const drop=(store,key,which)=>{delete store[key];dirty.add(which)};
@@ -6410,7 +6430,7 @@ function posPruneOrphans(){
     ct_pos_choice_cuts:posChoiceCuts,ct_pos_mod_names:posModNames,
     ct_pos_deleted_groups:posDeletedGroups,ct_pos_deleted_mods:posDeletedMods,
     ct_pos_choice_edits:posChoiceEdits,ct_pos_choice_order:posChoiceOrder,
-    ct_pos_item_group_order:posItemGroupOrder};
+    ct_pos_item_group_order:posItemGroupOrder,ct_pos_deleted_items:posDeletedItems};
   for(const k of dirty)kvPush(k,stores[k],Date.now());
   if(dirty.size)posRedraw();
 }
@@ -6834,7 +6854,7 @@ function posItemsBodyHTML(){
   const shown=rows.slice(0,POS_ITEM_CAP);
   // Header columns must line up with the row columns below — the widths are the same
   // three numbers in both places.
-  const head=`<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;max-width:690px">
+  const head=`<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;max-width:730px">
     <span style="width:330px">Item</span><span style="width:92px;text-align:right">Price</span>
     <span style="width:210px;padding-left:14px">Prints at</span></div>`;
   // Grouped under category headings rather than run together as one long list. The
@@ -6845,8 +6865,8 @@ function posItemsBodyHTML(){
   for(const r of shown){const k=r.cat||'—';if(!byCat.has(k)){byCat.set(k,[]);groups.push(k)}byCat.get(k).push(r)}
   // "on 5 items" is a question, not a fact — WHICH five? So it opens. One item is
   // named outright, since a list of one is just the name with extra steps.
-  const rowHTML=r=>`<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:16px;align-items:baseline;max-width:${r.cat==='Food Mods'?'800px':'690px'}">
-      <span style="width:330px;${posModDeleted(r)?'text-decoration:line-through;color:#ef4444':''}">${
+  const rowHTML=r=>`<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:16px;align-items:baseline;max-width:${r.cat==='Food Mods'?'800px':'730px'}">
+      <span style="width:330px;${(posModDeleted(r)||posItemDeleted(r))?'text-decoration:line-through;color:#ef4444':''}">${
         `<span onclick="posRenameMod('${encodeURIComponent(r.key)}','${encodeURIComponent(r.name)}')"
             title="Rename — this is the button a server reads and what prints on the ticket"
             style="cursor:pointer;border-bottom:1px dotted var(--text-muted);${posModNames[r.key]?'color:#22c55e;font-weight:700':''}">${esc(posRowLabel(r))}</span>${
@@ -6857,6 +6877,12 @@ function posItemsBodyHTML(){
           : posItemGroupsHTML(r)}</span>
       <span style="width:92px;text-align:right">${posPriceCell(r)}</span>
       <span style="width:210px;padding-left:14px">${posRouteCell(r)}</span>
+      ${r.cat!=='Food Mods'?`<span style="width:34px;text-align:right">
+        <button onclick="posDeleteItem('${encodeURIComponent(r.key)}','${encodeURIComponent(r.name)}')"
+          title="${posItemDeleted(r)?'keep it after all':'delete this menu item'}"
+          style="border:none;background:transparent;color:#ef4444;cursor:pointer;font-family:inherit;
+            line-height:1;padding:0 4px;font-weight:700;font-size:${posItemDeleted(r)?'13px':'22px'}"
+          >${posItemDeleted(r)?'undo':'×'}</button></span>`:''}
       ${r.cat==='Food Mods'?`<span style="width:96px;text-align:right;white-space:nowrap">
         <button onclick="posSetModLetter('${encodeURIComponent(r.name)}')" title="File it under a different letter"
           style="border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-family:inherit;font-size:12px;padding:2px 5px">move</button>
@@ -6989,7 +7015,7 @@ function posPendingCount(){
     +posNewClasses.length+posNewMods.length+Object.keys(posGroupNames).length
     +Object.keys(posGroupDetach).length+Object.keys(posModLetters).length+posDeletedMods.length
     +Object.values(posChoiceEdits).reduce((n,v)=>n+Object.keys(v).length,0)
-    +Object.keys(posChoiceOrder).length+Object.keys(posItemGroupOrder).length
+    +Object.keys(posChoiceOrder).length+Object.keys(posItemGroupOrder).length+posDeletedItems.length
     +Object.keys(posChoiceCuts).length+Object.keys(posModNames).length
     +posDeletedGroups.length;
 }
@@ -7006,14 +7032,14 @@ function posClearChanges(){
   posPrices={};posRouting={};posGroupMods={};posNewGroups=[];posGroupAttach={};
   posNewClasses=[];posNewMods=[];posGroupNames={};posGroupDetach={};
   posChoiceCuts={};posModLetters={};posDeletedMods=[];posModNames={};posDeletedGroups=[];
-  posChoiceEdits={};posChoiceOrder={};posItemGroupOrder={};
+  posChoiceEdits={};posChoiceOrder={};posItemGroupOrder={};posDeletedItems=[];
   for(const k of ['ct_pos_prices','ct_pos_routing','ct_pos_group_mods','ct_pos_new_groups',
                   'ct_pos_group_attach','ct_pos_print_classes','ct_pos_new_mods',
                   'ct_pos_group_names','ct_pos_group_detach','ct_pos_choice_cuts',
                   'ct_pos_mod_letters','ct_pos_deleted_mods','ct_pos_mod_names',
-                  'ct_pos_deleted_groups','ct_pos_choice_edits','ct_pos_choice_order','ct_pos_item_group_order'])
+                  'ct_pos_deleted_groups','ct_pos_choice_edits','ct_pos_choice_order','ct_pos_item_group_order','ct_pos_deleted_items'])
     kvPush(k,(k==='ct_pos_new_groups'||k==='ct_pos_print_classes'||k==='ct_pos_new_mods'
-              ||k==='ct_pos_deleted_mods'||k==='ct_pos_deleted_groups')?[]:{},Date.now());
+              ||k==='ct_pos_deleted_mods'||k==='ct_pos_deleted_groups'||k==='ct_pos_deleted_items')?[]:{},Date.now());
   posRedraw();
 }
 
@@ -7042,6 +7068,10 @@ function posCopyChanges(){
     for(const [k,names] of CC){const g=posNewGroups.find(x=>x.key===k)
       ||(c.mod_groups||[]).find(x=>String(x.num)===k||('n:'+x.name)===k);
       L.push(`  ${g?g.name:k}: ${names.join(', ')}`);}}
+  if(posDeletedItems.length){L.push('','MENU ITEMS TO DELETE');
+    const bk={};for(const i of (c.items||[]))bk[i.key]=i;
+    for(const k of posDeletedItems){const i=bk[k];
+      L.push('  '+(i?`${i.cat} | ${i.name}${i.cents?' | $'+(i.cents/100).toFixed(2):''}`:k));}}
   if(posDeletedMods.length){L.push('','FOOD MODS TO DELETE');
     const byKey={};for(const i of ((posS.cat&&posS.cat.items)||[]))byKey[i.key]=i;
     for(const k of posDeletedMods){
