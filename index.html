@@ -6096,18 +6096,18 @@ async function posLoadPrices(){
   // Fetch everything, compare it to what is already on screen, and only redraw when
   // something actually differs. A reload that changes nothing now changes nothing.
   const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
-  const [r,g,ng,at,rt,pc,nm,gn,gd,ml,dm,cc,mn,dg,ce,co,io,di]=await Promise.all([
+  const [r,g,ng,at,rt,pc,nm,gn,gd,ml,dm,cc,mn,dg,ce,co,io,di,ni]=await Promise.all([
     kvGet('ct_pos_prices'),kvGet('ct_pos_group_mods'),kvGet('ct_pos_new_groups'),
     kvGet('ct_pos_group_attach'),kvGet('ct_pos_routing'),kvGet('ct_pos_print_classes'),
     kvGet('ct_pos_new_mods'),kvGet('ct_pos_group_names'),kvGet('ct_pos_group_detach'),
     kvGet('ct_pos_mod_letters'),kvGet('ct_pos_deleted_mods'),kvGet('ct_pos_choice_cuts'),
-    kvGet('ct_pos_mod_names'),kvGet('ct_pos_deleted_groups'),kvGet('ct_pos_choice_edits'),kvGet('ct_pos_choice_order'),kvGet('ct_pos_item_group_order'),kvGet('ct_pos_deleted_items')]);
+    kvGet('ct_pos_mod_names'),kvGet('ct_pos_deleted_groups'),kvGet('ct_pos_choice_edits'),kvGet('ct_pos_choice_order'),kvGet('ct_pos_item_group_order'),kvGet('ct_pos_deleted_items'),kvGet('ct_pos_new_items')]);
   const next={
     prices:(r&&r.v)||{}, mods:(g&&g.v)||{}, groups:(ng&&ng.v)||[], attach:(at&&at.v)||{},
     routing:(rt&&rt.v)||{}, classes:(pc&&pc.v)||[], newMods:(nm&&nm.v)||[],
     names:(gn&&gn.v)||{}, detach:(gd&&gd.v)||{}, letters:(ml&&ml.v)||{},
     deleted:(dm&&dm.v)||[], cuts:(cc&&cc.v)||{}, modNames:(mn&&mn.v)||{},
-    delGroups:(dg&&dg.v)||[], choiceEdits:(ce&&ce.v)||{}, choiceOrder:(co&&co.v)||{}, itemGroupOrder:(io&&io.v)||{}, delItems:(di&&di.v)||[],
+    delGroups:(dg&&dg.v)||[], choiceEdits:(ce&&ce.v)||{}, choiceOrder:(co&&co.v)||{}, itemGroupOrder:(io&&io.v)||{}, delItems:(di&&di.v)||[], newItems:(ni&&ni.v)||[],
   };
   const changed=!same(next.prices,posPrices)||!same(next.mods,posGroupMods)
     ||!same(next.groups,posNewGroups)||!same(next.attach,posGroupAttach)
@@ -6117,13 +6117,13 @@ async function posLoadPrices(){
     ||!same(next.deleted,posDeletedMods)||!same(next.cuts,posChoiceCuts)
     ||!same(next.modNames,posModNames)||!same(next.delGroups,posDeletedGroups)
     ||!same(next.choiceEdits,posChoiceEdits)||!same(next.choiceOrder,posChoiceOrder)
-    ||!same(next.itemGroupOrder,posItemGroupOrder)||!same(next.delItems,posDeletedItems);
+    ||!same(next.itemGroupOrder,posItemGroupOrder)||!same(next.delItems,posDeletedItems)||!same(next.newItems,posNewItems);
   posPrices=next.prices; posGroupMods=next.mods; posNewGroups=next.groups;
   posGroupAttach=next.attach; posRouting=next.routing; posNewClasses=next.classes;
   posNewMods=next.newMods; posGroupNames=next.names; posGroupDetach=next.detach;
   posModLetters=next.letters; posDeletedMods=next.deleted; posChoiceCuts=next.cuts;
   posModNames=next.modNames; posDeletedGroups=next.delGroups;
-  posChoiceEdits=next.choiceEdits; posChoiceOrder=next.choiceOrder; posItemGroupOrder=next.itemGroupOrder; posDeletedItems=next.delItems;
+  posChoiceEdits=next.choiceEdits; posChoiceOrder=next.choiceOrder; posItemGroupOrder=next.itemGroupOrder; posDeletedItems=next.delItems; posNewItems=next.newItems;
   posPruneOrphans();   // redraws itself only if it actually drops something
   if(changed)posRedraw();
 }
@@ -6206,6 +6206,32 @@ let posDeletedMods=[];    // [row key]
 // across categories (there is a House Salad on the golf menu as well as the dining
 // one) and a name would take both.
 let posDeletedItems=[];
+// Menu items created here. {cat,name,cents}. They render in their section, green, and
+// reach the register when the change is applied — same contract as everything else on
+// this page: it is a request, not a live edit.
+let posNewItems=[];
+function posAddItem(encCat){
+  const cat=decodeURIComponent(encCat);
+  const nEl=document.getElementById('ni-n-'+encCat);
+  const pEl=document.getElementById('ni-p-'+encCat);
+  if(!nEl)return;
+  const name=String(nEl.value).trim(); if(!name)return;
+  const raw=pEl?String(pEl.value).replace(/[^0-9.]/g,''):'';
+  const n=raw?Math.round(parseFloat(raw)*100):0;
+  if(posNewItems.some(i=>i.cat===cat&&i.name.toLowerCase()===name.toLowerCase()))return;
+  posNewItems.push({cat,name,cents:isFinite(n)&&n>0?n:0});
+  kvPush('ct_pos_new_items',posNewItems,Date.now());
+  posRedraw();
+  const back=document.getElementById('ni-n-'+encCat);
+  if(back){back.value='';back.focus();}
+  const bp=document.getElementById('ni-p-'+encCat); if(bp)bp.value='';
+}
+function posRemoveNewItem(encCat,encName){
+  const cat=decodeURIComponent(encCat), name=decodeURIComponent(encName);
+  posNewItems=posNewItems.filter(i=>!(i.cat===cat&&i.name===name));
+  kvPush('ct_pos_new_items',posNewItems,Date.now());
+  posRedraw();
+}
 // Choices taken OUT of a group. These live in the register's menu files, so removing
 // one here records the removal and strikes it through — it is still on the iPads
 // until Claude applies it, and hiding it would have the page disagree with what a
@@ -6358,6 +6384,9 @@ function posPruneOrphans(){
     if(left.length!==posDeletedMods.length){
       posDeletedMods=left; dirty.add('ct_pos_deleted_mods');
     }
+    const before=posNewItems.length;
+    posNewItems=posNewItems.filter(x=>!(cat.items||[]).some(i=>i.cat===x.cat&&i.name===x.name));
+    if(posNewItems.length!==before)dirty.add('ct_pos_new_items');
     const li=posDeletedItems.filter(k=>byItem[k]);
     if(li.length!==posDeletedItems.length){
       posDeletedItems=li; dirty.add('ct_pos_deleted_items');
@@ -6448,7 +6477,7 @@ function posPruneOrphans(){
     ct_pos_choice_cuts:posChoiceCuts,ct_pos_mod_names:posModNames,
     ct_pos_deleted_groups:posDeletedGroups,ct_pos_deleted_mods:posDeletedMods,
     ct_pos_choice_edits:posChoiceEdits,ct_pos_choice_order:posChoiceOrder,
-    ct_pos_item_group_order:posItemGroupOrder,ct_pos_deleted_items:posDeletedItems};
+    ct_pos_item_group_order:posItemGroupOrder,ct_pos_deleted_items:posDeletedItems,ct_pos_new_items:posNewItems};
   for(const k of dirty)kvPush(k,stores[k],Date.now());
   if(dirty.size)posRedraw();
 }
@@ -6948,7 +6977,31 @@ function posItemsBodyHTML(){
         </div>`+(open?list.map(rowHTML).join(''):'');
     }).join('');
   }else{
-    body=groups.map(k=>catHeader(k,byCat.get(k))+byCat.get(k).map(rowHTML).join('')).join('');
+    // A section can be added to as well as read. The new item sits at the foot of its
+    // own section, green, until the change is applied — putting it anywhere else would
+    // be pretending the register already has it.
+    const addRow=(k)=>{
+      const e=encodeURIComponent(k);
+      const mine=posNewItems.filter(i=>i.cat===k).map(i=>`<div style="display:flex;gap:8px;padding:5px 0;
+        border-bottom:1px solid var(--border);font-size:16px;align-items:baseline;max-width:730px;color:#22c55e">
+        <span style="width:330px;font-weight:700">${esc(i.name)}
+          <span style="font-size:11px;font-weight:800;letter-spacing:.4px"> NEW</span></span>
+        <span style="width:92px;text-align:right;font-variant-numeric:tabular-nums">${i.cents?'$'+(i.cents/100).toFixed(2):'—'}</span>
+        <span style="width:210px;padding-left:14px;font-size:12px;color:var(--text-muted)">set once it is in</span>
+        <span style="width:34px;text-align:right"><button onclick="posRemoveNewItem('${e}','${encodeURIComponent(i.name)}')"
+          title="drop it" style="border:none;background:transparent;color:#ef4444;cursor:pointer;
+          font-size:22px;font-weight:700;line-height:1;padding:0 4px">×</button></span></div>`).join('');
+      return mine+`<div style="display:flex;gap:8px;align-items:center;margin:6px 0 2px;max-width:730px">
+        <input id="ni-n-${e}" placeholder="add an item to ${esc(k)}…" autocomplete="off"
+          onkeydown="if(event.key==='Enter'){posAddItem('${e}');event.preventDefault()}"
+          style="${posInput};width:330px;font-size:14px;padding:7px 10px">
+        <input id="ni-p-${e}" placeholder="$" inputmode="decimal" autocomplete="off"
+          onkeydown="if(event.key==='Enter'){posAddItem('${e}');event.preventDefault()}"
+          style="${posInput};width:92px;text-align:right;font-size:14px;padding:7px 10px">
+        <button onclick="posAddItem('${e}')" style="${posBtn('#3f3f46')};font-size:13px;padding:7px 14px">Add</button>
+      </div>`;
+    };
+    body=groups.map(k=>catHeader(k,byCat.get(k))+byCat.get(k).map(rowHTML).join('')+addRow(k)).join('');
   }
   // Never let a cap look like the whole answer.
   const capped=posS.catFilter==='Food Mods'&&!posS.q?false:rows.length>shown.length;
@@ -7040,7 +7093,7 @@ function posPendingCount(){
     +posNewClasses.length+posNewMods.length+Object.keys(posGroupNames).length
     +Object.keys(posGroupDetach).length+Object.keys(posModLetters).length+posDeletedMods.length
     +Object.values(posChoiceEdits).reduce((n,v)=>n+Object.keys(v).length,0)
-    +Object.keys(posChoiceOrder).length+Object.keys(posItemGroupOrder).length+posDeletedItems.length
+    +Object.keys(posChoiceOrder).length+Object.keys(posItemGroupOrder).length+posDeletedItems.length+posNewItems.length
     +Object.keys(posChoiceCuts).length+Object.keys(posModNames).length
     +posDeletedGroups.length;
 }
@@ -7057,14 +7110,14 @@ function posClearChanges(){
   posPrices={};posRouting={};posGroupMods={};posNewGroups=[];posGroupAttach={};
   posNewClasses=[];posNewMods=[];posGroupNames={};posGroupDetach={};
   posChoiceCuts={};posModLetters={};posDeletedMods=[];posModNames={};posDeletedGroups=[];
-  posChoiceEdits={};posChoiceOrder={};posItemGroupOrder={};posDeletedItems=[];
+  posChoiceEdits={};posChoiceOrder={};posItemGroupOrder={};posDeletedItems=[];posNewItems=[];
   for(const k of ['ct_pos_prices','ct_pos_routing','ct_pos_group_mods','ct_pos_new_groups',
                   'ct_pos_group_attach','ct_pos_print_classes','ct_pos_new_mods',
                   'ct_pos_group_names','ct_pos_group_detach','ct_pos_choice_cuts',
                   'ct_pos_mod_letters','ct_pos_deleted_mods','ct_pos_mod_names',
-                  'ct_pos_deleted_groups','ct_pos_choice_edits','ct_pos_choice_order','ct_pos_item_group_order','ct_pos_deleted_items'])
+                  'ct_pos_deleted_groups','ct_pos_choice_edits','ct_pos_choice_order','ct_pos_item_group_order','ct_pos_deleted_items','ct_pos_new_items'])
     kvPush(k,(k==='ct_pos_new_groups'||k==='ct_pos_print_classes'||k==='ct_pos_new_mods'
-              ||k==='ct_pos_deleted_mods'||k==='ct_pos_deleted_groups'||k==='ct_pos_deleted_items')?[]:{},Date.now());
+              ||k==='ct_pos_deleted_mods'||k==='ct_pos_deleted_groups'||k==='ct_pos_deleted_items'||k==='ct_pos_new_items')?[]:{},Date.now());
   posRedraw();
 }
 
@@ -7093,6 +7146,8 @@ function posCopyChanges(){
     for(const [k,names] of CC){const g=posNewGroups.find(x=>x.key===k)
       ||(c.mod_groups||[]).find(x=>String(x.num)===k||('n:'+x.name)===k);
       L.push(`  ${g?g.name:k}: ${names.join(', ')}`);}}
+  if(posNewItems.length){L.push('','NEW MENU ITEMS');
+    for(const i of posNewItems)L.push(`  ${i.cat} | ${i.name}${i.cents?' | '+(i.cents/100).toFixed(2):' | no price yet'}`);}
   if(posDeletedItems.length){L.push('','MENU ITEMS TO DELETE');
     const bk={};for(const i of (c.items||[]))bk[i.key]=i;
     for(const k of posDeletedItems){const i=bk[k];
