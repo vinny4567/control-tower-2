@@ -7222,7 +7222,7 @@ function posGroupsHTML(){
   const mine=posNewGroups.filter(g=>!q
     ||g.name.toLowerCase().includes(q)
     ||posAddedTo(g.key).some(n=>n.toLowerCase().includes(q)));
-  const newCards=mine.map(g=>`<div style="${posCardCss};margin-bottom:12px;border-color:#22c55e">
+  const newCards=mine.map(g=>`<div style="${posCardCss};border-color:#22c55e">
     <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
       <span style="font-size:11px;font-weight:800;color:#22c55e;text-transform:uppercase;letter-spacing:.5px">new</span>
       <span style="font-size:17px;font-weight:700;color:${posGroupNames[posGroupKey(g)]?'#22c55e':'var(--text)'}">${esc(posGroupLabel(g))}</span>
@@ -7241,7 +7241,15 @@ function posGroupsHTML(){
   const money=(x)=>x?`<span style="color:var(--accent,#f59e0b)"> +$${(x/100).toFixed(2)}</span>`:'';
   if(noMatch&&!posNewGroups.some(g=>g.name.toLowerCase().includes(q)))
     return datalist+newBtn+'<div style="padding:14px 0;color:var(--text-dim)">No mod group matches.</div>';
-  return datalist+newBtn+newCards+gs.map(g=>`<div style="${posCardCss};margin-bottom:12px${
+  // Two across rather than one long column. A group is a small thing — a name, a
+  // handful of choices and what it is on — and reading eighteen of them stacked
+  // meant most of the screen was empty on the right while you scrolled past the
+  // bottom. Rows stretch to match so the cards line up as a grid instead of tiling
+  // ragged, and it collapses to one column when the window is too narrow to keep
+  // both readable.
+  const grid=(cards)=>`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(430px,1fr));
+    gap:12px;align-items:stretch">${cards}</div>`;
+  return datalist+newBtn+grid(newCards+gs.map(g=>`<div style="${posCardCss}${
     posDeletedGroups.includes(posGroupKey(g))?';border-color:#ef4444;background:rgba(239,68,68,0.06)':''}">
     <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
       <span style="font-size:13px;font-weight:800;color:var(--text-dim);font-variant-numeric:tabular-nums">${g.num!=null?g.num:'—'}</span>
@@ -7262,7 +7270,7 @@ function posGroupsHTML(){
     ${posGroupModsHTML(g)}
     ${posGroupAttachHTML(g)}
     ${posUsedByHTML(g)}
-  </div>`).join('');
+  </div>`).join(''));
 }
 
 // ---- Printers ---------------------------------------------------------------
