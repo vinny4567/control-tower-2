@@ -7561,7 +7561,7 @@ function posGroupsHTML(){
         style="border:none;background:transparent;cursor:pointer;font-family:inherit;line-height:1;
           font-size:${posDeletedGroups.includes(posGroupKey(g))?'15px':'22px'};font-weight:700;padding:0 4px;
           color:#ef4444">${posDeletedGroups.includes(posGroupKey(g))?'undo':'×'}</button>
-      <span style="margin-left:auto;font-size:12px;color:${g.used_by.length?'var(--text-dim)':'#f59e0b'}">${g.used_by.length?g.used_by.length+' item'+(g.used_by.length===1?'':'s'):'not attached to anything'}</span>
+      <span style="margin-left:auto;font-size:12px;color:var(--text-dim)">${g.used_by.length?g.used_by.length+' item'+(g.used_by.length===1?'':'s'):''}</span>
     </div>
     ${posGroupModsHTML(g)}
     ${posGroupAttachHTML(g)}
