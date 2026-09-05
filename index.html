@@ -6592,6 +6592,17 @@ function posDragSort(e,rowId,save){
   const startX=e.clientX, startY=e.clientY;
   let moved=false;
 
+  // Outline every one of them while a drag is possible. Without it you are dragging a
+  // word through other words and cannot see where it would land — the boxes ARE the
+  // slots. Outline rather than border so nothing shifts when they appear.
+  const marks=[...row.querySelectorAll('[data-ch]')];
+  const dots=[...row.querySelectorAll('.ig-dot')];
+  marks.forEach(el=>{el.style.outline='1px dashed var(--text-muted)';
+    el.style.outlineOffset='2px';el.style.borderRadius='5px'});
+  dots.forEach(el=>el.style.visibility='hidden');
+  const unmark=()=>{marks.forEach(el=>{el.style.outline='';el.style.outlineOffset=''});
+    dots.forEach(el=>el.style.visibility='')};
+
   const onMove=(ev)=>{
     if(!moved){
       // A few pixels of slop, so a tap that wobbles still counts as a click to edit.
@@ -6614,6 +6625,7 @@ function posDragSort(e,rowId,save){
     document.removeEventListener('pointerup',onUp);
     document.removeEventListener('pointercancel',onUp);
     chip.style.opacity=''; chip.style.cursor='grab';
+    unmark();
     if(!moved)return;                       // a click, and the click handler has it
     // Suppress the click this drag would otherwise end in, or letting go on top of a
     // chip would open the editor.
@@ -7209,11 +7221,11 @@ function posItemGroupsHTML(r){
   }
   return `<div id="ig-${enc}" style="font-size:11.5px;color:var(--text);font-weight:600;
       display:flex;flex-wrap:wrap;gap:4px;align-items:baseline">`
-    +all.map((x,i)=>`<span data-ch="${encodeURIComponent(x.n)}"
+    +all.map((x,i)=>`${i?'<span class="ig-dot" style="opacity:.5">·</span>':''}<span data-ch="${encodeURIComponent(x.n)}"
         onpointerdown="posDragItemGroup(event,'${enc}')"
         title="drag to change the order the register asks these in"
         style="cursor:grab;touch-action:none;${x.pend?'color:#22c55e;font-weight:700':''}"
-        >${i?'<span style="opacity:.5">· </span>':''}${x.pend?esc(x.n):label(x.n)}</span>`).join('')
+        >${x.pend?esc(x.n):label(x.n)}</span>`).join('')
     +`</div>`;
 }
 
