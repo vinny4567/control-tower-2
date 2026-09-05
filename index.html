@@ -5248,7 +5248,7 @@ function wedEventHTML(){const fe=wedFeedEvent(wed.evId);if(!fe){wed.view='list';
       ${wed.pane==='plan'
         ?`<div class="wed-main wed-main-col">${wedPlanChrome(true)}</div>`
         :wed.pane==='catering'
-        ?`<div class="wed-main"><iframe onload="ctNotesKey(this)" src="https://order.angeliscatering.com/catering-notes.html?event=sched-${fe.id}&name=${encodeURIComponent(fe.label)}" allow="storage-access fullscreen"></iframe></div>`
+        ?`<div class="wed-main"><iframe onload="ctNotesKey(this)" src="https://order.angeliscatering.com/catering-notes.html?event=sched-${fe.id}&name=${posEnc(fe.label)}" allow="storage-access fullscreen"></iframe></div>`
         :wed.pane==='docs'
         ?`<div class="wed-main wed-main-col">${(docsSetNS('ct_docs_ev_sched-'+fe.id),docsHTML())}</div>`
         :wed.pane==='truck'
@@ -5259,7 +5259,7 @@ function wedEventHTML(){const fe=wedFeedEvent(wed.evId);if(!fe){wed.view='list';
         ?wedSchedPaneHTML(fe)
         :wed.pane==='sheet'
         ?wedSheetPaneHTML(fe)
-        :`<div class="wed-main"><iframe onload="ctNotesKey(this)" src="https://order.angeliscatering.com/wedding-notes.html?event=sched-${fe.id}&name=${encodeURIComponent(fe.label)}" allow="storage-access fullscreen"></iframe></div>`}
+        :`<div class="wed-main"><iframe onload="ctNotesKey(this)" src="https://order.angeliscatering.com/wedding-notes.html?event=sched-${fe.id}&name=${posEnc(fe.label)}" allow="storage-access fullscreen"></iframe></div>`}
     </div>
   </div>`}
 function wedHTML(){wedLoad();return wed.view==='plan'?wedPlanHTML():wed.view==='event'?wedEventHTML():wedListHTML()}
@@ -6843,6 +6843,12 @@ function posRerenderList(){const el=document.getElementById('pos-items-body');if
 const posMoney=(c)=>c==null?'—':'$'+(c/100).toFixed(2);
 function posBtn(c){return `padding:11px 16px;border:none;border-radius:10px;cursor:pointer;font-family:inherit;font-weight:700;font-size:15px;color:#fff;background:${c};-webkit-tap-highlight-color:transparent`}
 const posInput='padding:11px 13px;border:1px solid var(--border);background:var(--surface2);color:var(--text);border-radius:10px;font-size:16px';
+// encodeURIComponent does NOT escape ' ! ( ) * — and every one of these values is
+// dropped into an inline onclick="fn('…')". A bare apostrophe there closes the JS
+// string and the handler silently stops working: clicking "Pertinace Barbera D'Alba"
+// to rename it did nothing at all. Escape the whole set; decodeURIComponent reads
+// them all back unchanged.
+const posEnc=(v)=>encodeURIComponent(v).replace(/[!'()*]/g,c=>'%'+c.charCodeAt(0).toString(16).toUpperCase());
 const posCardCss='border:1px solid var(--border);border-radius:14px;background:var(--surface);padding:16px';
 function posStat(label,value,sub){
   return `<div style="${posCardCss};padding:14px 16px;min-width:150px;flex:1">
@@ -6955,7 +6961,7 @@ function posItemsBodyHTML(){
   // named outright, since a list of one is just the name with extra steps.
   const rowHTML=r=>`<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:16px;align-items:baseline;max-width:${r.cat==='Food Mods'?'800px':'730px'}">
       <span style="width:330px;${(posModDeleted(r)||posItemDeleted(r))?'text-decoration:line-through;color:#ef4444':''}">${
-        `<span onclick="posRenameMod('${encodeURIComponent(r.key)}','${encodeURIComponent(r.name)}')"
+        `<span onclick="posRenameMod('${posEnc(r.key)}','${posEnc(r.name)}')"
             title="Rename — this is the button a server reads and what prints on the ticket"
             style="cursor:pointer;border-bottom:1px dotted var(--text-muted);${posModNames[r.key]?'color:#22c55e;font-weight:700':''}">${esc(posRowLabel(r))}</span>${
             posModNames[r.key]?`<span style="font-size:12px;color:var(--text-muted)"> was ${esc(r.name)}</span>`:''}`
@@ -6966,15 +6972,15 @@ function posItemsBodyHTML(){
       <span style="width:92px;text-align:right">${posPriceCell(r)}</span>
       <span style="width:210px;padding-left:14px">${posRouteCell(r)}</span>
       ${r.cat!=='Food Mods'?`<span style="width:34px;text-align:right">
-        <button onclick="posDeleteItem('${encodeURIComponent(r.key)}','${encodeURIComponent(r.name)}')"
+        <button onclick="posDeleteItem('${posEnc(r.key)}','${posEnc(r.name)}')"
           title="${posItemDeleted(r)?'keep it after all':'delete this menu item'}"
           style="border:none;background:transparent;color:#ef4444;cursor:pointer;font-family:inherit;
             line-height:1;padding:0 4px;font-weight:700;font-size:${posItemDeleted(r)?'13px':'22px'}"
           >${posItemDeleted(r)?'undo':'×'}</button></span>`:''}
       ${r.cat==='Food Mods'?`<span style="width:96px;text-align:right;white-space:nowrap">
-        <button onclick="posSetModLetter('${encodeURIComponent(r.name)}')" title="File it under a different letter"
+        <button onclick="posSetModLetter('${posEnc(r.name)}')" title="File it under a different letter"
           style="border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-family:inherit;font-size:12px;padding:2px 5px">move</button>
-        <button onclick="posDeleteMod('${encodeURIComponent(r.key)}','${encodeURIComponent(r.name)}')" title="${posModDeleted(r)?'keep it after all':'delete this mod'}"
+        <button onclick="posDeleteMod('${posEnc(r.key)}','${posEnc(r.name)}')" title="${posModDeleted(r)?'keep it after all':'delete this mod'}"
           style="border:none;background:transparent;color:${posModDeleted(r)?'#ef4444':'var(--text-muted)'};cursor:pointer;font-family:inherit;font-size:12px;padding:2px 5px">${posModDeleted(r)?'undo':'delete'}</button>
       </span>`:''}
     </div>`;
@@ -7025,7 +7031,7 @@ function posItemsBodyHTML(){
             ${src?`<div style="font-size:12.5px;color:var(--text-muted);font-weight:400">lives in ${esc(src.cat)}</div>`:''}</span>
           <span style="width:92px;text-align:right;font-variant-numeric:tabular-nums">${src&&src.cents?'$'+(src.cents/100).toFixed(2):'—'}</span>
           <span style="width:210px;padding-left:14px"></span>
-          <span style="width:34px;text-align:right"><button onclick="posSectionRemove('${e}','${encodeURIComponent(n)}')"
+          <span style="width:34px;text-align:right"><button onclick="posSectionRemove('${e}','${posEnc(n)}')"
             title="take it back out of this section" style="border:none;background:transparent;color:#ef4444;
             cursor:pointer;font-size:22px;font-weight:700;line-height:1;padding:0 4px">×</button></span></div>`;
       }).join('');
@@ -7035,7 +7041,7 @@ function posItemsBodyHTML(){
           <span style="font-size:11px;font-weight:800;letter-spacing:.4px"> NEW</span></span>
         <span style="width:92px;text-align:right;font-variant-numeric:tabular-nums">${i.cents?'$'+(i.cents/100).toFixed(2):'—'}</span>
         <span style="width:210px;padding-left:14px;font-size:12px;color:var(--text-muted)">set once it is in</span>
-        <span style="width:34px;text-align:right"><button onclick="posRemoveNewItem('${e}','${encodeURIComponent(i.name)}')"
+        <span style="width:34px;text-align:right"><button onclick="posRemoveNewItem('${e}','${posEnc(i.name)}')"
           title="drop it" style="border:none;background:transparent;color:#ef4444;cursor:pointer;
           font-size:22px;font-weight:700;line-height:1;padding:0 4px">×</button></span></div>`).join('');
       // Type a name nobody has and Add makes it; type one that exists and the list
@@ -7388,7 +7394,7 @@ function posItemGroupsHTML(r){
   }
   return `<div id="ig-${enc}" style="font-size:13px;color:var(--text);font-weight:600;
       display:flex;flex-wrap:wrap;gap:4px;align-items:baseline">`
-    +all.map((x,i)=>`${i?'<span class="ig-dot" style="opacity:.5">·</span>':''}<span data-ch="${encodeURIComponent(x.n)}"
+    +all.map((x,i)=>`${i?'<span class="ig-dot" style="opacity:.5">·</span>':''}<span data-ch="${posEnc(x.n)}"
         onpointerdown="posDragItemGroup(event,'${enc}')"
         title="drag to change the order the register asks these in"
         style="cursor:grab;touch-action:none;${x.pend?'color:#22c55e;font-weight:700':''}"
@@ -7489,7 +7495,7 @@ function posAuto(kind,enc,inputId){
       kind==='anyitem'?'nothing by that name — Add will create it':'no match'}</div>`;
     box.style.display='block';return;
   }
-  box.innerHTML=create+hits.map(x=>`<button onclick="posAutoChoose('${kind}','${enc}','${encodeURIComponent(x.name)}')"
+  box.innerHTML=create+hits.map(x=>`<button onclick="posAutoChoose('${kind}','${enc}','${posEnc(x.name)}')"
     style="display:flex;align-items:baseline;gap:10px;width:100%;text-align:left;border:none;background:transparent;color:var(--text);
       font-family:inherit;font-size:14px;padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--border)"
     onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background='transparent'"
@@ -7579,29 +7585,29 @@ function posGroupModsHTML(g){
       const {orig,e}=x;
       const ch=e?{name:e.name,cents:e.cents}:orig;
       const gone=cuts.includes(orig.name);
-      return `<span data-ch="${encodeURIComponent(orig.name)}"
+      return `<span data-ch="${posEnc(orig.name)}"
         style="display:inline-flex;align-items:center;gap:5px;font-size:13px;
         padding:3px 5px 3px 9px;border-radius:7px;touch-action:none;
         background:${gone?'rgba(239,68,68,0.10)':e?'rgba(34,197,94,0.10)':'var(--surface2)'};
         border:1px solid ${gone?'#ef4444':e?'#22c55e':'var(--border)'};
         color:${gone?'#ef4444':e?'#22c55e':'var(--text)'};${gone?'text-decoration:line-through':''};${ring(orig.name)}">
         <span onpointerdown="posDragChoice(event,'${enc}')"
-          onclick="posEditChoice('${enc}','${encodeURIComponent(orig.name)}',${ch.cents||0})"
+          onclick="posEditChoice('${enc}','${posEnc(orig.name)}',${ch.cents||0})"
           title="drag to reorder · click to edit" style="cursor:grab">${esc(ch.name)}${money(ch.cents)}${
           e?`<span style="opacity:.7;font-size:11px"> was ${esc(orig.name)}</span>`:''}</span>
-        <button onclick="posCutChoice('${enc}','${encodeURIComponent(orig.name)}')"
+        <button onclick="posCutChoice('${enc}','${posEnc(orig.name)}')"
           title="${gone?'put it back':'take this choice out of the group'}"
           style="border:none;background:transparent;color:${gone?'#ef4444':'var(--text-muted)'};
             cursor:pointer;font-size:14px;line-height:1;padding:0 2px;text-decoration:none">${gone?'↺':'×'}</button></span>`;
     }
     const m=x.m;
-    return `<span data-ch="${encodeURIComponent(m.name)}"
+    return `<span data-ch="${posEnc(m.name)}"
       style="display:inline-flex;align-items:center;gap:6px;font-size:13px;padding:3px 6px 3px 9px;
       border-radius:7px;touch-action:none;background:rgba(34,197,94,0.10);border:1px solid #22c55e;color:#22c55e;${ring(m.name)}">
       <span onpointerdown="posDragChoice(event,'${enc}')"
-        onclick="posEditChoice('${enc}','${encodeURIComponent(m.name)}',${m.cents||0})"
+        onclick="posEditChoice('${enc}','${posEnc(m.name)}',${m.cents||0})"
         title="drag to reorder · click to edit" style="cursor:grab">${esc(m.name)}${money(m.cents)}</span>
-      <button onclick="posRemoveGroupMod('${enc}','${encodeURIComponent(m.name)}')" title="remove"
+      <button onclick="posRemoveGroupMod('${enc}','${posEnc(m.name)}')" title="remove"
         style="border:none;background:transparent;color:#22c55e;cursor:pointer;font-size:15px;line-height:1;padding:0 2px">×</button></span>`;
   };
   const chips=items.map(chip).join('');
@@ -7654,7 +7660,7 @@ function posUsedByHTML(g){
       background:${gone?'rgba(239,68,68,0.10)':'transparent'};
       color:${gone?'#ef4444':'var(--text-muted)'};${gone?'text-decoration:line-through':''}">
       ${esc(n)}
-      <button onclick="${isPend?`posAttachRemove('${enc}','item','${encodeURIComponent(n)}')`:`posDetachItem('${enc}','${encodeURIComponent(n)}')`}"
+      <button onclick="${isPend?`posAttachRemove('${enc}','item','${posEnc(n)}')`:`posDetachItem('${enc}','${posEnc(n)}')`}"
         title="${gone?'put it back':'take this group off '+esc(n)}"
         style="border:none;background:transparent;color:${gone?'#ef4444':'var(--text-muted)'};
           cursor:pointer;font-size:14px;line-height:1;padding:0 2px;text-decoration:none">${gone?'↺':'×'}</button></span>`;
@@ -7680,7 +7686,7 @@ function posGroupAttachHTML(g){
   // and a group landing somewhere nobody looked is how a prompt appears mid-service
   // that nobody meant to add. Any category chips already saved still render, so an
   // earlier one can be taken off.
-  const catChips=att.cats.map(c=>chip('all '+esc(c),`posAttachRemove('${enc}','cat','${encodeURIComponent(c)}')`)).join('');
+  const catChips=att.cats.map(c=>chip('all '+esc(c),`posAttachRemove('${enc}','cat','${posEnc(c)}')`)).join('');
   // Item chips are NOT rendered here any more — they show in "On these items" below
   // with everything else the group is on.
   return `<div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--border)">
@@ -7712,15 +7718,15 @@ function posGroupsHTML(){
   const mine=posNewGroups.filter(g=>!q
     ||g.name.toLowerCase().includes(q)
     ||posAddedTo(g.key).some(n=>n.toLowerCase().includes(q)));
-  const newCards=mine.map(g=>`<div data-gk="${encodeURIComponent(posGroupKey(g))}" style="${posCardCss};border-color:#22c55e">
+  const newCards=mine.map(g=>`<div data-gk="${posEnc(posGroupKey(g))}" style="${posCardCss};border-color:#22c55e">
     <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
       <span style="font-size:11px;font-weight:800;color:#22c55e;text-transform:uppercase;letter-spacing:.5px">new</span>
       <span style="font-size:17px;font-weight:700;color:${posGroupNames[posGroupKey(g)]?'#22c55e':'var(--text)'}">${esc(posGroupLabel(g))}</span>
       ${posGroupNames[posGroupKey(g)]?`<span style="font-size:12px;color:var(--text-muted)">was ${esc(g.name)}</span>`:''}
-      <button onclick="posRenameGroup('${encodeURIComponent(posGroupKey(g))}','${encodeURIComponent(g.name)}')"
+      <button onclick="posRenameGroup('${posEnc(posGroupKey(g))}','${posEnc(g.name)}')"
         style="border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-size:12px;font-family:inherit">rename</button>
       <span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;border:1px solid currentColor;color:${g.required?'#ef4444':'var(--text-muted)'}">${g.required?'required':'optional'}</span>
-      <button onclick="posDeleteNewGroup('${encodeURIComponent(g.key)}')" title="delete this group"
+      <button onclick="posDeleteNewGroup('${posEnc(g.key)}')" title="delete this group"
         style="margin-left:auto;border:none;background:transparent;color:#ef4444;cursor:pointer;
           font-size:22px;font-weight:700;line-height:1;padding:0 4px">×</button>
     </div>
@@ -7740,17 +7746,17 @@ function posGroupsHTML(){
   // ragged, and it collapses to one column when the window is too narrow to keep
   // both readable.
   const grid=(cards)=>`<div class="pos-grid2">${cards}</div>`;
-  return datalist+newBtn+grid(newCards+gs.map(g=>`<div data-gk="${encodeURIComponent(posGroupKey(g))}" style="${posCardCss}${
+  return datalist+newBtn+grid(newCards+gs.map(g=>`<div data-gk="${posEnc(posGroupKey(g))}" style="${posCardCss}${
     posDeletedGroups.includes(posGroupKey(g))?';border-color:#ef4444;background:rgba(239,68,68,0.06)':''}">
     <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
       <span style="font-size:13px;font-weight:800;color:var(--text-dim);font-variant-numeric:tabular-nums">${g.num!=null?g.num:'—'}</span>
       <span style="font-size:17px;font-weight:700;color:${posGroupNames[posGroupKey(g)]?'#22c55e':'var(--text)'}">${esc(posGroupLabel(g))}</span>
       ${posGroupNames[posGroupKey(g)]?`<span style="font-size:12px;color:var(--text-muted)">was ${esc(g.name)}</span>`:''}
-      <button onclick="posRenameGroup('${encodeURIComponent(posGroupKey(g))}','${encodeURIComponent(g.name)}')"
+      <button onclick="posRenameGroup('${posEnc(posGroupKey(g))}','${posEnc(g.name)}')"
         style="border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-size:12px;font-family:inherit">rename</button>
       <span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;border:1px solid currentColor;color:${g.required?'#ef4444':'var(--text-muted)'}">${g.required?'required':'optional'}</span>
       ${g.declared?'<span style="font-size:11px;color:#f59e0b;font-weight:700" title="It exists and keeps its prices, but no item asks it">defined, not in use</span>':''}
-      <button onclick="posDeleteGroup('${encodeURIComponent(posGroupKey(g))}','${encodeURIComponent(g.name)}',${(g.used_by||[]).length})"
+      <button onclick="posDeleteGroup('${posEnc(posGroupKey(g))}','${posEnc(g.name)}',${(g.used_by||[]).length})"
         title="${posDeletedGroups.includes(posGroupKey(g))?'keep it after all':'delete this group'}"
         style="border:none;background:transparent;cursor:pointer;font-family:inherit;line-height:1;
           font-size:${posDeletedGroups.includes(posGroupKey(g))?'15px':'22px'};font-weight:700;padding:0 4px;
