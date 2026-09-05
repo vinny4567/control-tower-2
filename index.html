@@ -5923,7 +5923,7 @@ const POS_URL_KEY='ct_pos_url';      // CRM portal (gift cards, customers)
 const POS_SRV_KEY='ct_pos_srv';      // POS server (checks, reports)
 let posS={sec:'items',url:localStorage.getItem(POS_URL_KEY)||'',srv:localStorage.getItem(POS_SRV_KEY)||'',
   health:'unknown',me:null,dash:null,err:'',card:null,cust:null,busy:false,
-  cat:null,catErr:'',q:'',catFilter:'all',gapsOnly:false,crmQ:'',crmResults:null,crmMember:null,demo:false,emp:null,
+  cat:null,catErr:'',q:'',catFilter:'all',crmQ:'',crmResults:null,crmMember:null,demo:false,emp:null,
   rep:null,repDays:1,repErr:'',repBusy:false,showConn:false};
 
 const posBaseUrl=(u)=>(u||'').replace(/\/+$/,'');
@@ -6024,14 +6024,12 @@ function posItemRows(){
   const q=(posS.q||'').toLowerCase().trim();
   return posAllRows().filter(r=>{
     if(posS.catFilter!=='all'&&r.cat!==posS.catFilter)return false;
-    if(posS.gapsOnly&&!posRowGaps(r).length)return false;
     if(q&&!(r.name||'').toLowerCase().includes(q)&&!String(r.num||'').includes(q))return false;
     return true;
   });
 }
 function posSetQ(v){posS.q=v;posRerenderList()}
 function posSetCat(v){posS.catFilter=v;posRerenderList()}
-function posToggleGaps(){posS.gapsOnly=!posS.gapsOnly;renderViewport()}
 
 // Re-rendering the tab throws away the scroll position, because the element that
 // actually scrolls lives INSIDE #viewport and is destroyed with it. Clicking "show
@@ -7048,7 +7046,6 @@ function posItemsHTML(){
       <input id="pos-q" value="${esc(posS.q)}" placeholder="search name or category…" style="${posInput};flex:1;min-width:200px" oninput="posSetQ(this.value)">
       <select onchange="posSetCat(this.value)" style="${posInput}"><option value="all">every category</option>
         ${posCatOptions(cats)}</select>
-      <button onclick="posToggleGaps()" style="${posBtn(posS.gapsOnly?'#f59e0b':'#3f3f46')}">${posS.gapsOnly?'Gaps only':'Show gaps only'}</button>
     </div>
     <div id="pos-items-body">${posItemsBodyHTML()}</div>
   </div>
