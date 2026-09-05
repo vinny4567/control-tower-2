@@ -6536,6 +6536,26 @@ function posCancelEdit(enc){
 }
 const posEditingIn=(k)=>(posS.editChoice||{})[String(k)]||null;
 
+// Clicking away puts the fields back.
+//
+// Read on CAPTURE, judged after: posEditChoice redraws the page, so by the time a
+// normal bubbling listener ran the element that was clicked would already be gone
+// from the document and every click would look like it landed outside.
+if(!window.__posEditAway){
+  window.__posEditAway=true;
+  document.addEventListener('click',(e)=>{
+    const card=e.target&&e.target.closest?e.target.closest('[data-gk]'):null;
+    const inside=card?decodeURIComponent(card.dataset.gk):null;
+    setTimeout(()=>{
+      const open=posS.editChoice||{};
+      const stale=Object.keys(open).filter(k=>k!==inside);
+      if(!stale.length)return;
+      for(const k of stale)delete open[k];
+      posRedraw();
+    },0);
+  },true);
+}
+
 function posAddGroupMod(enc,name,cents){
   const k=decodeURIComponent(enc);
   const nm=String(name||'').trim(); if(!nm)return;
@@ -7345,7 +7365,7 @@ function posGroupsHTML(){
   const mine=posNewGroups.filter(g=>!q
     ||g.name.toLowerCase().includes(q)
     ||posAddedTo(g.key).some(n=>n.toLowerCase().includes(q)));
-  const newCards=mine.map(g=>`<div style="${posCardCss};border-color:#22c55e">
+  const newCards=mine.map(g=>`<div data-gk="${encodeURIComponent(posGroupKey(g))}" style="${posCardCss};border-color:#22c55e">
     <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
       <span style="font-size:11px;font-weight:800;color:#22c55e;text-transform:uppercase;letter-spacing:.5px">new</span>
       <span style="font-size:17px;font-weight:700;color:${posGroupNames[posGroupKey(g)]?'#22c55e':'var(--text)'}">${esc(posGroupLabel(g))}</span>
@@ -7371,7 +7391,7 @@ function posGroupsHTML(){
   // ragged, and it collapses to one column when the window is too narrow to keep
   // both readable.
   const grid=(cards)=>`<div class="pos-grid2">${cards}</div>`;
-  return datalist+newBtn+grid(newCards+gs.map(g=>`<div style="${posCardCss}${
+  return datalist+newBtn+grid(newCards+gs.map(g=>`<div data-gk="${encodeURIComponent(posGroupKey(g))}" style="${posCardCss}${
     posDeletedGroups.includes(posGroupKey(g))?';border-color:#ef4444;background:rgba(239,68,68,0.06)':''}">
     <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
       <span style="font-size:13px;font-weight:800;color:var(--text-dim);font-variant-numeric:tabular-nums">${g.num!=null?g.num:'—'}</span>
