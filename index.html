@@ -6574,8 +6574,12 @@ function posAttachRemove(enc,kind,encV){
   posSaveGroups();
 }
 function posAttachFromInput(enc,kind){
-  const el=document.getElementById((kind==='cat'?'ga-c-':'ga-i-')+enc);
-  if(!el)return; posAttachAdd(enc,kind,el.value); el.value='';
+  const id=(kind==='cat'?'ga-c-':'ga-i-')+enc;
+  const el=document.getElementById(id);
+  if(!el)return;
+  posAttachAdd(enc,kind,el.value);   // redraws
+  const back=document.getElementById(id);
+  if(back){back.value='';back.focus();}
 }
 // EDITING A CHOICE. Clicking a chip loads it into the fields below; the Add button
 // becomes Save.
@@ -6749,9 +6753,12 @@ function posAddFromInput(enc){
     return;
   }
 
-  posAddGroupMod(enc,typed,cents);
-  el.value=''; if(pl)pl.value='';
-  el.focus();
+  posAddGroupMod(enc,typed,cents);   // redraws
+  // The field you were typing in no longer exists — find the new one and put the
+  // cursor back, so a group can be filled in without reaching for the mouse between
+  // every choice.
+  const back=document.getElementById('gm-'+enc);
+  if(back){back.value='';back.focus();}
 }
 function posSetPrice(enc,str){
   const key=decodeURIComponent(enc);
