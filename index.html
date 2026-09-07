@@ -6018,11 +6018,19 @@ function posAllRows(){
   })));
 }
 
+// The master wine list. Every wine also lives on one of the four wine screens, so
+// showing this too meant every bottle appeared twice in the back office and twice in
+// the category picker. The screens are the real thing now; this is the shelf they are
+// drawn from.
+const POS_HIDDEN_CATS=new Set(['Wine']);
+
 function posItemRows(){
   const c=posS.cat;if(!c)return[];
   if(posS.catFilter===POS_CLASSES_CAT)posS.catFilter='all';   // moved to Printers
+  if(POS_HIDDEN_CATS.has(posS.catFilter))posS.catFilter='all';
   const q=(posS.q||'').toLowerCase().trim();
   return posAllRows().filter(r=>{
+    if(POS_HIDDEN_CATS.has(r.cat))return false;
     if(posS.catFilter!=='all'&&r.cat!==posS.catFilter)return false;
     if(q&&!(r.name||'').toLowerCase().includes(q)&&!String(r.num||'').includes(q))return false;
     return true;
@@ -7135,6 +7143,7 @@ function posCatOptions(cats){
   const out=[];
   const opt=(v,label)=>`<option value="${esc(v)}" ${posS.catFilter===v?'selected':''}>${esc(label)}</option>`;
   for(const c of cats){
+    if(POS_HIDDEN_CATS.has(c))continue;
     out.push(opt(c,c));
     if(c==='Food Mods')out.push(opt(POS_GROUPS_CAT,'Mod groups'));
   }
