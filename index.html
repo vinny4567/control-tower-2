@@ -2198,7 +2198,18 @@ function wedMergeRemote(remote){
     if(!e||!e.id)return;
     if(del[e.id]&&del[e.id]>=(e.updated||0))return;
     const cur=byId[e.id];
-    if(!cur||(e.updated||0)>(cur.updated||0))byId[e.id]=e;
+    if(!cur){byId[e.id]=e;return}
+    const eHas=(e.items||[]).length>0,curHas=(cur.items||[]).length>0;
+    if(eHas!==curHas){
+      // One copy has a floor plan on it, the other is blank. Timestamps cannot settle this:
+      // a screen that never received the work often carries the LATER timestamp, and that is
+      // exactly how a finished plan gets wiped. The plan wins — unless the blank one was
+      // deliberately cleared after that plan was last touched.
+      const blank=eHas?cur:e,plan=eHas?e:cur;
+      byId[e.id]=((blank.cleared||0)>(plan.updated||0))?blank:plan;
+      return;
+    }
+    if((e.updated||0)>(cur.updated||0))byId[e.id]=e;
   });
   L.events=Object.values(byId).sort((a,b)=>(b.updated||0)-(a.updated||0));
   if(R.template&&(R.template.at||0)>((L.template&&L.template.at)||0))L.template=R.template;
@@ -3447,7 +3458,21 @@ function wedLoad(){if(!wed.data){try{wed.data=JSON.parse(localStorage.getItem('c
   if(!wed.data)wed.data={events:[],template:{items:wedDefaultItems()},cur:null};
   if(!wed.data.template||!wed.data.template.items)wed.data.template={items:wedDefaultItems()};}
   return wed.data}
-function wedStore(){try{localStorage.setItem('ct_weddings',JSON.stringify(wed.data))}catch(e){}if(!syncApplying&&wed.data)kvPush('ct_weddings',wed.data,Date.now())}
+let wedPushTimer=null;
+// Save locally at once; send to the server only after merging with what's there.
+// Pushing the whole blob blind is how one screen wipes the other's floor plan —
+// a device that hasn't pulled since this morning would overwrite tonight's work.
+function wedStore(){
+  try{localStorage.setItem('ct_weddings',JSON.stringify(wed.data))}catch(e){}
+  if(syncApplying||!wed.data)return;
+  clearTimeout(wedPushTimer);
+  wedPushTimer=setTimeout(wedPushMerged,700);
+}
+async function wedPushMerged(){
+  if(!wed.data)return;
+  try{const r=await kvGet('ct_weddings');if(r&&r.v)wedMergeRemote(r);}catch(e){}
+  if(wed.data)kvPush('ct_weddings',wed.data,Date.now());
+}
 function wedQueueSave(){clearTimeout(wed.saveTimer);wed.saveTimer=setTimeout(wedStore,400)}
 function wedFlush(){clearTimeout(wed.saveTimer);if(wed.data)wedStore()}
 function wedNewId(){return 'w'+Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
@@ -3511,7 +3536,9 @@ function wedSaveVenue(){const v=wedVenueSel();const ev=wedCur();if(!ev)return;
   wedStore();alert('"'+v+'" template saved ✓')}
 function wedClearAll(){const ev=wedCur();if(!ev||!ev.items.length)return;
   if(!confirm('Wipe the canvas clean? (The event and its notes/docs are untouched — only the floor plan empties.)'))return;
-  ev.items=[];wed.sel=null;ev.updated=Date.now();wedStore();renderViewport()}
+  ev.items=[];wed.sel=null;ev.updated=Date.now();
+  ev.cleared=ev.updated;      // deliberate — this is what lets an empty plan sync across
+  wedStore();renderViewport()}
 function wedDefaultItems(){const it=[];let n=1;
   const R=(x,y)=>it.push({id:wedNewId(),type:'round',x,y,w:76,h:76,label:String(n++)});
   R(305,95);R(425,75);R(545,75);R(665,85);R(785,95);R(895,140);
@@ -3539,7 +3566,15 @@ async function wedFetchFeed(){if(wed.loading)return;wed.loading=true;wed.feedErr
 if(!window._wedTick)window._wedTick=setInterval(()=>{if(activeTab===WED)wedFetchFeed()},120000);
 function wedPrettyDate(ymd){try{const d=new Date(ymd+'T00:00:00');return d.toLocaleDateString([],{month:'short',day:'numeric'})}catch(e){return ymd}}
 function wedDow(ymd){try{return new Date(ymd+'T00:00:00').toLocaleDateString([],{weekday:'short'}).toUpperCase()}catch(e){return ''}}
-function wedLayoutForSched(id){return wedLoad().events.find(e=>e.sched===id)||null}
+// Two devices can each create a layout for the same event, leaving twin records.
+// Prefer one that actually has something on it, then the most recently touched —
+// otherwise the event opens on an empty twin and the real plan looks lost.
+function wedLayoutForSched(id){
+  const all=(wedLoad().events||[]).filter(e=>e&&e.sched===id);
+  if(!all.length)return null;
+  const withItems=all.filter(e=>(e.items||[]).length);
+  return (withItems.length?withItems:all).sort((a,b)=>(b.updated||0)-(a.updated||0))[0];
+}
 function wedFeedEvent(id){const feed=wed.feed||wedFeedCache();return ((feed&&feed.events)||[]).find(e=>e.id===id)||null}
 // Clicking an event opens its HUB (sidebar: floor plan, wedding template) — the layout no longer auto-opens.
 function wedOpenSched(id){if(!wedFeedEvent(id))return;wed.evId=id;wed.view="event";wed.pane="sheet";wed.mailView=null;wed.mailRes=null;wed.schedRes=null;renderViewport();wedSheetPull()}
