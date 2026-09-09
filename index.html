@@ -4600,7 +4600,7 @@ function wedSaveTemplate(){const ev=wedCur();if(!ev)return;if(!confirm('Make thi
 // straight from the items so it never depends on the screen or the theme.
 function wedPlanPng(fe,scale){
   const ev=wedCur();if(!ev)return null;
-  const S=scale||2, PAD=26, TOP=fe?54:PAD;
+  const S=scale||2, PAD=26, TOP=fe?64:PAD;   // header band — grew with the date
   const c=document.createElement('canvas');
   c.width=(WED_W+PAD*2)*S; c.height=(WED_H+TOP+PAD)*S;
   const g=c.getContext('2d');
@@ -4610,10 +4610,10 @@ function wedPlanPng(fe,scale){
     g.fillStyle='#111';g.textAlign='center';g.textBaseline='middle';
     g.font='700 22px Georgia, serif';
     g.fillText(wedName(fe),(WED_W+PAD*2)/2,26);
-    g.font='400 13px Georgia, serif';
-    g.fillStyle='#666';
+    g.font='600 17px Georgia, serif';
+    g.fillStyle='#3a3a3a';
     const sub=[wedPrettyDate(fe.date),fe.time||''].filter(Boolean).join('  ·  ');
-    if(sub)g.fillText(sub,(WED_W+PAD*2)/2,45);
+    if(sub)g.fillText(sub,(WED_W+PAD*2)/2,51);
   }
   g.translate(PAD,TOP);
   ev.items.forEach(it=>{
