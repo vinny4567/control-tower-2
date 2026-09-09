@@ -576,6 +576,11 @@
     .wed-btn.amber{border-color:var(--accent);color:var(--accent)}
     .wed-btn.danger{border-color:#e5484d;color:#e5484d}
     .wed-count{font-size:12px;color:var(--text-muted);margin-left:auto;white-space:nowrap}
+    .wed-save{font-size:11.5px;font-weight:700;color:var(--text-muted);white-space:nowrap;margin-left:auto}
+    .wed-save.ok{color:#3fbf5f}
+    .wed-save.warn{color:#e5a23f}
+    .wed-save:empty{margin-left:auto}
+    .wed-save:not(:empty)+.wed-count{margin-left:10px}
     #wed-stage-wrap{flex:1;position:relative;overflow:hidden;background:var(--bg)}
     #wed-stage{position:absolute;left:50%;top:50%;width:1000px;height:700px;background:var(--ph-bg);border:2px solid var(--border);border-radius:6px;touch-action:none;background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);background-size:50px 50px;background-position:center center}
     .wed-it{position:absolute;display:flex;align-items:center;justify-content:center;transform:translate(-50%,-50%);font-weight:800;cursor:grab;user-select:none;-webkit-user-select:none;text-align:center;line-height:1.1;letter-spacing:.5px}
@@ -3468,10 +3473,22 @@ function wedStore(){
   clearTimeout(wedPushTimer);
   wedPushTimer=setTimeout(wedPushMerged,700);
 }
+// Every change saves itself and goes to the other screen — there is no Save button to
+// forget. The little line in the toolbar says where it got to.
+function wedSaveState(txt,cls){const el=document.getElementById('wed-save');
+  if(el){el.textContent=txt;el.className='wed-save'+(cls?' '+cls:'')}}
 async function wedPushMerged(){
   if(!wed.data)return;
-  try{const r=await kvGet('ct_weddings');if(r&&r.v)wedMergeRemote(r);}catch(e){}
+  wedSaveState('Saving…');
+  // A room being laid out keeps itself as that room's plan, change by change.
+  if(wed.roomEdit){const ev=wedCur();
+    if(ev){const d=wedLoad();d.vtpls=d.vtpls||{};
+      d.vtpls[wed.roomEdit]={items:JSON.parse(JSON.stringify(ev.items)),at:Date.now()};}}
+  let reached=false;
+  try{const r=await kvGet('ct_weddings');if(r&&r.v)wedMergeRemote(r);reached=true}catch(e){}
   if(wed.data)kvPush('ct_weddings',wed.data,Date.now());
+  wedSaveState(reached?(wed.roomEdit?('Saved · room “'+wed.roomEdit+'”'):'Saved on all devices ✓'):'Saved here — no connection',reached?'ok':'warn');
+  clearTimeout(wed._saveMsg);wed._saveMsg=setTimeout(()=>wedSaveState(''),4000);
 }
 function wedQueueSave(){clearTimeout(wed.saveTimer);wed.saveTimer=setTimeout(wedStore,400)}
 function wedFlush(){clearTimeout(wed.saveTimer);if(wed.data)wedStore()}
@@ -3498,17 +3515,20 @@ function wedAddVenue(){
   const d=wedLoad(),list=wedVenueList();
   if(list.some(v=>v.toLowerCase()===nn.toLowerCase())){alert('There is already a room called “'+nn+'”.');return}
   const ev=wedCur();
-  if(ev&&ev.items.length&&!confirm('“'+nn+'” starts as an empty grid, so what’s on this canvas now gets cleared.\n\nArrange the room, then press 💾 Save to keep it as this room’s floor plan. (Undo is right there if you clear it by mistake.)'))return;
+  if(ev&&ev.items.length&&!confirm('“'+nn+'” starts as an empty grid, so what’s on this canvas now gets cleared.\n\nLay the room out — it saves itself as this room’s floor plan as you go. (Undo is right there if you clear it by mistake.)'))return;
   list.push(nn);d.venuesAt=Date.now();
-  wed.venueSel=nn;
+  wed.venueSel=nn;wed.roomEdit=nn;      // this canvas IS the room now — it keeps itself
   if(ev){
     wedTraceSnap();                    // ↩ Undo import puts the old plan back
     ev.items=[];ev.updated=Date.now();wed.sel=null;
   }
   wedStore();renderViewport();
-  setTimeout(()=>wedBar('<span class="t"><b>“'+esc(nn)+'”</b> — an empty grid. Lay the room out, then press <b>💾 Save</b> and every event set to this room starts from it.</span>'+
+  setTimeout(()=>wedBar('<span class="t"><b>“'+esc(nn)+'”</b> — an empty grid. Lay the room out — it saves itself as you go, and every event set to this room will start from it. Press <b>✓ Done</b> when the room is finished.</span>'+
     (wedTrace.undo?'<button class="wed-btn" onclick="wedTraceUndo()">↩ Undo</button>':'')+
-    '<button class="wed-btn" onclick="wedBarClose()">OK</button>'),60)}
+    '<button class="wed-btn" onclick="wedRoomDone()">✓ Done</button>'),60)}
+// Stop treating the canvas as the room's master copy (it keeps saving as this event's plan).
+function wedRoomDone(){wed.roomEdit=null;wedBarClose();wedSaveState('Room saved ✓','ok');
+  clearTimeout(wed._saveMsg);wed._saveMsg=setTimeout(()=>wedSaveState(''),3000);}
 // Remove a room he added by mistake — otherwise a typo would sit in the list forever.
 function wedDeleteVenue(){
   const v=wedVenueSel();if(!v){alert('Pick the room to remove in the dropdown first.');return}
@@ -3520,7 +3540,7 @@ function wedDeleteVenue(){
 function wedVenueItems(v){const d=wedLoad();const t=(d.vtpls||{})[v];
   return (t&&t.items)?t.items:[]}
 function wedVenueSel(){const el=document.getElementById('wed-venue');const v=el?el.value:'';wed.venueSel=v;return v}
-function wedVenuePicked(sel){const v=sel.value;const ev=wedCur();
+function wedVenuePicked(sel){wed.roomEdit=null;const v=sel.value;const ev=wedCur();
   if(!v||!ev){wed.venueSel=v;return}
   const prev=wed.venueSel||'';
   if(ev.items.length&&!confirm('Switch the canvas to "'+v+'"? What\'s on it now will be replaced.')){sel.value=prev;return}
@@ -3528,12 +3548,6 @@ function wedVenuePicked(sel){const v=sel.value;const ev=wedCur();
   ev.items=JSON.parse(JSON.stringify(wedVenueItems(v)));
   ev.items.forEach(i=>i.id=wedNewId());
   ev.updated=Date.now();wed.sel=null;wedStore();renderViewport()}
-function wedSaveVenue(){const v=wedVenueSel();const ev=wedCur();if(!ev)return;
-  if(!v){alert('Pick a venue in the dropdown first, then Save.');return}
-  if(!confirm('Save this canvas as the "'+v+'" template? Every event will get this layout when it loads "'+v+'".'))return;
-  const d=wedLoad();d.vtpls=d.vtpls||{};
-  d.vtpls[v]={items:JSON.parse(JSON.stringify(ev.items)),at:Date.now()};
-  wedStore();alert('"'+v+'" template saved ✓')}
 function wedClearAll(){const ev=wedCur();if(!ev||!ev.items.length)return;
   if(!confirm('Wipe the canvas clean? (The event and its notes/docs are untouched — only the floor plan empties.)'))return;
   ev.items=[];wed.sel=null;ev.updated=Date.now();
@@ -3577,7 +3591,7 @@ function wedLayoutForSched(id){
 }
 function wedFeedEvent(id){const feed=wed.feed||wedFeedCache();return ((feed&&feed.events)||[]).find(e=>e.id===id)||null}
 // Clicking an event opens its HUB (sidebar: floor plan, wedding template) — the layout no longer auto-opens.
-function wedOpenSched(id){if(!wedFeedEvent(id))return;wed.evId=id;wed.view="event";wed.pane="sheet";wed.mailView=null;wed.mailRes=null;wed.schedRes=null;renderViewport();wedSheetPull()}
+function wedOpenSched(id){wed.roomEdit=null;if(!wedFeedEvent(id))return;wed.evId=id;wed.view="event";wed.pane="sheet";wed.mailView=null;wed.mailRes=null;wed.schedRes=null;renderViewport();wedSheetPull()}
 // Sidebar Floor Plan button — find-or-create the layout, then show the editor IN the hub's main pane
 // (the Event-tools sidebar stays visible).
 function wedOpenSchedLayout(){const fe=wedFeedEvent(wed.evId);if(!fe)return;
@@ -5226,20 +5240,20 @@ function wedPlanChrome(embedded){const ev=wedCur();if(!ev)return '';
       ${embedded?'':'<button class="wed-btn" onclick="wedBack()">‹ Events</button>'}
       <input type="text" id="wed-name" value="${esc(ev.name||'')}" placeholder="Layout name" oninput="wedRename(this.value)">
       ${ev.sched?'<span style="font-size:12px;color:var(--text-muted);white-space:nowrap">linked to schedule</span>':''}
-      ${ev.tpl?'<span style="font-size:11px;color:var(--accent);white-space:nowrap">this is your room template — press “Save as template” when done</span>':''}
+      ${ev.tpl?'<span style="font-size:11px;color:var(--accent);white-space:nowrap">this is your room template</span>':''}
       <select id="wed-venue" onchange="wedVenuePicked(this)">
         <option value="">📐 Venue / room…</option>
         ${wedVenueList().map(v=>`<option${wed.venueSel===v?' selected':''}>${esc(v)}</option>`).join('')}
       </select>
-      <button class="wed-btn" onclick="wedAddVenue()" title="Add a room for this venue — starts as an empty grid you lay out and save">➕ New room</button>
+      <button class="wed-btn" onclick="wedAddVenue()" title="Add a room for this venue — lay out the empty grid and it saves itself as that room's plan">➕ New room</button>
       <button class="wed-btn" onclick="wedRenameVenue()" title="Rename this room">✎ Rename</button>
-      <button class="wed-btn" onclick="wedSaveVenue()">💾 Save</button>
       <button class="wed-btn" onclick="wedPdfPick()" title="Drop the floor plan the guest sent — a PDF, a screenshot or a photo — and the tables get built for you">📄 Import plan</button>
       <button class="wed-btn${wedTrace.url&&wedTrace.on?' on':''}" id="wed-btn-trace" style="${wedTrace.url?'':'display:none'}" onclick="wedTraceCycle()" ondblclick="wedTraceClear()" title="Fade the imported picture — double-click to take it off">🖼 Picture</button>
       <button class="wed-btn${wedTrace.tap?' on':''}" id="wed-btn-tap" onclick="wedTapToggle()" title="Tap the canvas to drop tables. Press once for numbered tables, again for blank ones, again to stop.">${WED_TAP_LBL[wedTapMode()]||'👆 Tap tables'}</button>
       <button class="wed-btn" onclick="wedPrint()">🖨 Print</button>
       <button class="wed-btn" onclick="wedEmailPlan()" title="Email this floor plan to the client">📧 Email plan</button>
       <button class="wed-btn danger" onclick="wedClearAll()">🧹 Clear all</button>
+      <span class="wed-save" id="wed-save"></span>
       <span class="wed-count" id="wed-count"></span>
     </div>
     <div id="wed-stage-wrap" ondragover="wedPdfDragOver(event)" ondragleave="wedPdfDragLeave(event)" ondrop="wedPdfDrop(event)"><div id="wed-stage"></div><div id="wed-pdf-veil"></div></div>
