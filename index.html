@@ -4629,10 +4629,27 @@ function wedPlanPng(fe,scale){
     else if(it.type==='text'){g.font='600 13px system-ui'}
     else if(it.type==='box'){g.strokeRect(-w/2,-h/2,w,h);g.font='700 10px system-ui'}
     else{g.strokeRect(-w/2,-h/2,w,h);g.font='700 10px system-ui'}
-    if(it.label){
+    // The guest count only ever existed as an <input> on the editing surface, so the
+    // canvas — which draws shapes and labels and nothing else — silently left it off every
+    // plan ever emailed. Drawn here UNDER the label, inside the table, because a client
+    // reading a floor plan wants "Table 5 / 8 guests"; the dark box that floats above each
+    // table on screen is editing chrome and has no business on a sent plan.
+    const seatN=WED_SEATABLE.includes(it.type)?String(wedSeatsOf(it)||'').trim():'';
+    if(it.label||seatN){
       if(it.rot)g.rotate(-it.rot*Math.PI/180);
-      String(it.label).split(/\s*\n\s*/).slice(0,2).forEach((line,i,all)=>
-        g.fillText(line,0,(i-(all.length-1)/2)*13));
+      const lines=it.label?String(it.label).split(/\s*\n\s*/).slice(0,2):[];
+      // Lift the label half a line when a count sits beneath it, so the pair stays
+      // optically centred in the table instead of riding high.
+      const off=seatN?-7:0;
+      lines.forEach((line,i,all)=>g.fillText(line,0,off+(i-(all.length-1)/2)*13));
+      if(seatN){
+        const base=off+((lines.length?lines.length-1:0)/2)*13+(lines.length?15:0);
+        g.font='600 10px system-ui';g.fillStyle='#444';
+        // Spell it out where there is room. On a narrow table the bare number beats
+        // "8 gues…", and the number is what a room-setter counts anyway.
+        const n=parseInt(seatN,10);
+        g.fillText(w>=78&&Number.isFinite(n)?(n+' guest'+(n===1?'':'s')):seatN,0,base);
+      }
     }
     g.restore();
   });
