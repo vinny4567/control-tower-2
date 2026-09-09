@@ -579,6 +579,8 @@
     .wed-save{font-size:11.5px;font-weight:700;color:var(--text-muted);white-space:nowrap;margin-left:auto}
     .wed-save.ok{color:#3fbf5f}
     .wed-save.warn{color:#e5a23f}
+    .ct-nosync{background:#5a2b12;border:1px solid #e5a23f;color:#ffd9a0;border-radius:8px;
+      padding:6px 11px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap}
     .wed-save:empty{margin-left:auto}
     .wed-save:not(:empty)+.wed-count{margin-left:10px}
     #wed-stage-wrap{flex:1;position:relative;overflow:hidden;background:var(--bg)}
@@ -661,6 +663,8 @@
   <div class="tab-list" id="tab-list"></div>
   <button class="tab-nav" id="tab-nav-r" onclick="tabScroll(1)" title="Scroll tabs right">›</button>
   <div class="header-right">
+    <button id="ct-nosync" class="ct-nosync" style="display:none" onclick="setCtKeys()"
+      title="This computer has no sync key, so nothing it does reaches the other screens">⚠ Not syncing</button>
     <button class="icon-btn" onclick="forceUpdate()" title="Refresh — load the latest version">⟳</button>
     <button class="icon-btn" id="theme-btn" onclick="toggleTheme()" title="Toggle light/dark mode">☀️</button>
     <button class="icon-btn" onclick="openSettings()" title="Manage panels">⚙</button>
@@ -914,7 +918,7 @@ document.addEventListener('visibilitychange',()=>{
     if(activeTab===DASH)fetchGmail();
   }
 });
-window.addEventListener('load',()=>initGmail());
+window.addEventListener('load',()=>{initGmail();try{ctSyncBadge()}catch(e){}});
 
 // ── GMAIL MAILBOX TAB ─────────────────────────────────────────────
 let gmailTab={emails:null,loading:false,selectedId:null,selectedEmail:null,loadingDetail:false,composing:null,sendStatus:null};
@@ -3479,6 +3483,11 @@ function wedSaveState(txt,cls){const el=document.getElementById('wed-save');
   if(el){el.textContent=txt;el.className='wed-save'+(cls?' '+cls:'')}}
 async function wedPushMerged(){
   if(!wed.data)return;
+  if(!localStorage.getItem('ct_kv_key')){
+    // No sync key on this device: everything stays local and the other screen never sees it.
+    // This used to fail in total silence — it is how a whole floor plan went missing.
+    wedSaveState('⚠ Saved on this computer only — no sync key','warn');return;
+  }
   wedSaveState('Saving…');
   // A room being laid out keeps itself as that room's plan, change by change.
   if(wed.roomEdit){const ev=wedCur();
@@ -5245,7 +5254,6 @@ function wedPlanChrome(embedded){const ev=wedCur();if(!ev)return '';
         <option value="">📐 Venue / room…</option>
         ${wedVenueList().map(v=>`<option${wed.venueSel===v?' selected':''}>${esc(v)}</option>`).join('')}
       </select>
-      <button class="wed-btn" onclick="wedAddVenue()" title="Add a room for this venue — lay out the empty grid and it saves itself as that room's plan">➕ New room</button>
       <button class="wed-btn" onclick="wedRenameVenue()" title="Rename this room">✎ Rename</button>
       <button class="wed-btn" onclick="wedPdfPick()" title="Drop the floor plan the guest sent — a PDF, a screenshot or a photo — and the tables get built for you">📄 Import plan</button>
       <button class="wed-btn${wedTrace.url&&wedTrace.on?' on':''}" id="wed-btn-trace" style="${wedTrace.url?'':'display:none'}" onclick="wedTraceCycle()" ondblclick="wedTraceClear()" title="Fade the imported picture — double-click to take it off">🖼 Picture</button>
@@ -8935,6 +8943,10 @@ let draft=[];
 // The event-tool iframes are on order.angeliscatering.com, a different origin with its
 // own localStorage, so they can't see the key this device already has. Hand it over.
 function ctNotesKey(f){try{f.contentWindow.postMessage({ctKvKey:localStorage.getItem('ct_kv_key')||''},'https://order.angeliscatering.com')}catch(e){}}
+// A missing sync key used to be visible only inside Settings, so a device could sit there
+// for weeks saving to itself while everyone assumed it was syncing. Say it on every screen.
+function ctSyncBadge(){const b=document.getElementById('ct-nosync');
+  if(b)b.style.display=localStorage.getItem('ct_kv_key')?'none':'';}
 function ctKeysMissing(){const m=[];if(!localStorage.getItem('ct_kv_key'))m.push('Sync');if(!localStorage.getItem('ct_sched_key'))m.push('Schedule');if(!localStorage.getItem('ct_mail_key'))m.push('Email');return m}
 function setCtKeys(){
   const cur=k=>localStorage.getItem(k)||'';
