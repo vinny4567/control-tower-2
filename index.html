@@ -5469,13 +5469,102 @@ function tipsSetView(v){tipsState.view=v;document.getElementById('viewport').inn
 function tipsSetHoursFilter(f){tipsState.hoursFilter=f;tipsRerender();}
 // Import the MICROS timesheet PDF: upload it to the cloud for this period (Claude
 // parses it into hours + rates + busser splits; auto-parse backend is coming).
-function tipsImportTimesheet(input){
+// ── Import the MICROS timesheet PDF, parsed ENTIRELY in the browser (Safari-safe) ──
+// Same parse as the Python I ran by hand — validated to the penny on two periods.
+// Reads hours/rates/emp-IDs per job + computes the nightly busser-pool split, then
+// merges restaurant hours in with the wedding data and saves. No upload of the PDF.
+let tipsPdfjs=null;
+function tipsLoadPdfjs(){
+  if(tipsPdfjs)return Promise.resolve(tipsPdfjs);
+  const CDN='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+  const arm=()=>{tipsPdfjs=window.pdfjsLib;tipsPdfjs.GlobalWorkerOptions.workerSrc=CDN+'pdf.worker.min.js';return tipsPdfjs;};
+  if(window.pdfjsLib)return Promise.resolve(arm());
+  return new Promise((res,rej)=>{const s=document.createElement('script');s.src=CDN+'pdf.min.js';s.onload=()=>res(arm());s.onerror=()=>rej(new Error('could not load the PDF reader (need internet)'));document.head.appendChild(s);});
+}
+async function tipsExtractPdfLines(buf){
+  const pdfjs=await tipsLoadPdfjs();
+  const doc=await pdfjs.getDocument({data:new Uint8Array(buf)}).promise;
+  const lines=[];
+  for(let p=1;p<=doc.numPages;p++){
+    const tc=await (await doc.getPage(p)).getTextContent();
+    const items=tc.items.filter(it=>it.str!==undefined).map(it=>({x:it.transform[4],y:it.transform[5],s:it.str}));
+    items.sort((a,b)=>(b.y-a.y)||(a.x-b.x));
+    let cur=null,curY=null;
+    for(const it of items){if(cur===null||Math.abs(it.y-curY)>3){cur=[];lines.push(cur);curY=it.y;}cur.push(it);}
+  }
+  return lines.map(r=>r.sort((a,b)=>a.x-b.x).map(i=>i.s).join(' ').replace(/\s+/g,' ').trim()).filter(l=>l.length);
+}
+function tipsClockDec(s){const m=/(\d+):(\d+)(am|pm)/.exec(s);if(!m)return null;let h=+m[1];const mi=+m[2],ap=m[3];if(ap==='pm'&&h!==12)h+=12;if(ap==='am'&&h===12)h=0;return h+mi/60;}
+function tipsParseMicros(lines){
+  const people={},shifts=[];let curEmp=null,curName=null,inJT=false,pend=null;
+  for(let i=0;i<lines.length;i++){
+    const ln=(lines[i]||'').trim();
+    const m=/^(\d+) - (.+)$/.exec(ln);
+    if(m && i+1<lines.length && lines[i+1].trim().indexOf('Job # and Name')===0){curEmp=m[1];curName=m[2].trim();if(!people[curEmp])people[curEmp]={name:curName,jobs:{}};inJT=false;pend=null;continue;}
+    if(ln.indexOf('Job Totals')===0){inJT=true;continue;}
+    if(ln.indexOf('Total Hours Worked This Pay Period')===0){inJT=false;continue;}
+    if(inJT&&curEmp){
+      const jm=/^(\d+) - ([A-Za-z][A-Za-z ]*?)\s+([\d.,]+(?:\s+[\d.,]+){2,4})$/.exec(ln);
+      if(jm){const job=jm[2].trim();const nums=jm[3].split(/\s+/).map(x=>parseFloat(x.replace(/,/g,'')));
+        if(nums.length>=3){const reg=nums[0],otpay=nums[nums.length-2],regpay=nums[nums.length-3],ot=nums.length===5?nums[1]:0,rate=reg?Math.round(regpay/reg*10000)/10000:0;
+          people[curEmp].jobs[job]={reg:Math.round(reg*100)/100,ot:Math.round(ot*100)/100,rate};}continue;}
+    }
+    const bm=/^102 - Busser IN \w+ (\d+\/\d+\/\d+) (\d+:\d+(?:am|pm))/.exec(ln);
+    if(bm&&curEmp){const p=bm[1].split('/');pend={md:(+p[0])+'/'+(+p[1]),indec:tipsClockDec(bm[2])};continue;}
+    if(pend&&ln.indexOf('OUT')===0){const om=/(\d+:\d+(?:am|pm))\s*([\d.]+)/.exec(ln);
+      if(om&&pend.indec!=null){let o=tipsClockDec(om[1]);if(o!=null){if(o<pend.indec)o+=24;const a=Math.max(0,o-Math.max(pend.indec,15.5));if(a>0)shifts.push({name:curName,md:pend.md,after330:Math.round(a*10000)/10000});}}pend=null;continue;}
+  }
+  return {people,shifts};
+}
+function tipsComputeBusserSplit(shifts,log){
+  const mds=new Set(shifts.map(s=>s.md)),pool={};
+  (log||[]).forEach(e=>{const d=(e&&e.date)||'',p=d.split('/');if(p.length!==3)return;const md=(+p[0])+'/'+(+p[1]);if(!mds.has(md))return;
+    const bp=(e.pools&&e.pools.busser)||0,cur=pool[md];
+    if(!cur||((!e.draft)&&cur.draft)||(((!e.draft)===(!cur.draft))&&String(e.savedAt||'')>String(cur.savedAt||'')))pool[md]={busser:bp,draft:e.draft,savedAt:e.savedAt||''};});
+  const byDay={},split={};
+  [...mds].sort().forEach(md=>{const poolv=(pool[md]&&pool[md].busser)||0;if(!poolv)return;
+    const day={};shifts.forEach(s=>{if(s.md===md)day[s.name]=(day[s.name]||0)+s.after330;});
+    const tot=Object.values(day).reduce((a,b)=>a+b,0);if(tot<=0)return;
+    const amts={};Object.keys(day).forEach(nm=>amts[nm]=Math.round(poolv*day[nm]/tot*100)/100);
+    const resid=Math.round((poolv-Object.values(amts).reduce((a,b)=>a+b,0))*100)/100;
+    if(resid&&Object.keys(amts).length){const big=Object.keys(amts).reduce((a,b)=>amts[a]>=amts[b]?a:b);amts[big]=Math.round((amts[big]+resid)*100)/100;}
+    byDay[md]=amts;Object.keys(amts).forEach(nm=>split[nm]=Math.round(((split[nm]||0)+amts[nm])*100)/100);});
+  return {split,byDay};
+}
+function tipsMergeMicros(people,split,byDay){
+  if(!tipsState.hours)tipsState.hours={};if(!tipsState.empIds)tipsState.empIds={};
+  Object.keys(tipsState.hours).forEach(nm=>{const h=tipsState.hours[nm];Object.keys(h).forEach(j=>{if((h[j]||{}).src==='rest')delete h[j];});if(!Object.keys(h).length)delete tipsState.hours[nm];});   // idempotent: drop old restaurant rows, keep weddings
+  const map={};let n=0;
+  Object.keys(people).forEach(eid=>{const mname=people[eid].name;if(/private\s*party|\bpool\b/i.test(mname))return;   // "Private Party" is not a person
+    const fname=tipCanon(mname);map[mname]=fname;n++;
+    if(!tipsState.hours[fname])tipsState.hours[fname]={};
+    const jobs=people[eid].jobs;Object.keys(jobs).forEach(job=>{const d=jobs[job];const e={h:d.reg,r:d.rate,src:'rest'};if(d.ot)e.o=d.ot;tipsState.hours[fname][job]=e;});
+    if(eid&&!tipsState.empIds[fname])tipsState.empIds[fname]=String(eid);});
+  const sp={},bd={};
+  Object.keys(split).forEach(mn=>{const fn=map[mn]||tipCanon(mn);sp[fn]=Math.round(((sp[fn]||0)+split[mn])*100)/100;});
+  Object.keys(byDay).forEach(md=>{bd[md]={};Object.keys(byDay[md]).forEach(mn=>{const fn=map[mn]||tipCanon(mn);bd[md][fn]=Math.round(((bd[md][fn]||0)+byDay[md][mn])*100)/100;});});
+  tipsState.busserSplit=sp;tipsState.busserSplitByDay=bd;
+  return n;
+}
+async function tipsImportTimesheet(input){
   const f=input&&input.files&&input.files[0];if(!f){return;}
+  input.value='';
   tipsSetStatus('Reading '+f.name+'…','var(--text-dim)');
-  const r=new FileReader();
-  r.onload=function(){try{const b64=String(r.result||'').split(',').pop();kvPush('ct_timesheet_'+tipPeriodKey(),{name:f.name,at:Date.now(),size:f.size,data:b64},Date.now());tipsSetStatus('📄 '+f.name+' uploaded ✓ — importing hours & tips',' #34d399');}catch(e){tipsSetStatus('⚠ upload failed','#f87171');}};
-  r.onerror=function(){tipsSetStatus('⚠ could not read file','#f87171');};
-  r.readAsDataURL(f);input.value='';
+  try{
+    const buf=await f.arrayBuffer();
+    tipsSetStatus('Parsing the timesheet…','var(--text-dim)');
+    const lines=await tipsExtractPdfLines(buf);
+    const {people,shifts}=tipsParseMicros(lines);
+    if(!Object.keys(people).length){tipsSetStatus('⚠ no employees found — is this the MICROS time-card PDF?','#f87171');return;}
+    let log=[];try{const r=await fetch(TIPS_LOG_URL+'?key='+encodeURIComponent(TIPS_LOG_KEY));log=(await r.json()).log||[];}catch(e){}
+    const {split,byDay}=tipsComputeBusserSplit(shifts,log);
+    const n=tipsMergeMicros(people,split,byDay);
+    tipsSaveHoursSoon();
+    try{kvPush('ct_emp_ids',{emp:tipsState.empIds},Date.now());}catch(e){}
+    if(activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();
+    const stot=Object.values(split).reduce((a,b)=>a+b,0),nb=Object.keys(split).length;
+    tipsSetStatus('✓ imported '+n+' employees'+(nb?(' + busser split $'+stot.toFixed(2)+' across '+nb):'')+' — saved',' #34d399');
+  }catch(e){tipsSetStatus('⚠ import failed: '+(e&&e.message||e),'#f87171');}
 }
 function tipsImportBtnHTML(){return `<label title="Import the MICROS timesheet PDF" style="background:#7c3aed;border:none;color:#fff;font-weight:700;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px;display:inline-flex;align-items:center;gap:5px;white-space:nowrap">📄 Import timesheet<input type="file" accept="application/pdf,.pdf" onchange="tipsImportTimesheet(this)" style="display:none"></label>`;}
 // ── Paychex wide CSV (the format from ~/Desktop/Payroll/*/PAYCHEX COMBINED…WITH NAMES.csv) ──
