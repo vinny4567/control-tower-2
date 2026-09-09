@@ -4640,15 +4640,15 @@ function wedPlanPng(fe,scale){
       const lines=it.label?String(it.label).split(/\s*\n\s*/).slice(0,2):[];
       // Lift the label half a line when a count sits beneath it, so the pair stays
       // optically centred in the table instead of riding high.
-      const off=seatN?-7:0;
+      const off=seatN?-9:0;
       lines.forEach((line,i,all)=>g.fillText(line,0,off+(i-(all.length-1)/2)*13));
       if(seatN){
-        const base=off+((lines.length?lines.length-1:0)/2)*13+(lines.length?15:0);
-        g.font='600 10px system-ui';g.fillStyle='#444';
+        const base=off+((lines.length?lines.length-1:0)/2)*13+(lines.length?19:0);
+        g.font='700 14px system-ui';g.fillStyle='#222';
         // Spell it out where there is room. On a narrow table the bare number beats
         // "8 gues…", and the number is what a room-setter counts anyway.
         const n=parseInt(seatN,10);
-        g.fillText(w>=78&&Number.isFinite(n)?(n+' guest'+(n===1?'':'s')):seatN,0,base);
+        g.fillText(w>=104&&Number.isFinite(n)?(n+' guest'+(n===1?'':'s')):seatN,0,base);
       }
     }
     g.restore();
