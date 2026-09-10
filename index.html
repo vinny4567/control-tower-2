@@ -6734,6 +6734,58 @@ function posClassTogglePrinter(enc,printer){
   c.printers=c.printers.includes(printer)?c.printers.filter(p=>p!==printer):[...c.printers,printer];
   posSaveClasses();
 }
+// ── PUBLISH TO THE REGISTERS ─────────────────────────────────────────────────
+// The registers keep menu.js as their base; this page holds the edits and resolves them
+// onto it one cell at a time as the table draws. Nothing anywhere held the FINISHED menu,
+// which is why a price typed here reached the iPads only by a human copying it into a chat.
+//
+// This publishes what the editor already resolved. It deliberately does NOT rebuild the
+// menu — it emits only the DIFFERENCES from the file each register already ships with. The
+// file stays the source of truth for structure; this carries the edits. That keeps it to a
+// few hundred bytes instead of 300KB, and it means a register that cannot reach the mini
+// still rings the menu it was built with rather than nothing at all.
+//
+// The resolvers are REUSED, never reimplemented (posPriceOf, posRoutedTo). A second copy of
+// that logic is exactly how the two drift apart, which is the problem being fixed here.
+const POS_LIVE_KEY='ct_pos_live';
+function posBuildLive(){
+  const rows=posAllRows(), items={};
+  for(const r of rows){
+    if(!r||!r.key)continue;
+    const o={};
+    if(posEntered(r)&&posPriceOf(r)!==r.cents)o.cents=posPriceOf(r);
+    if(posRerouted(r))o.printers=posRoutedTo(r)||[];
+    if(Object.keys(o).length)items[r.key]=o;
+  }
+  return {
+    v:1, at:Date.now(),
+    base:(posS.cat&&posS.cat.generated_at)||null,   // which catalog snapshot these sit on
+    items,
+    deleted:(posDeletedItems||[]).slice(),
+    added:(posNewItems||[]).map(i=>({cat:i.cat,name:i.name,cents:i.cents||0})),
+  };
+}
+// kvPush is debounced and fire-and-forget, which is right for an edit and wrong for a
+// deliberate Publish — the operator needs to know it landed. This awaits the response.
+async function posPublishSend(blob){
+  const r=await fetch(KV_URL+encodeURIComponent(POS_LIVE_KEY)+'?token='+encodeURIComponent(KV_TOKEN()),
+    {method:'POST',headers:{'Content-Type':'application/json'},
+     body:JSON.stringify({v:blob,at:blob.at})});
+  if(!r.ok)throw new Error('server said '+r.status);
+  return true;
+}
+async function posPublish(){
+  if(!KV_TOKEN()){alert('No sync key on this device — open ⚙ and paste it first.');return}
+  const blob=posBuildLive();
+  const n=Object.keys(blob.items).length+blob.deleted.length+blob.added.length;
+  posS.publishing=true;posS.publishErr=null;renderViewport();
+  try{
+    await posPublishSend(blob);
+    posS.published=Date.now();posS.publishedCount=n;
+  }catch(e){ posS.publishErr=String((e&&e.message)||e); }
+  posS.publishing=false;renderViewport();
+}
+
 const posRoutedTo=(r)=>Object.prototype.hasOwnProperty.call(posRouting,r.key)
   ?posRouting[r.key]:(r.printers||[]);
 const posRerouted=(r)=>Object.prototype.hasOwnProperty.call(posRouting,r.key);
@@ -7268,7 +7320,16 @@ function posItemsHTML(){
   ${posPendingCount()?`<div style="border:1px solid #f59e0b;border-radius:12px;background:rgba(245,158,11,0.10);padding:12px 16px;margin-bottom:14px">
     <div style="font-weight:800;font-size:14px;color:#f59e0b">${posPendingCount()===1?'1 change made here is':posPendingCount()+' changes made here are'} NOT live on the iPads</div>
     <div style="font-size:13px;color:var(--text-dim);margin-top:3px">Prices, print routing and mod groups are saved and synced across your devices, but the register still runs off the menu file.</div>
-    <div style="font-size:12px;color:var(--text-muted);margin-top:6px">Tap <b>Copy for Claude</b> above, then paste it into the chat.</div>
+    <div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <button onclick="posPublish()" ${posS.publishing?'disabled':''}
+        style="border:0;background:#f59e0b;color:#111;font-weight:800;border-radius:9px;padding:8px 16px;
+          font-family:inherit;font-size:14px;cursor:pointer;${posS.publishing?'opacity:.6':''}">
+        ${posS.publishing?'Publishing…':'📤 Publish to registers'}</button>
+      <span style="font-size:12px;color:var(--text-muted)">${
+        posS.publishErr?`<span style="color:#f87171">Failed — ${esc(posS.publishErr)}</span>`
+        :posS.published?`Published ${posS.publishedCount} change${posS.publishedCount===1?'':'s'} — registers pick it up within a minute.`
+        :'Sends these edits to the mini, which serves them to every register.'}</span>
+    </div>
   </div>`:''}
   <div style="${posCardCss}">
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
