@@ -6433,7 +6433,7 @@ function posRemoveNewItem(encCat,encName){
 }
 // Choices taken OUT of a group. These live in the register's menu files, so removing
 // one here records the removal and strikes it through — it is still on the iPads
-// until Claude applies it, and hiding it would have the page disagree with what a
+// until it is published, and hiding it would have the page disagree with what a
 // server sees.
 let posChoiceCuts={};     // groupKey -> [choiceName]
 // Renamed food mods. The Micros names are verbatim and often awful — 'SLCD itl
@@ -6442,7 +6442,7 @@ let posChoiceCuts={};     // groupKey -> [choiceName]
 let posModNames={};       // oldName -> newName
 // Mod groups marked for deletion. A group lives in the register's menu files and is
 // attached to real items, so deleting one here records it and marks the card — it is
-// still asking a server for an answer until Claude applies it.
+// still asking a server for an answer until it is published.
 let posDeletedGroups=[];  // [groupKey]
 function posDeleteGroup(encKey,encName,used){
   const k=decodeURIComponent(encKey), name=decodeURIComponent(encName);
@@ -6451,7 +6451,7 @@ function posDeleteGroup(encKey,encName,used){
   }else{
     const n=Number(used)||0;
     const warn=n?`\n\nIt is on ${n} item${n===1?'':'s'} — they will stop asking it.`:'';
-    if(!confirm(`Delete the \u201c${name}\u201d group?${warn}\n\nIt stays on the iPads until Claude applies this.`))return;
+    if(!confirm(`Delete the \u201c${name}\u201d group?${warn}\n\nIt stays on the iPads until you Publish.`))return;
     posDeletedGroups=[...posDeletedGroups,k];
   }
   kvPush('ct_pos_deleted_groups',posDeletedGroups,Date.now());
@@ -6506,7 +6506,7 @@ function posDeleteMod(encKey,encName){
   if(posDeletedMods.includes(key)){
     posDeletedMods=posDeletedMods.filter(k=>k!==key);
   }else{
-    if(!confirm(`Mark “${name}” for deletion?\n\nIt stays on the iPads until Claude applies it.`))return;
+    if(!confirm(`Mark “${name}” for deletion?\n\nIt stays on the iPads until you Publish.`))return;
     posDeletedMods=[...posDeletedMods,key];
   }
   kvPush('ct_pos_deleted_mods',posDeletedMods,Date.now());
@@ -6533,7 +6533,7 @@ function posDeleteItem(encKey,encName){
   if(posDeletedItems.includes(key)){
     posDeletedItems=posDeletedItems.filter(k=>k!==key);
   }else{
-    if(!confirm(`Delete “${name}” from the menu?\n\nIt stays on the iPads until Claude applies it.`))return;
+    if(!confirm(`Delete “${name}” from the menu?\n\nIt stays on the iPads until you Publish.`))return;
     posDeletedItems=[...posDeletedItems,key];
   }
   kvPush('ct_pos_deleted_items',posDeletedItems,Date.now());
@@ -7305,21 +7305,18 @@ function posItemsHTML(){
     ${posStat('No price',String(posNoPriceNow()),'priced items still at $0')}
 
     <div style="${posCardCss};padding:14px 16px;min-width:150px;flex:1;position:relative;
-        border-color:${posPendingCount()?'#22c55e':'var(--border)'};
-        background:${posPendingCount()?'rgba(34,197,94,0.10)':'var(--surface)'}">
-      <div onclick="posCopyChanges()" title="Copy every change made here, to paste to Claude" style="cursor:pointer">
-        <div style="font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.6px">Copy for Claude</div>
-        <div style="font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;margin-top:4px;color:${posPendingCount()?'#22c55e':'var(--text-muted)'}">${posPendingCount()}</div>
-        <div id="pos-copy-note" style="font-size:12px;color:var(--text-dim);margin-top:2px">${posPendingCount()?'tap to copy, then paste to Claude':'nothing changed yet'}</div>
-      </div>
-      ${posPendingCount()?`<button onclick="event.stopPropagation();posClearChanges()" title="Throw away every pending change"
-        style="position:absolute;top:10px;right:12px;border:1px solid var(--border);background:transparent;
-          color:var(--text-muted);border-radius:7px;padding:3px 9px;font-family:inherit;font-size:12px;cursor:pointer">clear</button>`:''}
+        border-color:${posPendingCount()?'#f59e0b':'var(--border)'};
+        background:${posPendingCount()?'rgba(245,158,11,0.10)':'var(--surface)'}">
+        <div style="font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.6px">Unpublished</div>
+        <div style="font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;margin-top:4px;color:${posPendingCount()?'#f59e0b':'var(--text-muted)'}">${posPendingCount()}</div>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:2px">${posPendingCount()?'edits not yet on the registers':'everything is published'}</div>
+        ${posPendingCount()?`<button onclick="event.stopPropagation();posClearChanges()" title="Throw away every pending change"
+          style="position:absolute;top:10px;right:12px;border:1px solid var(--border);background:transparent;
+            color:var(--text-muted);border-radius:7px;padding:3px 9px;font-family:inherit;font-size:12px;cursor:pointer">clear</button>`:''}
     </div>
-  </div>
   ${posPendingCount()?`<div style="border:1px solid #f59e0b;border-radius:12px;background:rgba(245,158,11,0.10);padding:12px 16px;margin-bottom:14px">
-    <div style="font-weight:800;font-size:14px;color:#f59e0b">${posPendingCount()===1?'1 change made here is':posPendingCount()+' changes made here are'} NOT live on the iPads</div>
-    <div style="font-size:13px;color:var(--text-dim);margin-top:3px">Prices, print routing and mod groups are saved and synced across your devices, but the register still runs off the menu file.</div>
+    <div style="font-weight:800;font-size:14px;color:#f59e0b">${posPendingCount()===1?'1 edit':posPendingCount()+' edits'} in the back office</div>
+    <div style="font-size:13px;color:var(--text-dim);margin-top:3px">Prices, print routing and deletions reach the registers when you publish. Mod groups and choice edits are not carried yet.</div>
     <div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <button onclick="posPublish()" ${posS.publishing?'disabled':''}
         style="border:0;background:#f59e0b;color:#111;font-weight:800;border-radius:9px;padding:8px 16px;
@@ -7395,7 +7392,7 @@ function posPendingCount(){
 function posClearChanges(){
   const n=posPendingCount(); if(!n)return;
   if(!confirm(`Throw away ${n} pending change${n===1?'':'s'}?\n\nThey have not reached the iPads, so this cannot be undone.`))return;
-  if(n>=5&&!confirm(`Really discard all ${n}? Copy them for Claude first if you want them applied.`))return;
+  if(n>=5&&!confirm(`Really discard all ${n}? Publish them first if you want them on the registers.`))return;
   posPrices={};posRouting={};posGroupMods={};posNewGroups=[];posGroupAttach={};
   posNewClasses=[];posNewMods=[];posGroupNames={};posGroupDetach={};
   posChoiceCuts={};posModLetters={};posDeletedMods=[];posModNames={};posDeletedGroups=[];
@@ -7410,108 +7407,6 @@ function posClearChanges(){
   posRedraw();
 }
 
-function posCopyChanges(){
-  const note=()=>document.getElementById('pos-copy-note');
-  if(!posPendingCount()){const n=note();if(n)n.textContent='nothing changed yet';return;}
-  const c=posS.cat||{items:[]};
-  const byKey={};for(const r of c.items)byKey[r.key]=r;
-  const L=[];
-  const P=Object.entries(posPrices);
-  if(P.length){L.push('PRICES');for(const [k,cents] of P.sort()){const r=byKey[k];
-    L.push(`  ${r?r.cat:'?'} | ${r?r.name:k} | ${(cents/100).toFixed(2)}`);}}
-  const R=Object.entries(posRouting);
-  if(R.length){L.push('','PRINT ROUTING');for(const [k,ps] of R.sort()){const r=byKey[k];
-    L.push(`  ${r?r.cat:'?'} | ${r?r.name:k} | ${ps.length?ps.join(', '):'(nowhere)'}`);}}
-  if(posDeletedGroups.length){L.push('','MOD GROUPS TO DELETE');
-    for(const k of posDeletedGroups){const g=posNewGroups.find(x=>x.key===k)
-      ||(c.mod_groups||[]).find(x=>String(x.num)===k||('n:'+x.name)===k);
-      L.push(`  ${g?g.name:k}${g&&g.used_by?` (on ${g.used_by.length} items)`:''}`);}}
-  const MN=Object.entries(posModNames);
-  if(MN.length){L.push('','RENAMED');
-    for(const [k,n] of MN){const r=byKey[k];
-      L.push(`  ${r?r.cat:'?'} | ${r?r.name:k} → ${n}`);}}
-  const CC=Object.entries(posChoiceCuts);
-  if(CC.length){L.push('','CHOICES REMOVED FROM GROUPS');
-    for(const [k,names] of CC){const g=posNewGroups.find(x=>x.key===k)
-      ||(c.mod_groups||[]).find(x=>String(x.num)===k||('n:'+x.name)===k);
-      L.push(`  ${g?g.name:k}: ${names.join(', ')}`);}}
-  const SA=Object.entries(posSectionAdds).filter(([,v])=>v.length);
-  if(SA.length){L.push('','EXISTING ITEMS TO SHOW IN ANOTHER SECTION');
-    for(const [ct,names] of SA)for(const n of names){
-      const src=(c.items||[]).find(i=>i.cat!=='Food Mods'&&i.name===n);
-      L.push(`  ${ct}: ${n}${src?' (lives in '+src.cat+')':''}`);}}
-  if(posNewItems.length){L.push('','NEW MENU ITEMS');
-    for(const i of posNewItems)L.push(`  ${i.cat} | ${i.name}${i.cents?' | '+(i.cents/100).toFixed(2):' | no price yet'}`);}
-  if(posDeletedItems.length){L.push('','MENU ITEMS TO DELETE');
-    const bk={};for(const i of (c.items||[]))bk[i.key]=i;
-    for(const k of posDeletedItems){const i=bk[k];
-      L.push('  '+(i?`${i.cat} | ${i.name}${i.cents?' | $'+(i.cents/100).toFixed(2):''}`:k));}}
-  if(posDeletedMods.length){L.push('','FOOD MODS TO DELETE');
-    const byKey={};for(const i of ((posS.cat&&posS.cat.items)||[]))byKey[i.key]=i;
-    for(const k of posDeletedMods){
-      const i=byKey[k];
-      if(!i){L.push('  '+k);continue}
-      // A name is no longer enough to say which row — spell out where it lives.
-      const where=i.source==='choice'
-        ? `${i.prompt||'?'} group${i.cents?' · $'+(i.cents/100).toFixed(2):''}, on ${(i.usedBy||[]).join(', ')||'nothing'}`
-        : `letter ${i.letter||'—'}, micros #${i.num}`;
-      L.push('  '+i.name+'   ['+k+']   '+where);
-    }}
-  const ML=Object.entries(posModLetters);
-  if(ML.length){L.push('','FILED UNDER A DIFFERENT LETTER');
-    for(const [n,v] of ML)L.push(`  ${n} → ${v}`);}
-  const DT=Object.entries(posGroupDetach);
-  if(DT.length){L.push('','GROUPS REMOVED FROM');
-    for(const [k,items] of DT){const g=posNewGroups.find(x=>x.key===k)
-      ||(c.mod_groups||[]).find(x=>String(x.num)===k||('n:'+x.name)===k);
-      L.push(`  ${g?g.name:k}: ${items.join(', ')}`);}}
-  const RN=Object.entries(posGroupNames);
-  if(RN.length){L.push('','RENAMED GROUPS');
-    for(const [k,v] of RN){const g=posNewGroups.find(x=>x.key===k)
-      ||(c.mod_groups||[]).find(x=>String(x.num)===k||('n:'+x.name)===k);
-      L.push(`  ${g?g.name:k} → ${v}`);}}
-  if(posNewMods.length){L.push('','NEW FOOD MODS');
-    for(const m of posNewMods)L.push(`  ${m.name} | ${m.cents?(m.cents/100).toFixed(2):'free'}`);}
-  if(posNewClasses.length){L.push('','NEW PRINT CLASSES');
-    for(const pc of posNewClasses)L.push(`  ${pc.name} | ${pc.printers.join(', ')||'(no printers picked)'}`);}
-  if(posNewGroups.length){L.push('','NEW GROUPS');
-    for(const g of posNewGroups)L.push(`  ${g.name} | ${g.required?'required':'optional'}`);}
-  const M=Object.entries(posGroupMods);
-  const IO=Object.entries(posItemGroupOrder).filter(([,v])=>v&&v.length);
-  if(IO.length){L.push('','GROUP ORDER ON ITEMS (what the register asks first)');
-    const byKey={};for(const i of (c.items||[]))byKey[i.key]=i;
-    for(const [k,names] of IO){const it=byKey[k];
-      L.push(`  ${it?it.cat+' | '+it.name:k}: ${names.join(' → ')}`);}}
-  const CO=Object.entries(posChoiceOrder).filter(([,v])=>v&&v.length);
-  if(CO.length){L.push('','CHOICE ORDER (the Optional Entry screen)');
-    for(const [k,names] of CO){const g=posNewGroups.find(x=>x.key===k)
-      ||(c.mod_groups||[]).find(x=>String(x.num)===k||('n:'+x.name)===k);
-      L.push(`  ${g?g.name:k}: ${names.join(', ')}`);}}
-  const CE=Object.entries(posChoiceEdits).filter(([,v])=>Object.keys(v).length);
-  if(CE.length){L.push('','CHOICES CHANGED IN GROUPS');
-    for(const [k,map] of CE){const g=posNewGroups.find(x=>x.key===k)
-      ||(c.mod_groups||[]).find(x=>String(x.num)===k||('n:'+x.name)===k);
-      for(const [was,now] of Object.entries(map))
-        L.push(`  ${g?g.name:k}: ${was} → ${now.name}${now.cents?' | '+(now.cents/100).toFixed(2):' | free'}`);}}
-  if(M.length){L.push('','CHOICES ADDED TO GROUPS');
-    for(const [k] of M){const g=posNewGroups.find(x=>x.key===k)
-      ||(c.mod_groups||[]).find(x=>String(x.num)===k);
-      // Name and price, since a group's choices are its own now and the price does
-      // not come from a food mod of the same name any more.
-      const list=posAddedTo(k).map(m=>m.name+(m.cents?' | '+(m.cents/100).toFixed(2):''));
-      L.push(`  ${g?g.name:k}: ${list.join(', ')}`);}}
-  const A=Object.entries(posGroupAttach);
-  if(A.length){L.push('','GROUPS ATTACHED TO');
-    for(const [k,a] of A){const g=posNewGroups.find(x=>x.key===k)
-      ||(c.mod_groups||[]).find(x=>String(x.num)===k);
-      const bits=[...a.cats.map(x=>'all '+x),...a.items];
-      L.push(`  ${g?g.name:k}: ${bits.join(', ')}`);}}
-  const text='WATCH TOWER — PENDING POS CHANGES\n'+L.join('\n');
-  const done=(ok)=>{const n=note();if(n)n.textContent=ok?'copied — paste it to Claude':'could not copy';};
-  if(navigator.clipboard&&navigator.clipboard.writeText){
-    navigator.clipboard.writeText(text).then(()=>done(true)).catch(()=>done(false));
-  }else done(false);
-}
 
 function posNoPriceNow(){
   const c=posS.cat; if(!c)return 0;
