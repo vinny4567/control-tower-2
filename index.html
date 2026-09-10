@@ -8890,6 +8890,16 @@ function switchTab(id){
   if(activeTab===DOCS&&id!==DOCS)docsFlush();
   if(activeTab===WED&&id!==WED)wedFlush();
   activeTab=id;cfg.activeTab=id;saveCfg();renderAll();
+  loadTabData(id);
+}
+
+// What a tab needs to FETCH when it becomes visible. Split out of switchTab because the
+// page restores your last tab at boot (activeTab = cfg.activeTab) and renders it — without
+// ever calling switchTab. So the loading that lives here never ran on a reload: leave the
+// Watch Tower on the POS tab, reload, and the item database says "Loading…" for ever
+// because nothing ever asked for it. Every tab had the same hole; POS is just where it is
+// most visible, since the others mostly show something stale rather than nothing.
+function loadTabData(id){
   if(id===DASH){loadCateringOrders();loadLiveOrders();}
   if(id===WED){wed.view='list';wedFetchFeed();wedPullSync();wedMetaPull();}
   if(id===LIQ){liqPull();}
@@ -9085,6 +9095,8 @@ function applyTheme(light){document.body.classList.toggle('light',light);documen
 function toggleTheme(){const light=!document.body.classList.contains('light');localStorage.setItem('angeli_tower_theme',light?'light':'dark');applyTheme(light)}
 applyTheme(localStorage.getItem('angeli_tower_theme')==='light');
 renderAll();
+// The restored tab needs its data too — see loadTabData.
+loadTabData(activeTab);
 // Preload data for whichever tab is active on launch — a REFRESH must behave like switching to the
 // tab (the sync pulls used to run only on switchTab, so a reload landing on a tab showed stale/empty
 // synced data — that's how a linked customer email "disappeared" on refresh).
