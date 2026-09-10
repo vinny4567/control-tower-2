@@ -6095,9 +6095,24 @@ const posBaseUrl=(u)=>(u||'').replace(/\/+$/,'');
 const posMixedFor=(u)=>location.protocol==='https:'&&/^http:\/\//i.test(u||'')&&!/^http:\/\/(localhost|127\.0\.0\.1)/i.test(u||'');
 const posMixed=()=>posMixedFor(posS.url);
 
+// The session token, held here rather than relied on as a cookie.
+//
+// This page is served from github.io and the portal runs on a tailnet address, so to a
+// browser the CRM's cookie is THIRD-PARTY — and Safari blocks those outright however
+// correctly SameSite and Secure are set. The tab looked signed out on every single load
+// even with hours left on the session. A token this page holds and sends itself is not a
+// cookie and nothing blocks it.
+//
+// credentials:'include' stays, so a browser that DOES keep the cookie carries on using it;
+// this is a second way in, not a replacement.
+const POS_TOK_KEY='ct_pos_token';
+const posToken=()=>{try{return localStorage.getItem(POS_TOK_KEY)||''}catch(e){return ''}};
+const posSetToken=(t)=>{try{t?localStorage.setItem(POS_TOK_KEY,t):localStorage.removeItem(POS_TOK_KEY)}catch(e){}};
+
 async function posFetch(base,path,opts){
   const o=Object.assign({credentials:'include',headers:{}},opts||{});
   if(o.method==='POST'){o.headers['content-type']='application/json';o.headers['x-crm']='1'}
+  const tk=posToken(); if(tk)o.headers['authorization']='Bearer '+tk;
   const r=await fetch(posBaseUrl(base)+path,o);
   let body=null;try{body=await r.json()}catch(_){}
   return{ok:r.ok,status:r.status,body:body||{}};
@@ -8153,11 +8168,14 @@ async function posLogin(){
   posS.busy=true;posS.err='';renderViewport();
   try{
     const r=await posApi('/api/login',{method:'POST',body:JSON.stringify({username:u,password:p})});
+    // Cross-site logins come back with a token because the cookie will not survive. Keep it;
+    // a same-origin login returns none and the cookie does the work.
+    if(r.ok&&r.body&&r.body.token)posSetToken(r.body.token);
     if(r.ok){posS.me=r.body;await posLoadDash()}else posS.err=r.body.error||('sign in failed ('+r.status+')');
   }catch(e){posS.err=String(e&&e.message||e)}
   posS.busy=false;renderViewport();
 }
-async function posLogout(){try{await posApi('/api/logout',{method:'POST'})}catch(_){}posS.me=null;posS.dash=null;posS.card=null;posS.cust=null;renderViewport()}
+async function posLogout(){try{await posApi('/api/logout',{method:'POST'})}catch(_){}posSetToken('');posS.me=null;posS.dash=null;posS.card=null;posS.cust=null;renderViewport()}
 async function posFindCard(){const q=((document.getElementById('pos-card')||{}).value||'').trim();if(!q)return;
   const r=await posApi('/api/card?q='+encodeURIComponent(q));posS.card=r.body;renderViewport()}
 async function posFindCust(){const q=((document.getElementById('pos-cust')||{}).value||'').trim();if(!q)return;
