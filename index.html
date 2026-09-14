@@ -6778,6 +6778,9 @@ function posBuildLive(){
     items,
     deleted:(posDeletedItems||[]).slice(),
     added:(posNewItems||[]).map(i=>({cat:i.cat,name:i.name,cents:i.cents||0})),
+    // Mod groups travel now — their choices, their names, and what they are attached
+    // to. The register applies them over its built-in menu the same way it does a price.
+    ...posBuildGroups(),
   };
 }
 // kvPush is debounced and fire-and-forget, which is right for an edit and wrong for a
@@ -6792,7 +6795,9 @@ async function posPublishSend(blob){
 async function posPublish(){
   if(!KV_TOKEN()){alert('No sync key on this device — open ⚙ and paste it first.');return}
   const blob=posBuildLive();
-  const n=Object.keys(blob.items).length+blob.deleted.length+blob.added.length;
+  const n=Object.keys(blob.items).length+blob.deleted.length+blob.added.length
+    +Object.keys(blob.groups||{}).length+Object.keys(blob.attach||{}).length
+    +Object.keys(blob.detach||{}).length+(blob.gone||[]).length;
   posS.publishing=true;posS.publishErr=null;renderViewport();
   try{
     await posPublishSend(blob);
@@ -7406,6 +7411,69 @@ function posPendingCount(){
     +posDeletedGroups.length;
 }
 
+// A GROUP AS THE REGISTER SHOULD SEE IT — base choices with every pending edit already
+// worked in: renames and reprices applied, cuts removed, additions folded in, and the
+// whole thing in the order the chips are sitting in.
+//
+// The RESOLVED list is what travels, not the edits. The register would otherwise have to
+// reimplement all of this to get the same answer, and two copies of "what does this group
+// hold now" is two answers waiting to disagree over somebody's dinner.
+function posResolveGroup(g){
+  const k=String(posGroupKey(g));
+  const edits=posChoiceEdits[k]||{};
+  const cuts=posCutsFor(k);
+  const order=posChoiceOrder[k]||null;
+  let items=[
+    ...(g.choices||[]).filter(c=>!cuts.includes(c.name)).map(c=>{
+      const e=edits[c.name];
+      return { key:c.name, name:e?e.name:c.name, cents:(e?e.cents:c.cents)||0 };
+    }),
+    ...posAddedTo(k).map(m=>({ key:m.name, name:m.name, cents:m.cents||0 })),
+  ];
+  if(order){
+    const at=(x)=>{const i=order.indexOf(x.key);return i<0?9999:i};
+    items=items.map((x,i)=>[x,i]).sort((a,b)=>at(a[0])-at(b[0])||a[1]-b[1]).map(([x])=>x);
+  }
+  return {
+    key:k,
+    name:posGroupNames[k]||g.name,
+    required:!!g.required, multi:!!g.multi, qty:!!g.qty, screen:g.screen||null,
+    choices:items.map(x=>({name:x.name,cents:x.cents})),
+  };
+}
+
+// Every group the back office has changed, resolved — plus who it was put on and taken
+// off. A group with nothing pending is left out: the register already has it right.
+function posBuildGroups(){
+  const touched=new Set([
+    ...Object.keys(posGroupMods), ...Object.keys(posChoiceEdits), ...Object.keys(posChoiceCuts),
+    ...Object.keys(posChoiceOrder), ...Object.keys(posGroupNames),
+    ...Object.keys(posGroupAttach), ...Object.keys(posGroupDetach),
+  ].map(String));
+  const live=(posS.cat&&posS.cat.mod_groups)||[];
+  const groups={}, attach={}, detach={};
+
+  for(const g of live){
+    const k=String(posGroupKey(g));
+    if(touched.has(k))groups[k]=posResolveGroup(g);
+  }
+  // Groups invented here have no live counterpart to resolve against.
+  for(const ng of (posNewGroups||[])){
+    const k=String(posGroupKey(ng));
+    groups[k]=posResolveGroup({...ng,choices:ng.choices||[]});
+  }
+  for(const k of Object.keys(posGroupAttach)){
+    const a=posGroupAttach[k]||{};
+    if((a.items||[]).length||(a.cats||[]).length)
+      attach[String(k)]={items:(a.items||[]).slice(),cats:(a.cats||[]).slice()};
+  }
+  for(const k of Object.keys(posGroupDetach)){
+    const d=posGroupDetach[k]||[];
+    if(d.length)detach[String(k)]=d.slice();
+  }
+  return { groups, attach, detach, gone:(posDeletedGroups||[]).map(String) };
+}
+
 // HOW MANY OF THOSE EDITS PUBLISH TODAY.
 //
 // posPendingCount counts twenty kinds of edit; posBuildLive carries four — a price, a
@@ -7417,7 +7485,9 @@ function posPendingCount(){
 // been written on the banner all along.
 function posPublishableCount(){
   const b=posBuildLive();
-  return Object.keys(b.items).length+b.deleted.length+b.added.length;
+  return Object.keys(b.items).length+b.deleted.length+b.added.length
+    +Object.keys(b.groups||{}).length+Object.keys(b.attach||{}).length
+    +Object.keys(b.detach||{}).length+(b.gone||[]).length;
 }
 
 // Getting everything typed here into the build. No token changes hands — the page
