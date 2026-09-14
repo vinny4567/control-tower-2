@@ -7324,7 +7324,11 @@ function posItemsHTML(){
         background:${posPendingCount()?'rgba(245,158,11,0.10)':'var(--surface)'}">
         <div style="font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.6px">Unpublished</div>
         <div style="font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;margin-top:4px;color:${posPendingCount()?'#f59e0b':'var(--text-muted)'}">${posPendingCount()}</div>
-        <div style="font-size:12px;color:var(--text-dim);margin-top:2px">${posPendingCount()?'edits not yet on the registers':'everything is published'}</div>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:2px">${posPendingCount()
+          ? (posPublishableCount()
+              ? posPublishableCount()+' of them will publish'
+              : 'none of these publish yet')
+          : 'everything is published'}</div>
         ${posPendingCount()?`<button onclick="event.stopPropagation();posClearChanges()" title="Throw away every pending change"
           style="position:absolute;top:10px;right:12px;border:1px solid var(--border);background:transparent;
             color:var(--text-muted);border-radius:7px;padding:3px 9px;font-family:inherit;font-size:12px;cursor:pointer">clear</button>`:''}
@@ -7332,7 +7336,9 @@ function posItemsHTML(){
   </div>
   ${posPendingCount()?`<div style="border:1px solid #f59e0b;border-radius:12px;background:rgba(245,158,11,0.10);padding:12px 16px;margin-bottom:14px">
     <div style="font-weight:800;font-size:14px;color:#f59e0b">${posPendingCount()===1?'1 edit':posPendingCount()+' edits'} in the back office</div>
-    <div style="font-size:13px;color:var(--text-dim);margin-top:3px">Prices, print routing and deletions reach the registers when you publish. Mod groups and choice edits are not carried yet.</div>
+    <div style="font-size:13px;color:var(--text-dim);margin-top:3px">${posPublishableCount()
+      ? 'Publishing sends '+posPublishableCount()+' of them — prices, print routing, deleted and new items. Mod groups, their choices and attachments are saved here but are not carried to the registers yet.'
+      : '<b>None of these can be published yet.</b> Publishing carries prices, print routing, deleted and new items. Mod groups, their choices and attachments are saved here and stay here until the register can read them.'}</div>
     <div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <button onclick="posPublish()" ${posS.publishing?'disabled':''}
         style="border:0;background:#f59e0b;color:#111;font-weight:800;border-radius:9px;padding:8px 16px;
@@ -7398,6 +7404,20 @@ function posPendingCount(){
     +Object.values(posSectionAdds).reduce((n,v)=>n+v.length,0)
     +Object.keys(posChoiceCuts).length+Object.keys(posModNames).length
     +posDeletedGroups.length;
+}
+
+// HOW MANY OF THOSE EDITS PUBLISH TODAY.
+//
+// posPendingCount counts twenty kinds of edit; posBuildLive carries four — a price, a
+// print route, a deleted item, a new item. Everything else (mod groups, their choices,
+// attachments, renames, letters) is real and saved and simply has nowhere to go yet.
+//
+// The two numbers being one number is what made Publish look broken: the card promised
+// 2 and the button reported 0, which reads as a failure rather than as a limit that has
+// been written on the banner all along.
+function posPublishableCount(){
+  const b=posBuildLive();
+  return Object.keys(b.items).length+b.deleted.length+b.added.length;
 }
 
 // Getting everything typed here into the build. No token changes hands — the page
