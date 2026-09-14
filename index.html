@@ -6200,7 +6200,7 @@ function posAllRows(){
 // showing this too meant every bottle appeared twice in the back office and twice in
 // the category picker. The screens are the real thing now; this is the shelf they are
 // drawn from.
-const POS_HIDDEN_CATS=new Set(['Wine']);
+const POS_HIDDEN_CATS=new Set(['Wine','DISCOUNTS']);
 
 function posItemRows(){
   const c=posS.cat;if(!c)return[];
@@ -7188,7 +7188,7 @@ function posItemsBodyHTML(){
   // three numbers in both places.
   const head=`<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;max-width:730px">
     <span style="width:330px">Item</span><span style="width:92px;text-align:right">Price</span>
-    <span style="width:210px;padding-left:14px">${posS.catFilter==='DISCOUNTS'?'Kind':'Prints at'}</span></div>`;
+    <span style="width:210px;padding-left:14px">Prints at</span></div>`;
   // Grouped under category headings rather than run together as one long list. The
   // menu HAS a shape — appetizers, then pasta, then the bar — and a flat list of 776
   // rows hides it. The heading carries the count and how many rows in it still need
@@ -7199,9 +7199,7 @@ function posItemsBodyHTML(){
   // named outright, since a list of one is just the name with extra steps.
   const rowHTML=r=>`<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:16px;align-items:baseline;max-width:${r.cat==='Food Mods'?'800px':'730px'}">
       <span style="width:330px;${(posModDeleted(r)||posItemDeleted(r))?'text-decoration:line-through;color:#ef4444':''}">${
-        r.source==='discount'
-        ? `<span style="font-weight:600">${esc(r.name)}</span>`
-        : `<span onclick="posRenameMod('${posEnc(r.key)}','${posEnc(r.name)}')"
+        `<span onclick="posRenameMod('${posEnc(r.key)}','${posEnc(r.name)}')"
             title="Rename — this is the button a server reads and what prints on the ticket"
             style="cursor:pointer;border-bottom:1px dotted var(--text-muted);${posModNames[r.key]?'color:#22c55e;font-weight:700':''}">${esc(posRowLabel(r))}</span>${
             posModNames[r.key]?`<span style="font-size:12px;color:var(--text-muted)"> was ${esc(r.name)}</span>`:''}`
@@ -7211,7 +7209,7 @@ function posItemsBodyHTML(){
           : posItemGroupsHTML(r)}</span>
       <span style="width:92px;text-align:right">${posPriceCell(r)}</span>
       <span style="width:210px;padding-left:14px">${posRouteCell(r)}</span>
-      ${r.cat!=='Food Mods'&&r.source!=='discount'?`<span style="width:34px;text-align:right">
+      ${r.cat!=='Food Mods'?`<span style="width:34px;text-align:right">
         <button onclick="posDeleteItem('${posEnc(r.key)}','${posEnc(r.name)}')"
           title="${posItemDeleted(r)?'keep it after all':'delete this menu item'}"
           style="border:none;background:transparent;color:#ef4444;cursor:pointer;font-family:inherit;
@@ -7464,7 +7462,6 @@ function posSetRoute(enc,id){
   posRerenderList();renderViewport();
 }
 function posRouteCell(r){
-  if(r.source==='discount')return posDiscountKind(r);
   // A modifier prints on the ticket of the item it modifies. It has no routing of
   // its own, so it gets no dropdown — and must not be shouted at in red for having
   // no printer, which is the correct state for it.
@@ -7549,27 +7546,7 @@ function posItemGroupsHTML(r){
     +`</div>`;
 }
 
-// A DISCOUNT IS NOT PRICED, IT IS RATED. The money column would otherwise read $0.00
-// on every one of them, which looks like a gap in the menu rather than what it is:
-// a rate Vinny has not set yet.
-function posDiscountRate(r){
-  const d=((posS.cat&&posS.cat.discounts)||[]).find(x=>x.name===r.name);
-  if(!d)return '<span style="color:var(--text-muted)">—</span>';
-  if(d.kind==='open')return '<span style="color:var(--text-dim);font-size:13px">typed</span>';
-  if(d.rate==null)return '<span style="color:#f59e0b;font-size:13px">not set</span>';
-  return d.kind==='percent'?esc((d.rate/100).toFixed(2))+'%':'$'+esc((d.rate/100).toFixed(2));
-}
-function posDiscountKind(r){
-  const d=((posS.cat&&posS.cat.discounts)||[]).find(x=>x.name===r.name);
-  if(!d)return '';
-  const k=d.kind==='open'?('open '+(d.unit==='percent'?'%':'$')):d.kind;
-  return `<span style="font-size:13px;color:var(--text-dim)">${esc(k)}</span>`
-    + (d.manager?' <span style="font-size:11px;font-weight:700;color:#a78bfa">manager</span>':'')
-    + (d.why?`<div style="font-size:12px;color:var(--text-muted)">${esc(d.why)}</div>`:'');
-}
-
 function posPriceCell(r){
-  if(r.source==='discount')return posDiscountRate(r);
   const enc=encodeURIComponent(r.key);
   const v=posPriceOf(r);
   const entered=posEntered(r);
@@ -8445,8 +8422,71 @@ function posResultHTML(r,kind){
     <div style="margin-top:6px;font-variant-numeric:tabular-nums">${r.balance==null?'':esc(String(r.balance))+' points'}${rw?` · ${rw} reward${rw>1?'s':''} available`:''}</div></div>`;
 }
 
+
+// ---- Discounts ---------------------------------------------------------------
+//
+// The DISC key's list, off Vinny's own discount screen. Their own tab rather than a
+// section of the menu, because a discount is not a thing you sell — it has a rate and
+// a manager gate where an item has a price and a printer, and forcing it into those
+// columns made every one of them look like a menu item missing its data.
+//
+// READ-ONLY on purpose. The publish path carries prices, print routing and deletions;
+// it has nothing that can carry a discount rate, and a field that looks editable but
+// never reaches an iPad is worse than no field.
+function posDiscountsHTML(){
+  if(!posS.cat)return `<div style="${posCardCss}"><div style="color:var(--text-dim)">Loading…</div></div>`;
+  const ds=(posS.cat.discounts)||[];
+  if(!ds.length)return `<div style="${posCardCss}">
+    <div style="font-weight:700">No discounts in the snapshot</div>
+    <div style="color:var(--text-dim);font-size:13px;margin-top:4px">Re-run <code>npm run catalog</code> in the angelis-pos repo.</div></div>`;
+  const unset=ds.filter(d=>d.kind!=='open'&&d.rate==null).length;
+  const KINDS=[
+    ['amount','Dollars off','A fixed amount comes off the check.'],
+    ['percent','Percentage off','A share of the check comes off.'],
+    ['open','Typed at the register','The server keys the figure — no rate to set.'],
+  ];
+  const rate=d=>d.kind==='open'
+    ? `<span style="color:var(--text-dim)">${d.unit==='percent'?'a %':'a $ amount'}</span>`
+    : d.rate==null
+      ? '<span style="color:#f59e0b;font-weight:700">not set</span>'
+      : (d.kind==='percent'?esc((d.rate/100).toFixed(2))+'%':'$'+esc((d.rate/100).toFixed(2)));
+  const row=d=>`<div style="display:flex;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);font-size:16px;align-items:baseline;max-width:730px">
+      <span style="width:200px;font-weight:600">${esc(d.name)}</span>
+      <span style="width:110px;text-align:right;font-variant-numeric:tabular-nums">${rate(d)}</span>
+      <span style="width:110px;padding-left:16px">${d.manager
+        ? '<span style="font-size:11px;font-weight:800;color:#a78bfa;background:rgba(167,139,250,0.14);border-radius:5px;padding:2px 7px">manager</span>'
+        : '<span style="font-size:12px;color:var(--text-muted)">any server</span>'}</span>
+      <span style="flex:1;font-size:13px;color:var(--text-muted);padding-left:8px">${esc(d.why||'')}</span>
+    </div>`;
+  const group=([k,label,blurb])=>{
+    const list=ds.filter(d=>d.kind===k);
+    if(!list.length)return '';
+    return `<div style="display:flex;align-items:baseline;gap:8px;margin:16px 0 2px;padding-bottom:5px;border-bottom:2px solid var(--border);max-width:730px">
+        <span style="font-size:20px;font-weight:800;letter-spacing:.4px;text-transform:uppercase">${esc(label)}</span>
+        <span style="font-size:14px;color:var(--text-dim)">${list.length}</span>
+        <span style="font-size:12px;color:var(--text-muted);margin-left:auto">${esc(blurb)}</span></div>`
+      + list.map(row).join('');
+  };
+  return `
+  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+    ${posStat('Discounts',String(ds.length),"the DISC key's list")}
+    ${posStat('No rate',String(unset),'rates still to be set')}
+  </div>
+  <div style="${posCardCss}">
+    <div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;max-width:730px">
+      <span style="width:200px">Discount</span><span style="width:110px;text-align:right">Rate</span>
+      <span style="width:110px;padding-left:16px">Who</span><span style="flex:1;padding-left:8px">What it is</span></div>
+    ${KINDS.map(group).join('')}
+  </div>
+  ${unset?`<div style="border:1px solid #f59e0b;border-radius:12px;background:rgba(245,158,11,0.10);padding:12px 16px;margin-top:14px">
+    <div style="font-weight:800;font-size:14px;color:#f59e0b">${unset} discount${unset===1?'':'s'} without a rate</div>
+    <div style="font-size:13px;color:var(--text-dim);margin-top:3px">Left blank rather than guessed — a made-up rate is an undercharge that looks like it works. The register will show these and refuse to take anything off until the rate is set.</div>
+  </div>`:''}
+  <div style="color:var(--text-muted);font-size:12px;margin-top:10px">Read-only here — the publish path carries prices and print routing, not discount rates. Set them in the register's <code>discounts.js</code>.</div>`;
+}
+
 // ---- shell ------------------------------------------------------------------
-const POS_SECTIONS=[['items','Menu items'],['printers','Printers'],['reports','Reports'],['grazie','CRM'],['employees','Employees']];
+const POS_SECTIONS=[['items','Menu items'],['discounts','Discounts'],['printers','Printers'],['reports','Reports'],['grazie','CRM'],['employees','Employees']];
 function posConnHTML(){
   return `<div style="${posCardCss};margin-bottom:14px">
     <div style="font-weight:800;font-size:15px;margin-bottom:6px">Connections</div>
@@ -8462,7 +8502,7 @@ function posConnHTML(){
 function posHTML(){
   const nav=POS_SECTIONS.map(([k,l])=>`<button onclick="posSec('${k}')" style="${posBtn(posS.sec===k?'#f59e0b':'#3f3f46')};padding:9px 15px;font-size:14px">${l}</button>`).join('');
   const who=(posS.me&&posS.health==='ok'&&posS.sec==='grazie')?`<span style="font-size:13px;color:var(--text-dim)">${esc(posS.me.username)}</span><button onclick="posLogout()" style="${posBtn('#3f3f46')};padding:7px 12px;font-size:13px">Sign out</button>`:'';
-  const body=posS.sec==='items'?posItemsHTML():posS.sec==='printers'?posPrintersHTML():posS.sec==='reports'?posReportsHTML():posS.sec==='employees'?posEmployeesHTML():posGrazieHTML();
+  const body=posS.sec==='items'?posItemsHTML():posS.sec==='discounts'?posDiscountsHTML():posS.sec==='printers'?posPrintersHTML():posS.sec==='reports'?posReportsHTML():posS.sec==='employees'?posEmployeesHTML():posGrazieHTML();
   // #viewport is fixed and overflow:hidden, so every tab brings its own scroller —
   // without one, anything past the fold is simply clipped.
   return `<div style="height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch">
