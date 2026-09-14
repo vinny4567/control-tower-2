@@ -7469,7 +7469,7 @@ function posRouteCell(r){
   // Saying so on all 456 rows was 456 repetitions of one fact, so the column is just
   // empty for them.
   if(r.cat==='Food Mods')return '';
-  const enc=encodeURIComponent(r.key);
+  const enc=posEnc(r.key);
   const on=posRoutedTo(r), changed=posRerouted(r);
   const sel=posRouteIdFor(on);
   const opts=posRouteOptions().map(o=>
@@ -7529,7 +7529,7 @@ function posItemGroupsHTML(r){
   // Drag to reorder. Live and pending groups are one list, because a group being
   // added has to be placeable among the ones already there — attaching Sauce and
   // then finding it asked last is not a useful halfway state.
-  const enc=encodeURIComponent(r.key);
+  const enc=posEnc(r.key);
   let all=[...live.map(n=>({n,pend:false})),...pending.map(n=>({n,pend:true}))];
   const ord=posItemGroupOrder[r.key];
   if(ord){
@@ -7547,7 +7547,7 @@ function posItemGroupsHTML(r){
 }
 
 function posPriceCell(r){
-  const enc=encodeURIComponent(r.key);
+  const enc=posEnc(r.key);
   const v=posPriceOf(r);
   const entered=posEntered(r);
   const shown=v?(v/100).toFixed(2):'';
@@ -7682,7 +7682,7 @@ function posClassesHTML(){
   </div>`).join('');
 
   const mine=posNewClasses.map(pc=>{
-    const enc=encodeURIComponent(pc.key);
+    const enc=posEnc(pc.key);
     return `<div style="${posCardCss};margin-bottom:10px;border-color:#22c55e">
       <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
         <span style="font-size:11px;font-weight:800;color:#22c55e;text-transform:uppercase;letter-spacing:.5px">new</span>
@@ -7703,7 +7703,7 @@ const posGroupKey=(g)=>g.key!==undefined?g.key:(g.num!=null?String(g.num):'n:'+g
 
 function posGroupModsHTML(g){
   const k=posGroupKey(g);
-  const enc=encodeURIComponent(k);
+  const enc=posEnc(k);
   const added=posAddedTo(k);
   const money=(x)=>x?`<span style="opacity:.85"> +$${(x/100).toFixed(2)}</span>`:'';
 
@@ -7821,7 +7821,7 @@ function posUsedByHTML(g){
 
 function posGroupAttachHTML(g){
   const k=posGroupKey(g);
-  const enc=encodeURIComponent(k);
+  const enc=posEnc(k);
   const att=posAttachOf(k);
   const chip=(label,onRemove)=>`<span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;padding:3px 6px 3px 9px;border-radius:7px;background:rgba(96,165,250,0.10);border:1px solid #60a5fa;color:#60a5fa">
       ${label}<button onclick="${onRemove}" title="remove" style="border:none;background:transparent;color:#60a5fa;cursor:pointer;font-size:15px;line-height:1;padding:0 2px">×</button></span>`;
