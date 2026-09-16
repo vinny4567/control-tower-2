@@ -8055,6 +8055,7 @@ const POS_REPORTS = [
   { k:'voids',   name:'Voids',            says:'what came off a check, why, and who authorized it' },
   { k:'payouts', name:'Pay outs',         says:'cash reimbursed out of the drawer, and what for' },
   { k:'nights',  name:'Nightly cash count',says:'what should have been in the drawer each night' },
+  { k:'checks',  name:'Every check',        says:'each check of the night — number, server, table, total, how it was paid' },
 ];
 
 function posReportMenu(r){
@@ -8065,6 +8066,11 @@ function posReportMenu(r){
     if(k==='voids')return (r.voids&&(r.voids.voids||[]).length)?((r.voids.voids||[]).length+' voids'):'none';
     if(k==='payouts')return r.payouts===null?'not served by this mini':(((r.payouts.moves||[]).length)+' pay outs');
     if(k==='nights')return r.nights===null?'not served by this mini':(((r.nights.nights||[]).length)+' nights');
+    if(k==='checks'){
+      if(r.nights===null)return 'not served by this mini';
+      const n=(r.nights.nights||[]).reduce((a,x)=>a+((x.checks||[]).length),0);
+      return n?(n+' checks'):'nothing saved yet';
+    }
     return null;
   };
   return `<div style="${posCardCss};max-width:620px">
@@ -8129,6 +8135,47 @@ function posReportsHTML(){
           </div>`).join('')}</div>`
         :'<div style="color:var(--text-dim);font-size:13px">Nothing paid out.</div>'}
       </div>`;
+  // THE NIGHT, CHECK BY CHECK. The cash count says what should have been in the drawer;
+  // these are the checks that made it that much. Saved on the register at close and
+  // mirrored up here, so a figure questioned weeks later can still be taken apart.
+  const ni=r.nights;
+  const nightsCard = ni===null
+    ? `<div style="${posCardCss};margin-top:14px;max-width:620px">
+        <div style="font-weight:800;font-size:15px;margin-bottom:4px">Nightly cash count</div>
+        <div style="color:var(--text-dim);font-size:13px">This mini does not serve saved nights yet — the registers are saving them and they will appear here once it does.</div>
+      </div>`
+    : `<div style="${posCardCss};margin-top:14px">
+        <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:8px">
+          <div style="font-weight:800;font-size:15px">Nightly cash count</div>
+          <div style="color:var(--text-dim);font-size:13px">what should have been in the drawer, and every check behind it</div>
+        </div>
+        ${(ni.nights||[]).length?(ni.nights||[]).map(n=>`
+          <details style="border-top:1px solid var(--border);padding:7px 0">
+            <summary style="cursor:pointer;display:flex;gap:10px;align-items:baseline;font-size:14px;list-style:none">
+              <span style="width:110px;font-variant-numeric:tabular-nums;font-weight:700">${esc(n.date||'')}</span>
+              <span style="color:var(--text-dim);flex:1">${(n.checks||[]).length} check${(n.checks||[]).length===1?'':'s'}${n.tipOut?' · '+money(n.tipOut)+' tipped out':''}</span>
+              <span style="font-variant-numeric:tabular-nums;font-weight:800">${money(n.expected)}</span>
+            </summary>
+            ${(n.checks||[]).length?`<div style="margin:8px 0 4px 0">
+              <div style="display:flex;gap:8px;font-size:11px;color:var(--text-muted);letter-spacing:.5px;padding-bottom:3px">
+                <span style="width:54px">CHK</span><span style="width:88px">WHERE</span><span style="width:92px">SERVER</span>
+                <span style="width:40px;text-align:right">GST</span><span style="width:84px;text-align:right">NET</span>
+                <span style="width:84px;text-align:right">TOTAL</span><span style="width:74px;text-align:center">PAID</span>
+                <span style="width:74px;text-align:right">TIP</span></div>
+              ${(n.checks||[]).map(c=>`<div style="display:flex;gap:8px;font-size:13px;padding:3px 0;border-top:1px solid var(--border);font-variant-numeric:tabular-nums">
+                <span style="width:54px">${esc(String(c.id))}</span>
+                <span style="width:88px">${esc(c.where||'—')}</span>
+                <span style="width:92px">${esc(c.server||'')}</span>
+                <span style="width:40px;text-align:right">${c.guests||'—'}</span>
+                <span style="width:84px;text-align:right">${money(c.net)}</span>
+                <span style="width:84px;text-align:right;font-weight:700">${money(c.total)}</span>
+                <span style="width:74px;text-align:center;color:${c.closed?'var(--text-dim)':'#f59e0b'}">${esc(c.closed?(c.how||'comp').replace('gift_card','gift'):'OPEN')}</span>
+                <span style="width:74px;text-align:right;color:var(--text-dim)">${c.tips?money(c.tips):'—'}</span>
+              </div>`).join('')}
+            </div>`:'<div style="color:var(--text-dim);font-size:13px;padding:6px 0">This night was saved before the register started keeping its checks.</div>'}
+          </details>`).join('')
+        :'<div style="color:var(--text-dim);font-size:13px">No nights saved yet.</div>'}
+      </div>`;
   return `
   <div style="display:flex;gap:8px;margin-bottom:14px">${nav}</div>
   <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
@@ -8170,6 +8217,7 @@ function posReportsHTML(){
     </div>
   </div>
   ${payoutCard}
+  ${nightsCard}
   <div style="margin-top:14px">${posReportMenu(r)}</div>`;
 }
 
