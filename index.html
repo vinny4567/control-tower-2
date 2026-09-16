@@ -8039,16 +8039,48 @@ async function posLoadReports(){
   posS.repBusy=true;posS.repErr='';renderViewport();
   try{
     const d=posS.repDays;
-    const [s,i,v,p]=await Promise.all([posSrv('/api/reports/sales?days='+d),posSrv('/api/reports/items?days='+d),posSrv('/api/reports/voids?days='+d),posSrv('/api/reports/payouts?days='+d)]);
+    const [s,i,v,p,n]=await Promise.all([posSrv('/api/reports/sales?days='+d),posSrv('/api/reports/items?days='+d),posSrv('/api/reports/voids?days='+d),posSrv('/api/reports/payouts?days='+d),posSrv('/api/reports/nights?days='+d)]);
     if(!s.ok)throw new Error(s.body.error||('sales '+s.status));
     // Pay outs are allowed to be missing: the endpoint may not exist on an older mini,
     // and a report that refuses to load because ONE panel is unavailable is worse than
     // a report with one panel missing.
-    posS.rep={sales:s.body,items:i.body,voids:v.body,payouts:(p&&p.ok)?p.body:null};
+    posS.rep={sales:s.body,items:i.body,voids:v.body,payouts:(p&&p.ok)?p.body:null,nights:(n&&n.ok)?n.body:null};
   }catch(e){posS.rep=null;posS.repErr=String(e&&e.message||e)}
   posS.repBusy=false;renderViewport();
 }
 function posRepDays(d){posS.repDays=d;posLoadReports()}
+const POS_REPORTS = [
+  { k:'sales',   name:'Net sales',        says:'gross, tax, tips, checks and guests — closed checks only' },
+  { k:'items',   name:'What sold',        says:'every item, by count and by money' },
+  { k:'voids',   name:'Voids',            says:'what came off a check, why, and who authorized it' },
+  { k:'payouts', name:'Pay outs',         says:'cash reimbursed out of the drawer, and what for' },
+  { k:'nights',  name:'Nightly cash count',says:'what should have been in the drawer each night' },
+];
+
+function posReportMenu(r){
+  const has=(k)=>{
+    if(!r)return null;
+    if(k==='sales')return (r.sales&&r.sales.checks)?((r.sales.checks)+' checks'):'nothing yet';
+    if(k==='items')return (r.items&&(r.items.items||[]).length)?((r.items.items||[]).length+' items'):'nothing yet';
+    if(k==='voids')return (r.voids&&(r.voids.voids||[]).length)?((r.voids.voids||[]).length+' voids'):'none';
+    if(k==='payouts')return r.payouts===null?'not served by this mini':(((r.payouts.moves||[]).length)+' pay outs');
+    if(k==='nights')return r.nights===null?'not served by this mini':(((r.nights.nights||[]).length)+' nights');
+    return null;
+  };
+  return `<div style="${posCardCss};max-width:620px">
+    <div style="font-weight:800;font-size:15px;margin-bottom:2px">What this tab reports</div>
+    <div style="color:var(--text-dim);font-size:12px;margin-bottom:10px">All of it comes from the POS server. Pick a range above; each one covers that range.</div>
+    ${POS_REPORTS.map(x=>{
+      const st=has(x.k);
+      return `<div style="display:flex;gap:10px;align-items:baseline;padding:7px 0;border-bottom:1px solid var(--border)">
+        <span style="width:168px;font-weight:700;font-size:14px">${esc(x.name)}</span>
+        <span style="flex:1;color:var(--text-dim);font-size:13px">${esc(x.says)}</span>
+        ${st?`<span style="color:var(--text-muted);font-size:12px;white-space:nowrap">${esc(st)}</span>`:''}
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
 function posReportsHTML(){
   if(!posS.srv)return `<div style="${posCardCss};max-width:620px">
     <div style="font-weight:800;font-size:16px;margin-bottom:6px">The POS server isn't running</div>
@@ -8070,8 +8102,9 @@ function posReportsHTML(){
   const days=[[1,'Tonight'],[7,'7 days'],[30,'30 days']];
   const nav=days.map(([d,l])=>`<button onclick="posRepDays(${d})" style="${posBtn(posS.repDays===d?'#f59e0b':'#3f3f46')};padding:8px 14px;font-size:13px">${l}</button>`).join('');
   if(!s.checks)return `<div style="display:flex;gap:8px;margin-bottom:14px">${nav}</div>
-    <div style="${posCardCss};max-width:560px"><div style="font-weight:800;margin-bottom:6px">No closed checks yet</div>
-    <div style="color:var(--text-dim);font-size:13px;line-height:1.6">The server is answering — there is just nothing to report on. An open check is a table mid-meal, not revenue, so it stays out of these numbers until it closes.</div></div>`;
+    <div style="${posCardCss};max-width:620px;margin-bottom:14px"><div style="font-weight:800;margin-bottom:6px">No closed checks yet</div>
+    <div style="color:var(--text-dim);font-size:13px;line-height:1.6">The server is answering — there is just nothing to report on. An open check is a table mid-meal, not revenue, so it stays out of these numbers until it closes.</div></div>
+    ${posReportMenu(r)}`;
   const top=(r.items&&r.items.items||[]).slice(0,10);
   const v=r.voids||{};
   const po=r.payouts;
@@ -8136,7 +8169,8 @@ function posReportsHTML(){
         <span style="color:var(--text-dim);font-size:12px">${esc(x.by||'')}</span></div>`).join('')||'<div style="color:var(--text-dim);font-size:14px">None.</div>'}
     </div>
   </div>
-  ${payoutCard}`;
+  ${payoutCard}
+  <div style="margin-top:14px">${posReportMenu(r)}</div>`;
 }
 
 // ---- sample data -------------------------------------------------------------
