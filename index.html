@@ -8039,9 +8039,12 @@ async function posLoadReports(){
   posS.repBusy=true;posS.repErr='';renderViewport();
   try{
     const d=posS.repDays;
-    const [s,i,v]=await Promise.all([posSrv('/api/reports/sales?days='+d),posSrv('/api/reports/items?days='+d),posSrv('/api/reports/voids?days='+d)]);
+    const [s,i,v,p]=await Promise.all([posSrv('/api/reports/sales?days='+d),posSrv('/api/reports/items?days='+d),posSrv('/api/reports/voids?days='+d),posSrv('/api/reports/payouts?days='+d)]);
     if(!s.ok)throw new Error(s.body.error||('sales '+s.status));
-    posS.rep={sales:s.body,items:i.body,voids:v.body};
+    // Pay outs are allowed to be missing: the endpoint may not exist on an older mini,
+    // and a report that refuses to load because ONE panel is unavailable is worse than
+    // a report with one panel missing.
+    posS.rep={sales:s.body,items:i.body,voids:v.body,payouts:(p&&p.ok)?p.body:null};
   }catch(e){posS.rep=null;posS.repErr=String(e&&e.message||e)}
   posS.repBusy=false;renderViewport();
 }
@@ -8071,6 +8074,28 @@ function posReportsHTML(){
     <div style="color:var(--text-dim);font-size:13px;line-height:1.6">The server is answering — there is just nothing to report on. An open check is a table mid-meal, not revenue, so it stays out of these numbers until it closes.</div></div>`;
   const top=(r.items&&r.items.items||[]).slice(0,10);
   const v=r.voids||{};
+  const po=r.payouts;
+  const money=(c)=>'$'+((c||0)/100).toFixed(2);
+  const payoutCard=po===null
+    ? `<div style="${posCardCss};margin-top:14px;max-width:620px">
+        <div style="font-weight:800;font-size:15px;margin-bottom:4px">Pay outs</div>
+        <div style="color:var(--text-dim);font-size:13px">This mini does not serve pay outs yet — the registers are recording them and they will appear here once it does.</div>
+      </div>`
+    : `<div style="${posCardCss};margin-top:14px;max-width:620px">
+        <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:8px">
+          <div style="font-weight:800;font-size:15px">Pay outs</div>
+          <div style="color:var(--text-dim);font-size:13px">cash reimbursed out of the drawer</div>
+          <div style="margin-left:auto;font-size:20px;font-weight:800;font-variant-numeric:tabular-nums">${money((po.moves||[]).reduce((a,m)=>a+(m.cents||0),0))}</div>
+        </div>
+        ${(po.moves||[]).length?`<div>${(po.moves||[]).map(m=>`
+          <div style="display:flex;gap:10px;align-items:baseline;padding:5px 0;border-bottom:1px solid var(--border);font-size:14px">
+            <span style="color:var(--text-muted);width:132px;font-variant-numeric:tabular-nums">${esc(new Date(m.at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}))}</span>
+            <span style="flex:1">${esc(m.reason||'')}</span>
+            <span style="color:var(--text-muted);width:96px">${esc(m.by||'')}</span>
+            <span style="font-variant-numeric:tabular-nums;font-weight:700">${money(m.cents)}</span>
+          </div>`).join('')}</div>`
+        :'<div style="color:var(--text-dim);font-size:13px">Nothing paid out.</div>'}
+      </div>`;
   return `
   <div style="display:flex;gap:8px;margin-bottom:14px">${nav}</div>
   <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
@@ -8110,7 +8135,8 @@ function posReportsHTML(){
         <span style="flex:1">${esc(x.name)}<div style="font-size:12px;color:var(--text-muted)">${esc(x.reason||'')}</div></span>
         <span style="color:var(--text-dim);font-size:12px">${esc(x.by||'')}</span></div>`).join('')||'<div style="color:var(--text-dim);font-size:14px">None.</div>'}
     </div>
-  </div>`;
+  </div>
+  ${payoutCard}`;
 }
 
 // ---- sample data -------------------------------------------------------------
