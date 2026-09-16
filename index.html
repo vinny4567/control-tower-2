@@ -6164,7 +6164,7 @@ const POS_SRV_KEY='ct_pos_srv';      // POS server (checks, reports)
 let posS={sec:'items',url:localStorage.getItem(POS_URL_KEY)||'',srv:localStorage.getItem(POS_SRV_KEY)||'',
   health:'unknown',me:null,dash:null,err:'',card:null,cust:null,busy:false,
   cat:null,catErr:'',q:'',catFilter:'all',crmQ:'',crmResults:null,crmMember:null,demo:false,emp:null,
-  rep:null,repDays:1,repErr:'',repBusy:false,showConn:false};
+  rep:null,repRange:null,repErr:'',repBusy:false,showConn:false};
 
 const posBaseUrl=(u)=>(u||'').replace(/\/+$/,'');
 // An https page cannot call a plain-http box — the browser blocks it before the request
@@ -8110,22 +8110,58 @@ function posPrintersHTML(){
 }
 
 // ---- Reports ----------------------------------------------------------------
+//
+// THE DATE RANGE EVERY REPORT RUNS FOR. Presets answer the questions asked twenty
+// times a week; the two date boxes answer the one asked once — "what did the week of
+// the fourth look like". A range is INCLUSIVE of both days, and business days at that:
+// a check closed at 12:40am belongs to the night that just ended.
+//
+// A preset that really is "the last N days ending tonight" is ALSO sent as `days=`, so
+// those keep working against a mini that has not learned from/to yet. An arbitrary
+// range cannot be expressed that way, and rather than quietly showing the wrong
+// fortnight, the report says the mini is still answering by days (posRangeHonored).
+function posRangeDefault(){const t=new Date();return{from:posYmd(t),to:posYmd(t),days:1,label:'Tonight'}}
+function posYmd(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function posDaysAgo(n){const d=new Date();d.setHours(d.getHours()-4);d.setDate(d.getDate()-n);return d}
+function posRangeLastDays(n,label){const t=new Date();t.setHours(t.getHours()-4);return{from:posYmd(posDaysAgo(n-1)),to:posYmd(t),days:n,label:label||(n+' days')}}
+function posRangeMonth(back){const t=new Date();t.setHours(t.getHours()-4);const a=new Date(t.getFullYear(),t.getMonth()-back,1);
+  const b=back?new Date(t.getFullYear(),t.getMonth()-back+1,0):t;
+  return{from:posYmd(a),to:posYmd(b),days:null,label:a.toLocaleDateString('en-US',{month:'long'})}}
+function posRange(){return posS.repRange||(posS.repRange=posRangeDefault())}
+function posRepPick(r){posS.repRange=r;posLoadReports()}
+function posRepFrom(v){const r=Object.assign({},posRange());r.from=v;r.days=null;r.label='';if(r.to<r.from)r.to=v;posRepPick(r)}
+function posRepTo(v){const r=Object.assign({},posRange());r.to=v;r.days=null;r.label='';if(r.to<r.from)r.from=v;posRepPick(r)}
+function posRangeLabel(r){if(r.label)return r.label;
+  const f=(x)=>{const[y,m,d]=String(x).split('-');return new Date(+y,+m-1,+d).toLocaleDateString('en-US',{month:'short',day:'numeric'})};
+  return r.from===r.to?f(r.from):f(r.from)+' – '+f(r.to)}
+function posRepQuery(){const r=posRange();
+  // `days` alongside from/to is the compatibility shim, not the request: a mini that
+  // understands the range uses it, an older one falls back to the same window.
+  return '?from='+encodeURIComponent(r.from)+'&to='+encodeURIComponent(r.to)+(r.days?('&days='+r.days):'')}
+// Did the mini actually run the window we asked for? Every report echoes its own
+// from/to, so this is checkable rather than assumed.
+function posRangeHonored(){
+  const r=posRange(),b=posS.rep&&posS.rep.sales;
+  if(!b||b.from==null||b.to==null)return true;
+  const asked=new Date(r.from+'T00:00:00').getTime(),got=new Date(b.from).getTime();
+  return Math.abs(got-asked)<36*3600e3;   // a day's slack for the 4am cutoff
+}
 async function posLoadReports(){
   if(!posS.srv){await posFindLocal('srv')}
   if(!posS.srv){renderViewport();return}
   posS.repBusy=true;posS.repErr='';renderViewport();
   try{
-    const d=posS.repDays;
-    const [s,i,v,p,n]=await Promise.all([posSrv('/api/reports/sales?days='+d),posSrv('/api/reports/items?days='+d),posSrv('/api/reports/voids?days='+d),posSrv('/api/reports/payouts?days='+d),posSrv('/api/reports/nights?days='+d)]);
+    const q=posRepQuery();
+    const [s,i,v,p,n,l]=await Promise.all([posSrv('/api/reports/sales'+q),posSrv('/api/reports/items'+q),posSrv('/api/reports/voids'+q),posSrv('/api/reports/payouts'+q),posSrv('/api/reports/nights'+q),posSrv('/api/reports/labor'+q)]);
     if(!s.ok)throw new Error(s.body.error||('sales '+s.status));
     // Pay outs are allowed to be missing: the endpoint may not exist on an older mini,
     // and a report that refuses to load because ONE panel is unavailable is worse than
     // a report with one panel missing.
-    posS.rep={sales:s.body,items:i.body,voids:v.body,payouts:(p&&p.ok)?p.body:null,nights:(n&&n.ok)?n.body:null};
+    posS.rep={sales:s.body,items:i.body,voids:v.body,payouts:(p&&p.ok)?p.body:null,nights:(n&&n.ok)?n.body:null,labor:(l&&l.ok)?l.body:null};
   }catch(e){posS.rep=null;posS.repErr=String(e&&e.message||e)}
   posS.repBusy=false;renderViewport();
 }
-function posRepDays(d){posS.repDays=d;posLoadReports()}
+function posRepDays(d){posRepPick(posRangeLastDays(d,d===1?'Tonight':(d+' days')))}
 const POS_REPORTS = [
   { k:'sales',   name:'Net sales',        says:'gross, tax, tips, checks and guests — closed checks only' },
   { k:'items',   name:'What sold',        says:'every item, by count and by money' },
@@ -8133,6 +8169,8 @@ const POS_REPORTS = [
   { k:'payouts', name:'Pay outs',         says:'cash reimbursed out of the drawer, and what for' },
   { k:'nights',  name:'Nightly cash count',says:'what should have been in the drawer each night' },
   { k:'checks',  name:'Every check',        says:'each check of the night — number, server, table, total, how it was paid' },
+  { k:'menu',    name:'Menu item sales',  says:'every item over the range — count, money, share of sales, average price' },
+  { k:'labor',   name:'Labor',            says:'hours and overtime by person and job, and what the shift cost against sales' },
 ];
 
 function posReportMenu(r){
@@ -8143,6 +8181,11 @@ function posReportMenu(r){
     if(k==='voids')return (r.voids&&(r.voids.voids||[]).length)?((r.voids.voids||[]).length+' voids'):'none';
     if(k==='payouts')return r.payouts===null?'not served by this mini':(((r.payouts.moves||[]).length)+' pay outs');
     if(k==='nights')return r.nights===null?'not served by this mini':(((r.nights.nights||[]).length)+' nights');
+    if(k==='menu')return (r.items&&(r.items.items||[]).length)?((r.items.items||[]).length+' items'):'nothing yet';
+    if(k==='labor'){
+      if(r.labor===null)return 'not served by this mini';
+      const t=(r.labor.totals||{});return t.hours?(t.hours+' hrs'):'nothing yet';
+    }
     if(k==='checks'){
       if(r.nights===null)return 'not served by this mini';
       const n=(r.nights.nights||[]).reduce((a,x)=>a+((x.checks||[]).length),0);
@@ -8182,8 +8225,19 @@ function posReportsHTML(){
     <div style="margin-top:12px;display:flex;gap:10px"><button onclick="posLoadReports()" style="${posBtn('#f59e0b')}">Try again</button><button onclick="posToggleConn()" style="${posBtn('#3f3f46')}">Connections</button></div></div>`;
   const r=posS.rep;if(!r)return '';
   const s=r.sales||{};
-  const days=[[1,'Tonight'],[7,'7 days'],[30,'30 days']];
-  const nav=days.map(([d,l])=>`<button onclick="posRepDays(${d})" style="${posBtn(posS.repDays===d?'#f59e0b':'#3f3f46')};padding:8px 14px;font-size:13px">${l}</button>`).join('');
+  const rg=posRange(),lab=posRangeLabel(rg);
+  const di='background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 8px;font-family:inherit;font-size:13px;color-scheme:dark;cursor:pointer';
+  const preset=(mk,l)=>`<button onclick='posRepPick(${JSON.stringify(mk)})' style="${posBtn(lab===l?'#f59e0b':'#3f3f46')};padding:8px 14px;font-size:13px">${l}</button>`;
+  const nav=[preset(posRangeLastDays(1,'Tonight'),'Tonight'),preset(posRangeLastDays(7),'7 days'),
+             preset(posRangeLastDays(30),'30 days'),preset(posRangeMonth(0),posRangeMonth(0).label),
+             preset(posRangeMonth(1),posRangeMonth(1).label)].join('')
+    +`<span style="display:inline-flex;align-items:center;gap:6px;margin-left:8px">
+        <input type="date" value="${rg.from}" onchange="posRepFrom(this.value)" title="From" style="${di}">
+        <span style="color:var(--text-dim)">→</span>
+        <input type="date" value="${rg.to}" onchange="posRepTo(this.value)" title="To" style="${di}">
+      </span>
+      <span style="color:var(--text-dim);font-size:13px;margin-left:8px">${esc(lab)}</span>`
+    +(posRangeHonored()?'':`<div style="width:100%;margin-top:8px;padding:8px 12px;border-radius:8px;background:rgba(251,191,36,0.12);color:#fbbf24;font-size:13px">⚠ This mini still reports by <b>days back from tonight</b> — it answered with ${esc(String((posS.rep&&posS.rep.sales&&posS.rep.sales.from)?new Date(posS.rep.sales.from).toLocaleDateString():'another window'))}, not the range above. The numbers below are for the window it chose.</div>`);
   if(!s.checks)return `<div style="display:flex;gap:8px;margin-bottom:14px">${nav}</div>
     <div style="${posCardCss};max-width:620px;margin-bottom:14px"><div style="font-weight:800;margin-bottom:6px">No closed checks yet</div>
     <div style="color:var(--text-dim);font-size:13px;line-height:1.6">The server is answering — there is just nothing to report on. An open check is a table mid-meal, not revenue, so it stays out of these numbers until it closes.</div></div>
@@ -8212,6 +8266,100 @@ function posReportsHTML(){
           </div>`).join('')}</div>`
         :'<div style="color:var(--text-dim);font-size:13px">Nothing paid out.</div>'}
       </div>`;
+  // EVERY MENU ITEM OVER THE RANGE — not the top ten.
+  //
+  // The top of the list is the part everyone already knows. What a menu report is for
+  // is the bottom: the dish that sold four all month and takes three pans to prep.
+  // Share of sales is shown against the whole range so the long tail is visible as a
+  // tail, and average price is there because an item whose average has drifted below
+  // its menu price is being discounted by somebody, every night, quietly.
+  const it=(r.items&&r.items.items)||[];
+  const itNet=it.reduce((a,x)=>a+(x.revenue_cents||0),0);
+  const itUnits=it.reduce((a,x)=>a+(x.units||0),0);
+  const hasCat=it.some(x=>x.category);
+  const catOf=(x)=>x.category||'';
+  const cats={};it.forEach(x=>{(cats[catOf(x)]=cats[catOf(x)]||[]).push(x)});
+  const itemRow=(x)=>{const share=itNet?(x.revenue_cents/itNet*100):0;
+    return `<div style="display:flex;gap:10px;align-items:baseline;padding:4px 0;border-top:1px solid var(--border);font-size:13px">
+      <span style="width:46px;text-align:right;font-weight:800;font-variant-numeric:tabular-nums">${x.units}</span>
+      <span style="flex:1;min-width:120px">${esc(x.name)}</span>
+      <span style="width:84px;text-align:right;font-variant-numeric:tabular-nums">${money(x.revenue_cents)}</span>
+      <span style="width:76px;text-align:right;color:var(--text-dim);font-variant-numeric:tabular-nums">${x.units?money(Math.round(x.revenue_cents/x.units)):''}</span>
+      <span style="width:46px;text-align:right;color:var(--text-muted);font-variant-numeric:tabular-nums">${share>=0.05?share.toFixed(1)+'%':''}</span>
+      <span style="width:70px"><span style="display:block;height:6px;border-radius:3px;background:var(--accent,#f59e0b);opacity:.75;width:${Math.max(2,Math.min(100,share*3)).toFixed(1)}%"></span></span>
+    </div>`};
+  const menuCard=`<div style="${posCardCss};margin-top:14px">
+      <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:6px;flex-wrap:wrap">
+        <div style="font-weight:800;font-size:15px">Menu item sales</div>
+        <div style="color:var(--text-dim);font-size:13px">${esc(lab)} — every item that sold</div>
+        <div style="margin-left:auto;font-size:13px;color:var(--text-dim)">${itUnits} sold · <b style="color:var(--text)">${money(itNet)}</b></div>
+      </div>
+      ${it.length?`
+        <div style="display:flex;gap:10px;font-size:11px;color:var(--text-muted);letter-spacing:.5px;padding-bottom:2px">
+          <span style="width:46px;text-align:right">QTY</span><span style="flex:1;min-width:120px">ITEM</span>
+          <span style="width:84px;text-align:right">SALES</span><span style="width:76px;text-align:right">AVG</span>
+          <span style="width:46px;text-align:right">SHARE</span><span style="width:70px"></span></div>
+        ${hasCat
+          ? Object.keys(cats).sort().map(c=>`<div style="margin-top:8px">
+              <div style="font-size:11px;font-weight:800;letter-spacing:1px;color:var(--accent,#f59e0b);text-transform:uppercase">${esc(c||'Uncategorised')}</div>
+              ${cats[c].map(itemRow).join('')}</div>`).join('')
+          : it.map(itemRow).join('')}
+        ${hasCat?'':'<div style="margin-top:10px;font-size:12px;color:var(--text-muted)">Grouped by menu section once the mini serves a <code>category</code> on each item — until then it is one list, biggest first.</div>'}
+      `:'<div style="color:var(--text-dim);font-size:13px">Nothing sold in this range.</div>'}
+    </div>`;
+
+  // WHAT THE SHIFT COST. Hours are only half the question; the half a restaurant runs
+  // on is labor against sales. A rate the register does not know is printed as a blank,
+  // never a zero — a zero reads as "this shift was free" and quietly flatters the
+  // percentage that the whole report exists to tell the truth about.
+  const lb=r.labor;
+  const lbTot=(lb&&lb.totals)||{};
+  const netForPct=(s.gross_cents||0);
+  const lbPct=(lbTot.pay&&netForPct)?Math.round((lbTot.pay/netForPct)*1000)/10:null;
+  const laborCard=lb===null
+    ? `<div style="${posCardCss};margin-top:14px;max-width:620px">
+        <div style="font-weight:800;font-size:15px;margin-bottom:4px">Labor</div>
+        <div style="color:var(--text-dim);font-size:13px;line-height:1.6">This mini does not serve <code>/api/reports/labor</code> yet. The registers are recording every punch and holding them, so nothing is being lost — hours will appear here, and in the Tips tab's payroll pull, the day the endpoint ships.</div>
+      </div>`
+    : `<div style="${posCardCss};margin-top:14px">
+        <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:8px;flex-wrap:wrap">
+          <div style="font-weight:800;font-size:15px">Labor</div>
+          <div style="color:var(--text-dim);font-size:13px">${esc(lab)}</div>
+          <div style="margin-left:auto;display:flex;gap:16px;align-items:baseline">
+            <span style="font-size:13px;color:var(--text-dim)">${(lbTot.hours||0).toFixed?(lbTot.hours||0).toFixed(2):(lbTot.hours||0)} hrs${lbTot.ot?(' · '+lbTot.ot+' OT'):''}</span>
+            ${lbTot.pay?`<span style="font-size:20px;font-weight:800;font-variant-numeric:tabular-nums">${money(lbTot.pay)}${lbTot.payComplete===false?'<span title="some rates are not known — this is a floor, not the cost" style="color:#fbbf24">*</span>':''}</span>`:''}
+            ${lbPct!=null?`<span style="font-size:20px;font-weight:800;color:${lbPct>35?'#f87171':(lbPct>28?'#fbbf24':'#34d399')}">${lbPct}%</span>`:''}
+          </div>
+        </div>
+        ${lbTot.openShifts?`<div style="margin-bottom:8px;padding:8px 12px;border-radius:8px;background:rgba(251,191,36,0.12);color:#fbbf24;font-size:13px">⚠ ${lbTot.openShifts} shift${lbTot.openShifts>1?'s':''} never punched out. Those hours are counted up to now, so they are not final — fix the punch before this period is run.</div>`:''}
+        ${(lb.people||[]).length?`
+          <div style="display:flex;gap:10px;font-size:11px;color:var(--text-muted);letter-spacing:.5px;padding-bottom:3px">
+            <span style="flex:1;min-width:140px">WHO</span><span style="width:120px">JOB</span>
+            <span style="width:64px;text-align:right">REG</span><span style="width:54px;text-align:right">OT</span>
+            <span style="width:74px;text-align:right">RATE</span><span style="width:88px;text-align:right">PAY</span></div>
+          ${(lb.people||[]).map(pp=>{
+            const jobs=pp.jobs||[];
+            return `<div style="border-top:1px solid var(--border);padding:4px 0">
+              <div style="display:flex;gap:10px;align-items:baseline;font-size:13px;font-weight:700">
+                <span style="flex:1;min-width:140px">${esc(pp.name||('#'+pp.emp_id))}${pp.open_shifts?'<span title="a shift never punched out" style="color:#fbbf24"> ⚠</span>':''}</span>
+                <span style="width:120px;color:var(--text-muted);font-size:12px">${jobs.length>1?(jobs.length+' jobs'):''}</span>
+                <span style="width:64px;text-align:right;font-variant-numeric:tabular-nums">${(+pp.regular||0)}</span>
+                <span style="width:54px;text-align:right;font-variant-numeric:tabular-nums;color:${pp.ot?'#fbbf24':'var(--text-muted)'}">${pp.ot||''}</span>
+                <span style="width:74px"></span>
+                <span style="width:88px;text-align:right;font-variant-numeric:tabular-nums">${pp.pay_cents!=null?money(pp.pay_cents):'<span style="color:var(--text-muted)" title="no pay rate on file">—</span>'}</span>
+              </div>
+              ${jobs.map(j=>`<div style="display:flex;gap:10px;align-items:baseline;font-size:12px;color:var(--text-dim);padding-left:10px">
+                <span style="flex:1;min-width:140px">↳</span>
+                <span style="width:120px">${esc(j.job||j.name||'')}</span>
+                <span style="width:64px;text-align:right;font-variant-numeric:tabular-nums">${(+j.regular||0)}</span>
+                <span style="width:54px;text-align:right;font-variant-numeric:tabular-nums">${j.ot||''}</span>
+                <span style="width:74px;text-align:right;font-variant-numeric:tabular-nums">${j.rate_cents!=null?money(j.rate_cents):'—'}</span>
+                <span style="width:88px"></span></div>`).join('')}
+            </div>`}).join('')}
+          ${lbTot.payComplete===false?`<div style="margin-top:10px;font-size:12px;color:#fbbf24">* Pay rates are not on the register for everyone, so that total is a floor rather than the cost. The rates typed into the Tips tab are the only copy — payroll reads those.</div>`:''}
+        `:'<div style="color:var(--text-dim);font-size:13px">Nobody punched in over this range.</div>'}
+      </div>`;
+
   // THE NIGHT, CHECK BY CHECK. The cash count says what should have been in the drawer;
   // these are the checks that made it that much. Saved on the register at close and
   // mirrored up here, so a figure questioned weeks later can still be taken apart.
@@ -8293,6 +8441,8 @@ function posReportsHTML(){
         <span style="color:var(--text-dim);font-size:12px">${esc(x.by||'')}</span></div>`).join('')||'<div style="color:var(--text-dim);font-size:14px">None.</div>'}
     </div>
   </div>
+  ${menuCard}
+  ${laborCard}
   ${payoutCard}
   ${nightsCard}
   <div style="margin-top:14px">${posReportMenu(r)}</div>`;
