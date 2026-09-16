@@ -5531,19 +5531,31 @@ function tipsComputeBusserSplit(shifts,log){
     byDay[md]=amts;Object.keys(amts).forEach(nm=>split[nm]=Math.round(((split[nm]||0)+amts[nm])*100)/100);});
   return {split,byDay};
 }
-function tipsMergeMicros(people,split,byDay){
+function tipsMergeMicros(people,split,byDay,opt){
+  opt=opt||{};
   if(!tipsState.hours)tipsState.hours={};if(!tipsState.empIds)tipsState.empIds={};
+  // What the rates were, captured BEFORE the old rows go. A POS pull knows hours and
+  // nothing about pay, and these typed rates are the only copy anybody has.
+  const prevRates={};Object.keys(tipsState.hours).forEach(nm=>{const h=tipsState.hours[nm];Object.keys(h).forEach(j=>{const c=h[j]||{};if(c.src==='rest'&&c.r!=null&&c.r!==''){prevRates[nm]=prevRates[nm]||{};prevRates[nm][j]=c.r;}});});
   Object.keys(tipsState.hours).forEach(nm=>{const h=tipsState.hours[nm];Object.keys(h).forEach(j=>{if((h[j]||{}).src==='rest')delete h[j];});if(!Object.keys(h).length)delete tipsState.hours[nm];});   // idempotent: drop old restaurant rows, keep weddings
   const map={};let n=0;
   Object.keys(people).forEach(eid=>{const mname=people[eid].name;if(/private\s*party|\bpool\b/i.test(mname))return;   // "Private Party" is not a person
     const fname=tipCanon(mname);map[mname]=fname;n++;
     if(!tipsState.hours[fname])tipsState.hours[fname]={};
-    const jobs=people[eid].jobs;Object.keys(jobs).forEach(job=>{const d=jobs[job];const e={h:d.reg,r:d.rate,src:'rest'};if(d.ot)e.o=d.ot;tipsState.hours[fname][job]=e;});
+    const jobs=people[eid].jobs;Object.keys(jobs).forEach(job=>{const d=jobs[job];
+      const kept=opt.keepRates?((prevRates[fname]||{})[job]):undefined;
+      const rate=(d.rate!=null&&d.rate!=='')?d.rate:kept;
+      const e={h:d.reg,src:'rest'};if(rate!=null&&rate!=='')e.r=rate;if(d.ot)e.o=d.ot;
+      tipsState.hours[fname][job]=e;});
     if(eid&&!tipsState.empIds[fname])tipsState.empIds[fname]=String(eid);});
-  const sp={},bd={};
-  Object.keys(split).forEach(mn=>{const fn=map[mn]||tipCanon(mn);sp[fn]=Math.round(((sp[fn]||0)+split[mn])*100)/100;});
-  Object.keys(byDay).forEach(md=>{bd[md]={};Object.keys(byDay[md]).forEach(mn=>{const fn=map[mn]||tipCanon(mn);bd[md][fn]=Math.round(((bd[md][fn]||0)+byDay[md][mn])*100)/100;});});
-  tipsState.busserSplit=sp;tipsState.busserSplitByDay=bd;
+  // A pull that carries no busser split must LEAVE ALONE the one already there —
+  // overwriting it with {} would quietly erase every busser's unpaid tips.
+  if(!opt.keepSplit){
+    const sp={},bd={};
+    Object.keys(split).forEach(mn=>{const fn=map[mn]||tipCanon(mn);sp[fn]=Math.round(((sp[fn]||0)+split[mn])*100)/100;});
+    Object.keys(byDay).forEach(md=>{bd[md]={};Object.keys(byDay[md]).forEach(mn=>{const fn=map[mn]||tipCanon(mn);bd[md][fn]=Math.round(((bd[md][fn]||0)+byDay[md][mn])*100)/100;});});
+    tipsState.busserSplit=sp;tipsState.busserSplitByDay=bd;
+  }
   return n;
 }
 async function tipsImportTimesheet(input){
@@ -5565,6 +5577,70 @@ async function tipsImportTimesheet(input){
     const stot=Object.values(split).reduce((a,b)=>a+b,0),nb=Object.keys(split).length;
     tipsSetStatus('✓ imported '+n+' employees'+(nb?(' + busser split $'+stot.toFixed(2)+' across '+nb):'')+' — saved',' #34d399');
   }catch(e){tipsSetStatus('⚠ import failed: '+(e&&e.message||e),'#f87171');}
+}
+// ── HOURS STRAIGHT OFF THE REGISTER ──────────────────────────────────────────
+//
+// The MICROS timesheet PDF is a printout of somebody else's system, re-parsed on the
+// way in. The register is our own clock now, so payroll reads it directly: punches →
+// shifts → hours per person per job, for exactly the dates this sheet is set to.
+//
+// WHAT THIS DOES NOT TOUCH, on purpose:
+//   · RATES. The register does not know what anybody is paid. Rates typed here are
+//     the only copy, so a pull keeps every one of them and moves only the hours.
+//   · TIPS and UNPAID. Those come off the nightly tip sheet and the busser split.
+//     The POS knows charge tips per server and will be able to fill them later, but
+//     overwriting a hand-built tip sheet from a half-migrated register is how a
+//     busser's night disappears. It reports what it saw and changes nothing.
+//   · WEDDING (💍) rows. Same as the timesheet import — only restaurant rows are
+//     replaced, so re-pulling a period is safe and repeatable.
+async function tipsPullFromPos(){
+  if(!posS.srv){tipsSetStatus('⚠ no register server set — POS tab → Connections','#f87171');return;}
+  const from=tipISO(tipsState.start),to=tipISO(tipsState.end);
+  if(!from||!to){tipsSetStatus('⚠ pick a date range first','#f87171');return;}
+  tipsSetStatus('Reading the register, '+from+' → '+to+'…','var(--text-dim)');
+  let r;
+  try{r=await posSrv('/api/reports/labor?from='+encodeURIComponent(from)+'&to='+encodeURIComponent(to));}
+  catch(e){tipsSetStatus('⚠ could not reach the register: '+(e&&e.message||e),'#f87171');return;}
+  if(r.status===404){
+    tipsSetStatus('⚠ this mini does not serve /api/reports/labor yet — the registers are recording punches and they will land once it does','#fbbf24');return;}
+  if(!r.ok){tipsSetStatus('⚠ the register answered '+r.status+(r.body&&r.body.error?(' — '+r.body.error):''),'#f87171');return;}
+  const rows=(r.body&&r.body.people)||[];
+  if(!rows.length){tipsSetStatus('The register has no hours in '+from+' → '+to+' — nobody punched, or these dates are before the clock went live','var(--text-dim)');return;}
+
+  // Into the same shape the timesheet parser produces, so ONE merge fills this grid
+  // and the two sources can never drift apart in how they land.
+  const people={},warn=[];let posTips=0;
+  rows.forEach(pr=>{
+    const eid=pr.emp_id!=null?String(pr.emp_id):('x'+(pr.name||''));
+    const jobs={};
+    (pr.jobs||[]).forEach(j=>{
+      const name=j.job||j.name||'Hourly';
+      const e=jobs[name]||(jobs[name]={reg:0,ot:0,rate:undefined});
+      e.reg=Math.round((e.reg+(+j.regular||0))*100)/100;
+      e.ot=Math.round((e.ot+(+j.ot||0))*100)/100;
+      if(j.rate_cents!=null)e.rate=Math.round(+j.rate_cents)/100;
+    });
+    if(!Object.keys(jobs).length)return;
+    people[eid]={name:pr.name||('#'+eid),jobs:jobs};
+    if(pr.open_shifts)warn.push((pr.name||eid)+' — '+pr.open_shifts+' shift'+(pr.open_shifts>1?'s':'')+' never punched out');
+    posTips+=(+pr.charge_tips_cents||0);
+  });
+  const n=tipsMergeMicros(people,{},{},{keepRates:true,keepSplit:true});
+  tipsSaveHoursSoon();
+  try{kvPush('ct_emp_ids',{emp:tipsState.empIds},Date.now());}catch(e){}
+  if(activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();
+  // An unpunched shift is somebody's pay being wrong, and it has to be LOUD — a
+  // manager who does not hear about it signs off a period that is short a night.
+  const tipNote=posTips?('  ·  register also recorded '+tipMoney(posTips/100)+' in charge tips (not filled in — the tip sheet still owns those)'):'';
+  if(warn.length){
+    tipsSetStatus('✓ '+n+' from the register — ⚠ '+warn.length+' unfinished shift'+(warn.length>1?'s':'')+': '+warn.slice(0,3).join('; ')+(warn.length>3?' …':'')+tipNote,'#fbbf24');
+  }else{
+    tipsSetStatus('✓ hours for '+n+' employee'+(n===1?'':'s')+' pulled from the register — rates and tips untouched'+tipNote,'#34d399');
+  }
+}
+function tipsPosBtnHTML(){
+  const on=!!posS.srv;
+  return `<button onclick="tipsPullFromPos()" title="${on?'Pull hours from the register for these dates':'Set the register address in the POS tab first'}" style="background:${on?'#0ea5e9':'#3f3f46'};border:none;color:#fff;font-weight:700;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px;display:inline-flex;align-items:center;gap:5px;white-space:nowrap">🍽 Pull hours from POS</button>`;
 }
 function tipsImportBtnHTML(){return `<label title="Import the MICROS timesheet PDF" style="background:#7c3aed;border:none;color:#fff;font-weight:700;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px;display:inline-flex;align-items:center;gap:5px;white-space:nowrap">📄 Import timesheet<input type="file" accept="application/pdf,.pdf" onchange="tipsImportTimesheet(this)" style="display:none"></label>`;}
 // ── Paychex wide CSV (the format from ~/Desktop/Payroll/*/PAYCHEX COMBINED…WITH NAMES.csv) ──
@@ -5958,6 +6034,7 @@ function hoursHTML(){
         <button onclick="tipsThisPeriod()" title="Jump to the current pay period" style="background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:12px">This period</button>
       </div>
       ${filtToggle}
+      ${tipsPosBtnHTML()}
       ${tipsImportBtnHTML()}
       <span id="tips-status" style="font-size:12px;color:var(--text-dim)"></span>
       ${tipsCsvBtnHTML()}
@@ -5985,7 +6062,7 @@ function hoursHTML(){
       </table>
     </div>
     <div style="margin-top:10px;font-size:12px;color:var(--text-muted);line-height:1.5">
-      Everyone in one sheet — restaurant positions (MICROS) first, then wedding/event (💍) — with each person's <b>Tips</b> (paid) and <b>Unpaid</b> tips from the Tips tab. <b>Pay</b> = Reg × Rate + OT × Rate × 1.5. This is the shape of the Paychex export. Saves automatically.
+      Everyone in one sheet — restaurant positions first, then wedding/event (💍) — with each person's <b>Tips</b> (paid) and <b>Unpaid</b> tips from the Tips tab. Restaurant hours come from <b>the register</b> (Pull hours from POS) or the MICROS timesheet; either one replaces only the restaurant rows, and neither touches a rate you have typed. <b>Pay</b> = Reg × Rate + OT × Rate × 1.5. This is the shape of the Paychex export. Saves automatically.
     </div>
   </div>`;
 }
