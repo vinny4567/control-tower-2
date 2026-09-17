@@ -6307,9 +6307,19 @@ const posSyncToken=()=>posOfficeToken()||localStorage.getItem('ct_kv_key')||'';
 const posSrv=(p,o)=>posFetch(posS.srv,p,o);
 // A 401 from the mini means one of two things and they need different answers, so say
 // which: no key on this device at all, or a key it does not accept.
-const posAuthNote=()=>posSyncToken()
-  ? '⚠ the register refused this browser\'s back-office key — check it matches the mini'
-  : '⚠ this device has no back-office key, and the register now requires one (Watch Tower header → Enter keys)';
+// A 401 has THREE causes now, not two, and they need three different fixes. The third
+// is easy to miss: the key is deliberately withheld from an address that is not the
+// mini (posBackOfficeAuth's trusted-host check), so the browser holds a perfectly good
+// key and never sends it. Reporting that as "the register refused your key" would send
+// somebody off to re-enter a key that was never the problem.
+const posAuthNote=()=>{
+  if(!posTrustedHost(posS.srv))
+    return '⚠ the back-office key is not sent to ' + (posS.srv || 'this address')
+         + ' — only to the mini over the tailnet (a *.ts.net address) or localhost. Fix the POS server address in Connections.';
+  return posSyncToken()
+    ? '⚠ the register refused this browser\'s back-office key — check it matches the mini'
+    : '⚠ this device has no back-office key, and the register now requires one (Watch Tower header → Enter keys)';
+};
 
 function posSaveConn(){
   const u=(document.getElementById('pos-url')||{}).value||'';
