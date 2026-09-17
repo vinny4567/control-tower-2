@@ -9054,6 +9054,9 @@ async function staffPushMerged(){
   staffS.at=payload.at;
   try{localStorage.setItem(STAFF_KEY,JSON.stringify(payload))}catch(e){}
   kvPush(STAFF_KEY,payload,payload.at);
+  // Derived, and derived AFTER the merge — so the map the mini reads is built from the
+  // rates that actually survived, not from this screen's view of them.
+  staffPublishJobRates();
 }
 
 async function staffPull(){
@@ -9331,7 +9334,37 @@ function staffDetail(p){
 //
 // It is NOT a second copy of anybody's pay. A person with their own rate keeps it —
 // this only answers "and everyone else on that job".
+// The register's own job numbers, so a rate can be published against the NUMBER as well
+// as the name. The number is what survives a job being renamed, and the mini matches on
+// it first. Kept in step with pos/src/employees.js JOBS.
+const STAFF_JOB_NUMS={Manager:101,Cook:104,Server:201,Bartender:202,Host:203,Busser:204};
+
 function staffJobs(){return staffS.jobs||(staffS.jobs={})}
+
+// PUBLISH THE RATES THE MINI READS.
+//
+// The mini's labor report fills each shift's rate from KV `ct_job_rates`, shaped
+// { "<job num or name>": CENTS per hour } — see server/labor.js. This screen edits in
+// dollars and keeps timestamps for merging, so the flat cents map is written as a
+// derived projection rather than a second source of truth: rebuilt from the merged
+// state on every save, never edited directly.
+//
+// Both the name and the number are published where the number is known, because a job
+// renamed here would otherwise silently stop matching the punches already recorded.
+function staffJobRatesForMini(){
+  const out={};
+  const jobs=staffJobs();
+  Object.keys(jobs).forEach(job=>{
+    const r=jobs[job]&&jobs[job].rate;
+    if(!(r>0))return;                      // a missing rate stays missing — never 0
+    const cents=Math.round(r*100);
+    out[job]=cents;
+    const num=STAFF_JOB_NUMS[job];
+    if(num!=null)out[String(num)]=cents;
+  });
+  return out;
+}
+function staffPublishJobRates(){kvPush('ct_job_rates',staffJobRatesForMini(),Date.now())}
 function staffJobRate(job){const j=staffJobs()[job];return j&&j.rate>0?j.rate:null}
 
 function staffSetJobRate(job,v){
@@ -9425,6 +9458,8 @@ function posJobRatesHTML(){
       Payroll asks for a rate in this order: <b>the person's rate for that job</b> (Staff tab), then
       <b>the job default</b> here. Blank means not set — never $0, which would read as an hour worked
       for nothing.
+      <div style="margin-top:6px">These go to <b>the mini</b>, which uses them to cost every shift in the
+      Labor report — the register itself never knows what anybody is paid.</div>
       <div style="margin-top:6px;color:var(--text-muted);font-size:12px">A job showing people but no rate is the one to fill in first: those hours cannot be costed.</div>
     </div>
   </div>`;
