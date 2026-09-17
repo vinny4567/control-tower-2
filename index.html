@@ -9049,6 +9049,23 @@ async function staffPushMerged(){
   if(r&&r.value&&r.value.people){
     staffS.people=staffMerge(staffS.people,r.value.people);
     staffS.jobs=staffMergeJobs(staffS.jobs,r.value.jobs);
+    // NOTHING OF OURS TO ADD → DON'T WRITE.
+    //
+    // This push cannot re-enter staffSave (it writes storage and kvPush directly, it
+    // does not go back through the debounce), so there is no local loop. The one to
+    // guard is the two-device version: every payload carries a fresh `at`, so if a
+    // pull-and-merge ever runs on a timer, each side would see the other's "new" value
+    // and answer it — forever, with no change in content. Writing only when the merge
+    // actually added something makes that impossible before it can be built by
+    // accident.
+    // Compared THROUGH the merge on both sides. Merging normalises a record (it fills
+    // in the empty `rates`/`register`/`sources` objects), so comparing a merged result
+    // against a raw remote would differ on shape alone and push every single time —
+    // defeating the guard it is meant to be.
+    const same=JSON.stringify({p:staffS.people,j:staffS.jobs||{}})
+             ===JSON.stringify({p:staffMerge(r.value.people,r.value.people),
+                                j:staffMergeJobs(r.value.jobs,r.value.jobs)});
+    if(same){staffS.at=r.at||staffS.at;return;}
   }
   const payload={people:staffS.people,jobs:staffS.jobs||{},at:Date.now()};
   staffS.at=payload.at;
