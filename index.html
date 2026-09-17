@@ -6233,10 +6233,24 @@ const POS_TOK_KEY='ct_pos_token';
 const posToken=()=>{try{return localStorage.getItem(POS_TOK_KEY)||''}catch(e){return ''}};
 const posSetToken=(t)=>{try{t?localStorage.setItem(POS_TOK_KEY,t):localStorage.removeItem(POS_TOK_KEY)}catch(e){}};
 
+// The mini's reports, employees and stripe routes now require a manager session OR the
+// back-office sync token (Jarvis locked them down 9/17 — they were readable unauthenticated).
+// Only ever send that token to the mini itself or a local box, never to whatever host
+// happens to be typed into the connection card.
+const posTrustedHost=(u)=>{
+  try{
+    const h=new URL(/^https?:\/\//i.test(u||'')?u:'http://'+(u||'')).hostname.toLowerCase();
+    return h==='localhost'||h==='127.0.0.1'||/(^|\.)ts\.net$/.test(h);
+  }catch(e){return false}
+};
 async function posFetch(base,path,opts){
   const o=Object.assign({credentials:'include',headers:{}},opts||{});
   if(o.method==='POST'){o.headers['content-type']='application/json';o.headers['x-crm']='1'}
   const tk=posToken(); if(tk)o.headers['authorization']='Bearer '+tk;
+  if(posTrustedHost(base)){
+    const sk=(()=>{try{return localStorage.getItem('ct_kv_key')||''}catch(e){return ''}})();
+    if(sk)o.headers['x-sync-token']=sk;    // works when nobody is signed in as a manager
+  }
   const r=await fetch(posBaseUrl(base)+path,o);
   let body=null;try{body=await r.json()}catch(_){}
   return{ok:r.ok,status:r.status,body:body||{}};
