@@ -8151,10 +8151,15 @@ function posRangeHonored(){
   if(!rep)return true;
   // Whichever payload this report actually loaded — only sales used to be checked, so
   // a menu-item report run for August against an old mini said nothing at all.
-  const b=['sales','items','voids','labor','payouts','nights'].map(k=>rep[k]).find(x=>x&&x.from!=null);
+  const b=['sales','items','voids','labor','payouts','nights'].map(k=>rep[k]).find(x=>x&&(x.window||x.from!=null));
   if(!b)return true;
+  // The mini echoes the business days it actually used (`window`, or a string `from` on
+  // the labor report). Comparing those is exact — no timezone guesswork, and no 36-hour
+  // fuzz that could call a genuinely wrong fortnight close enough.
+  const w=b.window||(typeof b.from==='string'?{from:b.from,to:b.to}:null);
+  if(w&&w.from)return w.from===r.from&&(!w.to||w.to===r.to);
   const asked=new Date(r.from+'T00:00:00').getTime(),got=new Date(b.from).getTime();
-  return Math.abs(got-asked)<36*3600e3;   // a day's slack for the 4am cutoff
+  return Math.abs(got-asked)<36*3600e3;   // an older mini: a day's slack for the 4am cutoff
 }
 async function posLoadReports(){
   if(!posS.srv){await posFindLocal('srv')}
