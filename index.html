@@ -9026,7 +9026,7 @@ async function staffPull(){
   try{
     const r=await fetch(staffUrl()+'/api/roster/all',{headers:{'x-api-key':staffRosterKey()}});
     if(r.status===401){staffS.busy=false;staffS.note='⚠ the scheduler refused that key';return renderViewport()}
-    if(r.status===404){staffS.busy=false;staffS.note='⚠ the scheduler has not been redeployed yet — /api/roster/all is not there. Push is done; it needs a Manual Deploy on Render.';return renderViewport()}
+    if(r.status===404){staffS.busy=false;staffS.note='⚠ this scheduler does not serve /api/roster/all — check it has deployed the current build';return renderViewport()}
     if(!r.ok)throw new Error('HTTP '+r.status);
     body=await r.json();
   }catch(e){staffS.busy=false;staffS.note='⚠ could not reach the scheduler: '+(e&&e.message||e);return renderViewport()}
