@@ -6268,6 +6268,7 @@ function posSec(s){posS.sec=s;renderViewport();
   if(s==='items'||s==='printers')posLoadCatalog();
   if(s==='employees'&&!posS.demo&&!posS.url)posBoot();
   if(s==='reports'){posS.repShow=null;posS.rep=null;posS.repErr=''}
+  if(s==='staff')staffLoad();
   if(s==='grazie')posBoot();
 }
 function posToggleConn(){posS.showConn=!posS.showConn;renderViewport()}
@@ -8972,7 +8973,181 @@ function posDiscountsHTML(){
 }
 
 // ---- shell ------------------------------------------------------------------
-const POS_SECTIONS=[['items','Menu items'],['discounts','Discounts'],['printers','Printers'],['reports','Reports'],['grazie','CRM'],['employees','Employees']];
+// ---- THE EMPLOYEE DATABASE -----------------------------------------------------
+//
+// One list of every person who works here, which nothing else in the building has.
+// The scheduler knows who is on the schedule, Paychex knows who gets paid, the
+// register knows who can sign in, and each of them is missing people the others have.
+// This is where they meet.
+//
+// IT IS A STORE, NOT A VIEW. Pulling a source MERGES into it and never deletes:
+// somebody taken off the schedule is still on payroll until payroll says otherwise,
+// and a database that quietly drops them is one that will be wrong about somebody's
+// last cheque. A person the scheduler has stopped listing is MARKED, and stays.
+//
+// The roster key is never in this file. Same rule as the Orders key: it is pasted
+// once and kept in this browser, because a key in the page is a key in the repo.
+const STAFF_KEY='ct_staff';
+let staffS={people:{},at:0,loaded:false,busy:false,note:'',q:''};
+
+const staffRosterKey=()=>localStorage.getItem('ct_roster_key')||'';
+function staffSetKey(){
+  const k=prompt('Paste the scheduler roster key (ROSTER_API_KEY on Render):');
+  if(k&&k.trim()){localStorage.setItem('ct_roster_key',k.trim());staffPull();}
+}
+const staffUrl=()=>localStorage.getItem('ct_sched_url')||'https://schedule.angeliscatering.com';
+
+// The same normalisation payroll uses, so one person is one row whether they arrived
+// from the scheduler, a time sheet, or the register.
+function staffKeyOf(name){
+  return String(name||'').toLowerCase().replace(/['’.]/g,'').replace(/-/g,' ')
+    .split(/\s+/).filter(t=>t.length>1).join(' ').trim();
+}
+
+async function staffLoad(){
+  if(staffS.loaded)return;
+  staffS.loaded=true;
+  try{const local=localStorage.getItem(STAFF_KEY);if(local){const j=JSON.parse(local);if(j&&j.people)staffS.people=j.people,staffS.at=j.at||0}}catch(e){}
+  const r=await kvGet(STAFF_KEY);
+  if(r&&r.value&&r.value.people&&(r.at||0)>=(staffS.at||0)){staffS.people=r.value.people;staffS.at=r.at||0}
+  if(activeTab===POS&&posS.sec==='staff')renderViewport();
+}
+function staffSave(){
+  staffS.at=Date.now();
+  const payload={people:staffS.people,at:staffS.at};
+  try{localStorage.setItem(STAFF_KEY,JSON.stringify(payload))}catch(e){}
+  kvPush(STAFF_KEY,payload,staffS.at);
+}
+
+async function staffPull(){
+  if(!staffRosterKey())return staffSetKey();
+  staffS.busy=true;staffS.note='';renderViewport();
+  let body=null;
+  try{
+    const r=await fetch(staffUrl()+'/api/roster/all',{headers:{'x-api-key':staffRosterKey()}});
+    if(r.status===401){staffS.busy=false;staffS.note='⚠ the scheduler refused that key';return renderViewport()}
+    if(r.status===404){staffS.busy=false;staffS.note='⚠ the scheduler has not been redeployed yet — /api/roster/all is not there. Push is done; it needs a Manual Deploy on Render.';return renderViewport()}
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    body=await r.json();
+  }catch(e){staffS.busy=false;staffS.note='⚠ could not reach the scheduler: '+(e&&e.message||e);return renderViewport()}
+
+  const rows=(body&&body.employees)||[];
+  const now=Date.now();
+  const seen=new Set();
+  let added=0,updated=0;
+  rows.forEach(r=>{
+    const k=staffKeyOf(r.name);if(!k)return;
+    seen.add(k);
+    const p=staffS.people[k]||(staffS.people[k]={key:k,name:r.name,sources:{},addedAt:now});
+    if(!staffS.people[k].addedAt)staffS.people[k].addedAt=now;
+    const before=JSON.stringify(p);
+    p.name=r.name||p.name;
+    p.nickname=r.nickname||null;
+    p.positions=r.positions||[];
+    p.role=r.role||null;
+    p.active=r.active!==false;
+    p.phone=r.phone||null;
+    // The scheduler is the source for these two ONLY while nothing better has set
+    // them. A Paychex id typed in the Tips tab is a person's real id; a pull must not
+    // overwrite it with a blank because the scheduler never had one.
+    if(r.paychex_id)p.paychex_id=r.paychex_id;
+    if(r.rate!=null)p.rate=r.rate;
+    p.since=r.since||p.since||null;
+    p.gone=false;
+    p.sources=p.sources||{};
+    p.sources.scheduler={at:now,kind:r.source||'app'};
+    if(before==='undefined')added++;else if(JSON.stringify(p)!==before)updated++;
+  });
+  // Anybody this database learned FROM the scheduler who is no longer in its answer.
+  // Marked, never removed — see the note at the top.
+  let gone=0;
+  Object.keys(staffS.people).forEach(k=>{
+    const p=staffS.people[k];
+    if(p.sources&&p.sources.scheduler&&!seen.has(k)){p.gone=true;gone++;}
+  });
+  staffS.busy=false;
+  staffS.note='✓ '+rows.length+' from the scheduler'
+    +(gone?('  ·  '+gone+' no longer listed there (kept, marked)'):'')
+    +(body.counts?('  ·  '+body.counts.payroll_only+' payroll-only, '+body.counts.no_paychex_id+' with no Paychex ID'):'');
+  staffSave();
+  renderViewport();
+}
+
+function staffRows(){
+  const q=(staffS.q||'').toLowerCase().trim();
+  let rows=Object.values(staffS.people);
+  if(q)rows=rows.filter(p=>(p.name||'').toLowerCase().includes(q)
+    ||(p.positions||[]).join(' ').toLowerCase().includes(q)
+    ||String(p.paychex_id||'').includes(q));
+  const last=(n)=>String(n||'').trim().split(/\s+/).pop()||n;
+  return rows.sort((a,b)=>last(a.name).localeCompare(last(b.name))||String(a.name).localeCompare(String(b.name)));
+}
+function staffSearch(v){staffS.q=v;const el=document.getElementById('staff-body');if(el)el.innerHTML=staffBodyHTML();}
+
+function staffBodyHTML(){
+  const rows=staffRows();
+  if(!rows.length)return `<div style="color:var(--text-dim);font-size:13px;padding:12px 0">${staffS.q?'Nobody matches that.':'Nobody yet — pull from the scheduler to start the list.'}</div>`;
+  const line=(p)=>{
+    const sched=p.sources&&p.sources.scheduler;
+    const tag=(t,c)=>`<span style="font-size:10px;font-weight:800;letter-spacing:.4px;color:${c};border:1px solid currentColor;border-radius:5px;padding:0 5px;white-space:nowrap">${t}</span>`;
+    return `<div style="display:flex;gap:10px;align-items:baseline;padding:7px 0;border-top:1px solid var(--border);font-size:14px;${p.active===false||p.gone?'opacity:.55':''}">
+      <span style="flex:1;min-width:150px;font-weight:600">${esc(p.name)}
+        <div style="font-size:12px;color:var(--text-muted)">${esc((p.positions||[]).join(' · '))||(p.role?esc(p.role):'')}</div></span>
+      <span style="width:78px;font-variant-numeric:tabular-nums;font-size:13px;color:${p.paychex_id?'var(--accent2,#38bdf8)':'#f87171'}">${p.paychex_id?esc(String(p.paychex_id)):'no ID'}</span>
+      <span style="width:66px;text-align:right;font-variant-numeric:tabular-nums;font-size:13px;color:var(--text-dim)">${p.rate?('$'+p.rate):''}</span>
+      <span style="width:150px;display:flex;gap:4px;flex-wrap:wrap">
+        ${sched&&sched.kind==='payroll'?tag('PAYROLL ONLY','#a78bfa'):''}
+        ${sched&&sched.kind!=='payroll'?tag('SCHEDULER','var(--text-muted)'):''}
+        ${p.active===false?tag('INACTIVE','#f87171'):''}
+        ${p.gone?tag('OFF THE SCHEDULE','#fbbf24'):''}
+      </span>
+    </div>`;
+  };
+  return rows.map(line).join('');
+}
+
+function posStaffHTML(){
+  staffLoad();
+  const all=Object.values(staffS.people);
+  const noId=all.filter(p=>!p.paychex_id).length;
+  const payrollOnly=all.filter(p=>p.sources&&p.sources.scheduler&&p.sources.scheduler.kind==='payroll').length;
+  const inactive=all.filter(p=>p.active===false||p.gone).length;
+  const when=staffS.at?new Date(staffS.at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'never';
+  return `
+  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+    ${posStat('People',String(all.length),'in the database')}
+    ${posStat('On the schedule',String(all.length-payrollOnly-0),'have a scheduler account')}
+    ${posStat('Payroll only',String(payrollOnly),'no account, still paid')}
+    ${posStat('No Paychex ID',String(noId),noId?'cannot be exported':'every one can be exported')}
+  </div>
+  <div style="${posCardCss};margin-bottom:14px">
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+      <button onclick="staffPull()" ${staffS.busy?'disabled':''} style="${posBtn(staffS.busy?'#3f3f46':'#0ea5e9')}">${staffS.busy?'Reading the scheduler…':'⟳ Pull from the schedule app'}</button>
+      <button onclick="staffSetKey()" style="${posBtn('#3f3f46')};padding:8px 12px;font-size:13px">${staffRosterKey()?'Change key':'Set roster key'}</button>
+      <input value="${esc(staffS.q||'')}" oninput="staffSearch(this.value)" placeholder="Search name, position, ID"
+        style="${posInput};flex:1;min-width:180px">
+      <span style="font-size:12px;color:var(--text-muted)">last pulled ${esc(when)}</span>
+    </div>
+    ${staffS.note?`<div style="margin-bottom:8px;padding:8px 12px;border-radius:8px;background:${staffS.note[0]==='✓'?'rgba(52,211,153,.12)':'rgba(251,191,36,.12)'};color:${staffS.note[0]==='✓'?'#34d399':'#fbbf24'};font-size:13px">${esc(staffS.note)}</div>`:''}
+    <div style="display:flex;gap:10px;padding:4px 0;font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px">
+      <span style="flex:1;min-width:150px">Name</span><span style="width:78px">Paychex</span>
+      <span style="width:66px;text-align:right">Rate</span><span style="width:150px">Where from</span></div>
+    <div id="staff-body">${staffBodyHTML()}</div>
+  </div>
+  <div style="${posCardCss};max-width:720px">
+    <div style="font-weight:800;font-size:15px;margin-bottom:4px">Where this comes from</div>
+    <div style="color:var(--text-dim);font-size:13px;line-height:1.6">
+      The <b>schedule app</b> is the first source — everyone with an account, plus the company-wide Paychex
+      list it already holds for event staff who never had one. Pulling again merges: it updates what the
+      scheduler knows and <b>never deletes</b>. Somebody taken off the schedule is marked
+      <span style="color:#fbbf24">OFF THE SCHEDULE</span> and kept, because they are still on payroll until
+      payroll says otherwise.
+      <div style="margin-top:6px;color:var(--text-muted);font-size:12px">Next sources to add: the register's own sign-in list, and the Paychex IDs typed into the Tips tab.</div>
+    </div>
+  </div>`;
+}
+
+const POS_SECTIONS=[['items','Menu items'],['discounts','Discounts'],['printers','Printers'],['reports','Reports'],['grazie','CRM'],['staff','Staff'],['employees','Employees']];
 function posConnHTML(){
   return `<div style="${posCardCss};margin-bottom:14px">
     <div style="font-weight:800;font-size:15px;margin-bottom:6px">Connections</div>
@@ -8988,7 +9163,7 @@ function posConnHTML(){
 function posHTML(){
   const nav=POS_SECTIONS.map(([k,l])=>`<button onclick="posSec('${k}')" style="${posBtn(posS.sec===k?'#f59e0b':'#3f3f46')};padding:9px 15px;font-size:14px">${l}</button>`).join('');
   const who=(posS.me&&posS.health==='ok'&&posS.sec==='grazie')?`<span style="font-size:13px;color:var(--text-dim)">${esc(posS.me.username)}</span><button onclick="posLogout()" style="${posBtn('#3f3f46')};padding:7px 12px;font-size:13px">Sign out</button>`:'';
-  const body=posS.sec==='items'?posItemsHTML():posS.sec==='discounts'?posDiscountsHTML():posS.sec==='printers'?posPrintersHTML():posS.sec==='reports'?posReportsHTML():posS.sec==='employees'?posEmployeesHTML():posGrazieHTML();
+  const body=posS.sec==='items'?posItemsHTML():posS.sec==='discounts'?posDiscountsHTML():posS.sec==='printers'?posPrintersHTML():posS.sec==='reports'?posReportsHTML():posS.sec==='staff'?posStaffHTML():posS.sec==='employees'?posEmployeesHTML():posGrazieHTML();
   // #viewport is fixed and overflow:hidden, so every tab brings its own scroller —
   // without one, anything past the fold is simply clipped.
   return `<div style="height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch">
