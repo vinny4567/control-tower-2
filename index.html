@@ -6243,14 +6243,24 @@ const posTrustedHost=(u)=>{
     return h==='localhost'||h==='127.0.0.1'||/(^|\.)ts\.net$/.test(h);
   }catch(e){return false}
 };
+// The back office has its OWN key now (9/17), separate from the sync key, so that a
+// leaked sync key can read the calendar but not the day's sales or a manager PIN.
+// The mini still accepts the sync key while devices get the new one; once a device has
+// the office key we send only that, so a mistyped one fails loudly here instead of
+// quietly later when the mini stops accepting the old one.
+const posOfficeToken=()=>{try{return localStorage.getItem('ct_office_key')||''}catch(e){return ''}};
+const posBackOfficeAuth=(base)=>{
+  if(!posTrustedHost(base))return null;          // never to a host typed into the card
+  const ok=posOfficeToken(); if(ok)return{'x-office-token':ok};
+  const sk=(()=>{try{return localStorage.getItem('ct_kv_key')||''}catch(e){return ''}})();
+  return sk?{'x-sync-token':sk}:null;            // transitional: no office key on this device yet
+};
 async function posFetch(base,path,opts){
   const o=Object.assign({credentials:'include',headers:{}},opts||{});
   if(o.method==='POST'){o.headers['content-type']='application/json';o.headers['x-crm']='1'}
   const tk=posToken(); if(tk)o.headers['authorization']='Bearer '+tk;
-  if(posTrustedHost(base)){
-    const sk=(()=>{try{return localStorage.getItem('ct_kv_key')||''}catch(e){return ''}})();
-    if(sk)o.headers['x-sync-token']=sk;    // works when nobody is signed in as a manager
-  }
+  const auth=posBackOfficeAuth(base);            // works when nobody is signed in as a manager
+  if(auth)Object.assign(o.headers,auth);
   const r=await fetch(posBaseUrl(base)+path,o);
   let body=null;try{body=await r.json()}catch(_){}
   return{ok:r.ok,status:r.status,body:body||{}};
@@ -6291,18 +6301,15 @@ const posApi=(p,o)=>posFetch(posS.url,p,o);
 // Sent as a HEADER, never in the URL — a token in a query string ends up in server logs
 // and browser history, which is a slower version of not having locked the door.
 // Attached here rather than at each call site so a new endpoint cannot forget it.
-const posSyncToken=()=>localStorage.getItem('ct_kv_key')||'';
-const posSrv=(p,o)=>{
-  const tk=posSyncToken();
-  const opt=Object.assign({},o||{});
-  if(tk)opt.headers=Object.assign({'x-sync-token':tk},opt.headers||{});
-  return posFetch(posS.srv,p,opt);
-};
+// posFetch attaches the key itself, so a new endpoint can't forget it — and so it is
+// gated by the same trusted-host check rather than going to whatever address is typed in.
+const posSyncToken=()=>posOfficeToken()||localStorage.getItem('ct_kv_key')||'';
+const posSrv=(p,o)=>posFetch(posS.srv,p,o);
 // A 401 from the mini means one of two things and they need different answers, so say
 // which: no key on this device at all, or a key it does not accept.
 const posAuthNote=()=>posSyncToken()
   ? '⚠ the register refused this browser\'s back-office key — check it matches the mini'
-  : '⚠ this device has no back-office key, and the register now requires one (Watch Tower header → sync key)';
+  : '⚠ this device has no back-office key, and the register now requires one (Watch Tower header → Enter keys)';
 
 function posSaveConn(){
   const u=(document.getElementById('pos-url')||{}).value||'';
@@ -10405,11 +10412,13 @@ function ctNotesKey(f){try{f.contentWindow.postMessage({ctKvKey:localStorage.get
 // for weeks saving to itself while everyone assumed it was syncing. Say it on every screen.
 function ctSyncBadge(){const b=document.getElementById('ct-nosync');
   if(b)b.style.display=localStorage.getItem('ct_kv_key')?'none':'';}
-function ctKeysMissing(){const m=[];if(!localStorage.getItem('ct_kv_key'))m.push('Sync');if(!localStorage.getItem('ct_sched_key'))m.push('Schedule');if(!localStorage.getItem('ct_mail_key'))m.push('Email');return m}
+function ctKeysMissing(){const m=[];if(!localStorage.getItem('ct_kv_key'))m.push('Sync');if(!localStorage.getItem('ct_office_key'))m.push('Back office');if(!localStorage.getItem('ct_sched_key'))m.push('Schedule');if(!localStorage.getItem('ct_mail_key'))m.push('Email');return m}
 function setCtKeys(){
   const cur=k=>localStorage.getItem(k)||'';
   const kv=prompt('Sync key \u2014 saves and loads everything in the Watch Tower.\n(SYNC_TOKEN in Render \u2192 angelis-backend)',cur('ct_kv_key'));
   if(kv!==null)kv.trim()?localStorage.setItem('ct_kv_key',kv.trim()):localStorage.removeItem('ct_kv_key');
+  const of=prompt('Back-office key — the register’s sales reports and staff list.\n(OFFICE_TOKEN on the mini. Separate from the sync key on purpose, so\nthe sync key alone can’t open the money screens.)',cur('ct_office_key'));
+  if(of!==null)of.trim()?localStorage.setItem('ct_office_key',of.trim()):localStorage.removeItem('ct_office_key');
   const sc=prompt('Schedule key \u2014 weddings, time sheets and tips.\n(ROSTER_API_KEY in Render \u2192 restaurant-scheduler)',cur('ct_sched_key'));
   if(sc!==null)sc.trim()?localStorage.setItem('ct_sched_key',sc.trim()):localStorage.removeItem('ct_sched_key');
   const ml=prompt('Email key \u2014 the inboxes.\n(MAIL_TOKEN in Render \u2192 jarvis-voice)',cur('ct_mail_key'));
