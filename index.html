@@ -5605,6 +5605,11 @@ async function tipsPullFromPos(){
     tipsSetStatus('⚠ this mini does not serve /api/reports/labor yet — the registers are recording punches and they will land once it does','#fbbf24');return;}
   if(!r.ok){tipsSetStatus('⚠ the register answered '+r.status+(r.body&&r.body.error?(' — '+r.body.error):''),'#f87171');return;}
   const rows=(r.body&&r.body.people)||[];
+  // TWO PEOPLE, ONE NAME. A check records the server as free text, so when two
+  // employees share a display name their on-check tips cannot be told apart — the mini
+  // attributes the lot to one row and names the clash here. Payroll has to know, or
+  // somebody's tips are quietly on somebody else's cheque.
+  const clash=(r.body&&r.body.tip_name_collisions)||[];
   if(!rows.length){tipsSetStatus('The register has no hours in '+from+' → '+to+' — nobody punched, or these dates are before the clock went live','var(--text-dim)');return;}
 
   // Into the same shape the timesheet parser produces, so ONE merge fills this grid
@@ -5632,10 +5637,11 @@ async function tipsPullFromPos(){
   // An unpunched shift is somebody's pay being wrong, and it has to be LOUD — a
   // manager who does not hear about it signs off a period that is short a night.
   const tipNote=posTips?('  ·  register also recorded '+tipMoney(posTips/100)+' in charge tips (not filled in — the tip sheet still owns those)'):'';
+  const clashNote=clash.length?('  ·  ⚠ two people share the name '+clash.slice(0,3).map(esc).join(', ')+(clash.length>3?' …':'')+' — their on-check tips could not be split, verify by hand'):'';
   if(warn.length){
-    tipsSetStatus('✓ '+n+' from the register — ⚠ '+warn.length+' unfinished shift'+(warn.length>1?'s':'')+': '+warn.slice(0,3).join('; ')+(warn.length>3?' …':'')+tipNote,'#fbbf24');
+    tipsSetStatus('✓ '+n+' from the register — ⚠ '+warn.length+' unfinished shift'+(warn.length>1?'s':'')+': '+warn.slice(0,3).join('; ')+(warn.length>3?' …':'')+tipNote+clashNote,'#fbbf24');
   }else{
-    tipsSetStatus('✓ hours for '+n+' employee'+(n===1?'':'s')+' pulled from the register — rates and tips untouched'+tipNote,'#34d399');
+    tipsSetStatus('✓ hours for '+n+' employee'+(n===1?'':'s')+' pulled from the register — rates and tips untouched'+tipNote+clashNote,clash.length?'#fbbf24':'#34d399');
   }
 }
 function tipsPosBtnHTML(){
