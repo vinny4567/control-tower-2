@@ -2179,7 +2179,30 @@ const KV_URL='https://order.angeliscatering.com/api/kv/';
 async function kvGet(k){try{const r=await fetch(KV_URL+encodeURIComponent(k)+'?token='+encodeURIComponent(KV_TOKEN()));if(!r.ok)return null;return await r.json()}catch(e){return null}}
 const kvPushTimers={};
 const kvPending={}; // k -> {v,at} not yet sent (debounce window)
-function kvSend(k,p,keepalive){try{fetch(KV_URL+encodeURIComponent(k)+'?token='+encodeURIComponent(KV_TOKEN()),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:p.v,at:p.at}),keepalive:!!keepalive}).catch(()=>{})}catch(e){}}
+// Phase 1 of bringing the store in-house: every write also goes to the mini on the
+// tailnet, so its copy stays current while the cloud remains the one we READ from.
+// Strictly best-effort — off the tailnet that host doesn't resolve, and that must never
+// delay or fail a cloud write. Turn it off on a device with:
+//   localStorage.setItem('ct_kv_mini','off')
+const KV_MINI='https://angelis-pos.tail0739ce.ts.net:8443/api/kv/';
+function kvSendMini(k,p,keepalive){
+  if(!/^ct_/.test(k))return;                                   // only the ct_* keys move
+  if(localStorage.getItem('ct_kv_mini')==='off')return;
+  if(!KV_TOKEN())return;
+  try{
+    const opts={method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({v:p.v,at:p.at}),keepalive:!!keepalive};
+    if(!keepalive&&typeof AbortController==='function'){
+      const ac=new AbortController();opts.signal=ac.signal;
+      setTimeout(()=>{try{ac.abort()}catch(e){}},5000);        // never let it hang around
+    }
+    fetch(KV_MINI+encodeURIComponent(k)+'?token='+encodeURIComponent(KV_TOKEN()),opts).catch(()=>{});
+  }catch(e){}
+}
+function kvSend(k,p,keepalive){
+  try{fetch(KV_URL+encodeURIComponent(k)+'?token='+encodeURIComponent(KV_TOKEN()),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:p.v,at:p.at}),keepalive:!!keepalive}).catch(()=>{})}catch(e){}
+  kvSendMini(k,p,keepalive);   // after the cloud write, and it can't affect it
+}
 function kvPush(k,v,at){kvPending[k]={v,at};clearTimeout(kvPushTimers[k]);kvPushTimers[k]=setTimeout(()=>{const p=kvPending[k];delete kvPending[k];if(p)kvSend(k,p,false)},1200)}
 // Closing/backgrounding the app used to kill pending pushes (the 1.2s debounce) — edits made right
 // before putting the iPad down stayed device-only. Flush everything the moment we lose the foreground.
