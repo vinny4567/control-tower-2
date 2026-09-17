@@ -9039,6 +9039,10 @@ async function staffPull(){
     const k=staffKeyOf(r.name);if(!k)return;
     seen.add(k);
     const p=staffS.people[k]||(staffS.people[k]={key:k,name:r.name,sources:{},addedAt:now});
+    // SOMEBODY REMOVED HERE STAYS REMOVED. The scheduler will keep listing a person
+    // for as long as their account exists; handing them back every pull would make
+    // "remove" a button that does nothing twice.
+    if(p.removed){p.sources=p.sources||{};p.sources.scheduler={at:now,kind:r.source||'app'};return;}
     if(!staffS.people[k].addedAt)staffS.people[k].addedAt=now;
     const before=JSON.stringify(p);
     p.name=r.name||p.name;
@@ -9075,14 +9079,14 @@ async function staffPull(){
 
 function staffRows(){
   const q=(staffS.q||'').toLowerCase().trim();
-  let rows=Object.values(staffS.people);
+  let rows=Object.values(staffS.people).filter(p=>!p.removed);
   if(q)rows=rows.filter(p=>(p.name||'').toLowerCase().includes(q)
     ||(p.positions||[]).join(' ').toLowerCase().includes(q)
     ||String(p.paychex_id||'').includes(q));
   const last=(n)=>String(n||'').trim().split(/\s+/).pop()||n;
   return rows.sort((a,b)=>last(a.name).localeCompare(last(b.name))||String(a.name).localeCompare(String(b.name)));
 }
-function staffSearch(v){staffS.q=v;const el=document.getElementById('staff-body');if(el)el.innerHTML=staffBodyHTML();}
+function staffSearch(v){staffS.q=v;staffS.open=null;const el=document.getElementById('staff-body');if(el)el.innerHTML=staffBodyHTML();}
 
 function staffBodyHTML(){
   const rows=staffRows();
@@ -9090,20 +9094,158 @@ function staffBodyHTML(){
   const line=(p)=>{
     const sched=p.sources&&p.sources.scheduler;
     const tag=(t,c)=>`<span style="font-size:10px;font-weight:800;letter-spacing:.4px;color:${c};border:1px solid currentColor;border-radius:5px;padding:0 5px;white-space:nowrap">${t}</span>`;
-    return `<div style="display:flex;gap:10px;align-items:baseline;padding:7px 0;border-top:1px solid var(--border);font-size:14px;${p.active===false||p.gone?'opacity:.55':''}">
-      <span style="flex:1;min-width:150px;font-weight:600">${esc(p.name)}
-        <div style="font-size:12px;color:var(--text-muted)">${esc((p.positions||[]).join(' · '))||(p.role?esc(p.role):'')}</div></span>
+    const reg=p.register||{};
+    const rates=Object.values(p.rates||{}).filter(x=>x>0);
+    const rateTx=rates.length>1?('$'+Math.min(...rates)+'–'+Math.max(...rates)):(rates.length?('$'+rates[0]):(p.rate?('$'+p.rate):''));
+    const open=staffS.open===p.key;
+    return `<div style="border-top:1px solid var(--border)">
+      <div onclick="staffOpen('${esc(p.key)}')" style="display:flex;gap:10px;align-items:baseline;padding:7px 0;font-size:14px;cursor:pointer;${p.active===false||p.gone?'opacity:.55':''}">
+      <span style="flex:1;min-width:150px;font-weight:600">${open?'▾':'▸'} ${esc(p.name)}
+        <div style="font-size:12px;color:var(--text-muted);padding-left:14px">${esc(Object.keys(p.rates||{}).join(' · ')||(p.positions||[]).join(' · '))||(p.role?esc(p.role):'')}</div></span>
       <span style="width:78px;font-variant-numeric:tabular-nums;font-size:13px;color:${p.paychex_id?'var(--accent2,#38bdf8)':'#f87171'}">${p.paychex_id?esc(String(p.paychex_id)):'no ID'}</span>
-      <span style="width:66px;text-align:right;font-variant-numeric:tabular-nums;font-size:13px;color:var(--text-dim)">${p.rate?('$'+p.rate):''}</span>
+      <span style="width:66px;text-align:right;font-variant-numeric:tabular-nums;font-size:13px;color:var(--text-dim)">${rateTx}</span>
       <span style="width:150px;display:flex;gap:4px;flex-wrap:wrap">
+        ${reg.access?tag(reg.pin_set?'REGISTER':'REGISTER — NO CODE',reg.pin_set?'#34d399':'#fbbf24'):''}
         ${sched&&sched.kind==='payroll'?tag('PAYROLL ONLY','#a78bfa'):''}
-        ${sched&&sched.kind!=='payroll'?tag('SCHEDULER','var(--text-muted)'):''}
         ${p.active===false?tag('INACTIVE','#f87171'):''}
         ${p.gone?tag('OFF THE SCHEDULE','#fbbf24'):''}
       </span>
+      </div>
+      ${open?staffDetail(p):''}
     </div>`;
   };
   return rows.map(line).join('');
+}
+
+// ---- one person, opened up --------------------------------------------------
+// Rates, register access and a sign-in code. Everything here is per-person and
+// typed by a manager, which makes it the data a scheduler pull must never touch —
+// see the merge rules in staffPull.
+const STAFF_JOBS=['Server','Bartender','Busser','Food Runner','Host','Cook','Dishwasher','Manager','Setup'];
+
+function staffOpen(k){staffS.open=staffS.open===k?null:k;renderViewport()}
+function staffEdit(k,f,v){
+  const p=staffS.people[k];if(!p)return;
+  if(f==='rate'){const n=parseFloat(v);p.rate=isFinite(n)&&n>0?n:null;}
+  else if(f.startsWith('rate:')){
+    const job=f.slice(5);p.rates=p.rates||{};
+    const n=parseFloat(v);
+    if(isFinite(n)&&n>0)p.rates[job]=n;else delete p.rates[job];
+  }
+  else if(f==='paychex')p.paychex_id=String(v||'').trim()||null;
+  else if(f==='register'){p.register=p.register||{};p.register.access=!!v;if(!v)p.register.role=null;}
+  else if(f==='role'){p.register=p.register||{};p.register.role=v||null;if(v)p.register.access=true;}
+  staffSave();
+  renderViewport();
+}
+function staffAddJob(k){
+  const sel=document.getElementById('staff-job-'+k.replace(/[^a-z0-9]/gi,'_'));
+  if(!sel||!sel.value)return;
+  const p=staffS.people[k];if(!p)return;
+  p.rates=p.rates||{};
+  if(p.rates[sel.value]==null)p.rates[sel.value]=0;
+  staffSave();renderViewport();
+}
+
+// REMOVING SOMEBODY IS A TOMBSTONE, not an erase. The next scheduler pull would
+// otherwise hand them straight back, and deleting the same person every week is not
+// a feature. The row is kept so the removal itself is undoable and auditable.
+function staffRemove(k){
+  const p=staffS.people[k];if(!p)return;
+  if(!confirm('Take '+p.name+' off the staff list?\n\nThey stay recorded as removed, so a pull from the scheduler will not add them back. You can undo it.'))return;
+  p.removed={at:Date.now()};
+  staffSave();renderViewport();
+}
+function staffRestore(k){const p=staffS.people[k];if(!p)return;delete p.removed;staffSave();renderViewport()}
+
+// THE SIGN-IN CODE NEVER TOUCHES THIS BROWSER'S STORE.
+//
+// Whatever combination somebody picks is a credential. It goes straight to the mini,
+// which hashes it; this page keeps only the fact that one is set. Putting it in the
+// cloud KV that backs every other field here would be writing staff passwords into a
+// store the register does not even own.
+async function staffSetPin(k){
+  const p=staffS.people[k];if(!p)return;
+  if(!posS.srv)return alert('No register server set — POS tab → Connections.');
+  const code=prompt('Sign-in code for '+p.name+'\n\nAny combination they like (4+ characters). It is sent to the register and stored hashed — it is never kept in this browser or in the cloud.');
+  if(!code)return;
+  if(String(code).trim().length<4)return alert('Too short — 4 characters or more.');
+  try{
+    const r=await posSrv('/api/employees/pin',{method:'POST',body:JSON.stringify({
+      name:p.name, paychex_id:p.paychex_id||null, role:(p.register&&p.register.role)||'server', pin:String(code).trim()})});
+    if(r.status===404){
+      p.register=p.register||{};p.register.pin_pending=true;staffSave();renderViewport();
+      return alert('The mini does not serve /api/employees/pin yet.\n\nNothing was stored — the code was not written here, and it was not written there. Marked as "code pending" so this person is easy to find when the endpoint ships.');
+    }
+    if(!r.ok)return alert('The register refused it: '+((r.body&&r.body.error)||r.status));
+    p.register=p.register||{};p.register.access=true;p.register.pin_set=true;delete p.register.pin_pending;
+    staffSave();renderViewport();
+  }catch(e){alert('Could not reach the register: '+(e&&e.message||e));}
+}
+
+function staffDetail(p){
+  const k=p.key, kid=k.replace(/[^a-z0-9]/gi,'_');
+  const inp='background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 7px;font-family:inherit;font-size:13px;width:74px';
+  const reg=p.register||{};
+  const jobs=Object.keys(p.rates||{});
+  // Positions the scheduler knows about come pre-listed so a rate can be put against
+  // them without hunting through the dropdown.
+  const known=[...new Set([...(p.positions||[]),...jobs])];
+  const rateRow=(job)=>`<div style="display:flex;gap:8px;align-items:center;padding:3px 0">
+    <span style="width:120px;font-size:13px">${esc(job)}</span>
+    <span style="color:var(--text-muted);font-size:12px">$</span>
+    <input value="${(p.rates||{})[job]||''}" inputmode="decimal" placeholder="—"
+      onchange="staffEdit('${esc(k)}','rate:${esc(job)}',this.value)" style="${inp}">
+    <span style="color:var(--text-muted);font-size:12px">/hr</span>
+  </div>`;
+  return `<div style="padding:10px 0 14px 0;border-top:1px dashed var(--border);display:flex;gap:26px;flex-wrap:wrap">
+    <div style="min-width:230px">
+      <div style="font-size:11px;font-weight:800;letter-spacing:.6px;color:var(--text-muted);margin-bottom:6px">JOB RATES</div>
+      ${known.length?known.map(rateRow).join(''):'<div style="color:var(--text-dim);font-size:13px;padding-bottom:4px">No job on file yet.</div>'}
+      <div style="display:flex;gap:6px;align-items:center;margin-top:6px">
+        <select id="staff-job-${kid}" style="${inp};width:auto">
+          <option value="">add a job…</option>
+          ${STAFF_JOBS.filter(j=>known.indexOf(j)<0).map(j=>`<option>${esc(j)}</option>`).join('')}
+        </select>
+        <button onclick="staffAddJob('${esc(k)}')" style="${posBtn('#3f3f46')};padding:5px 10px;font-size:12px">Add</button>
+      </div>
+      <div style="margin-top:8px;font-size:12px;color:var(--text-muted)">A rate here is what payroll pays for that job. Blank means not set — never $0.</div>
+    </div>
+
+    <div style="min-width:230px">
+      <div style="font-size:11px;font-weight:800;letter-spacing:.6px;color:var(--text-muted);margin-bottom:6px">REGISTER ACCESS</div>
+      <label style="display:flex;gap:8px;align-items:center;font-size:14px;cursor:pointer">
+        <input type="checkbox" ${reg.access?'checked':''} onchange="staffEdit('${esc(k)}','register',this.checked)">
+        Can sign in to a register
+      </label>
+      ${reg.access?`
+        <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+          <span style="font-size:13px;width:44px">Role</span>
+          <select onchange="staffEdit('${esc(k)}','role',this.value)" style="${inp};width:auto">
+            ${Object.entries(POS_ROLES).map(([rk,r])=>`<option value="${rk}" ${reg.role===rk?'selected':''}>${esc(r.label)}</option>`).join('')}
+          </select>
+        </div>
+        <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button onclick="staffSetPin('${esc(k)}')" style="${posBtn(reg.pin_set?'#3f3f46':'#0ea5e9')};padding:6px 12px;font-size:13px">${reg.pin_set?'Change sign-in code':'Set a sign-in code'}</button>
+          <span style="font-size:12px;color:${reg.pin_set?'#34d399':(reg.pin_pending?'#fbbf24':'var(--text-muted)')}">${reg.pin_set?'code set':(reg.pin_pending?'code pending — the mini cannot take it yet':'no code yet')}</span>
+        </div>
+        <div style="margin-top:6px;font-size:12px;color:var(--text-muted)">Any combination they like. It goes straight to the mini and is stored hashed — never here, never in the cloud.</div>
+      `:'<div style="margin-top:6px;font-size:12px;color:var(--text-muted)">Off means they exist for payroll but cannot sign in.</div>'}
+    </div>
+
+    <div style="min-width:190px">
+      <div style="font-size:11px;font-weight:800;letter-spacing:.6px;color:var(--text-muted);margin-bottom:6px">PAYROLL</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span style="font-size:13px;width:74px">Paychex ID</span>
+        <input value="${esc(p.paychex_id||'')}" onchange="staffEdit('${esc(k)}','paychex',this.value)" style="${inp}">
+      </div>
+      <div style="margin-top:8px;font-size:12px;color:var(--text-dim)">
+        ${p.phone?('☎ '+esc(p.phone)+'<br>'):''}
+        ${p.since?('since '+esc(String(p.since).slice(0,10))):''}
+      </div>
+      <button onclick="staffRemove('${esc(k)}')" style="${posBtn('#7f1d1d')};padding:6px 12px;font-size:12px;margin-top:10px">Remove from the list</button>
+    </div>
+  </div>`;
 }
 
 function posStaffHTML(){
@@ -9119,6 +9261,7 @@ function posStaffHTML(){
     ${posStat('On the schedule',String(all.length-payrollOnly-0),'have a scheduler account')}
     ${posStat('Payroll only',String(payrollOnly),'no account, still paid')}
     ${posStat('No Paychex ID',String(noId),noId?'cannot be exported':'every one can be exported')}
+    ${posStat('On the register',String(all.filter(p=>!p.removed&&p.register&&p.register.access).length),'can sign in')}
   </div>
   <div style="${posCardCss};margin-bottom:14px">
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
@@ -9134,6 +9277,17 @@ function posStaffHTML(){
       <span style="width:66px;text-align:right">Rate</span><span style="width:150px">Where from</span></div>
     <div id="staff-body">${staffBodyHTML()}</div>
   </div>
+  ${(function(){const rm=Object.values(staffS.people).filter(p=>p.removed);
+    if(!rm.length)return '';
+    return `<div style="${posCardCss};margin-bottom:14px">
+      <div style="font-weight:800;font-size:14px;margin-bottom:2px">Removed (${rm.length})</div>
+      <div style="color:var(--text-muted);font-size:12px;margin-bottom:6px">Kept so a pull from the scheduler cannot put them back. Undo any time.</div>
+      ${rm.map(p=>`<div style="display:flex;gap:10px;align-items:baseline;padding:5px 0;border-top:1px solid var(--border);font-size:13px;opacity:.7">
+        <span style="flex:1">${esc(p.name)}</span>
+        <span style="color:var(--text-muted);font-size:12px">${esc(new Date(p.removed.at).toLocaleDateString())}</span>
+        <button onclick="staffRestore('${esc(p.key)}')" style="${posBtn('#3f3f46')};padding:4px 10px;font-size:12px">Put back</button>
+      </div>`).join('')}
+    </div>`})()}
   <div style="${posCardCss};max-width:720px">
     <div style="font-weight:800;font-size:15px;margin-bottom:4px">Where this comes from</div>
     <div style="color:var(--text-dim);font-size:13px;line-height:1.6">
