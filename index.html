@@ -9358,14 +9358,57 @@ function staffAddJob(k){
 // REMOVING SOMEBODY IS A TOMBSTONE, not an erase. The next scheduler pull would
 // otherwise hand them straight back, and deleting the same person every week is not
 // a feature. The row is kept so the removal itself is undoable and auditable.
-function staffRemove(k){
+async function staffRemove(k){
   const p=staffS.people[k];if(!p)return;
-  if(!confirm('Take '+p.name+' off the staff list?\n\nThey stay recorded as removed, so a pull from the scheduler will not add them back. You can undo it.'))return;
+  const onReg=!!(p.register&&p.register.emp_id);
+  if(!confirm('Take '+p.name+' off the staff list?\n\n'
+    +(onReg?'They will also be SIGNED OUT OF THE REGISTER — access off immediately, and their record deleted there if they have no recorded hours.\n\n':'')
+    +'They stay recorded as removed here, so a pull from the scheduler will not add them back. You can undo it.'))return;
+
+  // TAKE THE ACCESS AWAY BEFORE TAKING THE NAME OFF THE LIST.
+  //
+  // A person removed from this list who can still sign in is the worst outcome available
+  // — the list says gone, the terminal says welcome. So deactivation happens FIRST and
+  // its failure is reported rather than swallowed; the tombstone only follows once the
+  // register has actually been told.
+  if(onReg){
+    const id=p.register.emp_id;
+    let off=false;
+    try{
+      const r=await posSrv('/api/employees/active',{method:'POST',body:JSON.stringify({id,active:false})});
+      off=!!r.ok;
+      if(!off)staffS.regNote='⚠ the register refused to switch '+p.name+' off: '+((r.body&&r.body.error)||r.status);
+    }catch(e){staffS.regNote='⚠ could not reach the register — '+p.name+' CAN STILL SIGN IN: '+(e&&e.message||e);}
+    if(!off){staffRefreshNotes();return;}   // not removed here either: the two must not disagree
+
+    // Then tidy the row away entirely, but only where the mini allows it. A person with
+    // recorded hours stays on the register on purpose — deleting them would orphan the
+    // payroll those hours belong to. Switched off is enough; gone is not required.
+    try{
+      const d=await posSrv('/api/employees/delete',{method:'POST',body:JSON.stringify({id})});
+      if(d.ok&&d.body&&d.body.deleted){p.register={};staffS.regNote='✓ '+p.name+' removed, and their register record deleted';}
+      else if(d.status===409){p.register.mini={id,role:p.register.role||null,active:false,has_pin:true,at:Date.now()};
+        staffS.regNote='✓ '+p.name+' can no longer sign in. Their register record was KEPT — they have recorded hours, and deleting it would orphan that payroll.';}
+      else staffS.regNote='✓ '+p.name+' can no longer sign in (their register record could not be deleted: '+((d.body&&d.body.error)||d.status)+')';
+    }catch(e){staffS.regNote='✓ '+p.name+' can no longer sign in — the register record was left in place';}
+  }
+
   p.removed={at:Date.now()};
   staffTouch(p);
   staffSave();renderViewport();
 }
-function staffRestore(k){const p=staffS.people[k];if(!p)return;delete p.removed;staffTouch(p);staffSave();renderViewport()}
+function staffRestore(k){
+  const p=staffS.people[k];if(!p)return;
+  delete p.removed;
+  // Access does NOT come back with them. It was switched off on the register when they
+  // were removed, and quietly restoring it would be a door reopening because a name
+  // reappeared on a list. A manager grants it again deliberately.
+  if(p.register&&p.register.emp_id&&!(p.register.mini&&p.register.mini.active)){
+    p.register.access=false;
+    staffS.regNote='Put back — register access stays OFF until somebody grants it again.';
+  }
+  staffTouch(p);staffSave();renderViewport();
+}
 
 // THE SIGN-IN CODE NEVER TOUCHES THIS BROWSER'S STORE.
 //
