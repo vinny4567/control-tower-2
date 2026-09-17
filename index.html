@@ -5786,15 +5786,21 @@ async function tipsPullWeddingHours(auto){
   people.forEach(p=>{
     const nm=tipCanon(p.name);if(!nm)return;
     if(p.workerId){if(!tipsState.empIds)tipsState.empIds={};if(!tipsState.empIds[nm])tipsState.empIds[nm]=String(p.workerId);}
-    (p.positions||[]).forEach(pos=>{
-      if(!pos.hrs)return;
-      const cur=(tipsState.hours[nm]&&tipsState.hours[nm][pos.sec])?tipsState.hours[nm][pos.sec]:null;
-      if(cur&&cur.h)return;   // don't clobber existing hours for this position
-      tipHoursSetPos(nm,pos.sec,'h',pos.hrs);
-      if(pos.rate)tipHoursSetPos(nm,pos.sec,'r',pos.rate);
-      if(tipsState.hours[nm]&&tipsState.hours[nm][pos.sec])tipsState.hours[nm][pos.sec].src='wed';   // schedule-app = wedding side
+    // Scheduler = source of truth: REPLACE this person's wedding (💍) positions with the
+    // scheduler's current numbers for EVERY event in the period, so a later-added event
+    // date (or a rate change) always flows through instead of freezing on an early partial
+    // pull. Restaurant (MICROS, src:'rest') positions are never touched.
+    if(!tipsState.hours[nm])tipsState.hours[nm]={};
+    const H=tipsState.hours[nm];
+    const oldSig=Object.keys(H).filter(j=>(H[j]||{}).src==='wed').sort().map(j=>j+':'+H[j].h+'@'+H[j].r).join('|');
+    const want={};(p.positions||[]).forEach(pos=>{if(pos.hrs)want[pos.sec]={h:pos.hrs,r:pos.rate||0};});
+    const newSig=Object.keys(want).sort().map(j=>j+':'+want[j].h+'@'+want[j].r).join('|');
+    if(newSig!==oldSig){   // only rewrite when the scheduler differs from what's on the sheet (no churn)
+      Object.keys(H).forEach(j=>{if((H[j]||{}).src==='wed')delete H[j];});
+      Object.keys(want).forEach(sec=>{H[sec]={h:want[sec].h,r:want[sec].r,src:'wed'};});
       filled++;
-    });
+    }
+    if(!Object.keys(H).length)delete tipsState.hours[nm];
   });
   if(filled){if(activeTab===TIPS&&(tipsState.view||'tips')==='hours')document.getElementById('viewport').innerHTML=tipsHTML();tipsSaveHoursSoon();}
   if(!auto||filled)tipsSetStatus(filled?('Pulled '+filled+' wedding hour line'+(filled>1?'s':'')+' ✓'):'✓ in sync','var(--text-dim)');
