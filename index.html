@@ -8958,19 +8958,102 @@ function staffKeyOf(name){
     .split(/\s+/).filter(t=>t.length>1).join(' ').trim();
 }
 
+// ---- saving: MERGE, never a blind whole-blob push ---------------------------
+//
+// This list is built by hand on more than one screen — rates on the office iMac, a
+// removal on the iPad — and every field of it is somebody's pay or somebody's access.
+// A whole-blob last-writer-wins would mean the screen that saved second silently
+// erased the other's afternoon. (That is not hypothetical: it is how a wedding floor
+// plan was lost on 9/17 — see wedPushMerged, whose lesson this copies.)
+//
+// So: every record carries its own `at`, and a save is GET → merge per person → POST.
+// The merge rule that matters is the counter-intuitive one — WHEN IN DOUBT, KEEP THE
+// RECORD WITH CONTENT. The screen that missed somebody's work usually has the LATER
+// timestamp, because it saved after doing nothing to that person.
+function staffTouch(p){if(p)p.at=Date.now();return p}
+
+// One person, from two places. Field-by-field rather than record-by-record, so a rate
+// typed here and a Paychex ID typed there both survive.
+function staffMergeOne(a,b){
+  if(!a)return b;if(!b)return a;
+  const newer=(b.at||0)>(a.at||0)?b:a, older=newer===b?a:b;
+  const out=Object.assign({},older,newer);
+  out.at=Math.max(a.at||0,b.at||0);
+  // Content beats emptiness whichever side is newer.
+  const keep=(f)=>{const n=newer[f],o=older[f];
+    out[f]=(n==null||n==='')&&o!=null&&o!==''?o:n;};
+  ['paychex_id','phone','since','name','role','nickname'].forEach(keep);
+  // Rates merge key by key — two people editing two jobs must not undo each other.
+  out.rates=Object.assign({},older.rates||{},newer.rates||{});
+  // positions come from the scheduler, so the freshest pull wins outright.
+  out.positions=(newer.positions&&newer.positions.length)?newer.positions:(older.positions||[]);
+  out.register=Object.assign({},older.register||{},newer.register||{});
+  out.sources=Object.assign({},older.sources||{},newer.sources||{});
+  // A REMOVAL IS A FACT WITH A TIME. It only loses to an edit made after it — which is
+  // exactly what "put them back" is. Otherwise a stale screen resurrects them.
+  const rmA=a.removed&&a.removed.at||0, rmB=b.removed&&b.removed.at||0;
+  const rm=Math.max(rmA,rmB);
+  if(rm&&rm>=(out.at||0)-1)out.removed={at:rm};
+  else if(rm&&Math.max(a.at||0,b.at||0)>rm)delete out.removed;
+  else if(rm)out.removed={at:rm};
+  return out;
+}
+function staffMerge(mine,theirs){
+  const out={};
+  const keys=new Set([...Object.keys(mine||{}),...Object.keys(theirs||{})]);
+  keys.forEach(k=>{out[k]=staffMergeOne((mine||{})[k],(theirs||{})[k])});
+  return out;
+}
+function staffMergeJobs(mine,theirs){
+  const out={};
+  const keys=new Set([...Object.keys(mine||{}),...Object.keys(theirs||{})]);
+  keys.forEach(k=>{
+    const a=(mine||{})[k],b=(theirs||{})[k];
+    if(!a||!b){out[k]=a||b;return}
+    out[k]=(b.at||0)>(a.at||0)?b:a;
+  });
+  return out;
+}
+
 async function staffLoad(){
   if(staffS.loaded)return;
   staffS.loaded=true;
-  try{const local=localStorage.getItem(STAFF_KEY);if(local){const j=JSON.parse(local);if(j&&j.people)staffS.people=j.people,staffS.at=j.at||0}}catch(e){}
+  try{const local=localStorage.getItem(STAFF_KEY);if(local){const j=JSON.parse(local);
+    if(j&&j.people){staffS.people=j.people;staffS.jobs=j.jobs||{};staffS.at=j.at||0}}}catch(e){}
   const r=await kvGet(STAFF_KEY);
-  if(r&&r.value&&r.value.people&&(r.at||0)>=(staffS.at||0)){staffS.people=r.value.people;staffS.at=r.at||0}
-  if(activeTab===POS&&posS.sec==='staff')renderViewport();
+  // MERGED, not replaced: this device may hold edits the cloud has never seen.
+  if(r&&r.value&&r.value.people){
+    staffS.people=staffMerge(staffS.people,r.value.people);
+    staffS.jobs=staffMergeJobs(staffS.jobs,r.value.jobs);
+    staffS.at=Math.max(staffS.at||0,r.at||0);
+  }
+  if(activeTab===POS&&(posS.sec==='staff'||posS.sec==='jobrates'))renderViewport();
 }
+
+let staffPushTimer=null;
 function staffSave(){
   staffS.at=Date.now();
-  const payload={people:staffS.people,at:staffS.at};
+  try{localStorage.setItem(STAFF_KEY,JSON.stringify({people:staffS.people,jobs:staffS.jobs||{},at:staffS.at}))}catch(e){}
+  clearTimeout(staffPushTimer);
+  staffPushTimer=setTimeout(staffPushMerged,700);
+}
+async function staffPushMerged(){
+  // No sync key on this device means every edit stays here and no other screen ever
+  // sees it — silently, until somebody notices a rate they typed is gone. The header
+  // carries a "⚠ Not syncing" badge for exactly this; do not also fail quietly.
+  // Its own line, not `note` — that one carries the result of the last pull, and
+  // clobbering it would trade one piece of information for another.
+  if(!localStorage.getItem('ct_kv_key')){staffS.syncNote='⚠ Saved on this computer only — no sync key on this device';staffRefreshNotes();return;}
+  staffS.syncNote='';
+  const r=await kvGet(STAFF_KEY);
+  if(r&&r.value&&r.value.people){
+    staffS.people=staffMerge(staffS.people,r.value.people);
+    staffS.jobs=staffMergeJobs(staffS.jobs,r.value.jobs);
+  }
+  const payload={people:staffS.people,jobs:staffS.jobs||{},at:Date.now()};
+  staffS.at=payload.at;
   try{localStorage.setItem(STAFF_KEY,JSON.stringify(payload))}catch(e){}
-  kvPush(STAFF_KEY,payload,staffS.at);
+  kvPush(STAFF_KEY,payload,payload.at);
 }
 
 async function staffPull(){
@@ -9014,6 +9097,7 @@ async function staffPull(){
     p.gone=false;
     p.sources=p.sources||{};
     p.sources.scheduler={at:now,kind:r.source||'app'};
+    p.at=now;
     if(before==='undefined')added++;else if(JSON.stringify(p)!==before)updated++;
   });
   // Anybody this database learned FROM the scheduler who is no longer in its answer.
@@ -9042,6 +9126,14 @@ function staffLast(name){
 }
 const staffByLast=(a,b)=>staffLast(a.name).localeCompare(staffLast(b.name),undefined,{sensitivity:'base'})
   ||String(a.name||'').localeCompare(String(b.name||''),undefined,{sensitivity:'base'});
+
+// The last pull's result and the sync warning are different facts and both get said.
+function staffNotesHTML(){
+  const box=(tx,good)=>`<div style="margin-bottom:8px;padding:8px 12px;border-radius:8px;background:${good?'rgba(52,211,153,.12)':'rgba(251,191,36,.12)'};color:${good?'#34d399':'#fbbf24'};font-size:13px">${esc(tx)}</div>`;
+  return (staffS.note?box(staffS.note,staffS.note[0]==='✓'):'')
+       + (staffS.syncNote?box(staffS.syncNote,false):'');
+}
+function staffRefreshNotes(){const el=document.getElementById('staff-notes');if(el)el.innerHTML=staffNotesHTML();else renderViewport();}
 
 function staffRows(){
   const q=(staffS.q||'').toLowerCase().trim();
@@ -9115,6 +9207,7 @@ function staffEdit(k,f,v){
   else if(f==='paychex')p.paychex_id=String(v||'').trim()||null;
   else if(f==='register'){p.register=p.register||{};p.register.access=!!v;if(!v)p.register.role=null;}
   else if(f==='role'){p.register=p.register||{};p.register.role=v||null;if(v)p.register.access=true;}
+  staffTouch(p);
   staffSave();
   staffRefresh();
 }
@@ -9124,6 +9217,7 @@ function staffAddJob(k){
   const p=staffS.people[k];if(!p)return;
   p.rates=p.rates||{};
   if(p.rates[sel.value]==null)p.rates[sel.value]=0;
+  staffTouch(p);
   staffSave();staffRefresh();
 }
 
@@ -9134,9 +9228,10 @@ function staffRemove(k){
   const p=staffS.people[k];if(!p)return;
   if(!confirm('Take '+p.name+' off the staff list?\n\nThey stay recorded as removed, so a pull from the scheduler will not add them back. You can undo it.'))return;
   p.removed={at:Date.now()};
+  staffTouch(p);
   staffSave();renderViewport();
 }
-function staffRestore(k){const p=staffS.people[k];if(!p)return;delete p.removed;staffSave();renderViewport()}
+function staffRestore(k){const p=staffS.people[k];if(!p)return;delete p.removed;staffTouch(p);staffSave();renderViewport()}
 
 // THE SIGN-IN CODE NEVER TOUCHES THIS BROWSER'S STORE.
 //
@@ -9154,11 +9249,11 @@ async function staffSetPin(k){
     const r=await posSrv('/api/employees/pin',{method:'POST',body:JSON.stringify({
       name:p.name, paychex_id:p.paychex_id||null, role:(p.register&&p.register.role)||'server', pin:String(code).trim()})});
     if(r.status===404){
-      p.register=p.register||{};p.register.pin_pending=true;staffSave();staffRefresh();
+      p.register=p.register||{};p.register.pin_pending=true;staffTouch(p);staffSave();staffRefresh();
       return alert('The mini does not serve /api/employees/pin yet.\n\nNothing was stored — the code was not written here, and it was not written there. Marked as "code pending" so this person is easy to find when the endpoint ships.');
     }
     if(!r.ok)return alert('The register refused it: '+((r.body&&r.body.error)||r.status));
-    p.register=p.register||{};p.register.access=true;p.register.pin_set=true;delete p.register.pin_pending;
+    p.register=p.register||{};p.register.access=true;p.register.pin_set=true;delete p.register.pin_pending;staffTouch(p);
     staffSave();staffRefresh();
   }catch(e){alert('Could not reach the register: '+(e&&e.message||e));}
 }
@@ -9242,8 +9337,8 @@ function staffJobRate(job){const j=staffJobs()[job];return j&&j.rate>0?j.rate:nu
 function staffSetJobRate(job,v){
   const n=parseFloat(v);
   const jobs=staffJobs();
-  if(isFinite(n)&&n>0)jobs[job]=Object.assign(jobs[job]||{},{rate:n});
-  else if(jobs[job])delete jobs[job].rate;
+  if(isFinite(n)&&n>0)jobs[job]=Object.assign(jobs[job]||{},{rate:n,at:Date.now()});
+  else if(jobs[job]){delete jobs[job].rate;jobs[job].at=Date.now();}
   staffSave();
   posJobRatesRefresh();
 }
@@ -9358,7 +9453,7 @@ function posStaffHTML(){
         style="${posInput};flex:1;min-width:180px">
       <span style="font-size:12px;color:var(--text-muted)">last pulled ${esc(when)}</span>
     </div>
-    ${staffS.note?`<div style="margin-bottom:8px;padding:8px 12px;border-radius:8px;background:${staffS.note[0]==='✓'?'rgba(52,211,153,.12)':'rgba(251,191,36,.12)'};color:${staffS.note[0]==='✓'?'#34d399':'#fbbf24'};font-size:13px">${esc(staffS.note)}</div>`:''}
+    <div id="staff-notes">${staffNotesHTML()}</div>
     <div style="display:flex;gap:10px;padding:4px 0;font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px">
       <span style="flex:1;min-width:150px">Name</span><span style="width:78px">Paychex</span>
       <span style="width:66px;text-align:right">Rate</span><span style="width:150px">Where from</span></div>
