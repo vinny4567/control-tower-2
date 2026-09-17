@@ -811,7 +811,8 @@ async function gmailRefreshFromBackend(){
   gmailRefreshing=true;
   try{
     const r=await fetch(GMAIL_TOKEN_ENDPOINT+'?key='+encodeURIComponent(GMAIL_BACKEND_KEY()));
-    if(r.status===404){gmailConnected=false;gmailClearToken();return false}
+    if(r.status===401){tipsSetStatus(posAuthNote(),'#f87171');return;}
+  if(r.status===404){gmailConnected=false;gmailClearToken();return false}
     if(!r.ok)return gmailValid();
     const data=await r.json();
     if(data.access_token){
@@ -6265,7 +6266,29 @@ async function posFindLocal(which){
 }
 
 const posApi=(p,o)=>posFetch(posS.url,p,o);
-const posSrv=(p,o)=>posFetch(posS.srv,p,o);
+// THE REGISTER'S PRIVILEGED ROUTES WANT THE BACK-OFFICE TOKEN.
+//
+// The mini locked its reports and its employees table behind a credential (9/17): while
+// register auth is off for the build, anything on the restaurant wifi could otherwise
+// have read the day's sales, read Paychex IDs, or planted a MANAGER PIN that would
+// survive the go-live auth flip. It accepts a manager session OR the sync token this
+// browser already holds.
+//
+// Sent as a HEADER, never in the URL — a token in a query string ends up in server logs
+// and browser history, which is a slower version of not having locked the door.
+// Attached here rather than at each call site so a new endpoint cannot forget it.
+const posSyncToken=()=>localStorage.getItem('ct_kv_key')||'';
+const posSrv=(p,o)=>{
+  const tk=posSyncToken();
+  const opt=Object.assign({},o||{});
+  if(tk)opt.headers=Object.assign({'x-sync-token':tk},opt.headers||{});
+  return posFetch(posS.srv,p,opt);
+};
+// A 401 from the mini means one of two things and they need different answers, so say
+// which: no key on this device at all, or a key it does not accept.
+const posAuthNote=()=>posSyncToken()
+  ? '⚠ the register refused this browser\'s back-office key — check it matches the mini'
+  : '⚠ this device has no back-office key, and the register now requires one (Watch Tower header → sync key)';
 
 function posSaveConn(){
   const u=(document.getElementById('pos-url')||{}).value||'';
@@ -8215,6 +8238,7 @@ async function posLoadReports(){
       // A 404 is "this mini has not learned that yet" — a real answer, rendered as such.
       // Anything else on the report's OWN data is a failure worth showing as one.
       got[k]=res&&res.ok?res.body:null;
+      if(res&&res.status===401&&k===want[0])throw new Error(posAuthNote().replace(/^⚠ /,''));
       if(res&&!res.ok&&res.status!==404&&k===want[0])throw new Error((res.body&&res.body.error)||(k+' '+res.status));}));
     posS.rep={sales:got.sales||null,items:got.items||null,voids:got.voids||null,
               payouts:got.payouts!==undefined?got.payouts:null,nights:got.nights!==undefined?got.nights:null,
@@ -9223,6 +9247,7 @@ async function staffPullRegister(quiet){
   let r;
   try{r=await posSrv('/api/employees');}
   catch(e){staffS.regNote='⚠ could not reach the register: '+(e&&e.message||e);staffRefreshNotes();return;}
+  if(r.status===401){staffS.regNote=posAuthNote();staffRefreshNotes();return;}
   if(r.status===404){staffS.regNote='⚠ this mini does not serve /api/employees yet';staffRefreshNotes();return;}
   if(!r.ok){staffS.regNote='⚠ the register answered '+r.status;staffRefreshNotes();return;}
 
@@ -9434,6 +9459,7 @@ async function staffSetPin(k){
       p.register=p.register||{};p.register.pin_pending=true;staffTouch(p);staffSave();staffRefresh();
       return alert('The mini does not serve /api/employees/pin yet.\n\nNothing was stored — the code was not written here, and it was not written there. Marked as "code pending" so this person is easy to find when the endpoint ships.');
     }
+    if(r.status===401)return alert(posAuthNote().replace(/^⚠ /,'')+'\n\nNothing was stored.');
     if(!r.ok)return alert('The register would not take that code:\n\n'+((r.body&&r.body.error)||('HTTP '+r.status)));
     p.register=p.register||{};p.register.access=true;p.register.pin_set=true;delete p.register.pin_pending;
     // The mini's own id for this person, so a later role change can target the row
