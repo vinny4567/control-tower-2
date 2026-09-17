@@ -9151,9 +9151,23 @@ const staffByLast=(a,b)=>staffLast(a.name).localeCompare(staffLast(b.name),undef
 function staffNotesHTML(){
   const box=(tx,good)=>`<div style="margin-bottom:8px;padding:8px 12px;border-radius:8px;background:${good?'rgba(52,211,153,.12)':'rgba(251,191,36,.12)'};color:${good?'#34d399':'#fbbf24'};font-size:13px">${esc(tx)}</div>`;
   return (staffS.note?box(staffS.note,staffS.note[0]==='✓'):'')
+       + (staffS.regNote?box(staffS.regNote,staffS.regNote[0]==='✓'&&staffS.regNote.indexOf('⚠')<0):'')
        + (staffS.syncNote?box(staffS.syncNote,false):'');
 }
 function staffRefreshNotes(){const el=document.getElementById('staff-notes');if(el)el.innerHTML=staffNotesHTML();else renderViewport();}
+
+// What the badge says is the REGISTER's answer where there is one, and this screen's
+// intention where there is not — never the intention dressed up as the fact.
+function staffRegTag(p,tag){
+  const reg=p.register||{}, m=reg.mini;
+  if(m){
+    if(!m.active)return tag('REGISTER — OFF','#f87171');
+    if(!m.has_pin)return tag('REGISTER — NO CODE','#fbbf24');
+    return tag('REGISTER · '+String(m.role||'').toUpperCase(),'#34d399');
+  }
+  if(reg.access)return tag(reg.pin_set?'REGISTER — UNCONFIRMED':'REGISTER — NO CODE','#fbbf24');
+  return '';
+}
 
 function staffRows(){
   const q=(staffS.q||'').toLowerCase().trim();
@@ -9182,7 +9196,7 @@ function staffBodyHTML(){
       <span style="width:78px;font-variant-numeric:tabular-nums;font-size:13px;color:${p.paychex_id?'var(--accent2,#38bdf8)':'#f87171'}">${p.paychex_id?esc(String(p.paychex_id)):'no ID'}</span>
       <span style="width:66px;text-align:right;font-variant-numeric:tabular-nums;font-size:13px;color:var(--text-dim)">${rateTx}</span>
       <span style="width:150px;display:flex;gap:4px;flex-wrap:wrap">
-        ${reg.access?tag(reg.pin_set?'REGISTER':'REGISTER — NO CODE',reg.pin_set?'#34d399':'#fbbf24'):''}
+        ${staffRegTag(p,tag)}
         ${sched&&sched.kind==='payroll'?tag('PAYROLL ONLY','#a78bfa'):''}
         ${p.active===false?tag('INACTIVE','#f87171'):''}
         ${p.gone?tag('OFF THE SCHEDULE','#fbbf24'):''}
@@ -9192,6 +9206,102 @@ function staffBodyHTML(){
     </div>`;
   };
   return rows.map(line).join('');
+}
+
+// ---- WHAT THE REGISTER ACTUALLY HAS ----------------------------------------
+//
+// The mini is the authority on who can sign in — its `employees` table holds the
+// hashes and its login path reads only that. Everything this browser stores about
+// register access is therefore a REQUEST, not a fact, and the two can drift: a code
+// set from the office iMac, a person deactivated on the mini directly, a role changed
+// on one side only.
+//
+// Drift like that is silent until somebody cannot sign in on a Friday night. So the
+// mini's answer is read back, shown as the truth, and every disagreement is named.
+async function staffPullRegister(quiet){
+  if(!posS.srv){if(!quiet)staffS.regNote='⚠ no register server set — POS tab → Connections';staffRefreshNotes();return;}
+  let r;
+  try{r=await posSrv('/api/employees');}
+  catch(e){staffS.regNote='⚠ could not reach the register: '+(e&&e.message||e);staffRefreshNotes();return;}
+  if(r.status===404){staffS.regNote='⚠ this mini does not serve /api/employees yet';staffRefreshNotes();return;}
+  if(!r.ok){staffS.regNote='⚠ the register answered '+r.status;staffRefreshNotes();return;}
+
+  const rows=(r.body&&r.body.employees)||[];
+  const now=Date.now();
+  // Matched by paychex_id FIRST — it is the stable identity, and two people who share a
+  // display name resolve correctly on it where a name match would merge them.
+  const byPid=new Map(),byName=new Map();
+  Object.values(staffS.people).forEach(p=>{
+    if(p.paychex_id)byPid.set(String(p.paychex_id),p);
+    const n=staffKeyOf(p.name);if(n)byName.set(n,p);
+  });
+  const matched=new Set();
+  const strays=[];
+  rows.forEach(e=>{
+    const p=(e.paychex_id!=null&&byPid.get(String(e.paychex_id)))
+          ||(e.name&&byName.get(staffKeyOf(e.name)));
+    if(!p){strays.push(e);return;}
+    matched.add(p.key);
+    p.register=p.register||{};
+    // The mini's own state, kept apart from what this screen asked for, so the two can
+    // be compared rather than one quietly overwriting the other.
+    p.register.mini={id:e.id,role:e.role,active:!!e.active,has_pin:!!e.has_pin,at:now};
+    p.register.emp_id=e.id;
+    staffTouch(p);
+  });
+  // Anybody this screen thinks has access, whom the mini has never heard of.
+  Object.values(staffS.people).forEach(p=>{
+    if(p.register&&p.register.mini&&!matched.has(p.key))p.register.mini=null;
+  });
+  staffS.regStrays=strays;
+  staffS.regAt=now;
+  const drift=staffRegisterDrift();
+  staffS.regNote='✓ the register has '+rows.length+' '+(rows.length===1?'person':'people')
+    +(drift.length?('  ·  ⚠ '+drift.length+' disagree'+(drift.length===1?'s':'')+' with this list'):'  ·  everything matches')
+    +(strays.length?('  ·  '+strays.length+' on the register not in Staff'):'');
+  staffSave();
+  renderViewport();
+}
+
+// Every way the two can disagree, named. Each is a real failure somebody would hit:
+// "can sign in here but not there" is a person turned away at the register.
+function staffRegisterDrift(){
+  const out=[];
+  Object.values(staffS.people).forEach(p=>{
+    if(p.removed)return;
+    const want=p.register||{}, got=want.mini;
+    if(!want.access&&!got)return;
+    if(want.access&&!got)return out.push({p,what:'not on the register yet — set a sign-in code'});
+    if(!want.access&&got&&got.active)return out.push({p,what:'can still sign in to the register'});
+    if(!got)return;
+    if(want.access&&!got.active)return out.push({p,what:'is switched off on the register'});
+    if(want.access&&!got.has_pin)return out.push({p,what:'has no sign-in code on the register'});
+    if(want.role&&got.role&&want.role!==got.role)
+      return out.push({p,what:'is a '+got.role+' on the register, a '+want.role+' here'});
+  });
+  return out;
+}
+
+// A change made here has to REACH the mini, or the toggle is a lie told to a manager.
+// Only possible once the person exists there, which happens when a code is first set —
+// before that, access is an intention and the panel says so.
+async function staffPushRegister(p,what){
+  const id=p.register&&p.register.emp_id;
+  if(!id||!posS.srv)return false;
+  try{
+    const r=what==='role'
+      ? await posSrv('/api/employees/role',{method:'POST',body:JSON.stringify({id,role:p.register.role})})
+      : await posSrv('/api/employees/active',{method:'POST',body:JSON.stringify({id,active:!!p.register.access})});
+    if(!r.ok){staffS.regNote='⚠ the register would not take that change: '+((r.body&&r.body.error)||r.status);staffRefreshNotes();return false;}
+    p.register.mini=p.register.mini||{};
+    if(what==='role')p.register.mini.role=p.register.role;
+    else p.register.mini.active=!!p.register.access;
+    staffTouch(p);staffSave();
+    return true;
+  }catch(e){
+    staffS.regNote='⚠ could not reach the register — that change is NOT on it: '+(e&&e.message||e);
+    staffRefreshNotes();return false;
+  }
 }
 
 // ---- one person, opened up --------------------------------------------------
@@ -9230,6 +9340,10 @@ function staffEdit(k,f,v){
   staffTouch(p);
   staffSave();
   staffRefresh();
+  // A tick-box that changes nothing on the mini would be a manager believing somebody
+  // was locked out when they were not. Fire-and-report: the panel shows the register's
+  // own answer, and says so loudly if the change did not land.
+  if(f==='register'||f==='role')staffPushRegister(p,f==='role'?'role':'active').then(()=>staffRefresh());
 }
 function staffAddJob(k){
   const sel=document.getElementById('staff-job-'+k.replace(/[^a-z0-9]/gi,'_'));
@@ -9332,7 +9446,10 @@ function staffDetail(p){
         </div>
         <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <button onclick="staffSetPin('${esc(k)}')" style="${posBtn(reg.pin_set?'#3f3f46':'#0ea5e9')};padding:6px 12px;font-size:13px">${reg.pin_set?'Change sign-in code':'Set a sign-in code'}</button>
-          <span style="font-size:12px;color:${reg.pin_set?'#34d399':(reg.pin_pending?'#fbbf24':'var(--text-muted)')}">${reg.pin_set?'code set':(reg.pin_pending?'code pending — the mini cannot take it yet':'no code yet')}</span>
+          <span style="font-size:12px;color:${(reg.mini&&reg.mini.has_pin)?'#34d399':(reg.pin_pending?'#fbbf24':'var(--text-muted)')}">${
+            reg.mini?(reg.mini.has_pin?('code set on the register'+(reg.mini.active?'':' — but switched OFF there')):'no code on the register')
+            :(reg.pin_pending?'code pending — the mini cannot take it yet'
+              :(reg.pin_set?'set here, not yet confirmed on the register':'no code yet'))}</span>
         </div>
         <div style="margin-top:6px;font-size:12px;color:var(--text-muted)">6–8 digits, their own choice. It goes straight to the mini and is stored hashed — never here, never in the cloud, and it cannot be read back, only replaced.</div>
       `:'<div style="margin-top:6px;font-size:12px;color:var(--text-muted)">Off means they exist for payroll but cannot sign in.</div>'}
@@ -9505,12 +9622,13 @@ function posStaffHTML(){
     ${posStat('On the schedule',String(all.length-payrollOnly-0),'have a scheduler account')}
     ${posStat('Payroll only',String(payrollOnly),'no account, still paid')}
     ${posStat('No Paychex ID',String(noId),noId?'cannot be exported':'every one can be exported')}
-    ${posStat('On the register',String(all.filter(p=>!p.removed&&p.register&&p.register.access).length),'can sign in')}
+    ${posStat('On the register',String(all.filter(p=>!p.removed&&p.register&&p.register.mini&&p.register.mini.active&&p.register.mini.has_pin).length),staffS.regAt?'confirmed by the register':'press “Check the register”')}
   </div>
   <div style="${posCardCss};margin-bottom:14px">
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
       <button onclick="staffPull()" ${staffS.busy?'disabled':''} style="${posBtn(staffS.busy?'#3f3f46':'#0ea5e9')}">${staffS.busy?'Reading the scheduler…':'⟳ Pull from the schedule app'}</button>
       <button onclick="staffSetKey()" style="${posBtn('#3f3f46')};padding:8px 12px;font-size:13px">${staffRosterKey()?'Change key':'Set roster key'}</button>
+      <button onclick="staffPullRegister()" title="Read back who can actually sign in" style="${posBtn('#3f3f46')};padding:8px 12px;font-size:13px">Check the register</button>
       <input value="${esc(staffS.q||'')}" oninput="staffSearch(this.value)" placeholder="Search name, position, ID"
         style="${posInput};flex:1;min-width:180px">
       <span style="font-size:12px;color:var(--text-muted)">last pulled ${esc(when)}</span>
@@ -9521,6 +9639,19 @@ function posStaffHTML(){
       <span style="width:66px;text-align:right">Rate</span><span style="width:150px">Where from</span></div>
     <div id="staff-body">${staffBodyHTML()}</div>
   </div>
+  ${(function(){
+    const drift=staffRegisterDrift(), strays=staffS.regStrays||[];
+    if(!drift.length&&!strays.length)return '';
+    return `<div style="${posCardCss};margin-bottom:14px;border-color:#fbbf24">
+      <div style="font-weight:800;font-size:14px;margin-bottom:2px;color:#fbbf24">This list and the register disagree</div>
+      <div style="color:var(--text-muted);font-size:12px;margin-bottom:6px">The register decides who can sign in. Anything below is a difference somebody would hit at the terminal.</div>
+      ${drift.map(d=>`<div style="display:flex;gap:10px;align-items:baseline;padding:5px 0;border-top:1px solid var(--border);font-size:13px">
+        <span style="flex:1;font-weight:600">${esc(d.p.name)}</span>
+        <span style="color:#fbbf24">${esc(d.what)}</span></div>`).join('')}
+      ${strays.map(e=>`<div style="display:flex;gap:10px;align-items:baseline;padding:5px 0;border-top:1px solid var(--border);font-size:13px">
+        <span style="flex:1;font-weight:600">${esc(e.name)}</span>
+        <span style="color:#a78bfa">can sign in to the register but is not in this list</span></div>`).join('')}
+    </div>`})()}
   ${(function(){const rm=Object.values(staffS.people).filter(p=>p.removed).sort(staffByLast);
     if(!rm.length)return '';
     return `<div style="${posCardCss};margin-bottom:14px">
