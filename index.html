@@ -7502,7 +7502,21 @@ function posItemsBodyHTML(){
   const capped=posS.catFilter==='Food Mods'&&!posS.q?false:rows.length>shown.length;
   const more=capped?`<div style="padding:10px 0;color:var(--text-dim);font-size:13px">Showing ${shown.length} of ${rows.length} matches — narrow the search to see the rest.</div>`:
     `<div style="padding:10px 0;color:var(--text-muted);font-size:12px">${rows.length} item${rows.length===1?'':'s'}</div>`;
-  return head+(shown.length?body:'<div style="padding:14px 0;color:var(--text-dim)">Nothing matches.</div>')+more;
+  // AN EMPTY LIST SHOULD SAY WHY. "Nothing matches." over a tab that holds 923 items
+  // reads as "everything is gone" — which is exactly how it was read. If the search
+  // finds the thing in another category, say so and offer the way there.
+  const empty=(()=>{
+    const q=(posS.q||'').toLowerCase().trim();
+    if(!q)return `<div style="padding:14px 0;color:var(--text-dim)">No items in ${esc(posS.catFilter)}.</div>`;
+    const elsewhere=posAllRows().filter(r=>!POS_HIDDEN_CATS.has(r.cat)
+      &&((r.name||'').toLowerCase().includes(q)||String(r.num||'').includes(q)));
+    if(!elsewhere.length)
+      return `<div style="padding:14px 0;color:var(--text-dim)">Nothing anywhere is called “${esc(posS.q)}”.</div>`;
+    const cats=[...new Set(elsewhere.map(posCatOf))];
+    return `<div style="padding:14px 0;color:var(--text-dim)">Nothing in <b>${esc(posS.catFilter)}</b> is called “${esc(posS.q)}”
+      — but ${elsewhere.length} item${elsewhere.length===1?' is':'s are'}, in ${cats.map(c=>`<button onclick="posSetCat('${posEnc(c)}'.replace(/%../g,m=>decodeURIComponent(m)))" style="background:none;border:none;color:var(--accent,#f59e0b);cursor:pointer;font:inherit;padding:0;text-decoration:underline">${esc(c)}</button>`).join(', ')}.</div>`;
+  })();
+  return head+(shown.length?body:empty)+more;
 }
 function posItemsHTML(){
   if(posS.catErr)return `<div style="${posCardCss}">
