@@ -6947,6 +6947,16 @@ function posBuildLive(){
     const o={};
     if(posEntered(r)&&posPriceOf(r)!==r.cents)o.cents=posPriceOf(r);
     if(posRerouted(r))o.printers=posRoutedTo(r)||[];
+    // THE NAME TRAVELS AS A DISPLAY NAME, under the item's ORIGINAL key.
+    //
+    // Renaming used to save to ct_pos_mod_names and stop there — nothing on the mini or
+    // the register ever read that key, so a rename changed this screen and nothing else.
+    // It rides here instead, and deliberately does NOT change the key: the key is how a
+    // register matches the item it already has, and how a saved button layout finds its
+    // tile. Send a new key and the wine rings as a second item, splitting its sales
+    // across two names in every report and orphaning wherever it was placed.
+    const nn=posModNames[r.key];
+    if(nn&&nn!==r.name)o.name=nn;
     if(Object.keys(o).length)items[r.key]=o;
   }
   return {
@@ -7653,9 +7663,9 @@ function posBuildGroups(){
 
 // HOW MANY OF THOSE EDITS PUBLISH TODAY.
 //
-// posPendingCount counts twenty kinds of edit; posBuildLive carries four — a price, a
-// print route, a deleted item, a new item. Everything else (mod groups, their choices,
-// attachments, renames, letters) is real and saved and simply has nowhere to go yet.
+// posPendingCount counts twenty kinds of edit; posBuildLive carries five — a price, a
+// print route, a RENAME, a deleted item, a new item. Everything else (mod group choices,
+// attachments, letters) is real and saved and simply has nowhere to go yet.
 //
 // The two numbers being one number is what made Publish look broken: the card promised
 // 2 and the button reported 0, which reads as a failure rather than as a limit that has
