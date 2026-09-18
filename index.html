@@ -7511,7 +7511,10 @@ function posItemsHTML(){
     <div style="color:var(--text-dim)">Loading the item database…</div>
     <button onclick="posRetryCatalog()" style="${posBtn('#3f3f46')};margin-top:12px;font-size:13px">Stuck? Try again</button></div>`;
   const c=posS.cat,s=c.summary||{};
-  const cats=[...new Set(c.items.map(i=>i.cat))].sort();
+  // The SAME grouping the list and the filter use. Building this from the raw `cat`
+  // while the rows were filed under the finer one is why picking RED WINE answered
+  // "Nothing matches" — the dropdown was offering a category no row claimed.
+  const cats=[...new Set(c.items.map(posCatOf))].sort();
   return `
   <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
     ${posStat('Items',String((s.total||0)+posNewMods.length),'menu + food mods')}
