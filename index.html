@@ -6661,7 +6661,10 @@ function posRenameMod(encKey,encName){
   const next=prompt('Rename this\n\nThis is the button a server reads and what prints on the kitchen ticket.',
     posModNames[key]||name);
   if(next===null)return;
-  const v=String(next).trim();
+  // Collapse runs of whitespace as well as trimming the ends. Deleting a word out of
+  // the middle of a name leaves two spaces behind — "Sonoroso  — GL" — and that gap
+  // then rides all the way to the button and the kitchen ticket.
+  const v=String(next).replace(/\s+/g,' ').trim();
   if(!v||v===name)delete posModNames[key]; else posModNames[key]=v;
   kvPush('ct_pos_mod_names',posModNames,Date.now());
   posRedraw();
