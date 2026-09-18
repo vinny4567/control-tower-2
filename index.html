@@ -6378,6 +6378,12 @@ function posAllRows(){
 // the category picker. The screens are the real thing now; this is the shelf they are
 // drawn from.
 const POS_HIDDEN_CATS=new Set(['Wine','DISCOUNTS']);
+// WHAT THIS TAB FILES A ROW UNDER. The register shows ONE red wine button with glasses
+// and bottles as its two pages; the office still manages a $10 pour and a $39 bottle as
+// separate things, so the catalog carries a finer `group` for display. It is display
+// only — the key an edit publishes under is built from `cat`, and using anything else
+// here would send a price to a key the register never looks up.
+const posCatOf=(r)=>(r&&r.group)||(r&&r.cat)||'—';
 
 function posItemRows(){
   const c=posS.cat;if(!c)return[];
@@ -6386,7 +6392,7 @@ function posItemRows(){
   const q=(posS.q||'').toLowerCase().trim();
   return posAllRows().filter(r=>{
     if(POS_HIDDEN_CATS.has(r.cat))return false;
-    if(posS.catFilter!=='all'&&r.cat!==posS.catFilter)return false;
+    if(posS.catFilter!=='all'&&posCatOf(r)!==posS.catFilter)return false;
     if(q&&!(r.name||'').toLowerCase().includes(q)&&!String(r.num||'').includes(q))return false;
     return true;
   });
@@ -7386,7 +7392,7 @@ function posItemsBodyHTML(){
   // rows hides it. The heading carries the count and how many rows in it still need
   // data, so a category with gaps is visible without opening it.
   const groups=[],byCat=new Map();
-  for(const r of shown){const k=r.cat||'—';if(!byCat.has(k)){byCat.set(k,[]);groups.push(k)}byCat.get(k).push(r)}
+  for(const r of shown){const k=posCatOf(r);if(!byCat.has(k)){byCat.set(k,[]);groups.push(k)}byCat.get(k).push(r)}
   // "on 5 items" is a question, not a fact — WHICH five? So it opens. One item is
   // named outright, since a list of one is just the name with extra steps.
   const rowHTML=r=>`<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:16px;align-items:baseline;max-width:${r.cat==='Food Mods'?'800px':'730px'}">
