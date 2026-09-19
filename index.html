@@ -9696,16 +9696,6 @@ function staffDelJobRow(job){
 }
 function posJobRatesRefresh(){const el=document.getElementById('jobrates-body');if(el)el.innerHTML=posJobRatesBody();}
 
-// Who is actually on each job, and who is not on the default. Both numbers matter:
-// a default nobody uses is a number that will quietly go stale, and a job where
-// everyone overrides it is a default that is simply wrong.
-function staffJobUse(job){
-  const people=Object.values(staffS.people).filter(p=>!p.removed);
-  const on=people.filter(p=>(p.rates&&p.rates[job]!=null)||(p.positions||[]).indexOf(job)>=0);
-  const own=on.filter(p=>p.rates&&p.rates[job]>0);
-  return {on:on.length,own:own.length};
-}
-
 function posJobRatesBody(){
   const jobs=staffJobs();
   // Every job anybody actually holds, plus any rate row typed here, plus the
@@ -9719,11 +9709,9 @@ function posJobRatesBody(){
   const names=[...new Set([...Object.keys(jobs),...held,...STAFF_JOBS])].sort();
   const inp='background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-family:inherit;font-size:14px;width:86px;text-align:right';
   return names.map(job=>{
-    const u=staffJobUse(job);
     const r=staffJobRate(job);
-    return `<div style="display:flex;gap:12px;align-items:center;padding:8px 0;border-top:1px solid var(--border)">
-      <span style="flex:1;min-width:140px;font-weight:600;font-size:14px">${esc(job)}</span>
-      <span style="width:150px;font-size:12px;color:var(--text-muted)">${u.on?(u.on+' '+(u.on===1?'person':'people')+(u.own?(' · '+u.own+' on their own rate'):'')):'nobody yet'}</span>
+    return `<div style="display:flex;gap:10px;align-items:center;padding:4px 0;border-top:1px solid var(--border)">
+      <span style="flex:1;min-width:120px;font-weight:600;font-size:14px">${esc(job)}</span>
       <span style="color:var(--text-muted);font-size:13px">$</span>
       <input value="${r||''}" inputmode="decimal" placeholder="—"
         onchange="staffSetJobRate('${esc(job)}',this.value)" style="${inp}">
@@ -9736,25 +9724,16 @@ function posJobRatesBody(){
 
 function posJobRatesHTML(){
   staffLoad();
-  const jobs=staffJobs();
-  const set=Object.keys(jobs).filter(j=>staffJobRate(j)).length;
-  const people=Object.values(staffS.people).filter(p=>!p.removed);
-  const noRate=people.filter(p=>!Object.values(p.rates||{}).some(x=>x>0)&&!p.rate).length;
   const inp='background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 9px;font-family:inherit;font-size:14px';
   return `
-  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
-    ${posStat('Jobs priced',String(set),'have a default rate')}
-    ${posStat('People',String(people.length),'on the staff list')}
-    ${posStat('No rate anywhere',String(noRate),noRate?'fall back to the job default':'everybody is priced')}
-  </div>
-  <div style="${posCardCss};margin-bottom:14px;max-width:760px">
-    <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:6px">
+  <div style="${posCardCss};margin-bottom:10px;max-width:520px">
+    <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:2px">
       <span style="font-weight:800;font-size:15px">What each job pays</span>
       <span style="font-size:12px;color:var(--text-muted);margin-left:auto">a person's own rate always wins</span>
     </div>
     <div id="jobrates-body">${posJobRatesBody()}</div>
-    <div style="display:flex;gap:8px;align-items:center;margin-top:12px">
-      <input id="jobrate-new" placeholder="add a job…" style="${inp};flex:1;max-width:220px">
+    <div style="display:flex;gap:8px;align-items:center;margin-top:9px">
+      <input id="jobrate-new" placeholder="add a job…" style="${inp};flex:1;max-width:200px">
       <button onclick="staffAddJobRow()" style="${posBtn('#3f3f46')};padding:7px 13px;font-size:13px">Add</button>
     </div>
   </div>
