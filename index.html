@@ -80,7 +80,7 @@
     .ag-dots{display:flex;gap:2px;height:5px}
     .ag-dot{width:5px;height:5px;border-radius:50%;display:inline-block}
     .ag-dot.ag-cat{background:#ffb300}.ag-dot.ag-party{background:#4dd0e1}.ag-dot.ag-wed{background:#f06292}
-    .ag-list{display:flex;flex-direction:column;gap:4px;max-height:520px;overflow-y:auto;padding-right:4px}
+    .ag-list{display:flex;flex-direction:column;gap:4px;max-height:300px;overflow-y:auto;padding-right:4px}
     .ag-filter{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-dim);margin-bottom:4px}
     .ag-datehead{font-size:11px;font-weight:800;color:var(--text-dim);letter-spacing:.08em;margin:10px 0 2px;border-bottom:1px solid var(--border);padding-bottom:3px}
     .ag-datehead.ag-dh-today{color:var(--accent);border-color:var(--accent)}
@@ -97,6 +97,32 @@
     .ag-dr{display:flex;gap:8px;font-size:12px;color:var(--text-dim)}
     .ag-dr b{color:var(--text);font-weight:600}
     .ag-empty{color:var(--text-muted);font-size:13px;padding:24px;text-align:center}
+    /* Upcoming orders — is it on paper, and is the money in? */
+    .rq-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+    .rq-title{font-size:18px;font-weight:800;color:var(--accent);letter-spacing:.04em}
+    .rq-count{font-size:12px;font-weight:700;padding:2px 9px;border-radius:999px;background:rgba(244,67,54,.16);color:#ff8a80;border:1px solid rgba(244,67,54,.35)}
+    .rq-count.rq-ok{background:rgba(76,175,80,.14);color:#a5d6a7;border-color:rgba(76,175,80,.35)}
+    .rq-tabs{display:flex;gap:6px;margin-left:auto}
+    .rq-tab{background:transparent;border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:3px 11px;cursor:pointer;font-size:12px}
+    .rq-tab.on{color:var(--accent);border-color:var(--accent);background:rgba(255,179,0,.08)}
+    .rq-list{display:flex;flex-direction:column;gap:5px;max-height:380px;overflow-y:auto;padding-right:4px}
+    .rq-row{display:flex;align-items:center;gap:11px;padding:8px 11px;border-radius:9px;border:1px solid var(--border);border-left-width:3px;border-left-color:#4caf50;background:var(--surface2);cursor:pointer}
+    .rq-row:hover{filter:brightness(1.15)}
+    .rq-row.rq-warn{border-left-color:#ffb300;background:rgba(255,179,0,.06)}
+    .rq-row.rq-urgent{border-left-color:#f44336;background:rgba(244,67,54,.09)}
+    .rq-when{width:96px;flex:none;display:flex;flex-direction:column;gap:1px}
+    .rq-date{font-size:12px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
+    .rq-in{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em}
+    .rq-in.rq-soon{color:#ff8a80;font-weight:800}
+    .rq-main{display:flex;flex-direction:column;min-width:0;flex:1}
+    .rq-who{font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .rq-sub{font-size:11px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .rq-chips{display:flex;gap:6px;flex:none}
+    .rq-chip{font-size:10px;font-weight:800;letter-spacing:.04em;padding:3px 8px;border-radius:999px;border:1px solid;white-space:nowrap}
+    .rq-chip.ok{color:#a5d6a7;border-color:rgba(76,175,80,.4);background:rgba(76,175,80,.12)}
+    .rq-chip.no{color:#ff8a80;border-color:rgba(244,67,54,.45);background:rgba(244,67,54,.12)}
+    .rq-empty{color:var(--text-muted);font-size:13px;padding:22px;text-align:center}
+    @media(max-width:600px){.rq-chips{flex-direction:column;gap:3px}.rq-when{width:78px}}
     .dash-card:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.25)}
     .dash-card.wide{grid-column:span 2}
     @media (max-width:760px){.dash-card.wide{grid-column:span 1}}
@@ -7496,7 +7522,14 @@ function posItemsBodyHTML(){
         <button onclick="posAddItem('${e}')" style="${posBtn('#3f3f46')};font-size:13px;padding:7px 14px">Add</button>
       </div>`;
     };
-    body=groups.map(k=>catHeader(k,byCat.get(k))+byCat.get(k).map(rowHTML).join('')+addRow(k)).join('');
+    // ⚠️ NOT WHILE SEARCHING. A search is a way of LOOKING at the menu, and an "add an
+    // item to Pasta" box under three filtered results is an invitation to add something
+    // to whichever category the match happened to land in — which is almost never the
+    // one somebody had in mind when they typed "butter". Clear the search and the box
+    // comes back, under the whole category, where the choice is an informed one.
+    const searching=!!(posS.q||'').trim();
+    body=groups.map(k=>catHeader(k,byCat.get(k))+byCat.get(k).map(rowHTML).join('')
+      +(searching?'':addRow(k))).join('');
   }
   // Never let a cap look like the whole answer.
   const capped=posS.catFilter==='Food Mods'&&!posS.q?false:rows.length>shown.length;
