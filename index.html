@@ -9624,9 +9624,6 @@ function staffDetail(p){
         <span style="font-size:13px">Paychex</span>
         <input value="${esc(p.paychex_id||'')}" onchange="staffEdit('${esc(k)}','paychex',this.value)" style="${inp}">
       </div>
-      <div style="margin-top:5px;font-size:12px;color:var(--text-dim);line-height:1.5">
-        ${p.phone?esc(p.phone):''}${p.phone&&p.since?' · ':''}${p.since?('since '+esc(String(p.since).slice(0,10))):''}
-      </div>
     </div>
 
     <button onclick="staffRemove('${esc(k)}')" title="Take them off the list, and off the register"
