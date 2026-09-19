@@ -9409,6 +9409,17 @@ function staffOpen(k){staffS.open=staffS.open===k?null:k;staffRefresh()}
 // and a new element starts at scrollTop 0. Opening somebody two hundred names down
 // therefore threw the page back to the top, every time. This swaps only the rows, and
 // restores the scroll offset if a full redraw ever is needed.
+// ⚠️ REDRAW, DON'T REBUILD.
+//
+// Removing somebody used to end in renderViewport(), which rebuilds the whole tab and
+// drops you at the top of the list. On 231 people that means finding your place again
+// after every single removal — and the act you are doing is one you usually do several
+// times in a row.
+//
+// staffRefresh keeps the scroll position; the notes line has to be redrawn separately
+// because it lives outside the list body and carries what the register just said.
+function staffRedraw(){staffRefresh();staffRefreshNotes();}
+
 function staffRefresh(){
   const el=document.getElementById('staff-body');
   if(!el){renderViewport();return;}
@@ -9506,7 +9517,7 @@ async function staffRemove(k){
 
   p.removed={at:Date.now()};
   staffTouch(p);
-  staffSave();renderViewport();
+  staffSave();staffRedraw();
 }
 function staffRestore(k){
   const p=staffS.people[k];if(!p)return;
@@ -9518,7 +9529,7 @@ function staffRestore(k){
     p.register.access=false;
     staffS.regNote='Put back — register access stays OFF until somebody grants it again.';
   }
-  staffTouch(p);staffSave();renderViewport();
+  staffTouch(p);staffSave();staffRedraw();
 }
 
 // THE SIGN-IN CODE NEVER TOUCHES THIS BROWSER'S STORE.

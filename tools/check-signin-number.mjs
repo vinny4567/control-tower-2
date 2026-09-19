@@ -61,5 +61,19 @@ ok('the pin itself is not persisted locally after the post',
 ok('a refusal from the mini stores nothing either',
    /Nothing was stored/.test(pin));
 
+// ---- the list keeps your place -----------------------------------------------
+// Removing somebody rebuilt the whole tab and dropped you at the top of 231 rows —
+// after every removal, and removing people is something you do several in a row.
+const rm = src.slice(src.indexOf('async function staffRemove('), src.indexOf('function staffRestore('));
+ok('removing somebody redraws the list instead of rebuilding the tab',
+   /staffRedraw\(\)/.test(rm) && !/renderViewport\(\)/.test(rm));
+const rs = src.slice(src.indexOf('function staffRestore('), src.indexOf('function staffRestore(') + 900);
+ok('and so does putting them back', /staffRedraw\(\)/.test(rs));
+ok('the redraw keeps the scroll position', /const top=sc\?sc\.scrollTop:0/.test(src));
+ok('and redraws the register note, which lives outside the list',
+   /function staffRedraw\(\)\{staffRefresh\(\);staffRefreshNotes\(\);\}/.test(src));
+ok('both targets it redraws into actually exist',
+   src.includes('id="staff-body"') && src.includes('id="staff-notes"'));
+
 console.log(bad ? `\n${bad} FAILED` : '\nall good');
 process.exit(bad ? 1 : 0);
