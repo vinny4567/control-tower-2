@@ -45,9 +45,14 @@ ok('nothing reads a number back out of the mini for display',
 // ---- the rule is the mini's rule ---------------------------------------------
 // Two entry points now (the box and the prompt), so the shape check has to be the same
 // in both or one of them accepts something the register will refuse.
-const rule = /\^\\d\{6,8\}\$/;
-ok('the box checks 6 to 8 digits', rule.test(save));
+// Four is the floor, at Vinny's call 9/19: the roster already in use is four-digit
+// (1004, 7080), and a rule that rejects the numbers people are already punching is
+// wrong rather than strict. ⚠️ The MINI enforces this too — if the two disagree, this
+// page accepts a number the register then refuses, which is the worst of both.
+const rule = /\^\\d\{4,8\}\$/;
+ok('the box checks 4 to 8 digits', rule.test(save));
 ok('the prompt path checks the same thing', rule.test(pin));
+ok('and nothing still says six anywhere', !/6 to 8|6–8|\{6,8\}/.test(src));
 
 // ---- it goes to the mini, and only to the mini -------------------------------
 ok('the number is posted to the register', pin.includes('/api/employees/pin'));

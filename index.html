@@ -9511,14 +9511,14 @@ function staffRestore(k){
 async function staffSetPin(k,given){
   const p=staffS.people[k];if(!p)return;
   if(!posS.srv)return alert('No register server set — POS tab → Connections.');
-  // 6–8 DIGITS, because that is what the mini accepts and what a register keypad can
-  // type. Saying "any combination you like" here and having the box refuse it is a
-  // worse experience than saying the rule up front — and the shape check is repeated
-  // on the mini regardless, where it counts.
-  const code=given!=null?given:prompt('Sign-in code for '+p.name+'\n\n6 to 8 digits — their own choice, typed on the register keypad.\n\nIt goes straight to the register and is stored hashed there. It is never kept in this browser or in the cloud, and it can never be read back — only replaced.');
+  // 4–8 DIGITS. Vinny's call 9/19 — four is the floor because the roster already in
+  // use is four-digit (1004, 7080) and a rule that rejects the numbers people are
+  // already punching is a rule that is wrong, not a rule that is strict. The shape
+  // check is repeated on the mini regardless, where it counts.
+  const code=given!=null?given:prompt('Sign-in code for '+p.name+'\n\n4 to 8 digits — their own choice, typed on the register keypad.\n\nIt goes straight to the register and is stored hashed there. It is never kept in this browser or in the cloud, and it can never be read back — only replaced.');
   if(!code)return;
   const pin=String(code).trim();
-  if(!/^\d{6,8}$/.test(pin))return alert('A sign-in code must be 6 to 8 digits.\n\nThe register\'s keypad has no letters on it.');
+  if(!/^\d{4,8}$/.test(pin))return alert('A sign-in code must be 4 to 8 digits.\n\nThe register\'s keypad has no letters on it.');
   try{
     const r=await posSrv('/api/employees/pin',{method:'POST',body:JSON.stringify({
       name:p.name, paychex_id:p.paychex_id||null, role:(p.register&&p.register.role)||'server', pin})});
@@ -9550,8 +9550,8 @@ async function staffSetPin(k,given){
 async function staffSaveNumber(k,el){
   const v=String(el.value||'').trim();
   if(!v)return;
-  if(!/^\d{6,8}$/.test(v)){
-    alert('A sign-in number is 6 to 8 digits.\n\nThe register\'s keypad has no letters on it.');
+  if(!/^\d{4,8}$/.test(v)){
+    alert('A sign-in number is 4 to 8 digits.\n\nThe register\'s keypad has no letters on it.');
     el.focus();el.select();return;
   }
   el.disabled=true;
@@ -9598,13 +9598,12 @@ function staffDetail(p){
       </label>
       <div style="display:flex;gap:5px;align-items:center;margin-top:6px">
         <input id="staff-num-${kid}" inputmode="numeric" autocomplete="off" maxlength="8"
-          placeholder="${(mini&&mini.has_pin)?'new number':'sign-in number'}"
+          placeholder="${(mini&&mini.has_pin)?'new number':'number'}"
           onkeydown="if(event.key==='Enter')staffSaveNumber('${esc(k)}',document.getElementById('staff-num-${kid}'))"
           style="${inp};width:104px;letter-spacing:2px">
         <button onclick="staffSaveNumber('${esc(k)}',document.getElementById('staff-num-${kid}'))"
           style="${posBtn('#0ea5e9')};padding:3px 9px;font-size:12px">Save</button>
       </div>
-      <div style="font-size:11px;color:var(--text-dim);margin-top:3px">6–8 digits · saved to the register, never shown again</div>
       ${reg.access?`
         <div style="display:flex;gap:6px;align-items:center;margin-top:5px">
           <select onchange="staffEdit('${esc(k)}','role',this.value)" style="${inp};width:auto">
