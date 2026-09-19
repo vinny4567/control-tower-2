@@ -9508,14 +9508,14 @@ function staffRestore(k){
 // which hashes it; this page keeps only the fact that one is set. Putting it in the
 // cloud KV that backs every other field here would be writing staff passwords into a
 // store the register does not even own.
-async function staffSetPin(k){
+async function staffSetPin(k,given){
   const p=staffS.people[k];if(!p)return;
   if(!posS.srv)return alert('No register server set — POS tab → Connections.');
   // 6–8 DIGITS, because that is what the mini accepts and what a register keypad can
   // type. Saying "any combination you like" here and having the box refuse it is a
   // worse experience than saying the rule up front — and the shape check is repeated
   // on the mini regardless, where it counts.
-  const code=prompt('Sign-in code for '+p.name+'\n\n6 to 8 digits — their own choice, typed on the register keypad.\n\nIt goes straight to the register and is stored hashed there. It is never kept in this browser or in the cloud, and it can never be read back — only replaced.');
+  const code=given!=null?given:prompt('Sign-in code for '+p.name+'\n\n6 to 8 digits — their own choice, typed on the register keypad.\n\nIt goes straight to the register and is stored hashed there. It is never kept in this browser or in the cloud, and it can never be read back — only replaced.');
   if(!code)return;
   const pin=String(code).trim();
   if(!/^\d{6,8}$/.test(pin))return alert('A sign-in code must be 6 to 8 digits.\n\nThe register\'s keypad has no letters on it.');
@@ -9536,6 +9536,26 @@ async function staffSetPin(k){
     staffTouch(p);
     staffSave();staffRefresh();
   }catch(e){alert('Could not reach the register: '+(e&&e.message||e));}
+}
+
+// TYPE THE NUMBER HERE. Vinny's call 9/19 — the code used to be reachable only from a
+// button that appeared AFTER ticking "Can sign in", so the common act (hire somebody,
+// give them a number) was two steps with a prompt box in the middle.
+//
+// ⚠️ THE NUMBER IS NOT KEPT HERE. It goes straight to the mini, which stores it hashed;
+// this box empties itself the moment it is saved and never shows an existing one,
+// because there is nothing to show — a sign-in number can be replaced, never read back.
+// That is also why it is not a `value=` bound to anything: a credential that round-trips
+// through this page's state is a credential in this page's state.
+async function staffSaveNumber(k,el){
+  const v=String(el.value||'').trim();
+  if(!v)return;
+  if(!/^\d{6,8}$/.test(v)){
+    alert('A sign-in number is 6 to 8 digits.\n\nThe register\'s keypad has no letters on it.');
+    el.focus();el.select();return;
+  }
+  el.disabled=true;
+  try{ await staffSetPin(k,v); } finally { el.value='';el.disabled=false; }
 }
 
 function staffDetail(p){
@@ -9576,12 +9596,20 @@ function staffDetail(p){
         <input type="checkbox" ${reg.access?'checked':''} onchange="staffEdit('${esc(k)}','register',this.checked)">
         Can sign in
       </label>
+      <div style="display:flex;gap:5px;align-items:center;margin-top:6px">
+        <input id="staff-num-${kid}" inputmode="numeric" autocomplete="off" maxlength="8"
+          placeholder="${(mini&&mini.has_pin)?'new number':'sign-in number'}"
+          onkeydown="if(event.key==='Enter')staffSaveNumber('${esc(k)}',document.getElementById('staff-num-${kid}'))"
+          style="${inp};width:104px;letter-spacing:2px">
+        <button onclick="staffSaveNumber('${esc(k)}',document.getElementById('staff-num-${kid}'))"
+          style="${posBtn('#0ea5e9')};padding:3px 9px;font-size:12px">Save</button>
+      </div>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:3px">6–8 digits · saved to the register, never shown again</div>
       ${reg.access?`
         <div style="display:flex;gap:6px;align-items:center;margin-top:5px">
           <select onchange="staffEdit('${esc(k)}','role',this.value)" style="${inp};width:auto">
             ${Object.entries(POS_ROLES).map(([rk,r])=>`<option value="${rk}" ${reg.role===rk?'selected':''}>${esc(r.label)}</option>`).join('')}
           </select>
-          <button onclick="staffSetPin('${esc(k)}')" style="${posBtn((mini&&mini.has_pin)?'#3f3f46':'#0ea5e9')};padding:3px 9px;font-size:12px">${(mini&&mini.has_pin)?'New code':'Set code'}</button>
         </div>
         <div style="margin-top:5px;display:flex;gap:5px;flex-wrap:wrap">
           ${mini?(mini.has_pin?tag(mini.active?'CODE SET':'CODE SET · OFF',mini.active?'#34d399':'#f87171')
