@@ -9647,6 +9647,62 @@ const STAFF_JOB_NUMS={Manager:101,Cook:104,Server:201,Bartender:202,Host:203,Bus
 
 function staffJobs(){return staffS.jobs||(staffS.jobs={})}
 
+// ONE JOB, ONE ROW — however it was typed.
+//
+// Vinny had two "Food Runner" rows and neither would delete. Two different reasons,
+// both invisible on screen: one row was a VARIANT SPELLING held by people ("Food
+// Runner " with a trailing space reads identically), and the other was the standard
+// job out of STAFF_JOBS, which is rebuilt from a constant every render. The × removed
+// the default rate and nothing else, so in both cases the row came straight back and
+// the button looked broken.
+//
+// Rows are grouped by this key from now on. A job typed with a stray space, a
+// different case, or a double space is the same job — because it is.
+const staffJobCanon=(n)=>String(n||'').replace(/\s+/g,' ').trim();
+const staffJobKey=(n)=>staffJobCanon(n).toLowerCase();
+
+// Fold variant spellings back into one, everywhere they are stored. The render dedupes
+// regardless, so this is about what gets PUBLISHED: two spellings are two keys in
+// ct_job_rates, and the one the punches never match is a rate that silently does
+// nothing. A rate that is set beats one that is not; the standard spelling wins the
+// name when it is one of ours.
+function staffFoldJobNames(){
+  const pretty=new Map();                       // key -> the spelling to keep
+  STAFF_JOBS.forEach(j=>pretty.set(staffJobKey(j),j));
+  const jobs=staffJobs();
+  const seen=(n)=>{const k=staffJobKey(n);if(!pretty.has(k))pretty.set(k,staffJobCanon(n));return pretty.get(k);};
+  Object.keys(jobs).forEach(seen);
+  Object.values(staffS.people||{}).forEach(p=>{
+    (p.positions||[]).forEach(seen);
+    Object.keys(p.rates||{}).forEach(seen);
+  });
+
+  let changed=false;
+  Object.keys(jobs).forEach(n=>{
+    const to=pretty.get(staffJobKey(n));
+    if(to===n)return;
+    const from=jobs[n];delete jobs[n];changed=true;
+    const tgt=jobs[to]||(jobs[to]={});
+    // A rate that exists beats one that does not — never overwrite a number with a blank.
+    if(from&&from.rate>0&&!(tgt.rate>0)){tgt.rate=from.rate;tgt.at=Math.max(tgt.at||0,from.at||0);}
+  });
+  Object.values(staffS.people||{}).forEach(p=>{
+    if(p.positions){
+      const out=[...new Set(p.positions.map(j=>pretty.get(staffJobKey(j))||staffJobCanon(j)))];
+      if(out.join('|')!==p.positions.join('|')){p.positions=out;changed=true;}
+    }
+    if(p.rates){
+      Object.keys(p.rates).forEach(n=>{
+        const to=pretty.get(staffJobKey(n));
+        if(to===n)return;
+        const v=p.rates[n];delete p.rates[n];changed=true;
+        if(!(p.rates[to]>0))p.rates[to]=v;
+      });
+    }
+  });
+  return changed;
+}
+
 // PUBLISH THE RATES THE MINI READS.
 //
 // The mini's labor report fills each shift's rate from KV `ct_job_rates`, shaped
@@ -9671,11 +9727,27 @@ function staffJobRatesForMini(){
   return out;
 }
 function staffPublishJobRates(){kvPush('ct_job_rates',staffJobRatesForMini(),Date.now())}
-function staffJobRate(job){const j=staffJobs()[job];return j&&j.rate>0?j.rate:null}
+function staffJobRate(job){
+  const jobs=staffJobs();
+  const j=jobs[job];
+  if(j&&j.rate>0)return j.rate;
+  // A rate typed against another spelling is still this job's rate.
+  const k=staffJobKey(job);
+  for(const n of Object.keys(jobs)){
+    if(n!==job&&staffJobKey(n)===k&&jobs[n]&&jobs[n].rate>0)return jobs[n].rate;
+  }
+  return null;
+}
 
 function staffSetJobRate(job,v){
   const n=parseFloat(v);
   const jobs=staffJobs();
+  const k=staffJobKey(job);
+  // Every other spelling of this job loses its rate, or the old one would keep being
+  // published alongside the new one and which of the two the mini used would be luck.
+  Object.keys(jobs).forEach(o=>{
+    if(o!==job&&staffJobKey(o)===k&&jobs[o]){delete jobs[o].rate;jobs[o].at=Date.now();}
+  });
   if(isFinite(n)&&n>0)jobs[job]=Object.assign(jobs[job]||{},{rate:n,at:Date.now()});
   else if(jobs[job]){delete jobs[job].rate;jobs[job].at=Date.now();}
   staffSave();
@@ -9689,10 +9761,36 @@ function staffAddJobRow(){
   el.value='';
   staffSave();renderViewport();
 }
+// ⚠️ THE × USED TO LIE. It deleted the default rate and nothing else, so a row that
+// existed because PEOPLE hold the job, or because it is one of the standard jobs, came
+// straight back on the next render — and the button looked broken. It now says which
+// of the three it is and does what it says.
 function staffDelJobRow(job){
-  if(!confirm('Remove the "'+job+'" job rate?\n\nNobody’s own rate changes — only the default for that job.'))return;
-  delete staffJobs()[job];
-  staffSave();renderViewport();
+  const k=staffJobKey(job);
+  const jobs=staffJobs();
+  const spellings=Object.keys(jobs).filter(n=>staffJobKey(n)===k);
+  const std=STAFF_JOBS.some(j=>staffJobKey(j)===k);
+  const held=Object.values(staffS.people||{}).filter(p=>!p.removed&&(
+    (p.positions||[]).some(j=>staffJobKey(j)===k)||
+    Object.keys(p.rates||{}).some(j=>staffJobKey(j)===k)));
+
+  if(std){
+    if(!confirm('"'+job+'" is one of the standard jobs, so the row itself stays.\n\nClear its default rate?'))return;
+    spellings.forEach(n=>{delete jobs[n].rate;jobs[n].at=Date.now();});
+  }else if(held.length){
+    const who=held.length===1?'1 person is':held.length+' people are';
+    if(!confirm(who+' on "'+job+'".\n\nRemoving the job takes it off them as well, including any rate they have for it. Clearing only the default would leave the row exactly where it is.\n\nRemove it from everybody?'))return;
+    held.forEach(p=>{
+      if(p.positions)p.positions=p.positions.filter(j=>staffJobKey(j)!==k);
+      if(p.rates)Object.keys(p.rates).forEach(n=>{if(staffJobKey(n)===k)delete p.rates[n];});
+      staffTouch(p);
+    });
+    spellings.forEach(n=>delete jobs[n]);
+  }else{
+    if(!confirm('Remove the "'+job+'" job rate?\n\nNobody is on it, so nothing else changes.'))return;
+    spellings.forEach(n=>delete jobs[n]);
+  }
+  staffSave();staffPublishJobRates();renderViewport();
 }
 function posJobRatesRefresh(){const el=document.getElementById('jobrates-body');if(el)el.innerHTML=posJobRatesBody();}
 
@@ -9706,7 +9804,14 @@ function posJobRatesBody(){
     (p.positions||[]).forEach(j=>held.add(j));
     Object.keys(p.rates||{}).forEach(j=>held.add(j));
   });
-  const names=[...new Set([...Object.keys(jobs),...held,...STAFF_JOBS])].sort();
+  // Grouped by canonical key, so two spellings of one job are one row.
+  const byKey=new Map();
+  [...Object.keys(jobs),...held,...STAFF_JOBS].forEach(n=>{
+    const k=staffJobKey(n);if(!k)return;
+    const pretty=STAFF_JOBS.find(j=>staffJobKey(j)===k)||staffJobCanon(n);
+    if(!byKey.has(k))byKey.set(k,pretty);
+  });
+  const names=[...byKey.values()].sort();
   const inp='background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-family:inherit;font-size:14px;width:86px;text-align:right';
   return names.map(job=>{
     const r=staffJobRate(job);
@@ -9724,6 +9829,9 @@ function posJobRatesBody(){
 
 function posJobRatesHTML(){
   staffLoad();
+  // One-time tidy of whatever spellings are already in the data. Cheap, idempotent,
+  // and it only ever removes duplicates — so running it on every render is fine.
+  if(staffFoldJobNames()){staffSave();staffPublishJobRates();}
   const inp='background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 9px;font-family:inherit;font-size:14px';
   return `
   <div style="${posCardCss};margin-bottom:10px;max-width:520px">
