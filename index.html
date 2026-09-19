@@ -9282,8 +9282,7 @@ function staffBodyHTML(){
     const open=staffS.open===p.key;
     return `<div style="border-top:1px solid var(--border)">
       <div onclick="staffOpen('${esc(p.key)}')" style="display:flex;gap:10px;align-items:baseline;padding:7px 0;font-size:14px;cursor:pointer;${p.active===false||p.gone?'opacity:.55':''}">
-      <span style="flex:1;min-width:150px;font-weight:600">${open?'▾':'▸'} ${esc(p.name)}
-        <div style="font-size:12px;color:var(--text-muted);padding-left:14px">${esc(Object.keys(p.rates||{}).join(' · ')||(p.positions||[]).join(' · '))||(p.role?esc(p.role):'')}</div></span>
+      <span style="flex:1;min-width:150px;font-weight:600">${open?'▾':'▸'} ${esc(p.name)}</span>
       <span style="width:78px;font-variant-numeric:tabular-nums;font-size:13px;color:${p.paychex_id?'var(--accent2,#38bdf8)':'#f87171'}">${p.paychex_id?esc(String(p.paychex_id)):'no ID'}</span>
       <span style="width:66px;text-align:right;font-variant-numeric:tabular-nums;font-size:13px;color:var(--text-dim)">${rateTx}</span>
       <span style="width:150px;display:flex;gap:4px;flex-wrap:wrap">
