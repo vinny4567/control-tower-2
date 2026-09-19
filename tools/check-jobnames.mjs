@@ -74,5 +74,27 @@ ok('it clears EVERY spelling, not just the one clicked', /spellings\.forEach/.te
 ok('and republishes, so the mini stops seeing the old key',
    /staffPublishJobRates\(\)/.test(del));
 
+// ---- the override box on a person --------------------------------------------
+// It shows the job's default when empty, and empty has to STAY a normal state.
+// ⚠️ `const tag=` appears earlier in the file for something else, so search forward
+// from rateRow or the slice comes out empty and every assertion below it passes by
+// accident on an empty string.
+const rowAt = src.indexOf('const rateRow=(job)=>');
+const row = src.slice(rowAt, src.indexOf('const tag=(t,c)=>', rowAt));
+ok('the row markup was actually found', row.length > 200 && row.includes('staffEdit'));
+ok('the box shows the default as a placeholder', /placeholder="\$\{def>0\?/.test(row));
+ok('⚠️ and NOT as a prefilled value — an override must be distinguishable from a default',
+   /value="\$\{own>0\?/.test(row) && !/value="\$\{(own\|\||def)/.test(row));
+ok('the column is labelled OVERRIDE', /">OVERRIDE</.test(src));
+
+const edit = src.slice(src.indexOf("else if(f.startsWith('rate:'))"), src.indexOf("else if(f.startsWith('rate:'))") + 900);
+ok('emptying the box does not delete the job off the person',
+   !/delete p\.rates\[job\]/.test(edit));
+ok('it falls back to the default instead', /p\.rates\[job\]=\(isFinite/.test(edit));
+ok('so there is a separate way to take a job away', src.includes('function staffDelPersonJob('));
+const dpj = src.slice(src.indexOf('function staffDelPersonJob('), src.indexOf('function staffAddJob('));
+ok('which removes the override with it', /delete p\.rates\[n\]/.test(dpj));
+ok('and every spelling of that job, not just the one shown', /staffJobKey\(n\)===kk/.test(dpj));
+
 console.log(bad ? `\n${bad} FAILED` : '\nall good');
 process.exit(bad ? 1 : 0);

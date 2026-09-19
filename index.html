@@ -9422,9 +9422,16 @@ function staffEdit(k,f,v){
   const p=staffS.people[k];if(!p)return;
   if(f==='rate'){const n=parseFloat(v);p.rate=isFinite(n)&&n>0?n:null;}
   else if(f.startsWith('rate:')){
+    // ⚠️ EMPTYING THE BOX MEANS "back to the default", not "remove the job".
+    //
+    // It used to delete the key, and the key is also what says this person HOLDS the
+    // job — so clearing an override made the whole row disappear. That was survivable
+    // while the box was the only thing on the row; now that it shows the default when
+    // it is empty, empty is a perfectly normal state to want. 0 = holds the job, on
+    // the default. The × on the row is how a job is taken away.
     const job=f.slice(5);p.rates=p.rates||{};
     const n=parseFloat(v);
-    if(isFinite(n)&&n>0)p.rates[job]=n;else delete p.rates[job];
+    p.rates[job]=(isFinite(n)&&n>0)?n:0;
   }
   else if(f==='paychex')p.paychex_id=String(v||'').trim()||null;
   else if(f==='register'){p.register=p.register||{};p.register.access=!!v;if(!v)p.register.role=null;}
@@ -9437,6 +9444,19 @@ function staffEdit(k,f,v){
   // own answer, and says so loudly if the change did not land.
   if(f==='register'||f==='role')staffPushRegister(p,f==='role'?'role':'active').then(()=>staffRefresh());
 }
+// Taking a job off one person. The override goes with it — it was a rate FOR that
+// job, and leaving it behind would put a number on a job they no longer hold.
+function staffDelPersonJob(k,job){
+  const p=staffS.people[k];if(!p)return;
+  const kk=staffJobKey(job);
+  const own=(p.rates||{})[job];
+  if(!confirm('Take "'+job+'" off '+p.name+'?'+(own>0?('\n\nTheir $'+own+' override for it goes too.'):'')))return;
+  if(p.rates)Object.keys(p.rates).forEach(n=>{if(staffJobKey(n)===kk)delete p.rates[n];});
+  if(p.positions)p.positions=p.positions.filter(j=>staffJobKey(j)!==kk);
+  staffTouch(p);
+  staffSave();staffRefresh();
+}
+
 function staffAddJob(k){
   const sel=document.getElementById('staff-job-'+k.replace(/[^a-z0-9]/gi,'_'));
   if(!sel||!sel.value)return;
@@ -9569,17 +9589,36 @@ function staffDetail(p){
   const reg=p.register||{};
   const jobs=Object.keys(p.rates||{});
   const known=[...new Set([...(p.positions||[]),...jobs])];
-  const rateRow=(job)=>`<div style="display:flex;gap:6px;align-items:center;padding:1px 0">
+  // THE BOX SHOWS THE DEFAULT WHEN THERE IS NO OVERRIDE, as a placeholder — grey, and
+  // it disappears the moment anything is typed.
+  //
+  // ⚠️ NOT prefilled as a real value. A default sitting in the box as an editable
+  // number cannot be told apart from an override that happens to equal it, and the
+  // difference is the whole point: an override is frozen at what it says, a default
+  // follows the Job Rates tab. Prefilling would mean raising the Server rate once, on
+  // one screen, and silently not raising it for anybody whose box had been opened.
+  const rateRow=(job)=>{
+    const own=(p.rates||{})[job];
+    const def=staffJobRate(job);
+    return `<div style="display:flex;gap:6px;align-items:center;padding:1px 0">
     <span style="flex:1;font-size:13px;white-space:nowrap">${esc(job)}</span>
     <span style="color:var(--text-muted);font-size:12px">$</span>
-    <input value="${(p.rates||{})[job]||''}" inputmode="decimal" placeholder="—"
+    <input value="${own>0?esc(String(own)):''}" inputmode="decimal"
+      placeholder="${def>0?esc(String(def)):'—'}"
+      title="${def>0?('Default for '+esc(job)+' is $'+esc(String(def))+' — type a number to override it for this person'):('No default set for '+esc(job)+' yet')}"
       onchange="staffEdit('${esc(k)}','rate:${esc(job)}',this.value)" style="${inp}">
+    <button onclick="staffDelPersonJob('${esc(k)}','${esc(job)}')" title="Take this job off them"
+      style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;padding:0 2px;line-height:1">×</button>
   </div>`;
+  };
   const tag=(t,c)=>`<span style="font-size:10px;font-weight:800;color:${c};border:1px solid currentColor;border-radius:5px;padding:0 5px;white-space:nowrap">${t}</span>`;
   const mini=reg.mini;
   return `<div style="padding:6px 0 10px 26px;border-top:1px dashed var(--border);display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start">
     <div style="${col};flex:1;max-width:260px">
-      <div style="${hd}">JOB RATES <span style="font-weight:500;letter-spacing:0">· blank = not set</span></div>
+      <div style="${hd};display:flex;align-items:baseline">
+        <span>JOB RATES</span>
+        <span style="margin-left:auto;letter-spacing:.6px">OVERRIDE</span>
+      </div>
       ${known.length?known.map(rateRow).join(''):'<div style="color:var(--text-dim);font-size:12px">No job on file.</div>'}
       <div style="display:flex;gap:5px;align-items:center;margin-top:5px">
         <select id="staff-job-${kid}" style="${inp};width:auto">
