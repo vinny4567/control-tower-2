@@ -110,7 +110,7 @@
     .rq-row:hover{filter:brightness(1.15)}
     .rq-row.rq-warn{border-left-color:#ffb300;background:rgba(255,179,0,.06)}
     .rq-row.rq-urgent{border-left-color:#f44336;background:rgba(244,67,54,.09)}
-    .rq-when{width:96px;flex:none;display:flex;flex-direction:column;gap:1px}
+    .rq-when{width:112px;flex:none;display:flex;flex-direction:column;gap:1px}
     .rq-date{font-size:12px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
     .rq-in{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em}
     .rq-in.rq-soon{color:#ff8a80;font-weight:800}
@@ -10253,6 +10253,91 @@ function agItems(){
 }
 const AG_KIND={cat:{ico:'🍝',name:'Catering',cls:'ag-cat'},party:{ico:'🎉',name:'Party',cls:'ag-party'},wed:{ico:'💍',name:'Wedding/Event',cls:'ag-wed'}};
 function agPretty(d){try{return new Date(d+'T00:00:00').toLocaleDateString([],{weekday:'short',month:'short',day:'numeric'}).toUpperCase()}catch(e){return d}}
+// ── UPCOMING ORDERS: is it on paper, and is the money in? ────────────────────
+// An order taken months ago sat in the system with no kitchen ticket and no payment,
+// and nobody knew until the customer rang the night before. This is the window that
+// makes that impossible to miss: every upcoming order, and the two things that can
+// still be outstanding on it.
+let rqFilter='all';            // 'all' | 'todo'
+function rqSetFilter(f){rqFilter=f;const el=document.getElementById('rq-card');if(el)el.outerHTML=readyCardHTML()}
+function rqItems(){
+  const today=agToday();
+  const out=[];
+  (ag.orders||[]).forEach(o=>{
+    const id=String(o.id||'');
+    const isParty=id.startsWith('party-')||o.type==='party-booking';
+    const d=String(isParty?(o.eventDate||''):(o.eventDateRaw||'')).slice(0,10);
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(d)||d<today)return;
+    if(o.status==='cancelled'||o.status==='refunded')return;
+    // The browser print and the server print both stamp the record; either counts.
+    const printed=(o.printed===true)||(o.serverPrinted===true);
+    // A Stripe id is the only payment we can actually see. Cash and cheques taken at the
+    // desk leave no trace here, so the chip says "no payment on file", not "unpaid".
+    const paid=!!(o.transactionId||o.stripePaymentIntentId||o.stripeChargeId);
+    let who,sub,total;
+    if(isParty){
+      const c=o.customer||{};
+      who=[c.firstName,c.lastName].filter(Boolean).join(' ').trim()||o.occasion||'Private party';
+      const gc=o.finalGuestCount||o.guestCount;
+      sub=[o.room==='private'?'Private room':(o.room||''),gc?gc+' guests':'',o.packageName||''].filter(Boolean).join(' · ');
+      // estimatedTotal is a raw float — 1922.2500000000002 is not a price anyone wants to read
+      total=(o.estimatedTotal!=null&&isFinite(o.estimatedTotal))?('$'+Number(o.estimatedTotal).toFixed(2)):'';
+    }else{
+      who=o.name||'Catering order';
+      sub=[o.serviceType||'',(o.guests&&o.guests!=='—'&&o.guests!=='?')?o.guests+' guests':''].filter(Boolean).join(' · ');
+      total=o.total||'';
+    }
+    out.push({id,date:d,isParty,printed,paid,who,sub,total,
+      time:isParty?(o.startTime||''):((o.eventTime&&o.eventTime!=='Select a time')?o.eventTime:''),
+      days:agDaysUntil(d)});
+  });
+  out.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
+  return out;
+}
+function agDaysUntil(d){
+  const p=d.split('-').map(Number),t=agToday().split('-').map(Number);
+  return Math.round((new Date(p[0],p[1]-1,p[2])-new Date(t[0],t[1]-1,t[2]))/86400000);
+}
+function rqWhenLabel(n){return n===0?'TODAY':n===1?'TOMORROW':n<7?('in '+n+' days'):n<14?'next week':('in '+Math.round(n/7)+' weeks')}
+function readyCardHTML(){
+  const all=rqItems();
+  const todo=all.filter(r=>!r.printed||!r.paid);
+  const list=rqFilter==='todo'?todo:all;
+  // "Needs attention" counts only what is close enough to matter. An order three months
+  // out with no payment is normal; one three days out with no ticket is not.
+  const urgent=todo.filter(r=>r.days<=7).length;
+  let rows='';
+  list.forEach(r=>{
+    const bad=!r.printed||!r.paid;
+    const cls=bad?(r.days<=7?'rq-urgent':'rq-warn'):'';
+    rows+=`<div class="rq-row ${cls}" onclick="agOpenCat('${esc(r.id)}')" title="Open this order">
+      <span class="rq-when">
+        <span class="rq-date">${esc(agPretty(r.date))}</span>
+        <span class="rq-in${r.days<=7?' rq-soon':''}">${rqWhenLabel(r.days)}</span>
+      </span>
+      <span class="rq-main">
+        <span class="rq-who">${r.isParty?'🎉 ':'🍝 '}${esc(r.who)}</span>
+        <span class="rq-sub">${esc([r.time,r.sub,r.total].filter(Boolean).join(' · '))}</span>
+      </span>
+      <span class="rq-chips">
+        <span class="rq-chip ${r.printed?'ok':'no'}">${r.printed?'🖨 PRINTED':'🖨 NOT PRINTED'}</span>
+        <span class="rq-chip ${r.paid?'ok':'no'}">${r.paid?(r.isParty?'💵 DEPOSIT':'💵 PAID'):(r.isParty?'💵 NO DEPOSIT':'💵 NO PAYMENT')}</span>
+      </span>
+    </div>`;
+  });
+  if(!list.length)rows=`<div class="rq-empty">${ag.orders===null?'Loading orders…':(rqFilter==='todo'?'Nothing outstanding — every upcoming order is printed and paid.':'Nothing coming up.')}</div>`;
+  return `<div class="dash-card" id="rq-card" style="grid-column:1/-1;min-height:auto">
+    <div class="rq-head">
+      <div class="rq-title">🧾 Upcoming Orders</div>
+      <span class="rq-count${urgent?'':' rq-ok'}">${urgent?(urgent+' need'+(urgent===1?'s':'')+' attention within a week'):'nothing outstanding this week'}</span>
+      <div class="rq-tabs">
+        <button class="rq-tab${rqFilter==='all'?' on':''}" onclick="rqSetFilter('all')">All ${all.length}</button>
+        <button class="rq-tab${rqFilter==='todo'?' on':''}" onclick="rqSetFilter('todo')">Outstanding ${todo.length}</button>
+      </div>
+    </div>
+    <div class="rq-list">${rows}</div>
+  </div>`;
+}
 function agendaCardHTML(){
   const today=agToday();
   if(!agMonth)agMonth=today.slice(0,7);
@@ -10474,6 +10559,7 @@ function dashboardHTML(){
           <div id="dash-clock-time" style="font-size:52px;font-weight:800;color:var(--text);letter-spacing:-0.03em;line-height:1;font-variant-numeric:tabular-nums">${_timeStr}</div>
           <div id="dash-clock-date" style="font-size:14px;color:var(--text-dim);font-weight:600">${_dateStr}</div>
         </div>
+        ${readyCardHTML()}
         ${agendaCardHTML()}
         <!-- Reservations + Upcoming Catering + Online Orders cards + Busy buttons removed for now (re-add from git history) -->
       </div>
