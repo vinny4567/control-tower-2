@@ -55,18 +55,18 @@
     #viewport .launcher,#viewport .empty-state{width:100%;height:100%}
     /* DASHBOARD */
     .dashboard{width:100%;height:100%;overflow-y:auto;padding:20px;padding-bottom:48px}
-    .dash-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;max-width:1500px;margin:0 auto}
-    .dash-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:12px;min-height:180px;transition:transform .15s,box-shadow .15s}
+    .dash-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(520px,1fr));gap:12px;max-width:1700px;margin:0 auto}
+    .dash-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:13px;display:flex;flex-direction:column;gap:9px;min-height:140px;transition:transform .15s,box-shadow .15s}
     /* Dashboard agenda + calendar (Coming Up card) */
     .ag-head{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
-    .ag-title{font-size:18px;font-weight:800;color:var(--accent);letter-spacing:.04em}
+    .ag-title{font-size:15px;font-weight:800;color:var(--accent);letter-spacing:.04em}
     .ag-legend{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--text-dim);margin-right:auto}
     .ag-leg{display:flex;align-items:center;gap:5px}
     .ag-err{font-size:11px;color:#ff7043}
     .ag-btn{background:transparent;border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:3px 10px;cursor:pointer;font-size:13px}
     .ag-btn:hover{color:var(--accent);border-color:var(--accent)}
-    .ag-body{display:grid;grid-template-columns:340px 1fr;gap:20px;align-items:start}
-    @media(max-width:860px){.ag-body{grid-template-columns:1fr}}
+    .ag-body{display:grid;grid-template-columns:230px 1fr;gap:14px;align-items:start}
+    @media(max-width:1100px){.ag-body{grid-template-columns:1fr}}
     .ag-mnav{display:flex;align-items:center;gap:8px;margin-bottom:8px}
     .ag-mon{flex:1;text-align:center;font-weight:700;color:var(--text);font-size:14px}
     .ag-todaybtn{font-size:11px}
@@ -80,7 +80,7 @@
     .ag-dots{display:flex;gap:2px;height:5px}
     .ag-dot{width:5px;height:5px;border-radius:50%;display:inline-block}
     .ag-dot.ag-cat{background:#ffb300}.ag-dot.ag-party{background:#4dd0e1}.ag-dot.ag-wed{background:#f06292}
-    .ag-list{display:flex;flex-direction:column;gap:4px;max-height:300px;overflow-y:auto;padding-right:4px}
+    .ag-list{display:flex;flex-direction:column;gap:3px;max-height:330px;overflow-y:auto;padding-right:3px}
     .ag-filter{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-dim);margin-bottom:4px}
     .ag-datehead{font-size:11px;font-weight:800;color:var(--text-dim);letter-spacing:.08em;margin:10px 0 2px;border-bottom:1px solid var(--border);padding-bottom:3px}
     .ag-datehead.ag-dh-today{color:var(--accent);border-color:var(--accent)}
@@ -98,31 +98,34 @@
     .ag-dr b{color:var(--text);font-weight:600}
     .ag-empty{color:var(--text-muted);font-size:13px;padding:24px;text-align:center}
     /* Upcoming orders — is it on paper, and is the money in? */
-    .rq-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-    .rq-title{font-size:18px;font-weight:800;color:var(--accent);letter-spacing:.04em}
-    .rq-count{font-size:12px;font-weight:700;padding:2px 9px;border-radius:999px;background:rgba(244,67,54,.16);color:#ff8a80;border:1px solid rgba(244,67,54,.35)}
+    .rq-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .rq-title{font-size:15px;font-weight:800;color:var(--accent);letter-spacing:.03em;white-space:nowrap}
+    .rq-count{font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;background:rgba(244,67,54,.16);color:#ff8a80;border:1px solid rgba(244,67,54,.35)}
     .rq-count.rq-ok{background:rgba(76,175,80,.14);color:#a5d6a7;border-color:rgba(76,175,80,.35)}
-    .rq-tabs{display:flex;gap:6px;margin-left:auto}
-    .rq-tab{background:transparent;border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:3px 11px;cursor:pointer;font-size:12px}
+    .rq-tabs{display:flex;gap:5px;margin-left:auto}
+    .rq-tab{background:transparent;border:1px solid var(--border);color:var(--text-dim);border-radius:7px;padding:2px 8px;cursor:pointer;font-size:11px}
     .rq-tab.on{color:var(--accent);border-color:var(--accent);background:rgba(255,179,0,.08)}
-    .rq-list{display:flex;flex-direction:column;gap:5px;max-height:380px;overflow-y:auto;padding-right:4px}
-    .rq-row{display:flex;align-items:center;gap:11px;padding:8px 11px;border-radius:9px;border:1px solid var(--border);border-left-width:3px;border-left-color:#4caf50;background:var(--surface2);cursor:pointer}
-    .rq-row:hover{filter:brightness(1.15)}
+    .rq-list{display:flex;flex-direction:column;gap:4px;max-height:330px;overflow-y:auto;padding-right:3px}
+    .rq-row{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;border:1px solid var(--border);border-left-width:3px;border-left-color:#4caf50;background:var(--surface2)}
     .rq-row.rq-warn{border-left-color:#ffb300;background:rgba(255,179,0,.06)}
     .rq-row.rq-urgent{border-left-color:#f44336;background:rgba(244,67,54,.09)}
-    .rq-when{width:112px;flex:none;display:flex;flex-direction:column;gap:1px}
-    .rq-date{font-size:12px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
-    .rq-in{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em}
+    .rq-when{width:82px;flex:none;display:flex;flex-direction:column;gap:0}
+    .rq-date{font-size:11px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap}
+    .rq-in{font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
     .rq-in.rq-soon{color:#ff8a80;font-weight:800}
     .rq-main{display:flex;flex-direction:column;min-width:0;flex:1}
-    .rq-who{font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .rq-sub{font-size:11px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .rq-chips{display:flex;gap:6px;flex:none}
-    .rq-chip{font-size:10px;font-weight:800;letter-spacing:.04em;padding:3px 8px;border-radius:999px;border:1px solid;white-space:nowrap}
+    .rq-who{font-size:12px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .rq-sub{font-size:10px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .rq-chips{display:flex;flex-direction:column;gap:2px;flex:none;align-items:stretch}
+    .rq-chip{font-size:9px;font-weight:800;letter-spacing:.03em;padding:2px 6px;border-radius:999px;border:1px solid;white-space:nowrap;text-align:center}
     .rq-chip.ok{color:#a5d6a7;border-color:rgba(76,175,80,.4);background:rgba(76,175,80,.12)}
     .rq-chip.no{color:#ff8a80;border-color:rgba(244,67,54,.45);background:rgba(244,67,54,.12)}
-    .rq-empty{color:var(--text-muted);font-size:13px;padding:22px;text-align:center}
-    @media(max-width:600px){.rq-chips{flex-direction:column;gap:3px}.rq-when{width:78px}}
+    .rq-chip.rq-tap{cursor:pointer}
+    .rq-chip.rq-tap:hover{filter:brightness(1.4)}
+    .rq-go{color:var(--accent);font-weight:800;flex:none;cursor:pointer;font-size:15px;width:16px;text-align:center}
+    .rq-go:hover{filter:brightness(1.3)}
+    .rq-go-off{cursor:default}
+    .rq-empty{color:var(--text-muted);font-size:12px;padding:18px;text-align:center}
     .dash-card:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.25)}
     .dash-card.wide{grid-column:span 2}
     @media (max-width:760px){.dash-card.wide{grid-column:span 1}}
@@ -10260,6 +10263,31 @@ function agPretty(d){try{return new Date(d+'T00:00:00').toLocaleDateString([],{w
 // still be outstanding on it.
 let rqFilter='all';            // 'all' | 'todo'
 function rqSetFilter(f){rqFilter=f;const el=document.getElementById('rq-card');if(el)el.outerHTML=readyCardHTML()}
+// Tick the payment off by hand. A card taken over the phone or a cheque at the desk never
+// reaches Stripe, so without this those orders sit red forever and the real ones stop
+// standing out. Sends ONLY the id and the flag: the server merges, so nothing else on the
+// order can be touched by this write.
+async function rqTogglePaid(id){
+  const o=(ag.orders||[]).find(x=>String(x.id)===String(id));
+  if(!o)return;
+  const onStripe=!!(o.transactionId||o.stripePaymentIntentId||o.stripeChargeId);
+  if(onStripe){alert('This one was paid through Stripe — that can\'t be un-ticked here.');return}
+  const now=!!o.paidManual;
+  if(!now&&!confirm('Mark this order as paid?\n\n'+(o.name||'This order')+'\n\nUse this when you took the payment yourself — a card over the phone, cash or a cheque.'))return;
+  if(now&&!confirm('Undo the payment mark on this order?'))return;
+  o.paidManual=!now; o.paidManualAt=!now?new Date().toISOString():null;   // optimistic
+  const el=document.getElementById('rq-card'); if(el)el.outerHTML=readyCardHTML();
+  try{
+    const r=await fetch(CATERING_ORDERS_API,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({_id:String(id),paidManual:!now,paidManualAt:o.paidManualAt})});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    const j=await r.json(); if(!j||j.success!==true)throw new Error((j&&j.error)||'save refused');
+  }catch(e){
+    o.paidManual=now; o.paidManualAt=null;                                // put it back
+    const el2=document.getElementById('rq-card'); if(el2)el2.outerHTML=readyCardHTML();
+    alert('Could not save that — the mark has been undone.\n\n'+(e.message||e));
+  }
+}
 function rqItems(){
   const today=agToday();
   const out=[];
@@ -10271,9 +10299,11 @@ function rqItems(){
     if(o.status==='cancelled'||o.status==='refunded')return;
     // The browser print and the server print both stamp the record; either counts.
     const printed=(o.printed===true)||(o.serverPrinted===true);
-    // A Stripe id is the only payment we can actually see. Cash and cheques taken at the
-    // desk leave no trace here, so the chip says "no payment on file", not "unpaid".
-    const paid=!!(o.transactionId||o.stripePaymentIntentId||o.stripeChargeId);
+    // A Stripe id is the only payment the record can show on its own. A card taken over
+    // the phone or a cheque at the desk leaves no trace, so the chip can also be ticked by
+    // hand — that is what paidManual is.
+    const paid=!!(o.transactionId||o.stripePaymentIntentId||o.stripeChargeId||o.paidManual);
+    const paidByHand=!o.transactionId&&!o.stripePaymentIntentId&&!o.stripeChargeId&&!!o.paidManual;
     let who,sub,total;
     if(isParty){
       const c=o.customer||{};
@@ -10287,7 +10317,7 @@ function rqItems(){
       sub=[o.serviceType||'',(o.guests&&o.guests!=='—'&&o.guests!=='?')?o.guests+' guests':''].filter(Boolean).join(' · ');
       total=o.total||'';
     }
-    out.push({id,date:d,isParty,printed,paid,who,sub,total,
+    out.push({id,date:d,isParty,printed,paid,paidByHand,who,sub,total,
       time:isParty?(o.startTime||''):((o.eventTime&&o.eventTime!=='Select a time')?o.eventTime:''),
       days:agDaysUntil(d)});
   });
@@ -10310,7 +10340,8 @@ function readyCardHTML(){
   list.forEach(r=>{
     const bad=!r.printed||!r.paid;
     const cls=bad?(r.days<=7?'rq-urgent':'rq-warn'):'';
-    rows+=`<div class="rq-row ${cls}" onclick="agOpenCat('${esc(r.id)}')" title="Open this order">
+    const payLabel=r.paid?(r.paidByHand?'PAID ✓':(r.isParty?'DEPOSIT':'PAID')):(r.isParty?'NO DEPOSIT':'NO PAYMENT');
+    rows+=`<div class="rq-row ${cls}">
       <span class="rq-when">
         <span class="rq-date">${esc(agPretty(r.date))}</span>
         <span class="rq-in${r.days<=7?' rq-soon':''}">${rqWhenLabel(r.days)}</span>
@@ -10320,13 +10351,15 @@ function readyCardHTML(){
         <span class="rq-sub">${esc([r.time,r.sub,r.total].filter(Boolean).join(' · '))}</span>
       </span>
       <span class="rq-chips">
-        <span class="rq-chip ${r.printed?'ok':'no'}">${r.printed?'🖨 PRINTED':'🖨 NOT PRINTED'}</span>
-        <span class="rq-chip ${r.paid?'ok':'no'}">${r.paid?(r.isParty?'💵 DEPOSIT':'💵 PAID'):(r.isParty?'💵 NO DEPOSIT':'💵 NO PAYMENT')}</span>
+        <span class="rq-chip ${r.printed?'ok':'no'}">🖨 ${r.printed?'PRINTED':'NOT PRINTED'}</span>
+        <span class="rq-chip rq-tap ${r.paid?'ok':'no'}" onclick="rqTogglePaid('${esc(r.id)}')"
+          title="${r.paid?'Click to undo':'Click to mark the payment as taken'}">💵 ${payLabel}</span>
       </span>
+      ${r.isParty?'<span class="rq-go rq-go-off"></span>':`<span class="rq-go" onclick="agOpenCat('${esc(r.id)}')" title="Open this order">→</span>`}
     </div>`;
   });
   if(!list.length)rows=`<div class="rq-empty">${ag.orders===null?'Loading orders…':(rqFilter==='todo'?'Nothing outstanding — every upcoming order is printed and paid.':'Nothing coming up.')}</div>`;
-  return `<div class="dash-card" id="rq-card" style="grid-column:1/-1;min-height:auto">
+  return `<div class="dash-card" id="rq-card" style="min-height:auto">
     <div class="rq-head">
       <div class="rq-title">🧾 Upcoming Orders</div>
       <span class="rq-count${urgent?'':' rq-ok'}">${urgent?(urgent+' need'+(urgent===1?'s':'')+' attention within a week'):'nothing outstanding this week'}</span>
@@ -10365,7 +10398,7 @@ function agendaCardHTML(){
     if(agOpen[it.id]&&it.o)lh+=agDetailHTML(it);
   });
   if(!list.length)lh=`<div class="ag-empty">${agSel?'Nothing on this day':'Nothing coming up'}${ag.orders===null&&ag.at===0?' — loading…':''}</div>`;
-  return `<div class="dash-card" id="ag-card" style="grid-column:1/-1;min-height:auto">
+  return `<div class="dash-card" id="ag-card" style="min-height:auto">
     <div class="ag-head">
       <div class="ag-title">📅 Coming Up</div>
       <div class="ag-legend">${Object.values(AG_KIND).map(k=>`<span class="ag-leg"><span class="ag-dot ${k.cls}"></span>${k.name}</span>`).join('')}</div>
@@ -10410,15 +10443,19 @@ function agNav(dir){
 }
 // Arrow on a catering agenda row: open the Catering tab and tell the page
 // (once it's up — it's a big page) to open that order from its log.
+let agOpenTimer=null;   // only one order can be opening at a time
 function agOpenCat(id){
+  // Two of these running at once both kept posting, and whichever fired last won — so
+  // tapping one order and then another opened the wrong person. Cancel the one in flight.
+  if(agOpenTimer){clearInterval(agOpenTimer);agOpenTimer=null}
   switchTab(4);
   const sid=String(id),t0=Date.now();
-  const timer=setInterval(()=>{
+  const timer=agOpenTimer=setInterval(()=>{
     const f=document.querySelector('#viewport iframe');
     if(f&&f.contentWindow){try{f.contentWindow.postMessage({ctOpenOrder:sid},'https://order.angeliscatering.com')}catch(e){}}
-    if(Date.now()-t0>25000)clearInterval(timer);
+    if(Date.now()-t0>25000){clearInterval(timer);if(agOpenTimer===timer)agOpenTimer=null}
   },900);
-  const ack=e=>{if(e.data&&e.data.ctOpenOrderAck===sid){clearInterval(timer);window.removeEventListener('message',ack)}};
+  const ack=e=>{if(e.data&&e.data.ctOpenOrderAck===sid){clearInterval(timer);if(agOpenTimer===timer)agOpenTimer=null;window.removeEventListener('message',ack)}};
   window.addEventListener('message',ack);
 }
 function agTap(id){
@@ -10555,9 +10592,9 @@ function dashboardHTML(){
   return `
     <div class="dashboard">
       <div class="dash-grid">
-        <div class="dash-card" style="grid-column:1/-1;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;min-height:auto;padding:12px;gap:1px">
-          <div id="dash-clock-time" style="font-size:52px;font-weight:800;color:var(--text);letter-spacing:-0.03em;line-height:1;font-variant-numeric:tabular-nums">${_timeStr}</div>
-          <div id="dash-clock-date" style="font-size:14px;color:var(--text-dim);font-weight:600">${_dateStr}</div>
+        <div class="dash-card" style="grid-column:1/-1;flex-direction:row;justify-content:center;align-items:baseline;gap:14px;text-align:center;min-height:auto;padding:8px">
+          <div id="dash-clock-time" style="font-size:30px;font-weight:800;color:var(--text);letter-spacing:-0.02em;line-height:1;font-variant-numeric:tabular-nums">${_timeStr}</div>
+          <div id="dash-clock-date" style="font-size:13px;color:var(--text-dim);font-weight:600">${_dateStr}</div>
         </div>
         ${readyCardHTML()}
         ${agendaCardHTML()}
