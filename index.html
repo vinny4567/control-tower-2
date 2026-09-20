@@ -1889,7 +1889,10 @@ function mailAttachHTML(mm,acctId,folder){
   const list=(mm&&mm.attachments)||[];
   if(!list.length)return '';
   const acct=acctId||mm.acctId||mailx.acct;
-  const fld=folder||mailx.folder||'inbox';
+  // A message inside a thread can live in a different mailbox from the list you are
+  // looking at — your own reply sits in Sent while the thread is read from the inbox —
+  // so use the folder the message itself came back with before falling back to the list's.
+  const fld=mm.folder||folder||mailx.folder||'inbox';
   const kb=n=>!n?'':(n<1024?n+' B':n<1048576?Math.round(n/1024)+' KB':(n/1048576).toFixed(1)+' MB');
   const icon=t=>/pdf/i.test(t)?'📄':/image/i.test(t)?'🖼':/word|doc/i.test(t)?'📝':/sheet|excel|csv/i.test(t)?'📊':'📎';
   return `<div class="mail-attach"><div class="mail-attach-hd">${list.length} attachment${list.length>1?'s':''}</div>
