@@ -5519,6 +5519,16 @@ const TIP_SECTIONS=['Server','Bartender','Busser','Food Runner','Weddings'];
 const TIP_SEC_LABEL={'Server':'Servers','Bartender':'Bartenders','Busser':'Bussers','Food Runner':'Food Runners','Weddings':'Weddings (event-only)'};
 const TIP_SEC_SHORT={'Server':'Srv','Bartender':'Bar','Busser':'Bus','Food Runner':'Run','Weddings':'Wed'};
 function tipBusserSplit(name){return (tipsState.busserSplit&&tipsState.busserSplit[name])||0;}   // period-total busser pool share
+// busserSplitByDay is stored DATE first, then name — {"9/8":{"Anna Kinsella":20.93,…}} — which
+// is what tipsComputeBusserSplit produces and what the rename/remove helpers already assume.
+// Two readers indexed it the other way round and quietly got nothing; go through these.
+function tipBusserDay(name,label){const d=(tipsState.busserSplitByDay||{})[label];return (d&&d[name])||0;}
+function tipBusserPoolDay(label){const d=(tipsState.busserSplitByDay||{})[label];if(!d)return 0;
+  return Math.round(Object.keys(d).reduce((s,n)=>s+(d[n]||0),0)*100)/100;}
+// Everyone the split pays, whether or not they are on the roster. A busser who worked the
+// period but isn't in the roster list had no row at all, so their share was invisible —
+// Connor Parkhurst was owed the largest share of all and simply wasn't on the sheet.
+function tipBusserSplitPeople(){return Object.keys(tipsState.busserSplit||{}).filter(n=>(tipsState.busserSplit[n]||0)>0);}
 function tipHasTips(name){const t=tipRowTotals(name);return t.paid>0||t.upt>0||tipBusserSplit(name)>0;}
 // Roster categorized from the Google Sheet tip tabs (Weddings = event-only people
 // from the scheduler/Paychex who aren't restaurant staff). Each person appears once.
@@ -5948,7 +5958,8 @@ function tipSectionPeople(sec){
   const all=[],seen={},add=n=>{if(n&&!seen[n]){seen[n]=1;all.push(n);}};
   Object.keys(tipsState.roster||{}).forEach(s=>((tipsState.roster[s])||[]).forEach(add));
   Object.keys(tipsState.adds||{}).forEach(s=>((tipsState.adds[s])||[]).forEach(add));
-  return all.filter(n=>tipEffSection(n)===sec).sort((a,b)=>{const la=a.split(' ').pop(),lb=b.split(' ').pop();return la.localeCompare(lb)||a.localeCompare(b);});
+  if(sec==='Busser')tipBusserSplitPeople().forEach(add);   // paid by the pool ⇒ has a row, roster or not
+  return all.filter(n=>tipEffSection(n)===sec||(sec==='Busser'&&!tipEffSection(n)&&tipBusserSplit(n)>0)).sort((a,b)=>{const la=a.split(' ').pop(),lb=b.split(' ').pop();return la.localeCompare(lb)||a.localeCompare(b);});
 }
 function tipAddPerson(sec){const inp=document.getElementById('tip-add-'+sec.replace(/ /g,'_'));if(!inp)return;const name=(inp.value||'').trim();if(!name)return;if(!tipsState.adds[sec])tipsState.adds[sec]=[];const all=tipSectionPeople(sec);if(all.indexOf(name)<0){tipsState.adds[sec].push(name);tipsSaveSoon();}document.getElementById('viewport').innerHTML=tipsHTML();}
 function tipsSetStatus(s,c){const el=document.getElementById('tips-status');if(el){el.textContent=s;el.style.color=c||'var(--text-dim)';}}
@@ -6226,9 +6237,8 @@ function tipsHTML(){
     const t=tipRowTotals(name),upt=Math.round((t.upt+tipBusserSplit(name))*100)/100;gp+=t.paid;gu+=upt;const id=tipId(name);
     const bb='border-bottom:1px solid var(--border)';
     const en=esc(name).replace(/'/g,"\\'");
-    const bday=(tipsState.busserSplitByDay||{})[name]||{};
-    const tds=days.map(d=>{const lb=tipDayLabel(d);const mon=(d.getDay()===1);const c=tipCell(name,lb),sp=bday[lb];
-      return `<td id="tc-${id}-${lb.replace('/','_')}" data-tipcell onclick="tipCellEdit('${en}','${lb}')" title="Click to edit" style="cursor:pointer;border-right:1px solid var(--border);${bb};text-align:right;padding:5px ${mon?'2px':'6px'};min-width:${mon?'18px':'58px'};white-space:nowrap;vertical-align:middle">${c?tipCompsHTML(c):(sp?tipCompsHTML({u:sp}):'')}</td>`;}).join('');
+    const tds=days.map(d=>{const lb=tipDayLabel(d);const mon=(d.getDay()===1);const c=tipCell(name,lb),sp=tipBusserDay(name,lb);
+      return `<td id="tc-${id}-${lb.replace('/','_')}" data-tipcell onclick="tipCellEdit('${en}','${lb}')" title="Click to edit" style="cursor:pointer;border-right:1px solid var(--border);${bb};text-align:right;padding:5px ${mon?'2px':'6px'};min-width:${mon?'18px':'58px'};white-space:nowrap;vertical-align:middle">${tipCompsHTML(sp?Object.assign({},c||{},{u:Math.round((((c&&c.u)||0)+sp)*100)/100}):c)}</td>`;}).join('');
     return `<tr style="${isPool?'background:rgba(251,191,36,0.06)':''}">
       <td style="position:sticky;left:0;z-index:1;background:var(--surface);padding:7px 12px;font-weight:${isPool?'800':'600'};white-space:nowrap;border-right:2px solid var(--border);${bb};${isPool?'color:#fbbf24':''}"><span style="display:inline-flex;align-items:center;gap:6px">${esc(name)}${isPool?'':`<select title="Move to another section" onchange="tipMovePerson('${esc(name).replace(/'/g,"\\'")}',this.value)" style="background:transparent;border:none;color:var(--text-muted);font-size:11px;font-family:inherit;cursor:pointer;-webkit-appearance:none;appearance:none;padding:0 2px">${TIP_SECTIONS.map(s=>`<option value="${s}" ${tipEffSection(name)===s?'selected':''} style="color:#000">${TIP_SEC_SHORT[s]}</option>`).join('')}</select>`}</span></td>
       ${tds}
@@ -6243,9 +6253,8 @@ function tipsHTML(){
     const ordered=[...people.filter(tipHasTips),...people.filter(n=>!tipHasTips(n))];
     const bsd=tipsState.busserSplitByDay||{};
     if(sec==='Busser'&&Object.keys(bsd).length){
-      const poolByDay={};Object.keys(bsd).forEach(nm=>{const by=bsd[nm];Object.keys(by).forEach(lb=>{poolByDay[lb]=Math.round(((poolByDay[lb]||0)+by[lb])*100)/100;});});
-      const ptds=days.map(d=>{const lb=tipDayLabel(d);const mon=(d.getDay()===1);const p=poolByDay[lb];return `<td style="text-align:right;padding:5px ${mon?'2px':'6px'};color:#fbbf24;font-weight:700;font-size:11px;border-right:1px solid var(--border);border-top:1px solid var(--border);white-space:nowrap">${p?tipMoney(p):''}</td>`;}).join('');
-      const ptot=Math.round(Object.values(poolByDay).reduce((s,x)=>s+x,0)*100)/100;
+      const ptds=days.map(d=>{const lb=tipDayLabel(d);const mon=(d.getDay()===1);const p=tipBusserPoolDay(lb);return `<td style="text-align:right;padding:5px ${mon?'2px':'6px'};color:#fbbf24;font-weight:700;font-size:11px;border-right:1px solid var(--border);border-top:1px solid var(--border);white-space:nowrap">${p?tipMoney(p):''}</td>`;}).join('');
+      const ptot=Math.round(days.reduce((s,d)=>s+tipBusserPoolDay(tipDayLabel(d)),0)*100)/100;
       body+=`<tr style="background:var(--surface2)"><td style="position:sticky;left:0;z-index:1;background:var(--surface2);color:var(--accent);font-weight:800;padding:6px 12px;letter-spacing:.5px;border-top:1px solid var(--border);border-right:2px solid var(--border);white-space:nowrap">BUSSERS <span style="color:var(--text-muted);font-weight:600;font-size:9px;letter-spacing:0">pool / night</span></td>${ptds}<td style="border-top:1px solid var(--border)"></td><td style="text-align:right;color:#fbbf24;font-weight:800;padding:6px 8px;border-top:1px solid var(--border);border-left:2px solid var(--border);white-space:nowrap">${ptot?tipMoney(ptot):''}</td></tr>`;
     }else{
       body+=`<tr><td colspan="${days.length+3}" style="position:sticky;left:0;background:var(--surface2);color:var(--accent);font-weight:800;padding:8px 12px;letter-spacing:.5px;border-top:1px solid var(--border)">${TIP_SEC_LABEL[sec].toUpperCase()}</td></tr>`;
