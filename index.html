@@ -6073,9 +6073,35 @@ async function tipsPullWeddings(auto){
       wed[n]=wed[n]||{};wed[n][lb]=Math.round(((wed[n][lb]||0)+pe.amount)*100)/100;
     });
   });
-  Object.keys(wed).forEach(n=>{Object.keys(wed[n]).forEach(lb=>{ensureW(n);const c=tipCell(n,lb);if(c&&c.w)return;tipSetComp(n,lb,'w',wed[n][lb]);filled++;});});
+  // THE SCHEDULE APP OWNS A WEDDING'S TIPS. This used to fill only blank cells, so a
+  // tip-out re-worked in the schedule app after a first look never reached the grid:
+  // the 9/11 Danada event still read the original split days later, with Diego $137.40
+  // over and Jennifer $83.61 under — the same total, handed to the wrong people.
+  // So mirror the scheduler for every event date it returns: set what it says, and drop
+  // anyone it no longer lists on that date. Only dates it actually returned are touched,
+  // which is what keeps an empty or failed response from clearing anything.
+  const evDates={};Object.keys(wed).forEach(n=>Object.keys(wed[n]).forEach(lb=>{evDates[lb]=true}));
+  Object.keys(wed).forEach(n=>{Object.keys(wed[n]).forEach(lb=>{
+    const c=tipCell(n,lb),v=wed[n][lb];
+    if(c&&Math.abs((c.w||0)-v)<0.005)return;                 // already right — no churn
+    ensureW(n);tipSetComp(n,lb,'w',v);filled++;
+  });});
+  // Taken off an event in the schedule app → their wedding tip goes with them.
+  Object.keys(tipsState.cells||{}).forEach(n=>{
+    Object.keys(tipsState.cells[n]||{}).forEach(lb=>{
+      if(!evDates[lb])return;                                 // not an event date we were told about
+      const c=tipsState.cells[n][lb];
+      if(!c||!c.w)return;
+      if(wed[n]&&wed[n][lb]!=null)return;                     // still on the event
+      tipSetComp(n,lb,'w',0);filled++;
+    });
+  });
   if(filled&&activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();
-  if(filled&&!auto)tipsSaveSoon();   // same undo as the tip-out pull: an auto pull only displays, it no longer auto-saves
+  // Unlike the tip-out pull, this one SAVES even on an auto pull. That pull fills blanks
+  // from a calculator that can still be mid-night, so freezing it was the bug; this one
+  // copies a finished event's figures from the app that owns them, and a correction is no
+  // use if it only appears on the screen that happened to fetch it.
+  if(filled)tipsSaveSoon();
   tipsSetStatus(filled?('Pulled '+filled+' wedding tip'+(filled>1?'s':'')+' ✓'):(auto?'✓ in sync':'No wedding tips in this range'),'var(--text-dim)');
 }
 
