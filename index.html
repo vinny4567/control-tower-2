@@ -5635,14 +5635,38 @@ async function tipsImportTimesheet(input){
     const lines=await tipsExtractPdfLines(buf);
     const {people,shifts}=tipsParseMicros(lines);
     if(!Object.keys(people).length){tipsSetStatus('⚠ no employees found — is this the MICROS time-card PDF?','#f87171');return;}
-    let log=[];try{const r=await fetch(TIPS_LOG_URL+'?key='+encodeURIComponent(TIPS_LOG_KEY));log=(await r.json()).log||[];}catch(e){}
+    // TIPS_LOG_KEY is a function. This one call site was left calling it WITHOUT the
+    // parentheses when the key moved out of the page and into localStorage, so the request
+    // went out with the function's source text as its key, came back 401, and `.log` was
+    // undefined — an empty log, every time, silently. The busser split is worked out from
+    // the nightly pools in that log, so every timesheet imported since has produced no
+    // split at all, no matter how good the PDF was.
+    let log=[],logErr=null;
+    try{
+      const r=await fetch(TIPS_LOG_URL+'?key='+encodeURIComponent(TIPS_LOG_KEY()));
+      const d=await r.json();
+      if(!r.ok||d.error)logErr=d.error||('the tip-out log answered '+r.status);
+      log=d.log||[];
+    }catch(e){logErr=(e&&e.message)||String(e);}
     const {split,byDay}=tipsComputeBusserSplit(shifts,log);
-    const n=tipsMergeMicros(people,split,byDay);
+    const stot=Object.values(split).reduce((a,b)=>a+b,0),nb=Object.keys(split).length;
+    // An import that worked out no split must not erase the one already there. Passing an
+    // empty split through is how a good period gets wiped by a bad read.
+    const n=tipsMergeMicros(people,split,byDay,nb?undefined:{keepSplit:true});
     tipsSaveHoursSoon();
     try{kvPush('ct_emp_ids',{emp:tipsState.empIds},Date.now());}catch(e){}
     if(activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();
-    const stot=Object.values(split).reduce((a,b)=>a+b,0),nb=Object.keys(split).length;
-    tipsSetStatus('✓ imported '+n+' employees'+(nb?(' + busser split $'+stot.toFixed(2)+' across '+nb):'')+' — saved',' #34d399');
+    // Say why when there is no split — this failed silently for weeks behind a cheerful
+    // "imported 58 employees" and the bussers simply read as zero.
+    if(nb){
+      tipsSetStatus('✓ imported '+n+' employees + busser split $'+stot.toFixed(2)+' across '+nb+' — saved',' #34d399');
+    }else if(logErr){
+      tipsSetStatus('✓ imported '+n+' employees — but the busser split could NOT be worked out: '+logErr+' (check the Schedule key)','#f87171');
+    }else if(!shifts.length){
+      tipsSetStatus('✓ imported '+n+' employees — but no busser clock-in lines were found in this PDF, so there is no split','#fbbf24');
+    }else{
+      tipsSetStatus('✓ imported '+n+' employees — busser shifts found, but the tip-out log has no busser pool on those nights, so there is nothing to split','#fbbf24');
+    }
   }catch(e){tipsSetStatus('⚠ import failed: '+(e&&e.message||e),'#f87171');}
 }
 // ── HOURS STRAIGHT OFF THE REGISTER ──────────────────────────────────────────
