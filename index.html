@@ -5943,8 +5943,30 @@ tipsState.busserSplit=(rh&&rh.v&&rh.v.busserSplit)?rh.v.busserSplit:{};tipsState
   let _mig=tipMigrateCells();if(tipCleanAdds())_mig=true;if(_mig)tipsSaveSoon();   // upgrade legacy {v,upt,wed} cells + heal stale adds
   tipsState.loaded=true;tipsState.loading=false;
   if(activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();
-  tipsPull(true).then(()=>{ if(g!==tipsGen)return; tipsPullWeddings(true); tipsPullWeddingHours(true); });   // picking a date range pulls the tip-out log + wedding tips + wedding hours
+  tipsPull(true).then(()=>{ if(g!==tipsGen)return; tipsPullWeddings(true); tipsPullWeddingHours(true); tipsPulledAt=Date.now(); });   // picking a date range pulls the tip-out log + wedding tips + wedding hours
 }
+// Come back to this tab and pick the numbers up again.
+// tipsInit() returns at its first line once the period is loaded, so for the rest of the
+// browser session it never pulled again: an event's time sheet edited in the schedule app
+// AFTER the sheet was first opened kept showing the old hours until the whole page was
+// reloaded or the date range re-picked. Re-pulling is safe by design — the tip pulls only
+// fill EMPTY cells and the hours pull only rewrites 💍 wedding positions — so nothing you
+// typed can be overwritten by it.
+let tipsPulledAt=0;
+const TIPS_REPULL_AFTER=20000;   // don't re-hit the scheduler on every flick between tabs
+async function tipsRefresh(force){
+  if(!tipsState.loaded){tipsInit();return;}
+  if(!force&&Date.now()-tipsPulledAt<TIPS_REPULL_AFTER)return;
+  tipsPulledAt=Date.now();
+  const g=tipsGen;
+  if(force)tipsSetStatus('Checking the schedule…','var(--text-dim)');
+  await tipsPull(!force);            if(g!==tipsGen)return;
+  await tipsPullWeddings(!force);    if(g!==tipsGen)return;
+  await tipsPullWeddingHours(!force);
+}
+// A time sheet is usually edited in the schedule app in another tab — so also re-check
+// the moment this window is looked at again, not only when the tab is clicked.
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&activeTab===TIPS)tipsRefresh();});
 function tipsReload(){tipsGen++;tipsState.loaded=false;tipsState.loading=false;tipsState.cells={};tipsState.adds={};document.getElementById('viewport').innerHTML=tipsHTML();tipsInit();}
 function tipsSetStart(ds){const d=tipParseISO(ds);if(!d)return;tipsState.start=d;tipsState.end=new Date(d.getTime()+13*86400000);tipsReload();} // snap to a 14-day period; adjust the end for a custom length
 function tipsSetEnd(ds){const d=tipParseISO(ds);if(!d)return;tipsState.end=d;if(tipsState.start>d)tipsState.start=new Date(d.getTime()-13*86400000);tipsReload();}
@@ -6059,7 +6081,7 @@ async function tipsPullWeddings(auto){
 
 function tipsToggleHTML(view){
   const b=(v,lab)=>`<button onclick="tipsSetView('${v}')" style="background:${view===v?'var(--accent)':'transparent'};color:${view===v?'#000':'var(--text-dim)'};border:none;padding:7px 15px;font-weight:800;cursor:pointer;font-size:14px;font-family:inherit;${v==='hours'?'border-left:1px solid var(--border)':''}">${lab}</button>`;
-  return `<div style="display:inline-flex;border:1px solid var(--border);border-radius:9px;overflow:hidden">${b('tips','🧾 Tips')}${b('hours','⏱ Hours')}</div>`;
+  return `<div style="display:inline-flex;align-items:center;gap:8px"><div style="display:inline-flex;border:1px solid var(--border);border-radius:9px;overflow:hidden">${b('tips','🧾 Tips')}${b('hours','⏱ Hours')}</div><button onclick="tipsRefresh(true)" title="Re-read the schedule app — picks up a time sheet edited since you opened this" style="background:transparent;border:1px solid var(--border);color:var(--text-dim);border-radius:9px;padding:7px 12px;font-weight:800;cursor:pointer;font-size:13px;font-family:inherit">↻</button></div>`;
 }
 function hoursHTML(){
   const di='background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:5px 8px;font-family:inherit;font-size:13px;color-scheme:dark;cursor:pointer';
@@ -6222,7 +6244,7 @@ Picking a date range automatically pulls the nightly <b>tip-out log</b> (restaur
 }
 
 function renderViewport(){if(activeTab===WED){document.getElementById('viewport').innerHTML=wedHTML();wedInit();return}if(activeTab===DOCS){docsSetNS('ct_docs');docsPullSync();document.getElementById('viewport').innerHTML=docsHTML();return}if(activeTab===MAIL){document.getElementById('viewport').innerHTML=mailHTML();restoreGmailListScroll();return}if(activeTab===LIQ){document.getElementById('viewport').innerHTML=liqHTML();return}if(activeTab===BANK){document.getElementById('viewport').innerHTML=bankHTML();return}
-   if(activeTab===TIPS){document.getElementById('viewport').innerHTML=tipsHTML();tipsInit();return}if(activeTab===POS){document.getElementById('viewport').innerHTML=posHTML();return}if(activeTab===ONLINE){document.getElementById('viewport').innerHTML=onlineHTML();renderChat();if(ordersKey())loadCmdConsole();return}if(activeTab===DASH){const vp=document.getElementById('viewport');const sc=vp.querySelector('.dashboard');const top=sc?sc.scrollTop:0;const al=vp.querySelector('.ag-list');const alTop=al?al.scrollTop:0;vp.innerHTML=dashboardHTML();if(top){const sc2=vp.querySelector('.dashboard');if(sc2)sc2.scrollTop=top}if(alTop){const al2=vp.querySelector('.ag-list');if(al2)al2.scrollTop=alTop}return}const p=cfg.panels.find(x=>x.id===activeTab);if(!p){document.getElementById('viewport').innerHTML='';return}document.getElementById('viewport').innerHTML=bodyHTML(p);if(activeTab===3)restoreGmailListScroll()}
+   if(activeTab===TIPS){document.getElementById('viewport').innerHTML=tipsHTML();tipsRefresh();return}if(activeTab===POS){document.getElementById('viewport').innerHTML=posHTML();return}if(activeTab===ONLINE){document.getElementById('viewport').innerHTML=onlineHTML();renderChat();if(ordersKey())loadCmdConsole();return}if(activeTab===DASH){const vp=document.getElementById('viewport');const sc=vp.querySelector('.dashboard');const top=sc?sc.scrollTop:0;const al=vp.querySelector('.ag-list');const alTop=al?al.scrollTop:0;vp.innerHTML=dashboardHTML();if(top){const sc2=vp.querySelector('.dashboard');if(sc2)sc2.scrollTop=top}if(alTop){const al2=vp.querySelector('.ag-list');if(al2)al2.scrollTop=alTop}return}const p=cfg.panels.find(x=>x.id===activeTab);if(!p){document.getElementById('viewport').innerHTML='';return}document.getElementById('viewport').innerHTML=bodyHTML(p);if(activeTab===3)restoreGmailListScroll()}
 
 // ── POS TAB: the Angeli's POS back office ──────────────────────────
 // Four sections, and they do NOT all need the mini:
