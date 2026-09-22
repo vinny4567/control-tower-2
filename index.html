@@ -6199,7 +6199,17 @@ function tipsHTML(){
       body+=`<tr style="background:var(--surface2)"><td style="position:sticky;left:0;z-index:1;background:var(--surface2);color:var(--accent);font-weight:800;padding:6px 12px;letter-spacing:.5px;border-top:1px solid var(--border);border-right:2px solid var(--border);white-space:nowrap">BUSSERS <span style="color:var(--text-muted);font-weight:600;font-size:9px;letter-spacing:0">pool / night</span></td>${ptds}<td style="border-top:1px solid var(--border)"></td><td style="text-align:right;color:#fbbf24;font-weight:800;padding:6px 8px;border-top:1px solid var(--border);border-left:2px solid var(--border);white-space:nowrap">${ptot?tipMoney(ptot):''}</td></tr>`;
     }else{
       body+=`<tr><td colspan="${days.length+3}" style="position:sticky;left:0;background:var(--surface2);color:var(--accent);font-weight:800;padding:8px 12px;letter-spacing:.5px;border-top:1px solid var(--border)">${TIP_SEC_LABEL[sec].toUpperCase()}</td></tr>`;
-      if(sec==='Busser')body+=rowFor('Busser Pool',true);   // no timesheet yet → show the lumped pool row
+      if(sec==='Busser'){
+        body+=rowFor('Busser Pool',true);   // no timesheet yet → show the lumped pool row
+        // Say WHY every busser's row is empty. The pool is collected nightly by the
+        // calculator, but dividing it needs each busser's after-3:30 clock times, and those
+        // only arrive with the MICROS timesheet PDF — "Pull hours from POS" brings hours
+        // per job for the whole period and no punches, so it cannot split anything.
+        // Without this line the sheet just looks like the bussers earned nothing.
+        const poolCells=(tipsState.cells||{})['Busser Pool']||{};
+        const unsplit=Math.round(Object.values(poolCells).reduce((s,c)=>s+((c&&c.u)||0),0)*100)/100;
+        if(unsplit)body+=`<tr><td colspan="${days.length+3}" style="position:sticky;left:0;background:rgba(251,191,36,.08);border-left:3px solid #fbbf24;padding:8px 12px;font-size:12px;color:var(--text-dim);line-height:1.5">⚠ <b style="color:#fbbf24">${tipMoney(unsplit)}</b> of busser pool is collected but <b>not split between anyone yet</b>, so every busser below reads empty. The share is worked out from each busser's hours after 3:30, which only come with the <b>📄 Import timesheet</b> PDF — pulling hours from the register gives totals per job, not clock-in times, so it can't divide the pool.</td></tr>`;
+      }
     }
     ordered.forEach(n=>{body+=rowFor(n,false);});
     body+=`<tr><td colspan="${days.length+3}" style="position:sticky;left:0;background:var(--surface);padding:4px 12px"><input id="tip-add-${sec.replace(/ /g,'_')}" placeholder="+ add ${TIP_SEC_LABEL[sec].toLowerCase().replace(/s$/,'')}…" onkeydown="if(event.key==='Enter')tipAddPerson('${sec}')" style="width:180px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 9px;font-size:12px;font-family:inherit"></td></tr>`;
