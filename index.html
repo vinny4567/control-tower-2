@@ -5572,8 +5572,10 @@ async function tipsExtractPdfLines(buf){
   return lines.map(r=>r.sort((a,b)=>a.x-b.x).map(i=>i.s).join(' ').replace(/\s+/g,' ').trim()).filter(l=>l.length);
 }
 function tipsClockDec(s){const m=/(\d+):(\d+)(am|pm)/.exec(s);if(!m)return null;let h=+m[1];const mi=+m[2],ap=m[3];if(ap==='pm'&&h!==12)h+=12;if(ap==='am'&&h===12)h=0;return h+mi/60;}
+// "5:00pm" as the 24h "17:00" the time-sheet checks and the scheduler both speak.
+function tipsClock24(s){const d=tipsClockDec(s);if(d==null)return '';const h=Math.floor(d)%24,m=Math.round((d-Math.floor(d))*60);return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');}
 function tipsParseMicros(lines){
-  const people={},shifts=[];let curEmp=null,curName=null,inJT=false,pend=null;
+  const people={},shifts=[],punches=[];let curEmp=null,curName=null,inJT=false,pend=null;
   for(let i=0;i<lines.length;i++){
     const ln=(lines[i]||'').trim();
     const m=/^(\d+) - (.+)$/.exec(ln);
@@ -5586,12 +5588,17 @@ function tipsParseMicros(lines){
         if(nums.length>=3){const reg=nums[0],otpay=nums[nums.length-2],regpay=nums[nums.length-3],ot=nums.length===5?nums[1]:0,rate=reg?Math.round(regpay/reg*10000)/10000:0;
           people[curEmp].jobs[job]={reg:Math.round(reg*100)/100,ot:Math.round(ot*100)/100,rate};}continue;}
     }
-    const bm=/^102 - Busser IN \w+ (\d+\/\d+\/\d+) (\d+:\d+(?:am|pm))/.exec(ln);
-    if(bm&&curEmp){const p=bm[1].split('/');pend={md:(+p[0])+'/'+(+p[1]),indec:tipsClockDec(bm[2])};continue;}
+    // Every job's clock-in, not only the bussers': the busser split needs 102, and the time
+    // sheet checks need all of them (a cook who never clocked out is the same mistake).
+    const bm=/^(\d+) - ([A-Za-z][A-Za-z ]*?) IN \w+ (\d+\/\d+\/\d+) (\d+:\d+(?:am|pm))/.exec(ln);
+    if(bm&&curEmp){const p=bm[3].split('/');pend={job:bm[2].trim(),md:(+p[0])+'/'+(+p[1]),inRaw:bm[4],indec:tipsClockDec(bm[4])};continue;}
     if(pend&&ln.indexOf('OUT')===0){const om=/(\d+:\d+(?:am|pm))\s*([\d.]+)/.exec(ln);
-      if(om&&pend.indec!=null){let o=tipsClockDec(om[1]);if(o!=null){if(o<pend.indec)o+=24;const a=Math.max(0,o-Math.max(pend.indec,15.5));if(a>0)shifts.push({name:curName,md:pend.md,after330:Math.round(a*10000)/10000});}}pend=null;continue;}
+      if(om&&pend.indec!=null){let o=tipsClockDec(om[1]);
+        punches.push({name:curName,job:pend.job,date:pend.md,inTime:tipsClock24(pend.inRaw),outTime:tipsClock24(om[1])});
+        if(o!=null&&/busser/i.test(pend.job)){if(o<pend.indec)o+=24;const a=Math.max(0,o-Math.max(pend.indec,15.5));if(a>0)shifts.push({name:curName,md:pend.md,after330:Math.round(a*10000)/10000});}}
+      pend=null;continue;}
   }
-  return {people,shifts};
+  return {people,shifts,punches};
 }
 function tipsComputeBusserSplit(shifts,log){
   const mds=new Set(shifts.map(s=>s.md)),pool={};
@@ -5643,7 +5650,8 @@ async function tipsImportTimesheet(input){
     const buf=await f.arrayBuffer();
     tipsSetStatus('Parsing the timesheet…','var(--text-dim)');
     const lines=await tipsExtractPdfLines(buf);
-    const {people,shifts}=tipsParseMicros(lines);
+    const {people,shifts,punches}=tipsParseMicros(lines);
+    tipsState.punches=punches;   // kept so the time-sheet checks still run without re-importing
     if(!Object.keys(people).length){tipsSetStatus('⚠ no employees found — is this the MICROS time-card PDF?','#f87171');return;}
     // TIPS_LOG_KEY is a function. This one call site was left calling it WITHOUT the
     // parentheses when the key moved out of the page and into localStorage, so the request
@@ -5835,7 +5843,7 @@ function tipsSaveHoursSoon(){
   clearTimeout(tipsHoursSaveTimer);
   tipsHoursSaveTimer=setTimeout(()=>{
     if(gen!==tipsGen)return;   // the period moved under us — this save is no longer about anything on screen
-    try{kvPush(key,{hours:tipsState.hours,empIds:tipsState.empIds,busserSplit:tipsState.busserSplit,busserSplitByDay:tipsState.busserSplitByDay},Date.now());tipsSetStatus('Saved ✓','var(--text-dim)');}
+    try{kvPush(key,{hours:tipsState.hours,empIds:tipsState.empIds,busserSplit:tipsState.busserSplit,busserSplitByDay:tipsState.busserSplitByDay,punches:tipsState.punches||[]},Date.now());tipsSetStatus('Saved ✓','var(--text-dim)');}
     catch(e){tipsSetStatus('⚠ not saved','#f87171');}
   },600);
   tipsSetStatus('Saving…','var(--text-dim)');
@@ -5988,11 +5996,11 @@ async function tipsInit(){
   const rm=await kvGet('ct_tips_moves');if(g!==tipsGen)return;tipsState.moves=(rm&&rm.v&&rm.v.moves)?rm.v.moves:{};
   const rh=await kvGet(tipHoursKey());if(g!==tipsGen)return;tipsState.hours=(rh&&rh.v&&rh.v.hours)?rh.v.hours:{};const ge=await kvGet('ct_emp_ids');if(g!==tipsGen)return;const globalEmp=(ge&&ge.v&&ge.v.emp)?ge.v.emp:{};   // emp-IDs never change → remembered globally across periods
 tipsState.empIds=Object.assign({},(rh&&rh.v&&rh.v.empIds)?rh.v.empIds:{},globalEmp);   // global wins
-tipsState.busserSplit=(rh&&rh.v&&rh.v.busserSplit)?rh.v.busserSplit:{};tipsState.busserSplitByDay=(rh&&rh.v&&rh.v.busserSplitByDay)?rh.v.busserSplitByDay:{};   // per-person + per-night busser pool split
+tipsState.busserSplit=(rh&&rh.v&&rh.v.busserSplit)?rh.v.busserSplit:{};tipsState.busserSplitByDay=(rh&&rh.v&&rh.v.busserSplitByDay)?rh.v.busserSplitByDay:{};tipsState.punches=(rh&&rh.v&&rh.v.punches)?rh.v.punches:[];   // per-person + per-night busser pool split
   let _mig=tipMigrateCells();if(tipCleanAdds())_mig=true;if(_mig)tipsSaveSoon();   // upgrade legacy {v,upt,wed} cells + heal stale adds
   tipsState.loaded=true;tipsState.loading=false;
   if(activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();
-  tipsPull(true).then(()=>{ if(g!==tipsGen)return; tipsPullWeddings(true); tipsPullWeddingHours(true); tipsPulledAt=Date.now(); });   // picking a date range pulls the tip-out log + wedding tips + wedding hours
+  tipsPull(true).then(()=>{ if(g!==tipsGen)return; tipsPullWeddings(true); tipsPullWeddingHours(true); tipsScanTimesheets(true); tipsPulledAt=Date.now(); });   // picking a date range pulls the tip-out log + wedding tips + wedding hours
 }
 // Come back to this tab and pick the numbers up again.
 // tipsInit() returns at its first line once the period is loaded, so for the rest of the
@@ -6011,7 +6019,8 @@ async function tipsRefresh(force){
   if(force)tipsSetStatus('Checking the schedule…','var(--text-dim)');
   await tipsPull(!force);            if(g!==tipsGen)return;
   await tipsPullWeddings(!force);    if(g!==tipsGen)return;
-  await tipsPullWeddingHours(!force);
+  await tipsPullWeddingHours(!force);    if(g!==tipsGen)return;
+  await tipsScanTimesheets(force);
 }
 // A time sheet is usually edited in the schedule app in another tab — so also re-check
 // the moment this window is looked at again, not only when the tab is clicked.
@@ -6019,7 +6028,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden&&activeTab
 function tipsReload(){tipsGen++;tipsState.loaded=false;tipsState.loading=false;tipsState.cells={};tipsState.adds={};
   // The busser split belongs to a period as much as the cells do. Leaving it behind meant
   // last fortnight's shares sat on the new one until the load finished overwriting them.
-  tipsState.hours={};tipsState.busserSplit={};tipsState.busserSplitByDay={};
+  tipsState.hours={};tipsState.busserSplit={};tipsState.busserSplitByDay={};tipsState.punches=[];tipsState.checks=null;
   document.getElementById('viewport').innerHTML=tipsHTML();tipsInit();}
 function tipsSetStart(ds){const d=tipParseISO(ds);if(!d)return;tipsState.start=d;tipsState.end=new Date(d.getTime()+13*86400000);tipsReload();} // snap to a 14-day period; adjust the end for a custom length
 function tipsSetEnd(ds){const d=tipParseISO(ds);if(!d)return;tipsState.end=d;if(tipsState.start>d)tipsState.start=new Date(d.getTime()-13*86400000);tipsReload();}
@@ -6184,7 +6193,113 @@ function tipsToggleHTML(view){
   const b=(v,lab)=>`<button onclick="tipsSetView('${v}')" style="background:${view===v?'var(--accent)':'transparent'};color:${view===v?'#000':'var(--text-dim)'};border:none;padding:7px 15px;font-weight:800;cursor:pointer;font-size:14px;font-family:inherit;${v==='hours'?'border-left:1px solid var(--border)':''}">${lab}</button>`;
   return `<div style="display:inline-flex;align-items:center;gap:8px"><div style="display:inline-flex;border:1px solid var(--border);border-radius:9px;overflow:hidden">${b('tips','🧾 Tips')}${b('hours','⏱ Hours')}</div><button onclick="tipsRefresh(true)" title="Re-read the schedule app — picks up a time sheet edited since you opened this" style="background:transparent;border:1px solid var(--border);color:var(--text-dim);border-radius:9px;padding:7px 12px;font-weight:800;cursor:pointer;font-size:13px;font-family:inherit">↻</button></div>`;
 }
+
+// ══ TIME SHEET CHECKS ════════════════════════════════════════════════════════
+// Hours are typed by people at the end of a long night, and a slip costs somebody real
+// money in both directions — Ashley's setup was entered as midnight→3pm and came out as a
+// 15-hour day. These are the mistakes worth catching, checked over the whole period every
+// time the sheet loads: a half a punch missing (which silently pays nothing), a clock-out
+// before the clock-in, an impossible length, somebody who forgot to clock out, the same
+// punch entered twice, and test rows left in a real sheet.
+const TS_RULES={
+  missingHalf:{sev:'high',  why:'only one half of the shift is filled in, so this counts as ZERO hours'},
+  midnightIn:  {sev:'high',  why:'clocked in at 12:00am — usually a missed clock-in, and it inflates the shift'},
+  reversed:    {sev:'high',  why:'clocked out BEFORE clocking in, so it is counted as running past midnight'},
+  forgotOut:   {sev:'high',  why:'clocked out in the small hours — usually nobody clocked them out'},
+  tooLong:     {sev:'warn',  why:'a very long shift — worth a look'},
+  duplicate:   {sev:'warn',  why:'the same person, same day, same clock-in, entered more than once'},
+  junk:        {sev:'warn',  why:'does not look like a real name — a test row left behind'},
+};
+function tsDec(t){if(!t)return null;const m=/^(\d{1,2}):(\d{2})/.exec(String(t));if(!m)return null;const h=+m[1],mi=+m[2];if(h>23||mi>59)return null;return h+mi/60;}
+function tsLen(inT,outT){const a=tsDec(inT),b=tsDec(outT);if(a==null||b==null)return null;let e=b;if(e<a)e+=24;return Math.round((e-a)*100)/100;}
+function tsFmt(t){const d=tsDec(t);if(d==null)return String(t||'—');let h=Math.floor(d),m=Math.round((d-h)*60);const ap=h>=12?'pm':'am';let hh=h%12;if(hh===0)hh=12;return hh+':'+String(m).padStart(2,'0')+ap;}
+// One row of anybody's time sheet, checked. `where` is 'Wedding' or 'Restaurant', since
+// what counts as a late finish differs: a wedding bar runs to 1am as a matter of course.
+function tsCheckRow(r,where,seenKey){
+  const out=[];const nm=(r.name||'').trim();
+  const add=(rule,detail)=>out.push({rule,sev:TS_RULES[rule].sev,why:TS_RULES[rule].why,detail,
+    where,name:nm||'(no name)',date:r.date,job:r.job||r.section||'',inT:r.inTime,outT:r.outTime});
+  if(!nm||/(.)\1{3,}/.test(nm)||/^(test|asdf|qwer)/i.test(nm.replace(/\s+/g,''))||nm.replace(/[^a-z]/gi,'').length<3)add('junk','"'+nm+'"');
+  const hasIn=!!tsDec(r.inTime),hasOut=!!tsDec(r.outTime);
+  if(hasIn!==hasOut)add('missingHalf',hasIn?('in '+tsFmt(r.inTime)+', no clock-out'):('no clock-in, out '+tsFmt(r.outTime)));
+  if(!hasIn&&!hasOut)return out;                       // an empty placeholder row — nothing to check
+  if(hasIn&&tsDec(r.inTime)===0)add('midnightIn','in 12:00am → out '+tsFmt(r.outTime));
+  const len=tsLen(r.inTime,r.outTime);
+  if(len!=null){
+    const a=tsDec(r.inTime),b=tsDec(r.outTime);
+    if(b<a&&len>14)add('reversed',tsFmt(r.inTime)+' → '+tsFmt(r.outTime)+' counts as '+len+'h');
+    else if(len>=(where==='Wedding'?14:14))add('tooLong',len+'h ('+tsFmt(r.inTime)+' → '+tsFmt(r.outTime)+')');
+    // A wedding legitimately ends at 1am; the restaurant does not.
+    const cut=where==='Wedding'?2.5:1.5;
+    if(b!=null&&b>=cut&&b<6)add('forgotOut','out at '+tsFmt(r.outTime));
+  }
+  if(seenKey){const k=nm+'|'+r.date+'|'+(r.inTime||'');if(seenKey[k])add('duplicate',tsFmt(r.inTime)+' entered '+(seenKey[k]+1)+' times');seenKey[k]=(seenKey[k]||0)+1;}
+  return out;
+}
+function tsCheckAll(wedRows,restRows){
+  const found=[],s1={},s2={};
+  (wedRows||[]).forEach(r=>found.push(...tsCheckRow(r,'Wedding',s1)));
+  (restRows||[]).forEach(r=>found.push(...tsCheckRow(r,'Restaurant',s2)));
+  const order={high:0,warn:1};
+  return found.sort((a,b)=>order[a.sev]-order[b.sev]||String(a.date).localeCompare(String(b.date))||a.name.localeCompare(b.name));
+}
+// Read the wedding/event sheets for the days on screen. One request per date, run together;
+// the feed is per-date and there is no range form.
+async function tsFetchWeddingRows(){
+  const key=TIPS_LOG_KEY();if(!key)return [];
+  const days=tipDays().map(d=>tipISO(d));
+  const all=await Promise.all(days.map(async ds=>{
+    try{
+      const r=await fetch(WED_TS_FEED+'?date='+encodeURIComponent(ds)+'&key='+encodeURIComponent(key));
+      if(!r.ok)return [];
+      const d=await r.json();
+      return (d.rows||d.entries||[]).map(x=>({name:x.name,section:x.section,inTime:x.inTime,outTime:x.outTime,date:ds}));
+    }catch(e){return []}
+  }));
+  return all.flat();
+}
+// Restaurant punches come off the imported MICROS timesheet and are kept with the period,
+// so the check still runs on a later visit without re-importing the PDF.
+function tsRestaurantRows(){
+  return (tipsState.punches||[]).filter(p=>{
+    const lb=p.date;const days=tipDays().map(d=>tipDayLabel(d));
+    return days.indexOf(lb)>=0;
+  });
+}
+let tsScanAt=0;
+async function tipsScanTimesheets(force){
+  const g=tipsGen;
+  if(!force&&Date.now()-tsScanAt<60000)return;
+  tsScanAt=Date.now();
+  const wed=await tsFetchWeddingRows();
+  if(g!==tipsGen)return;
+  tipsState.checks=tsCheckAll(wed,tsRestaurantRows());
+  if(activeTab===TIPS&&(tipsState.view||'tips')==='hours')document.getElementById('viewport').innerHTML=tipsHTML();
+}
+function tsChecksHTML(){
+  const list=tipsState.checks;
+  if(list==null)return '';
+  const high=list.filter(c=>c.sev==='high').length;
+  if(!list.length)return `<div style="border:1px solid rgba(76,175,80,.3);background:rgba(76,175,80,.07);border-radius:10px;padding:9px 13px;margin-bottom:12px;font-size:12.5px;color:#a5d6a7">✓ Time sheets look clean for these dates — no missing punches, no impossible shifts, nothing entered twice.</div>`;
+  const row=c=>`<div style="display:flex;gap:10px;align-items:baseline;padding:6px 0;border-top:1px solid var(--border)">
+    <span style="flex:none;width:8px;height:8px;border-radius:50%;background:${c.sev==='high'?'#f87171':'#fbbf24'};margin-top:5px"></span>
+    <span style="flex:none;width:96px;font-size:11px;color:var(--text-muted);font-variant-numeric:tabular-nums">${esc(String(c.date||''))}</span>
+    <span style="flex:none;width:150px;font-size:12.5px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.name)}</span>
+    <span style="flex:none;width:92px;font-size:11px;color:var(--text-dim)">${esc(c.where)}${c.job?' · '+esc(String(c.job)):''}</span>
+    <span style="flex:1;font-size:12px;color:var(--text-dim)"><b style="color:${c.sev==='high'?'#f87171':'#fbbf24'}">${esc(c.detail)}</b> — ${esc(c.why)}</span>
+  </div>`;
+  return `<div style="border:1px solid ${high?'rgba(248,113,113,.35)':'rgba(251,191,36,.3)'};background:${high?'rgba(248,113,113,.06)':'rgba(251,191,36,.05)'};border-radius:10px;padding:10px 13px 4px;margin-bottom:12px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:2px">
+      <b style="font-size:13.5px;color:${high?'#f87171':'#fbbf24'}">⚠ ${list.length} thing${list.length>1?'s':''} to check on the time sheets</b>
+      <span style="font-size:11px;color:var(--text-muted)">${high?high+' that change someone\'s pay':'none of them change pay on their own'}</span>
+      <button class="rq-tab" style="margin-left:auto" onclick="tipsScanTimesheets(true)">↻ re-check</button>
+    </div>
+    ${list.map(row).join('')}
+  </div>`;
+}
+
 function hoursHTML(){
+  const _checks=tsChecksHTML();
   const di='background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:5px 8px;font-family:inherit;font-size:13px;color-scheme:dark;cursor:pointer';
   const bb='border-bottom:1px solid var(--border)';
   const lastOf=n=>String(n||'').trim().split(' ').pop();
@@ -6228,6 +6343,7 @@ function hoursHTML(){
   if(!names.length)body=`<tr><td colspan="7" style="padding:34px;text-align:center;color:var(--text-dim);line-height:1.6">No hours or tips yet — pick a date range to pull weddings, and give me the MICROS timesheet.</td></tr>`;
   return `
   <div style="height:100%;overflow-y:auto;padding:2px 2px 56px">
+    ${_checks}
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
       ${tipsToggleHTML('hours')}
       <div style="display:flex;align-items:center;gap:6px">
