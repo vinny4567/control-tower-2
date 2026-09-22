@@ -5756,6 +5756,7 @@ function tipsPaychexCsv(){
   const COMPANY='11048355';
   const isPool=(n)=>/\bpool\b/i.test(n)||/private\s*party/i.test(n);
   const set={};Object.keys(tipsState.hours||{}).forEach(n=>{if(!isPool(n))set[n]=1;});Object.keys(tipsState.cells||{}).forEach(n=>{if(isPool(n))return;const t=tipRowTotals(n);if(t.paid>0||t.upt>0)set[n]=1;});
+  tipBusserSplitPeople().forEach(n=>{if(!isPool(n))set[n]=1;});   // a pool share is pay: it puts you on the export on its own
   const names=Object.keys(set).sort((a,b)=>{const wa=parseInt((tipsState.empIds||{})[a])||999999,wb=parseInt((tipsState.empIds||{})[b])||999999;return wa-wb||a.localeCompare(b);});
   const lines=['Company ID,Worker ID,Name,Pay Component,Hours,Rate,Tips,Unpaid Tips,Overtime Hours,Training Hours,Training Rate,Bonus Amount'];
   const f=n=>{n=Math.round((+n||0)*100)/100;return n?n.toFixed(2):'';};
@@ -6038,7 +6039,29 @@ function tipEditSet(comp,val){
   tipRefreshCell(name,day);tipRefreshRow(name);tipsSaveSoon();
 }
 document.addEventListener('mousedown',e=>{const p=document.getElementById('tip-pop');if(p&&p.style.display!=='none'&&!p.contains(e.target)&&!(e.target.closest&&e.target.closest('[data-tipcell]')))tipHidePopup();});
-function tipsUpdateGrand(){let gp=0,gu=0;Object.keys(tipsState.cells).forEach(n=>{const t=tipRowTotals(n);gp+=t.paid;gu+=t.upt;});Object.keys(tipsState.busserSplit||{}).forEach(n=>{gu+=tipsState.busserSplit[n];});const p=document.getElementById('tips-grand-paid'),u=document.getElementById('tips-grand-upt');if(p)p.textContent=tipMoney(gp);if(u)u.textContent=tipMoney(gu);}
+// The footer has to be the sum of the rows above it, so it is worked out the same way they
+// are — walking the same people in the same sections, adding each one's pool share once.
+// It used to walk tipsState.cells instead, which holds the lumped "Busser Pool" row (the
+// same money as the shares) and people who no longer appear in any section, so the moment a
+// cell was edited the Unpaid total jumped by thousands against rows that had not changed.
+function tipsGrandTotals(){
+  let gp=0,gu=0;const seen={};
+  TIP_SECTIONS.forEach(sec=>tipSectionPeople(sec).forEach(n=>{
+    if(seen[n])return;seen[n]=1;
+    const t=tipRowTotals(n);gp+=t.paid;gu+=t.upt+tipBusserSplit(n);
+  }));
+  // With no per-person split, the lumped pool row IS how the pool is shown, and it counts.
+  const days=tipDays();
+  if(!days.some(d=>tipBusserPoolDay(tipDayLabel(d))>0)){
+    const t=tipRowTotals('Busser Pool');gp+=t.paid;gu+=t.upt;
+  }
+  return {paid:Math.round(gp*100)/100,upt:Math.round(gu*100)/100};
+}
+function tipsUpdateGrand(){
+  const g=tipsGrandTotals();
+  const p=document.getElementById('tips-grand-paid'),u=document.getElementById('tips-grand-upt');
+  if(p)p.textContent=tipMoney(g.paid);if(u)u.textContent=tipMoney(g.upt);
+}
 
 // Auto-fill this period's cells from the nightly tip-out cloud log. Fills only
 // EMPTY cells (never clobbers a hand override). Servers' own tips + busser pool
@@ -6165,6 +6188,7 @@ function hoursHTML(){
   const secOrd=(all)=>Object.keys(all).sort((a,b)=>{const sa=hoursSrc(all[a])==='rest'?0:1,sb=hoursSrc(all[b])==='rest'?0:1;return sa-sb||a.localeCompare(b);});
   const isPoolRow=(n)=>/\bpool\b/i.test(n)||/private\s*party/i.test(n);   // "Busser Pool" / "Private Party" are tracking rows, not people
   const set={};Object.keys(tipsState.hours||{}).forEach(n=>{if(!isPoolRow(n))set[n]=1;});Object.keys(tipsState.cells||{}).forEach(n=>{if(isPoolRow(n))return;const t=tipRowTotals(n);if(t.paid>0||t.upt>0)set[n]=1;});
+  tipBusserSplitPeople().forEach(n=>{if(!isPoolRow(n))set[n]=1;});   // same as the CSV — a pool share earns a row
   const filt=tipsState.hoursFilter||'all';   // 'all' | 'rest' | 'wed'
   let names=Object.keys(set).sort((a,b)=>{const ra=isRestEmp(a)?0:1,rb=isRestEmp(b)?0:1;return ra-rb||lastOf(a).localeCompare(lastOf(b))||a.localeCompare(b);});   // restaurant first, wedding-only at the bottom
   if(filt==='rest')names=names.filter(isRestEmp);else if(filt==='wed')names=names.filter(n=>!isRestEmp(n));
@@ -6252,9 +6276,13 @@ function tipsHTML(){
     // Full staff list always shown; people WITH tips float to the top of their section.
     const ordered=[...people.filter(tipHasTips),...people.filter(n=>!tipHasTips(n))];
     const bsd=tipsState.busserSplitByDay||{};
-    if(sec==='Busser'&&Object.keys(bsd).length){
-      const ptds=days.map(d=>{const lb=tipDayLabel(d);const mon=(d.getDay()===1);const p=tipBusserPoolDay(lb);return `<td style="text-align:right;padding:5px ${mon?'2px':'6px'};color:#fbbf24;font-weight:700;font-size:11px;border-right:1px solid var(--border);border-top:1px solid var(--border);white-space:nowrap">${p?tipMoney(p):''}</td>`;}).join('');
-      const ptot=Math.round(days.reduce((s,d)=>s+tipBusserPoolDay(tipDayLabel(d)),0)*100)/100;
+    const poolDays=(sec==='Busser')?days.map(d=>tipBusserPoolDay(tipDayLabel(d))):null;
+    // Gate on the nights being SHOWN. Gating on "the map has any date" meant that a split
+    // saved for other dates opened this branch and then filled nothing — no night cells, no
+    // total, and, since it is an if/else, no section header and no explanation either.
+    if(sec==='Busser'&&poolDays.some(x=>x>0)){
+      const ptds=days.map((d,di)=>{const mon=(d.getDay()===1);const p=poolDays[di];return `<td style="text-align:right;padding:5px ${mon?'2px':'6px'};color:#fbbf24;font-weight:700;font-size:11px;border-right:1px solid var(--border);border-top:1px solid var(--border);white-space:nowrap">${p?tipMoney(p):''}</td>`;}).join('');
+      const ptot=Math.round(poolDays.reduce((s,x)=>s+x,0)*100)/100;
       body+=`<tr style="background:var(--surface2)"><td style="position:sticky;left:0;z-index:1;background:var(--surface2);color:var(--accent);font-weight:800;padding:6px 12px;letter-spacing:.5px;border-top:1px solid var(--border);border-right:2px solid var(--border);white-space:nowrap">BUSSERS <span style="color:var(--text-muted);font-weight:600;font-size:9px;letter-spacing:0">pool / night</span></td>${ptds}<td style="border-top:1px solid var(--border)"></td><td style="text-align:right;color:#fbbf24;font-weight:800;padding:6px 8px;border-top:1px solid var(--border);border-left:2px solid var(--border);white-space:nowrap">${ptot?tipMoney(ptot):''}</td></tr>`;
     }else{
       body+=`<tr><td colspan="${days.length+3}" style="position:sticky;left:0;background:var(--surface2);color:var(--accent);font-weight:800;padding:8px 12px;letter-spacing:.5px;border-top:1px solid var(--border)">${TIP_SEC_LABEL[sec].toUpperCase()}</td></tr>`;
@@ -6273,6 +6301,7 @@ function tipsHTML(){
     ordered.forEach(n=>{body+=rowFor(n,false);});
     body+=`<tr><td colspan="${days.length+3}" style="position:sticky;left:0;background:var(--surface);padding:4px 12px"><input id="tip-add-${sec.replace(/ /g,'_')}" placeholder="+ add ${TIP_SEC_LABEL[sec].toLowerCase().replace(/s$/,'')}…" onkeydown="if(event.key==='Enter')tipAddPerson('${sec}')" style="width:180px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 9px;font-size:12px;font-family:inherit"></td></tr>`;
   });
+  const _grand=tipsGrandTotals();   // same arithmetic as the live recalc, so they cannot drift
   const dayHead=days.map(d=>{const wd=d.getDay();const closed=(wd===1);return `<th style="padding:6px ${closed?'2px':'4px'};font-size:${closed?'9px':'11px'};color:${closed?'var(--text-muted)':'var(--text-dim)'};font-weight:600;border-right:1px solid var(--border);white-space:nowrap;min-width:${closed?'20px':'auto'}">${['Su','M','Tu','W','Th','F','Sa'][wd]}<br>${d.getMonth()+1}/${d.getDate()}</th>`;}).join('');
   const di='background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:5px 8px;font-family:inherit;font-size:13px;color-scheme:dark;cursor:pointer';
   return `
@@ -6301,8 +6330,8 @@ function tipsHTML(){
         <tfoot><tr style="background:var(--surface2);font-weight:800">
           <td style="position:sticky;left:0;background:var(--surface2);padding:9px 12px;border-right:2px solid var(--border);border-top:2px solid var(--border)">TOTAL</td>
           <td colspan="${days.length}" style="border-top:2px solid var(--border)"></td>
-          <td id="tips-grand-paid" style="padding:9px 8px;text-align:right;color:#34d399;border-left:2px solid var(--border);border-top:2px solid var(--border)">${tipMoney(gp)}</td>
-          <td id="tips-grand-upt" style="padding:9px 8px;text-align:right;color:#fbbf24;border-top:2px solid var(--border);border-left:2px solid var(--border)">${tipMoney(gu)}</td>
+          <td id="tips-grand-paid" style="padding:9px 8px;text-align:right;color:#34d399;border-left:2px solid var(--border);border-top:2px solid var(--border)">${tipMoney(_grand.paid)}</td>
+          <td id="tips-grand-upt" style="padding:9px 8px;text-align:right;color:#fbbf24;border-top:2px solid var(--border);border-left:2px solid var(--border)">${tipMoney(_grand.upt)}</td>
         </tr></tfoot>
       </table>
     </div>
