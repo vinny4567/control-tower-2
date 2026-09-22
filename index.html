@@ -5711,7 +5711,7 @@ async function tipsPullFromPos(){
   try{r=await posSrv('/api/reports/labor?from='+encodeURIComponent(from)+'&to='+encodeURIComponent(to));}
   catch(e){tipsSetStatus('⚠ could not reach the register: '+(e&&e.message||e),'#f87171');return;}
   if(r.status===404){
-    tipsSetStatus('⚠ this mini does not serve /api/reports/labor yet — the registers are recording punches and they will land once it does','#fbbf24');return;}
+    tipsSetStatus('⚠ this mini does not serve /api/reports/labor yet','#fbbf24');return;}
   if(!r.ok){tipsSetStatus('⚠ the register answered '+r.status+(r.body&&r.body.error?(' — '+r.body.error):''),'#f87171');return;}
   const rows=(r.body&&r.body.people)||[];
   // TWO PEOPLE, ONE NAME. A check records the server as free text, so when two
@@ -5739,6 +5739,12 @@ async function tipsPullFromPos(){
     if(pr.open_shifts)warn.push((pr.name||eid)+' — '+pr.open_shifts+' shift'+(pr.open_shifts>1?'s':'')+' never punched out');
     posTips+=(+pr.charge_tips_cents||0);
   });
+  // The register cannot work out the busser split, and the reason is worth saying out loud
+  // rather than leaving the section looking broken: the split needs each busser's clock-in
+  // and clock-out, and as of 9/22 no punch has EVER reached the mini — staff still clock on
+  // MICROS, so the register is not the time clock yet. Its report does carry raw shifts, so
+  // the day that changes this can read them; until then the MICROS PDF is the only source.
+  const posShifts=(r.body&&Array.isArray(r.body.shifts))?r.body.shifts:[];
   const n=tipsMergeMicros(people,{},{},{keepRates:true,keepSplit:true});
   tipsSaveHoursSoon();
   try{kvPush('ct_emp_ids',{emp:tipsState.empIds},Date.now());}catch(e){}
@@ -5747,10 +5753,13 @@ async function tipsPullFromPos(){
   // manager who does not hear about it signs off a period that is short a night.
   const tipNote=posTips?('  ·  register also recorded '+tipMoney(posTips/100)+' in charge tips (not filled in — the tip sheet still owns those)'):'';
   const clashNote=clash.length?('  ·  ⚠ two people share the name '+clash.slice(0,3).map(esc).join(', ')+(clash.length>3?' …':'')+' — their on-check tips could not be split, verify by hand'):'';
+  const splitNote=Object.keys(tipsState.busserSplit||{}).length?''
+    :(posShifts.length?'  ·  busser split not built from these punches yet — import the timesheet PDF for now'
+                      :'  ·  ⚠ the busser split still needs the 📄 timesheet PDF: the register has no clock-in/out punches (staff clock on MICROS), and the split is worked out from them');
   if(warn.length){
-    tipsSetStatus('✓ '+n+' from the register — ⚠ '+warn.length+' unfinished shift'+(warn.length>1?'s':'')+': '+warn.slice(0,3).join('; ')+(warn.length>3?' …':'')+tipNote+clashNote,'#fbbf24');
+    tipsSetStatus('✓ '+n+' from the register — ⚠ '+warn.length+' unfinished shift'+(warn.length>1?'s':'')+': '+warn.slice(0,3).join('; ')+(warn.length>3?' …':'')+tipNote+clashNote+splitNote,'#fbbf24');
   }else{
-    tipsSetStatus('✓ hours for '+n+' employee'+(n===1?'':'s')+' pulled from the register — rates and tips untouched'+tipNote+clashNote,clash.length?'#fbbf24':'#34d399');
+    tipsSetStatus('✓ hours for '+n+' employee'+(n===1?'':'s')+' pulled from the register — rates and tips untouched'+tipNote+clashNote+splitNote,(clash.length||splitNote)?'#fbbf24':'#34d399');
   }
 }
 function tipsPosBtnHTML(){
