@@ -31,7 +31,7 @@ const miniAccepts = (o) => !!o && typeof o === 'object'
   && Array.isArray(o.deleted) && Array.isArray(o.added);
 
 const state = {
-  rows: [], modNames: {}, deleted: [], added: [],
+  rows: [], modNames: {}, deleted: [], added: [], discRates: {},
   groups: { groups: {}, attach: {}, detach: {}, gone: [] },
 };
 const ctx = {
@@ -41,6 +41,7 @@ const ctx = {
   posModNames: state.modNames,
   posDeletedItems: state.deleted, posNewItems: state.added,
   posBuildGroups: () => state.groups,
+  get posDiscRates() { return state.discRates; },
   posS: { cat: { generated_at: '2026-09-17' } },
   Object, Date, Array, String, JSON, console,
 };
@@ -79,3 +80,21 @@ ok('and the blob is still accepted', miniAccepts(b));
 // 5. the thing the mini needs that is easiest to drop by accident
 ok('the blob names its catalog so the register knows what it sits on', 'base' in b);
 ok('every publish carries a timestamp', typeof b.at === 'number' && b.at > 0);
+
+// ---- DISCOUNT RATES TRAVEL ----------------------------------------------------
+// They were read-only, on the honest grounds that the publish had nothing that could
+// carry them. It does now, so the field is real rather than decorative — and money
+// coming off a bill rides the same audited path as a price, not a second one.
+state.discRates = {};
+b = build();
+ok('an untouched publish carries an empty discounts map',
+   b.discounts && typeof b.discounts === 'object' && Object.keys(b.discounts).length === 0);
+
+state.discRates = { birthday: 1000, vip_pct: 1250, house_acct: 5000 };
+b = build();
+ok('a set rate rides the publish', b.discounts.birthday === 1000);
+ok('a fraction of a percent survives — 12.5% is 1250, not 12 or 13', b.discounts.vip_pct === 1250);
+ok('and a dollar discount rides as cents', b.discounts.house_acct === 5000);
+const sent = build().discounts;
+state.discRates.birthday = 9999;
+ok('⚠️ it is a COPY, so a later edit cannot rewrite a blob already sent', sent.birthday === 1000);

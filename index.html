@@ -6744,6 +6744,7 @@ function posRedraw(){
 // in one go. The UI has to SAY that, or a price typed here looks like a price that
 // is being charged.
 let posPrices={};
+let posDiscRates={};   // discount id -> rate in cents (percent stored as basis points × 1)
 // Mods added to a group here, as {groupNum: [modName, ...]}. Names only — the price
 // is read from the catalog row at render time, so a mod whose price changes does not
 // go stale inside a group.
@@ -6757,18 +6758,19 @@ async function posLoadPrices(){
   // Fetch everything, compare it to what is already on screen, and only redraw when
   // something actually differs. A reload that changes nothing now changes nothing.
   const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
-  const [r,g,ng,at,rt,pc,nm,gn,gd,ml,dm,cc,mn,dg,ce,co,io,di,ni,sa]=await Promise.all([
+  const [r,g,ng,at,rt,pc,nm,gn,gd,ml,dm,cc,mn,dg,ce,co,io,di,ni,sa,dr]=await Promise.all([
     kvGet('ct_pos_prices'),kvGet('ct_pos_group_mods'),kvGet('ct_pos_new_groups'),
     kvGet('ct_pos_group_attach'),kvGet('ct_pos_routing'),kvGet('ct_pos_print_classes'),
     kvGet('ct_pos_new_mods'),kvGet('ct_pos_group_names'),kvGet('ct_pos_group_detach'),
     kvGet('ct_pos_mod_letters'),kvGet('ct_pos_deleted_mods'),kvGet('ct_pos_choice_cuts'),
-    kvGet('ct_pos_mod_names'),kvGet('ct_pos_deleted_groups'),kvGet('ct_pos_choice_edits'),kvGet('ct_pos_choice_order'),kvGet('ct_pos_item_group_order'),kvGet('ct_pos_deleted_items'),kvGet('ct_pos_new_items'),kvGet('ct_pos_section_adds')]);
+    kvGet('ct_pos_mod_names'),kvGet('ct_pos_deleted_groups'),kvGet('ct_pos_choice_edits'),kvGet('ct_pos_choice_order'),kvGet('ct_pos_item_group_order'),kvGet('ct_pos_deleted_items'),kvGet('ct_pos_new_items'),kvGet('ct_pos_section_adds'),kvGet('ct_pos_disc_rates')]);
   const next={
     prices:(r&&r.v)||{}, mods:(g&&g.v)||{}, groups:(ng&&ng.v)||[], attach:(at&&at.v)||{},
     routing:(rt&&rt.v)||{}, classes:(pc&&pc.v)||[], newMods:(nm&&nm.v)||[],
     names:(gn&&gn.v)||{}, detach:(gd&&gd.v)||{}, letters:(ml&&ml.v)||{},
     deleted:(dm&&dm.v)||[], cuts:(cc&&cc.v)||{}, modNames:(mn&&mn.v)||{},
     delGroups:(dg&&dg.v)||[], choiceEdits:(ce&&ce.v)||{}, choiceOrder:(co&&co.v)||{}, itemGroupOrder:(io&&io.v)||{}, delItems:(di&&di.v)||[], newItems:(ni&&ni.v)||[], sectionAdds:(sa&&sa.v)||{},
+    discRates:(dr&&dr.v)||{},
   };
   const changed=!same(next.prices,posPrices)||!same(next.mods,posGroupMods)
     ||!same(next.groups,posNewGroups)||!same(next.attach,posGroupAttach)
@@ -6778,13 +6780,15 @@ async function posLoadPrices(){
     ||!same(next.deleted,posDeletedMods)||!same(next.cuts,posChoiceCuts)
     ||!same(next.modNames,posModNames)||!same(next.delGroups,posDeletedGroups)
     ||!same(next.choiceEdits,posChoiceEdits)||!same(next.choiceOrder,posChoiceOrder)
-    ||!same(next.itemGroupOrder,posItemGroupOrder)||!same(next.delItems,posDeletedItems)||!same(next.newItems,posNewItems)||!same(next.sectionAdds,posSectionAdds);
+    ||!same(next.itemGroupOrder,posItemGroupOrder)||!same(next.delItems,posDeletedItems)||!same(next.newItems,posNewItems)||!same(next.sectionAdds,posSectionAdds)
+    ||!same(next.discRates,posDiscRates);
   posPrices=next.prices; posGroupMods=next.mods; posNewGroups=next.groups;
   posGroupAttach=next.attach; posRouting=next.routing; posNewClasses=next.classes;
   posNewMods=next.newMods; posGroupNames=next.names; posGroupDetach=next.detach;
   posModLetters=next.letters; posDeletedMods=next.deleted; posChoiceCuts=next.cuts;
   posModNames=next.modNames; posDeletedGroups=next.delGroups;
   posChoiceEdits=next.choiceEdits; posChoiceOrder=next.choiceOrder; posItemGroupOrder=next.itemGroupOrder; posDeletedItems=next.delItems; posNewItems=next.newItems; posSectionAdds=next.sectionAdds;
+  posDiscRates=next.discRates;
   posPruneOrphans();   // redraws itself only if it actually drops something
   if(changed)posRedraw();
 }
@@ -7271,6 +7275,9 @@ function posBuildLive(){
     // Mod groups travel now — their choices, their names, and what they are attached
     // to. The register applies them over its built-in menu the same way it does a price.
     ...posBuildGroups(),
+    // Discount rates, by the discount's stable id. Money coming off a bill, so it
+    // travels the same audited path as a price rather than a second one of its own.
+    discounts:{...posDiscRates},
   };
 }
 // kvPush is debounced and fire-and-forget, which is right for an edit and wrong for a
@@ -7556,6 +7563,27 @@ function posAddFromInput(enc){
   const back=document.getElementById('gm-'+enc);
   if(back){back.value='';back.focus();}
 }
+// A DISCOUNT RATE IS MONEY COMING OFF A REAL BILL.
+//
+// Stored in cents for a $ discount and in HUNDREDTHS OF A PERCENT for a % one, so
+// "12.5%" survives as 1250 rather than being rounded to 12 or 13. Blank clears it back
+// to not-set, which is the only honest way to say "nobody has decided this yet" — a 0
+// would read as a discount that takes nothing off, which is a different statement.
+function posSetDiscRate(id,kind,str){
+  const raw=String(str).replace(/[^0-9.]/g,'');
+  if(!raw){delete posDiscRates[id];}
+  else{
+    const n=parseFloat(raw);
+    if(!isFinite(n)||n<0)return;
+    // A percentage over 100 takes more off than the check is worth. Refuse rather than
+    // store it — this is the field where a stray digit writes off a table.
+    if(kind==='percent'&&n>100){alert('A percentage discount cannot be more than 100%.');return;}
+    posDiscRates[id]=Math.round(n*100);
+  }
+  kvPush('ct_pos_disc_rates',posDiscRates,Date.now());
+  posKeepScroll(()=>{renderViewport();});
+}
+
 function posSetPrice(enc,str){
   const key=decodeURIComponent(enc);
   const raw=String(str).replace(/[^0-9.]/g,'');
@@ -9279,26 +9307,48 @@ function posResultHTML(r,kind){
 // a manager gate where an item has a price and a printer, and forcing it into those
 // columns made every one of them look like a menu item missing its data.
 //
-// READ-ONLY on purpose. The publish path carries prices, print routing and deletions;
-// it has nothing that can carry a discount rate, and a field that looks editable but
-// never reaches an iPad is worse than no field.
+// ⚠️ THESE WERE READ-ONLY, and the reason was good: the publish carried prices, print
+// routing and deletions, and nothing that could carry a discount RATE — a field that
+// looks editable and never reaches an iPad is worse than no field.
+//
+// So Vinny asking to set them (9/22) meant building the path, not removing a guard. The
+// rates now ride the same publish as everything else, under `discounts`, keyed by the
+// discount's stable id. Set one here, hit Publish, and the register has it.
+//
+// ⚠️ WHAT IT STILL DOES NOT DO: the register's DISC button is not built — it says so
+// when pressed. Setting a rate here files the number; it does not yet take anything off
+// a check anywhere.
 function posDiscountsHTML(){
   if(!posS.cat)return `<div style="${posCardCss}"><div style="color:var(--text-dim)">Loading…</div></div>`;
   const ds=(posS.cat.discounts)||[];
   if(!ds.length)return `<div style="${posCardCss}">
     <div style="font-weight:700">No discounts in the snapshot</div>
     <div style="color:var(--text-dim);font-size:13px;margin-top:4px">Re-run <code>npm run catalog</code> in the angelis-pos repo.</div></div>`;
-  const unset=ds.filter(d=>d.kind!=='open'&&d.rate==null).length;
+  const unset=ds.filter(d=>d.kind!=='open'&&posDiscRates[d.id]==null&&d.rate==null).length;
   const KINDS=[
     ['amount','Dollars off','A fixed amount comes off the check.'],
     ['percent','Percentage off','A share of the check comes off.'],
     ['open','Typed at the register','The server keys the figure — no rate to set.'],
   ];
-  const rate=d=>d.kind==='open'
-    ? `<span style="color:var(--text-dim)">${d.unit==='percent'?'a %':'a $ amount'}</span>`
-    : d.rate==null
-      ? '<span style="color:#f59e0b;font-weight:700">not set</span>'
-      : (d.kind==='percent'?esc((d.rate/100).toFixed(2))+'%':'$'+esc((d.rate/100).toFixed(2)));
+  const rate=d=>{
+    // An open discount has no rate to set — the server types the figure each time.
+    if(d.kind==='open')return `<span style="color:var(--text-dim)">${d.unit==='percent'?'a %':'a $ amount'}</span>`;
+    const set=posDiscRates[d.id];
+    const v=set!=null?set:d.rate;
+    const shown=v!=null?(v/100).toFixed(2):'';
+    const entered=set!=null;
+    return `<span style="display:inline-flex;align-items:baseline;gap:4px;justify-content:flex-end;width:100%">
+      <span style="color:var(--text-muted);font-size:13px">${d.kind==='percent'?'':'$'}</span>
+      <input value="${shown}" placeholder="not set" inputmode="decimal"
+        onchange="posSetDiscRate('${esc(d.id)}','${esc(d.kind)}',this.value)"
+        onkeydown="if(event.key==='Enter')this.blur()"
+        style="width:74px;text-align:right;font-variant-numeric:tabular-nums;font-size:15px;
+          padding:3px 6px;border-radius:6px;font-family:inherit;
+          border:1px solid ${entered?'#22c55e':'var(--border)'};
+          background:${entered?'rgba(34,197,94,0.10)':'var(--surface2)'};
+          color:${v!=null?(entered?'#22c55e':'var(--text)'):'#f59e0b'}">
+      <span style="color:var(--text-muted);font-size:13px">${d.kind==='percent'?'%':''}</span></span>`;
+  };
   const row=d=>`<div style="display:flex;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);font-size:16px;align-items:baseline;max-width:730px">
       <span style="width:200px;font-weight:600">${esc(d.name)}</span>
       <span style="width:110px;text-align:right;font-variant-numeric:tabular-nums">${rate(d)}</span>
