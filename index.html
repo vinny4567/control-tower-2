@@ -7278,6 +7278,26 @@ function posBuildLive(){
     // Discount rates, by the discount's stable id. Money coming off a bill, so it
     // travels the same audited path as a price rather than a second one of its own.
     discounts:{...posDiscRates},
+    // ⚠️ NEW FOOD MODS TRAVEL. They did not, and the failure was silent in the worst
+    // way: adding one SAVED it, SHOWED it in this list as a row marked new, and then
+    // never published it — so the back office said the mod existed and the register had
+    // never heard of it. Vinny added "$GF ROTINI" on 9/23 and hit Publish; the only
+    // thing that rode was the RENAME of a mod the register did not have.
+    //
+    // The letter rides too, so one filed under G by hand does not land under whatever
+    // its first letter happens to be.
+    // ⚠️ AND DELETIONS. The confirm says "It stays on the iPads until you Publish" —
+    // a promise the publish never kept, because this store did not travel either.
+    // Keys, as the back office holds them ('c:600707'), so the register can match the
+    // condiment they name.
+    deletedMods:(posDeletedMods||[]).slice(),
+    // Where a mod was filed by hand. Without it a mod MOVED to another letter moves
+    // only on this screen.
+    modLetters:{...posModLetters},
+    newMods:(posNewMods||[]).map(m=>({
+      name:m.name, cents:m.cents||0,
+      letter:posModLetters[m.name]||posModLetter(m.name),
+    })),
   };
 }
 // kvPush is debounced and fire-and-forget, which is right for an edit and wrong for a

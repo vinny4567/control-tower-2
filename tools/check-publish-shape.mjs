@@ -31,7 +31,7 @@ const miniAccepts = (o) => !!o && typeof o === 'object'
   && Array.isArray(o.deleted) && Array.isArray(o.added);
 
 const state = {
-  rows: [], modNames: {}, deleted: [], added: [], discRates: {},
+  rows: [], modNames: {}, deleted: [], added: [], discRates: {}, newMods: [], modLetters: {},
   groups: { groups: {}, attach: {}, detach: {}, gone: [] },
 };
 const ctx = {
@@ -42,6 +42,9 @@ const ctx = {
   posDeletedItems: state.deleted, posNewItems: state.added,
   posBuildGroups: () => state.groups,
   get posDiscRates() { return state.discRates; },
+  get posNewMods() { return state.newMods; },
+  get posModLetters() { return state.modLetters; },
+  posModLetter: (n) => (String(n).match(/[A-Za-z]/) || ['#'])[0].toUpperCase(),
   posS: { cat: { generated_at: '2026-09-17' } },
   Object, Date, Array, String, JSON, console,
 };
@@ -98,3 +101,27 @@ ok('and a dollar discount rides as cents', b.discounts.house_acct === 5000);
 const sent = build().discounts;
 state.discRates.birthday = 9999;
 ok('⚠️ it is a COPY, so a later edit cannot rewrite a blob already sent', sent.birthday === 1000);
+
+// ---- NEW FOOD MODS TRAVEL -------------------------------------------------------
+// ⚠️ They did not, and it failed in the worst way available: adding one SAVED it and
+// SHOWED it in the back office as a row marked new, then never published it. The back
+// office said the mod existed; the register had never heard of it. Vinny added
+// "$GF ROTINI" and published — the only thing that rode was a RENAME of a mod that was
+// not there.
+state.newMods = [];
+b = build();
+ok('an untouched publish carries an empty newMods list',
+   Array.isArray(b.newMods) && b.newMods.length === 0);
+
+state.newMods = [{ name: '$GF ROTINI', cents: 300 }, { name: 'extra napkins', cents: 0 }];
+b = build();
+ok('a mod added in the back office rides the publish', b.newMods.length === 2);
+ok('with its price', b.newMods.find((m) => m.name === '$GF ROTINI').cents === 300);
+ok('a free one rides too', b.newMods.find((m) => m.name === 'extra napkins').cents === 0);
+ok('⚠️ and its LETTER, so it lands where the back office filed it',
+   b.newMods.find((m) => m.name === '$GF ROTINI').letter === 'G');
+state.modLetters = { '$GF ROTINI': 'R' };
+b = build();
+ok('a letter set by hand beats the first letter of the name',
+   b.newMods.find((m) => m.name === '$GF ROTINI').letter === 'R');
+state.newMods = []; state.modLetters = {};
