@@ -7566,12 +7566,28 @@ function posSetPrice(enc,str){
     posPrices[key]=cents;
   }
   kvPush('ct_pos_prices',posPrices,Date.now());
-  posRerenderList();renderViewport();
+  posKeepScroll(()=>{posRerenderList();renderViewport();});
 }
 const posEntered=(r)=>Object.prototype.hasOwnProperty.call(posPrices,r.key);
 const posPriceOf=(r)=>posEntered(r)?posPrices[r.key]:r.cents;
 // Re-render only the list so typing in the search box never loses focus.
 function posRerenderList(){const el=document.getElementById('pos-items-body');if(el)el.innerHTML=posItemsBodyHTML();else renderViewport()}
+
+// ⚠️ KEEP THE PLACE IN THE LIST.
+//
+// Typing a price and clicking away rebuilt the whole tab, which drops you at the top of
+// nine hundred items. Vinny hit it the moment mod prices became worth typing — and the
+// job is to work down a list, so it threw away the position after every single one.
+//
+// The rebuild is still wanted: the gap counters and the publish state at the top of the
+// tab are read off the same data. It just should not cost the scroll position.
+function posKeepScroll(fn){
+  const el=document.getElementById('pos-items-body');
+  const sc=(el&&el.closest('[style*="overflow-y"]'))||document.getElementById('viewport');
+  const top=sc?sc.scrollTop:0;
+  fn();
+  if(sc)sc.scrollTop=top;
+}
 
 const posMoney=(c)=>c==null?'—':'$'+(c/100).toFixed(2);
 function posBtn(c){return `padding:11px 16px;border:none;border-radius:10px;cursor:pointer;font-family:inherit;font-weight:700;font-size:15px;color:#fff;background:${c};-webkit-tap-highlight-color:transparent`}
@@ -8063,7 +8079,7 @@ function posSetRoute(enc,id){
   if(posSameSet(opt.printers,orig))delete posRouting[key];
   else posRouting[key]=opt.printers;
   kvPush('ct_pos_routing',posRouting,Date.now());
-  posRerenderList();renderViewport();
+  posKeepScroll(()=>{posRerenderList();renderViewport();});
 }
 function posRouteCell(r){
   // A modifier prints on the ticket of the item it modifies. It has no routing of
