@@ -7629,12 +7629,35 @@ function posRerenderList(){const el=document.getElementById('pos-items-body');if
 //
 // The rebuild is still wanted: the gap counters and the publish state at the top of the
 // tab are read off the same data. It just should not cost the scroll position.
+//
+// ⚠️ RE-FIND THE SCROLLER AFTER THE REBUILD, don't hold the old one. This is why it came
+// back: renderViewport() replaces the tab's contents, so the element measured before
+// fn() is DETACHED by the time the scroll is put back, and setting scrollTop on a
+// detached node is a silent no-op. It only ever worked when the match happened to be
+// #viewport itself, which survives because only its innerHTML is replaced.
+//
+// The window is restored too. Replacing the innerHTML of a tall container collapses its
+// height for an instant, the browser clamps the page scroll to the new maximum, and the
+// position is gone before anything is put back — which looks identical to the inner
+// scroller losing its place.
 function posKeepScroll(fn){
-  const el=document.getElementById('pos-items-body');
-  const sc=(el&&el.closest('[style*="overflow-y"]'))||document.getElementById('viewport');
-  const top=sc?sc.scrollTop:0;
+  const find=()=>{
+    const el=document.getElementById('pos-items-body');
+    return (el&&el.closest('[style*="overflow-y"]'))||document.getElementById('viewport')||null;
+  };
+  const before=find();
+  const top=before?before.scrollTop:0;
+  const win=window.scrollY||0;
+  const put=()=>{
+    const sc=find();
+    if(sc&&sc.scrollTop!==top)sc.scrollTop=top;
+    if(win&&window.scrollY!==win)window.scrollTo(0,win);
+  };
   fn();
-  if(sc)sc.scrollTop=top;
+  put();
+  // Again after layout. Height is restored a frame later, and until it is, the browser
+  // clamps anything set above the (briefly shorter) maximum straight back down.
+  requestAnimationFrame(put);
 }
 
 const posMoney=(c)=>c==null?'—':'$'+(c/100).toFixed(2);

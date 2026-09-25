@@ -32,6 +32,11 @@ const miniAccepts = (o) => !!o && typeof o === 'object'
 
 const state = {
   rows: [], modNames: {}, deleted: [], added: [], discRates: {}, newMods: [], modLetters: {},
+  // ⚠️ EVERY GLOBAL posBuildLive TOUCHES HAS TO BE HERE. The sandbox has no page around
+  // it, so a new one reaches this file as a ReferenceError that takes the whole check
+  // down — which is exactly what happened when deletedMods joined the payload: the
+  // publish kept working and its shape simply stopped being checked at all.
+  deletedMods: [], choiceCuts: {},
   groups: { groups: {}, attach: {}, detach: {}, gone: [] },
 };
 const ctx = {
@@ -44,6 +49,8 @@ const ctx = {
   get posDiscRates() { return state.discRates; },
   get posNewMods() { return state.newMods; },
   get posModLetters() { return state.modLetters; },
+  get posDeletedMods() { return state.deletedMods; },
+  get posChoiceCuts() { return state.choiceCuts; },
   posModLetter: (n) => (String(n).match(/[A-Za-z]/) || ['#'])[0].toUpperCase(),
   posS: { cat: { generated_at: '2026-09-17' } },
   Object, Date, Array, String, JSON, console,
