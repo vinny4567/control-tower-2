@@ -7670,14 +7670,18 @@ const posInput='padding:11px 13px;border:1px solid var(--border);background:var(
 // them all back unchanged.
 const posEnc=(v)=>encodeURIComponent(v).replace(/[!'()*]/g,c=>'%'+c.charCodeAt(0).toString(16).toUpperCase());
 const posCardCss='border:1px solid var(--border);border-radius:14px;background:var(--surface);padding:16px';
-function posStat(label,value,sub,click){
+function posStat(label,value,sub,click,on){
   // A card with a `click` becomes a control, and says so — a number that does something
-  // when pressed and looks exactly like four that do not is a thing nobody presses.
+  // when pressed and looks exactly like others that do not is a thing nobody presses.
+  //
+  // ⚠️ CLICKABLE AND SELECTED ARE DIFFERENT THINGS and need different marks. When they
+  // shared one, the filtered card looked identical to the ones that would clear it, and
+  // there was no way to see which view you were in or which card got you out of it.
   return `<div ${click?`onclick="${click}"`:''} style="${posCardCss};padding:14px 16px;min-width:150px;flex:1${
-    click?';cursor:pointer;border-color:var(--accent2,#38bdf8)':''}">
+    click?';cursor:pointer':''}${on?';border-color:var(--accent2,#38bdf8);background:rgba(56,189,248,.08)':''}">
     <div style="font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.6px">${label}</div>
     <div style="font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;margin-top:4px">${value}</div>
-    ${sub?`<div style="font-size:12px;color:${click?'var(--accent2,#38bdf8)':'var(--text-dim)'};margin-top:2px">${sub}</div>`:''}</div>`;
+    ${sub?`<div style="font-size:12px;color:${on?'var(--accent2,#38bdf8)':'var(--text-dim)'};margin-top:2px">${sub}</div>`:''}</div>`;
 }
 const POS_GAP_COLOR={'price':'#ef4444','micros #':'#f59e0b','printer':'#ef4444'};
 function posGapTags(gaps){return (gaps||[]).map(g=>`<span style="font-size:11px;font-weight:700;color:${POS_GAP_COLOR[g]||'#f59e0b'};border:1px solid currentColor;border-radius:6px;padding:1px 5px;margin-left:4px">${esc(g)}</span>`).join('')}
@@ -9667,7 +9671,10 @@ function staffRefreshNotes(){const el=document.getElementById('staff-notes');if(
 // says how many are fine, and the question a manager actually has is WHO IS NOT.
 const staffPayrollOnly=(p)=>!!(p.sources&&p.sources.scheduler&&p.sources.scheduler.kind==='payroll');
 function staffFilter(mode){
-  staffS.filter=staffS.filter===mode?null:mode;
+  // ⚠️ NOT A TOGGLE WHEN THE MODE IS null. PEOPLE means "show everybody", so pressing it
+  // has to end with no filter whether or not one was on — a toggle would have turned the
+  // way OUT of a filtered view into a no-op the second time it was pressed.
+  staffS.filter=mode==null?null:(staffS.filter===mode?null:mode);
   staffS.open=null;
   posKeepScroll(()=>renderViewport());
 }
@@ -9675,6 +9682,7 @@ function staffRows(){
   const q=(staffS.q||'').toLowerCase().trim();
   let rows=Object.values(staffS.people).filter(p=>!p.removed);
   if(staffS.filter==='noschedule')rows=rows.filter(staffPayrollOnly);
+  if(staffS.filter==='noid')rows=rows.filter(p=>!p.paychex_id);
   if(q)rows=rows.filter(p=>(p.name||'').toLowerCase().includes(q)
     ||(p.positions||[]).join(' ').toLowerCase().includes(q)
     ||String(p.paychex_id||'').includes(q));
@@ -9686,6 +9694,7 @@ function staffBodyHTML(){
   const rows=staffRows();
   if(!rows.length)return `<div style="color:var(--text-dim);font-size:13px;padding:12px 0">${
     staffS.filter==='noschedule'?'Everybody has a scheduler account.'
+    :staffS.filter==='noid'?'Everybody has a Paychex ID.'
     :staffS.q?'Nobody matches that.'
     :'Nobody yet — pull from the scheduler to start the list.'}</div>`;
   const line=(p)=>{
@@ -10368,12 +10377,16 @@ function posStaffHTML(){
   const when=staffS.at?new Date(staffS.at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'never';
   return `
   <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
-    ${posStat('People',String(all.length),'in the database')}
+    ${posStat('People',String(all.length),
+      staffS.filter?'press to show everybody again':'in the database',
+      "staffFilter(null)",!staffS.filter)}
     ${posStat('On the schedule',String(all.length-payrollOnly-0),
-      staffS.filter==='noschedule'?'showing the '+payrollOnly+' who are not — press to clear'
+      staffS.filter==='noschedule'?'showing the '+payrollOnly+' who are not'
                                   :'press to see the '+payrollOnly+' who are not',
-      "staffFilter('noschedule')")}
-    ${posStat('No Paychex ID',String(noId),noId?'cannot be exported':'every one can be exported')}
+      "staffFilter('noschedule')",staffS.filter==='noschedule')}
+    ${posStat('No Paychex ID',String(noId),
+      staffS.filter==='noid'?'showing them':(noId?'press to see them — they cannot be exported':'every one can be exported'),
+      noId?"staffFilter('noid')":'',staffS.filter==='noid')}
   </div>
   <div style="${posCardCss};margin-bottom:14px">
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
