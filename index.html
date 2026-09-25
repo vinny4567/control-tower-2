@@ -9866,6 +9866,44 @@ async function staffPushRegister(p,what){
   }
 }
 
+// THE PAYROLL ID, PUSHED TO THE REGISTER.
+//
+// ⚠️ Vinny's onboarding order is: add them here (quick), give them a sign-in code, THEN
+// add them to Paychex and come back with the id. So the id is almost never known at the
+// moment the register row is created — which is the only moment it used to travel. The
+// register therefore held `paychex_id: null` for everybody onboarded that way, for ever.
+//
+// In MICROS the third step is retyping their EMPLOYEE NUMBER to match Paychex. Here it
+// is just a field: nothing is keyed on it, punches file under `pid`, so typing it is
+// safe and the third trip disappears.
+async function staffPushPaychex(p){
+  if(!posS.srv)return false;
+  const id=p.register&&p.register.emp_id;
+  // By mini id where we have one, else by exact name — the mini refuses an ambiguous
+  // name rather than guessing between two rows, which is what we want given the roster
+  // still has duplicate spellings in it.
+  const body=id?{id,paychex_id:p.paychex_id||null}:{name:p.name,paychex_id:p.paychex_id||null};
+  try{
+    const r=await posSrv('/api/employees/paychex',{method:'POST',body:JSON.stringify(body)});
+    if(r.status===404){staffS.regNote='Paychex id saved here — this register build cannot take it yet.';staffRefreshNotes();return false}
+    // ⚠️ TWO PEOPLE ON ONE PAYROLL ID IS A WRONG PAYCHEQUE, and it is a typo that looks
+    // perfectly fine on screen. The mini refuses it and names who already holds it; that
+    // has to reach Vinny as an alert, not a note he might scroll past.
+    if(r.status===409){
+      const b=r.body||{};
+      alert(b.holder_name
+        ? 'Paychex id '+(p.paychex_id||'')+' already belongs to '+b.holder_name+'.\n\nIt is saved here but NOT on the register. Two people on one payroll id is a wrong paycheque — check which of them it really is.'
+        : (b.error||'The register would not take that Paychex id.'));
+      return false;
+    }
+    if(!r.ok){staffS.regNote='⚠ the register would not take that Paychex id: '+((r.body&&r.body.error)||r.status);staffRefreshNotes();return false}
+    return true;
+  }catch(e){
+    staffS.regNote='⚠ could not reach the register — that Paychex id is NOT on it: '+(e&&e.message||e);
+    staffRefreshNotes();return false;
+  }
+}
+
 // ---- one person, opened up --------------------------------------------------
 // Rates, register access and a sign-in code. Everything here is per-person and
 // typed by a manager, which makes it the data a scheduler pull must never touch —
@@ -9948,6 +9986,7 @@ function staffEdit(k,f,v){
   // was locked out when they were not. Fire-and-report: the panel shows the register's
   // own answer, and says so loudly if the change did not land.
   if(f==='register'||f==='role')staffPushRegister(p,f==='role'?'role':'active').then(()=>staffRefresh());
+  if(f==='paychex')staffPushPaychex(p).then(()=>staffRefresh());
   if(f==='drawer')staffPushRegister(p,'drawer').then(()=>staffRefresh());
 }
 // Taking a job off one person. The override goes with it — it was a rate FOR that
