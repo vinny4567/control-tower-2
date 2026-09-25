@@ -9482,6 +9482,34 @@ function staffTouch(p){if(p)p.at=Date.now();return p}
 
 // One person, from two places. Field-by-field rather than record-by-record, so a rate
 // typed here and a Paychex ID typed there both survive.
+// A PERSON'S PERMANENT ID.
+//
+// ⚠️ NOT DERIVED FROM ANYTHING A HUMAN CAN EDIT. The staff key is the lowercased name
+// ('adam tietje'), which is fine for looking somebody up and fatal as an identity: fix a
+// spelling and the key changes, and every hour already filed under the old one silently
+// stops reaching that person's pay. Priscilla Lagace is the standing case here — MICROS
+// exports her as "Priscill" and payroll rewrites it every period. Two Mike Smiths would
+// share one key as well, and payroll would merge them without a word.
+//
+// So: minted once, stored, never regenerated, never reused, and meaningless by design —
+// there is nothing in it to "correct". The register files punches under this, and the
+// mini joins punch -> person -> rate. It is an opaque id and not PII, so it can ride in
+// the plain roster payload alongside the name.
+//
+// paychex_id cannot do this job: 15 people do not have one.
+function staffNewPid(){
+  const r = (self.crypto && self.crypto.randomUUID) ? self.crypto.randomUUID().replace(/-/g,'').slice(0,16)
+    : (Date.now().toString(36) + Math.random().toString(36).slice(2,10));
+  return 'p_' + r;
+}
+// Give an id to everybody who predates them. Runs after a load, once — every row here
+// was created before ids existed, and they are all the same people they were.
+function staffBackfillPids(){
+  let n = 0;
+  Object.values(staffS.people || {}).forEach(p => { if (p && !p.pid) { p.pid = staffNewPid(); n++; } });
+  return n;
+}
+
 function staffMergeOne(a,b){
   if(!a)return b;if(!b)return a;
   const newer=(b.at||0)>(a.at||0)?b:a, older=newer===b?a:b;
@@ -9491,6 +9519,14 @@ function staffMergeOne(a,b){
   const keep=(f)=>{const n=newer[f],o=older[f];
     out[f]=(n==null||n==='')&&o!=null&&o!==''?o:n;};
   ['paychex_id','phone','since','name','role','nickname'].forEach(keep);
+  // ⚠️ THE PERMANENT ID NEVER CHANGES, and two devices that both backfilled the same
+  // person offline will have minted two. Newest-wins would flap forever, and a flapping
+  // identity is the exact failure this id exists to prevent. Smallest string wins: not
+  // because it is better, but because every device computes the same answer and they
+  // converge on the next sync. An id already on one side is never dropped for nothing.
+  const pidA = a.pid || '', pidB = b.pid || '';
+  out.pid = (pidA && pidB) ? (pidA < pidB ? pidA : pidB) : (pidA || pidB || undefined);
+  if (!out.pid) delete out.pid;
   // Rates merge key by key — two people editing two jobs must not undo each other.
   out.rates=Object.assign({},older.rates||{},newer.rates||{});
   // positions come from the scheduler, so the freshest pull wins outright.
@@ -9535,6 +9571,12 @@ async function staffLoad(){
     staffS.jobs=staffMergeJobs(staffS.jobs,r.value.jobs);
     staffS.at=Math.max(staffS.at||0,r.at||0);
   }
+  // ⚠️ AFTER the merge, never before. Backfilling first would mint an id on this device
+  // for somebody the cloud already has one for, and the merge would then have to throw
+  // one of the two away — churn, on the one field that must never churn.
+  //
+  // Saved only if something was actually minted, so an ordinary load does not write.
+  if(staffBackfillPids())staffSave();
   if(activeTab===POS&&(posS.sec==='staff'||posS.sec==='jobrates'))renderViewport();
 }
 
@@ -9603,7 +9645,8 @@ async function staffPull(){
   rows.forEach(r=>{
     const k=staffKeyOf(r.name);if(!k)return;
     seen.add(k);
-    const p=staffS.people[k]||(staffS.people[k]={key:k,name:r.name,sources:{},addedAt:now});
+    const p=staffS.people[k]||(staffS.people[k]={key:k,pid:staffNewPid(),name:r.name,sources:{},addedAt:now});
+    if(!p.pid)p.pid=staffNewPid();          // a row from before ids existed
     // SOMEBODY REMOVED HERE STAYS REMOVED. The scheduler will keep listing a person
     // for as long as their account exists; handing them back every pull would make
     // "remove" a button that does nothing twice.
