@@ -9639,17 +9639,19 @@ async function staffPull(){
   renderViewport();
 }
 
-// ALPHABETICAL BY LAST NAME. Not the last word: "Jr"/"III" are not surnames, and
-// sorting on them files a father and son apart. Case- and accent-insensitive, so
-// "de la Cruz" and "De La Cruz" land together instead of in two different places.
-const STAFF_SUFFIX=/^(jr|sr|ii|iii|iv|v)\.?$/i;
-function staffLast(name){
-  const t=String(name||'').trim().split(/\s+/).filter(Boolean);
-  while(t.length>1&&STAFF_SUFFIX.test(t[t.length-1]))t.pop();
-  return (t[t.length-1]||'').toLowerCase();
-}
-const staffByLast=(a,b)=>staffLast(a.name).localeCompare(staffLast(b.name),undefined,{sensitivity:'base'})
-  ||String(a.name||'').localeCompare(String(b.name||''),undefined,{sensitivity:'base'});
+// ⚠️ THE LIST SORTS BY FIRST NAME, Vinny's call 9/24 — the same as the register's own
+// people list. It is how the whole building refers to each other, and how somebody
+// hunting for Rosa scans.
+//
+// The last-name sort that used to live here went with it, suffix handling and all
+// (git has it). It was kept for a moment on the grounds that a payroll export would
+// want surnames — it would, but nothing here does one, and a helper kept for a caller
+// that does not exist is just something to maintain.
+//
+// 'base' so a stray capital or an accent cannot bury somebody, numeric so a "Sal 2"
+// sorts after "Sal" rather than by digit.
+const staffByFirst=(a,b)=>String(a.name||'').localeCompare(String(b.name||''),undefined,
+  {sensitivity:'base',numeric:true});
 
 // The last pull's result and the sync warning are different facts and both get said.
 function staffNotesHTML(){
@@ -9676,7 +9678,7 @@ function staffRows(){
   if(q)rows=rows.filter(p=>(p.name||'').toLowerCase().includes(q)
     ||(p.positions||[]).join(' ').toLowerCase().includes(q)
     ||String(p.paychex_id||'').includes(q));
-  return rows.sort(staffByLast);
+  return rows.sort(staffByFirst);
 }
 function staffSearch(v){staffS.q=v;staffS.open=null;const el=document.getElementById('staff-body');if(el)el.innerHTML=staffBodyHTML();}
 
@@ -10402,7 +10404,7 @@ function posStaffHTML(){
         <span style="flex:1;font-weight:600">${esc(e.name)}</span>
         <span style="color:#a78bfa">can sign in to the register but is not in this list</span></div>`).join('')}
     </div>`})()}
-  ${(function(){const rm=Object.values(staffS.people).filter(p=>p.removed).sort(staffByLast);
+  ${(function(){const rm=Object.values(staffS.people).filter(p=>p.removed).sort(staffByFirst);
     if(!rm.length)return '';
     return `<div style="${posCardCss};margin-bottom:14px">
       <div style="font-weight:800;font-size:14px;margin-bottom:2px">Removed (${rm.length})</div>
