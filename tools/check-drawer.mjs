@@ -39,18 +39,20 @@ ok('and null on a server denies, by the job', d('server', null).on === false);
 const edit = src.slice(src.indexOf("else if(f==='drawer')"), src.indexOf("else if(f==='drawer')") + 220);
 ok('⚠️ the editor keeps null as null rather than coercing it to false',
    /v===null\?null:!!v/.test(edit));
-// TWO BOXES, THREE STATES. "By job" on is null; turning it off hands the decision to
-// the second box, which is disabled while the job is deciding so it reads as what the
-// job gives rather than as something just set.
-ok('"By job" is a box of its own', /By job<span/.test(src));
-ok('⚠️ and ticking it sends null — that is what clears the override',
-   /'drawer',this\.checked\?null:/.test(src));
-ok('turning it off keeps the value that was showing, so nothing jumps',
-   /this\.checked\?null:\$\{drawer\.on\}/.test(src));
-ok('the decision box is disabled while the job decides',
-   /\$\{drawer\.byRole\?'disabled':''\}/.test(src));
-ok('the hint beside it comes from the same rule staffDrawer uses',
-   /const roleGives=\(reg\.role==='owner'\|\|reg\.role==='manager'\)/.test(src));
+// ONE BOX (Vinny's call 9/24). The role dropdown above it is where privileges get set
+// per person regardless of what they clock in as, so the drawer does not also carry a
+// "by job / set here" distinction. It shows the role's answer until touched, and
+// touching it stores a real true or false.
+ok('one checkbox, and it says what it does',
+   /Can open the cash drawer\n\s*<\/label>/.test(src));
+ok('it shows the role answer until somebody touches it', /\$\{drawer\.on\?'checked':''\}/.test(src));
+ok('and touching it stores the real value', /'drawer',this\.checked\)/.test(src));
+// ⚠️ null has no CONTROL any more, but every layer underneath still carries it — the
+// mini stores it, staffDrawer reads it, and the push forwards it. A tidy-up that
+// collapsed it to false here would turn "no override" into a deny on the next write.
+ok('⚠️ null is still handled by the editor even with no control for it',
+   /v===null\?null:!!v/.test(src));
+
 const push = src.slice(src.indexOf("what==='drawer'"), src.indexOf("what==='drawer'") + 300);
 ok('⚠️ and null goes to the mini as null, not false',
    /===null\|\|[^?]*===undefined\?null:!!/.test(push));

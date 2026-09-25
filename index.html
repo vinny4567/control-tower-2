@@ -10024,9 +10024,6 @@ function staffDetail(p){
   const hd='font-size:10px;font-weight:800;letter-spacing:.6px;color:var(--text-muted);margin-bottom:4px';
   const reg=p.register||{};
   const drawer=staffDrawer(p);
-  // What the JOB alone would give — the same rule staffDrawer falls back to, named once
-  // so the hint beside "By job" cannot drift away from the behaviour it describes.
-  const roleGives=(reg.role==='owner'||reg.role==='manager');
   const jobs=Object.keys(p.rates||{});
   const known=[...new Set([...(p.positions||[]),...jobs])];
   // THE BOX SHOWS THE DEFAULT WHEN THERE IS NO OVERRIDE, as a placeholder — grey, and
@@ -10089,22 +10086,16 @@ function staffDetail(p){
             ${Object.entries(POS_ROLES).map(([rk,r])=>`<option value="${rk}" ${reg.role===rk?'selected':''}>${esc(r.label)}</option>`).join('')}
           </select>
         </div>
-        <!-- THE CASH DRAWER, as two boxes rather than one box and a link.
-             Three states have to fit: by job, an explicit yes, an explicit no. "By job"
-             is the first box; when it is off the second box IS the decision. Ticking
-             "by job" back on sends null, which is what hands the person back to their
-             role — see staffDrawer and the mini's tri-state.
-             The second box is disabled while the job is deciding, so it reads as what
-             the job currently gives rather than as something you just set. -->
-        <div style="${hd};margin-top:14px">CASH DRAWER</div>
-        <label style="display:flex;gap:8px;align-items:center;font-size:13px;cursor:pointer;margin-top:2px">
-          <input type="checkbox" ${drawer.byRole?'checked':''}
-            onchange="staffEdit('${esc(k)}','drawer',this.checked?null:${drawer.on})">
-          By job<span style="color:var(--text-muted);font-size:11px">${esc((POS_ROLES[reg.role]||{}).label||'no role')} — ${roleGives?'yes':'no'}</span>
-        </label>
-        <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin-top:7px;${drawer.byRole?'opacity:.5':'cursor:pointer'}">
-          <input type="checkbox" ${drawer.on?'checked':''} ${drawer.byRole?'disabled':''}
-            onchange="staffEdit('${esc(k)}','drawer',this.checked)">
+        <!-- ONE BOX. Vinny's call 9/24: the ROLE DROPDOWN above is where privileges get
+             set for a person regardless of what they clock in as, so the drawer does not
+             also need a "by job / set here" distinction bolted onto it — it just says
+             whether this person can open the till.
+             It still shows the role's own answer until somebody touches it, and touching
+             it stores a real true or false that beats the role. null is still handled
+             everywhere underneath (the mini's tri-state, staffEdit, the push) — there is
+             simply no longer a control that sends it. -->
+        <label style="display:flex;gap:8px;align-items:center;font-size:13px;cursor:pointer;margin-top:12px">
+          <input type="checkbox" ${drawer.on?'checked':''} onchange="staffEdit('${esc(k)}','drawer',this.checked)">
           Can open the cash drawer
         </label>
         <div style="margin-top:14px;display:flex;gap:5px;flex-wrap:wrap">
