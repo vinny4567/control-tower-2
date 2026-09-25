@@ -10387,23 +10387,9 @@ function posStaffHTML(){
     </div>
     <div id="staff-notes">${staffNotesHTML()}</div>
     <div style="display:flex;gap:10px;padding:4px 0;font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px">
-      <span style="flex:1;min-width:150px">Name</span><span style="width:78px">Paychex</span>
-      <span style="width:66px;text-align:right">Rate</span><span style="width:150px">Where from</span></div>
+      <span style="flex:1;min-width:150px">Name</span><span style="width:78px">Paychex</span></div>
     <div id="staff-body">${staffBodyHTML()}</div>
   </div>
-  ${(function(){
-    const drift=staffRegisterDrift(), strays=staffS.regStrays||[];
-    if(!drift.length&&!strays.length)return '';
-    return `<div style="${posCardCss};margin-bottom:14px;border-color:#fbbf24">
-      <div style="font-weight:800;font-size:14px;margin-bottom:2px;color:#fbbf24">This list and the register disagree</div>
-      <div style="color:var(--text-muted);font-size:12px;margin-bottom:6px">The register decides who can sign in. Anything below is a difference somebody would hit at the terminal.</div>
-      ${drift.map(d=>`<div style="display:flex;gap:10px;align-items:baseline;padding:5px 0;border-top:1px solid var(--border);font-size:13px">
-        <span style="flex:1;font-weight:600">${esc(d.p.name)}</span>
-        <span style="color:#fbbf24">${esc(d.what)}</span></div>`).join('')}
-      ${strays.map(e=>`<div style="display:flex;gap:10px;align-items:baseline;padding:5px 0;border-top:1px solid var(--border);font-size:13px">
-        <span style="flex:1;font-weight:600">${esc(e.name)}</span>
-        <span style="color:#a78bfa">can sign in to the register but is not in this list</span></div>`).join('')}
-    </div>`})()}
   ${(function(){const rm=Object.values(staffS.people).filter(p=>p.removed).sort(staffByFirst);
     if(!rm.length)return '';
     return `<div style="${posCardCss};margin-bottom:14px">
