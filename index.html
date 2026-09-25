@@ -9674,14 +9674,13 @@ function staffBodyHTML(){
     // The badge column came off 9/24 at Vinny's call — where somebody came from is not
     // something he needs on every row. A person who is inactive or off the schedule still
     // reads as one: the row itself dims, just below.
-    const rates=Object.values(p.rates||{}).filter(x=>x>0);
-    const rateTx=rates.length>1?('$'+Math.min(...rates)+'–'+Math.max(...rates)):(rates.length?('$'+rates[0]):(p.rate?('$'+p.rate):''));
+    // The rate column came off with the badges. A range like "$9–$17" says almost
+    // nothing on its own, and the real per-job numbers are one click away in JOB RATES.
     const open=staffS.open===p.key;
     return `<div style="border-top:1px solid var(--border)">
       <div onclick="staffOpen('${esc(p.key)}')" style="display:flex;gap:10px;align-items:baseline;padding:7px 0;font-size:14px;cursor:pointer;${p.active===false||p.gone?'opacity:.55':''}">
       <span style="flex:1;min-width:150px;font-weight:600">${open?'▾':'▸'} ${esc(p.name)}</span>
       <span style="width:78px;font-variant-numeric:tabular-nums;font-size:13px;color:${p.paychex_id?'var(--accent2,#38bdf8)':'#f87171'}">${p.paychex_id?esc(String(p.paychex_id)):'no ID'}</span>
-      <span style="width:66px;text-align:right;font-variant-numeric:tabular-nums;font-size:13px;color:var(--text-dim)">${rateTx}</span>
       </div>
       ${open?staffDetail(p):''}
     </div>`;
