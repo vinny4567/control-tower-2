@@ -7670,11 +7670,14 @@ const posInput='padding:11px 13px;border:1px solid var(--border);background:var(
 // them all back unchanged.
 const posEnc=(v)=>encodeURIComponent(v).replace(/[!'()*]/g,c=>'%'+c.charCodeAt(0).toString(16).toUpperCase());
 const posCardCss='border:1px solid var(--border);border-radius:14px;background:var(--surface);padding:16px';
-function posStat(label,value,sub){
-  return `<div style="${posCardCss};padding:14px 16px;min-width:150px;flex:1">
+function posStat(label,value,sub,click){
+  // A card with a `click` becomes a control, and says so — a number that does something
+  // when pressed and looks exactly like four that do not is a thing nobody presses.
+  return `<div ${click?`onclick="${click}"`:''} style="${posCardCss};padding:14px 16px;min-width:150px;flex:1${
+    click?';cursor:pointer;border-color:var(--accent2,#38bdf8)':''}">
     <div style="font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.6px">${label}</div>
     <div style="font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;margin-top:4px">${value}</div>
-    ${sub?`<div style="font-size:12px;color:var(--text-dim);margin-top:2px">${sub}</div>`:''}</div>`;
+    ${sub?`<div style="font-size:12px;color:${click?'var(--accent2,#38bdf8)':'var(--text-dim)'};margin-top:2px">${sub}</div>`:''}</div>`;
 }
 const POS_GAP_COLOR={'price':'#ef4444','micros #':'#f59e0b','printer':'#ef4444'};
 function posGapTags(gaps){return (gaps||[]).map(g=>`<span style="font-size:11px;font-weight:700;color:${POS_GAP_COLOR[g]||'#f59e0b'};border:1px solid currentColor;border-radius:6px;padding:1px 5px;margin-left:4px">${esc(g)}</span>`).join('')}
@@ -9657,9 +9660,19 @@ function staffNotesHTML(){
 }
 function staffRefreshNotes(){const el=document.getElementById('staff-notes');if(el)el.innerHTML=staffNotesHTML();else renderViewport();}
 
+// NOT ON THE SCHEDULE = payroll-only: somebody who gets paid but has no scheduler
+// account. It is the inverse of the number on the card, which is the point — the count
+// says how many are fine, and the question a manager actually has is WHO IS NOT.
+const staffPayrollOnly=(p)=>!!(p.sources&&p.sources.scheduler&&p.sources.scheduler.kind==='payroll');
+function staffFilter(mode){
+  staffS.filter=staffS.filter===mode?null:mode;
+  staffS.open=null;
+  posKeepScroll(()=>renderViewport());
+}
 function staffRows(){
   const q=(staffS.q||'').toLowerCase().trim();
   let rows=Object.values(staffS.people).filter(p=>!p.removed);
+  if(staffS.filter==='noschedule')rows=rows.filter(staffPayrollOnly);
   if(q)rows=rows.filter(p=>(p.name||'').toLowerCase().includes(q)
     ||(p.positions||[]).join(' ').toLowerCase().includes(q)
     ||String(p.paychex_id||'').includes(q));
@@ -9669,7 +9682,10 @@ function staffSearch(v){staffS.q=v;staffS.open=null;const el=document.getElement
 
 function staffBodyHTML(){
   const rows=staffRows();
-  if(!rows.length)return `<div style="color:var(--text-dim);font-size:13px;padding:12px 0">${staffS.q?'Nobody matches that.':'Nobody yet — pull from the scheduler to start the list.'}</div>`;
+  if(!rows.length)return `<div style="color:var(--text-dim);font-size:13px;padding:12px 0">${
+    staffS.filter==='noschedule'?'Everybody has a scheduler account.'
+    :staffS.q?'Nobody matches that.'
+    :'Nobody yet — pull from the scheduler to start the list.'}</div>`;
   const line=(p)=>{
     // The badge column came off 9/24 at Vinny's call — where somebody came from is not
     // something he needs on every row. A person who is inactive or off the schedule still
@@ -10048,7 +10064,6 @@ function staffDetail(p){
       style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;padding:0 2px;line-height:1">×</button>
   </div>`;
   };
-  const tag=(t,c)=>`<span style="font-size:10px;font-weight:800;color:${c};border:1px solid currentColor;border-radius:5px;padding:0 5px;white-space:nowrap">${t}</span>`;
   const mini=reg.mini;
   return `<div style="padding:6px 0 10px 26px;border-top:1px dashed var(--border);display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start">
     <div style="${col};flex:1;max-width:260px">
@@ -10098,11 +10113,7 @@ function staffDetail(p){
           <input type="checkbox" ${drawer.on?'checked':''} onchange="staffEdit('${esc(k)}','drawer',this.checked)">
           Can open the cash drawer
         </label>
-        <div style="margin-top:14px;display:flex;gap:5px;flex-wrap:wrap">
-          ${mini?(mini.has_pin?tag(mini.active?'CODE SET':'CODE SET · OFF',mini.active?'#34d399':'#f87171')
-                              :tag('NO CODE','#fbbf24'))
-                :tag(reg.pin_pending?'PENDING':'NOT ON THE REGISTER','#fbbf24')}
-        </div>`
+        `
       :''}
     </div>
 
@@ -10356,10 +10367,11 @@ function posStaffHTML(){
   return `
   <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
     ${posStat('People',String(all.length),'in the database')}
-    ${posStat('On the schedule',String(all.length-payrollOnly-0),'have a scheduler account')}
-    ${posStat('Payroll only',String(payrollOnly),'no account, still paid')}
+    ${posStat('On the schedule',String(all.length-payrollOnly-0),
+      staffS.filter==='noschedule'?'showing the '+payrollOnly+' who are not — press to clear'
+                                  :'press to see the '+payrollOnly+' who are not',
+      "staffFilter('noschedule')")}
     ${posStat('No Paychex ID',String(noId),noId?'cannot be exported':'every one can be exported')}
-    ${posStat('On the register',String(all.filter(p=>!p.removed&&p.register&&p.register.mini&&p.register.mini.active&&p.register.mini.has_pin).length),staffS.regAt?'confirmed by the register':'not yet confirmed by the register')}
   </div>
   <div style="${posCardCss};margin-bottom:14px">
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
@@ -10468,7 +10480,6 @@ function posHTML(){
       <div style="max-width:1000px;margin:0 auto;padding:4px 14px 56px">
         <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px">
           <h2 style="margin:0;font-size:24px;font-weight:800">${esc(here)}</h2>
-          <span style="font-size:13px;color:var(--text-dim)">Changes here reach the iPads when you Publish.</span>
           <span style="margin-left:auto;display:flex;gap:10px;align-items:center">${who}</span>
         </div>
         ${posS.showConn?posConnHTML():''}
