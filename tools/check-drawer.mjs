@@ -39,7 +39,18 @@ ok('and null on a server denies, by the job', d('server', null).on === false);
 const edit = src.slice(src.indexOf("else if(f==='drawer')"), src.indexOf("else if(f==='drawer')") + 220);
 ok('⚠️ the editor keeps null as null rather than coercing it to false',
    /v===null\?null:!!v/.test(edit));
-ok('there is a way to clear it back to the job', /'drawer',null\)/.test(src));
+// TWO BOXES, THREE STATES. "By job" on is null; turning it off hands the decision to
+// the second box, which is disabled while the job is deciding so it reads as what the
+// job gives rather than as something just set.
+ok('"By job" is a box of its own', /By job<span/.test(src));
+ok('⚠️ and ticking it sends null — that is what clears the override',
+   /'drawer',this\.checked\?null:/.test(src));
+ok('turning it off keeps the value that was showing, so nothing jumps',
+   /this\.checked\?null:\$\{drawer\.on\}/.test(src));
+ok('the decision box is disabled while the job decides',
+   /\$\{drawer\.byRole\?'disabled':''\}/.test(src));
+ok('the hint beside it comes from the same rule staffDrawer uses',
+   /const roleGives=\(reg\.role==='owner'\|\|reg\.role==='manager'\)/.test(src));
 const push = src.slice(src.indexOf("what==='drawer'"), src.indexOf("what==='drawer'") + 300);
 ok('⚠️ and null goes to the mini as null, not false',
    /===null\|\|[^?]*===undefined\?null:!!/.test(push));

@@ -10024,6 +10024,9 @@ function staffDetail(p){
   const hd='font-size:10px;font-weight:800;letter-spacing:.6px;color:var(--text-muted);margin-bottom:4px';
   const reg=p.register||{};
   const drawer=staffDrawer(p);
+  // What the JOB alone would give — the same rule staffDrawer falls back to, named once
+  // so the hint beside "By job" cannot drift away from the behaviour it describes.
+  const roleGives=(reg.role==='owner'||reg.role==='manager');
   const jobs=Object.keys(p.rates||{});
   const known=[...new Set([...(p.positions||[]),...jobs])];
   // THE BOX SHOWS THE DEFAULT WHEN THERE IS NO OVERRIDE, as a placeholder — grey, and
@@ -10072,7 +10075,7 @@ function staffDetail(p){
         <input type="checkbox" ${reg.access?'checked':''} onchange="staffEdit('${esc(k)}','register',this.checked)">
         Can sign in
       </label>
-      <div style="display:flex;gap:5px;align-items:center;margin-top:6px">
+      <div style="display:flex;gap:5px;align-items:center;margin-top:10px">
         <input id="staff-num-${kid}" inputmode="numeric" autocomplete="off" maxlength="8"
           placeholder="${(mini&&mini.has_pin)?'new number':'number'}"
           onkeydown="if(event.key==='Enter')staffSaveNumber('${esc(k)}',document.getElementById('staff-num-${kid}'))"
@@ -10081,22 +10084,30 @@ function staffDetail(p){
           style="${posBtn('#0ea5e9')};padding:3px 9px;font-size:12px">Save</button>
       </div>
       ${reg.access?`
-        <div style="display:flex;gap:6px;align-items:center;margin-top:5px">
+        <div style="display:flex;gap:6px;align-items:center;margin-top:10px">
           <select onchange="staffEdit('${esc(k)}','role',this.value)" style="${inp};width:auto">
             ${Object.entries(POS_ROLES).map(([rk,r])=>`<option value="${rk}" ${reg.role===rk?'selected':''}>${esc(r.label)}</option>`).join('')}
           </select>
         </div>
-        <div style="display:flex;gap:7px;align-items:center;margin-top:5px">
-          <label style="display:flex;gap:7px;align-items:center;font-size:13px;cursor:pointer">
-            <input type="checkbox" ${drawer.on?'checked':''} onchange="staffEdit('${esc(k)}','drawer',this.checked)">
-            Can open the cash drawer
-          </label>
-          ${drawer.byRole
-            ? '<span style="color:var(--text-muted);font-size:11px">by job</span>'
-            : `<button onclick="staffEdit('${esc(k)}','drawer',null)" title="Back to whatever the job says"
-                 style="background:none;border:none;color:var(--text-muted);font-size:11px;cursor:pointer;padding:0;text-decoration:underline">set for this person · clear</button>`}
-        </div>
-        <div style="margin-top:5px;display:flex;gap:5px;flex-wrap:wrap">
+        <!-- THE CASH DRAWER, as two boxes rather than one box and a link.
+             Three states have to fit: by job, an explicit yes, an explicit no. "By job"
+             is the first box; when it is off the second box IS the decision. Ticking
+             "by job" back on sends null, which is what hands the person back to their
+             role — see staffDrawer and the mini's tri-state.
+             The second box is disabled while the job is deciding, so it reads as what
+             the job currently gives rather than as something you just set. -->
+        <div style="${hd};margin-top:14px">CASH DRAWER</div>
+        <label style="display:flex;gap:8px;align-items:center;font-size:13px;cursor:pointer;margin-top:2px">
+          <input type="checkbox" ${drawer.byRole?'checked':''}
+            onchange="staffEdit('${esc(k)}','drawer',this.checked?null:${drawer.on})">
+          By job<span style="color:var(--text-muted);font-size:11px">${esc((POS_ROLES[reg.role]||{}).label||'no role')} — ${roleGives?'yes':'no'}</span>
+        </label>
+        <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin-top:7px;${drawer.byRole?'opacity:.5':'cursor:pointer'}">
+          <input type="checkbox" ${drawer.on?'checked':''} ${drawer.byRole?'disabled':''}
+            onchange="staffEdit('${esc(k)}','drawer',this.checked)">
+          Can open the cash drawer
+        </label>
+        <div style="margin-top:14px;display:flex;gap:5px;flex-wrap:wrap">
           ${mini?(mini.has_pin?tag(mini.active?'CODE SET':'CODE SET · OFF',mini.active?'#34d399':'#f87171')
                               :tag('NO CODE','#fbbf24'))
                 :tag(reg.pin_pending?'PENDING':'NOT ON THE REGISTER','#fbbf24')}
