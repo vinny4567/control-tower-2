@@ -9793,7 +9793,7 @@ async function staffPushRegister(p,what){
     const r=what==='role'
       ? await posSrv('/api/employees/role',{method:'POST',body:JSON.stringify({id,role:p.register.role})})
       : what==='drawer'
-      ? await posSrv('/api/employees/drawer',{method:'POST',body:JSON.stringify({id,drawer:!!p.register.drawer})})
+      ? await posSrv('/api/employees/drawer',{method:'POST',body:JSON.stringify({id,drawer:p.register.drawer===null||p.register.drawer===undefined?null:!!p.register.drawer})})
       : await posSrv('/api/employees/active',{method:'POST',body:JSON.stringify({id,active:!!p.register.access})});
     // ⚠️ 404 IS NOT A REFUSAL. The mini does not have a drawer endpoint yet. Saying "the
     // register would not take that change" would read as "it said no" when what it said
@@ -9885,7 +9885,12 @@ function staffEdit(k,f,v){
   // ⚠️ STORED AS A REAL true/false, never deleted back to "unset". Un-ticking a manager
   // has to mean "no", not "fall back to the job that says yes" — otherwise taking a
   // manager out of the till would silently do nothing.
-  else if(f==='drawer'){p.register=p.register||{};p.register.drawer=!!v;}
+  // ⚠️ THREE STATES, NOT TWO. true = allow, false = DENY (this is what takes a manager
+  // out of the till), null = no override, fall back to the job. Coercing with !! looks
+  // harmless and is not: once ticked, a person could never go back to "by job", so an
+  // explicit true would outlive the role that justified it — promote a server to manager
+  // and back and they keep the till for ever. The mini stores all three; so do we.
+  else if(f==='drawer'){p.register=p.register||{};p.register.drawer=(v===null?null:!!v);}
   staffTouch(p);
   staffSave();
   staffRefresh();
@@ -10101,10 +10106,16 @@ function staffDetail(p){
             ${Object.entries(POS_ROLES).map(([rk,r])=>`<option value="${rk}" ${reg.role===rk?'selected':''}>${esc(r.label)}</option>`).join('')}
           </select>
         </div>
-        <label style="display:flex;gap:7px;align-items:center;font-size:13px;cursor:pointer;margin-top:5px">
-          <input type="checkbox" ${drawer.on?'checked':''} onchange="staffEdit('${esc(k)}','drawer',this.checked)">
-          Can open the cash drawer${drawer.byRole?'<span style="color:var(--text-muted);font-size:11px;margin-left:4px">by job</span>':''}
-        </label>
+        <div style="display:flex;gap:7px;align-items:center;margin-top:5px">
+          <label style="display:flex;gap:7px;align-items:center;font-size:13px;cursor:pointer">
+            <input type="checkbox" ${drawer.on?'checked':''} onchange="staffEdit('${esc(k)}','drawer',this.checked)">
+            Can open the cash drawer
+          </label>
+          ${drawer.byRole
+            ? '<span style="color:var(--text-muted);font-size:11px">by job</span>'
+            : `<button onclick="staffEdit('${esc(k)}','drawer',null)" title="Back to whatever the job says"
+                 style="background:none;border:none;color:var(--text-muted);font-size:11px;cursor:pointer;padding:0;text-decoration:underline">set for this person · clear</button>`}
+        </div>
         <div style="margin-top:5px;display:flex;gap:5px;flex-wrap:wrap">
           ${mini?(mini.has_pin?tag(mini.active?'CODE SET':'CODE SET · OFF',mini.active?'#34d399':'#f87171')
                               :tag('NO CODE','#fbbf24'))
