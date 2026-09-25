@@ -9657,19 +9657,6 @@ function staffNotesHTML(){
 }
 function staffRefreshNotes(){const el=document.getElementById('staff-notes');if(el)el.innerHTML=staffNotesHTML();else renderViewport();}
 
-// What the badge says is the REGISTER's answer where there is one, and this screen's
-// intention where there is not — never the intention dressed up as the fact.
-function staffRegTag(p,tag){
-  const reg=p.register||{}, m=reg.mini;
-  if(m){
-    if(!m.active)return tag('REGISTER — OFF','#f87171');
-    if(!m.has_pin)return tag('REGISTER — NO CODE','#fbbf24');
-    return tag('REGISTER · '+String(m.role||'').toUpperCase(),'#34d399');
-  }
-  if(reg.access)return tag(reg.pin_set?'REGISTER — UNCONFIRMED':'REGISTER — NO CODE','#fbbf24');
-  return '';
-}
-
 function staffRows(){
   const q=(staffS.q||'').toLowerCase().trim();
   let rows=Object.values(staffS.people).filter(p=>!p.removed);
@@ -9684,9 +9671,9 @@ function staffBodyHTML(){
   const rows=staffRows();
   if(!rows.length)return `<div style="color:var(--text-dim);font-size:13px;padding:12px 0">${staffS.q?'Nobody matches that.':'Nobody yet — pull from the scheduler to start the list.'}</div>`;
   const line=(p)=>{
-    const sched=p.sources&&p.sources.scheduler;
-    const tag=(t,c)=>`<span style="font-size:10px;font-weight:800;letter-spacing:.4px;color:${c};border:1px solid currentColor;border-radius:5px;padding:0 5px;white-space:nowrap">${t}</span>`;
-    const reg=p.register||{};
+    // The badge column came off 9/24 at Vinny's call — where somebody came from is not
+    // something he needs on every row. A person who is inactive or off the schedule still
+    // reads as one: the row itself dims, just below.
     const rates=Object.values(p.rates||{}).filter(x=>x>0);
     const rateTx=rates.length>1?('$'+Math.min(...rates)+'–'+Math.max(...rates)):(rates.length?('$'+rates[0]):(p.rate?('$'+p.rate):''));
     const open=staffS.open===p.key;
@@ -9695,12 +9682,6 @@ function staffBodyHTML(){
       <span style="flex:1;min-width:150px;font-weight:600">${open?'▾':'▸'} ${esc(p.name)}</span>
       <span style="width:78px;font-variant-numeric:tabular-nums;font-size:13px;color:${p.paychex_id?'var(--accent2,#38bdf8)':'#f87171'}">${p.paychex_id?esc(String(p.paychex_id)):'no ID'}</span>
       <span style="width:66px;text-align:right;font-variant-numeric:tabular-nums;font-size:13px;color:var(--text-dim)">${rateTx}</span>
-      <span style="width:150px;display:flex;gap:4px;flex-wrap:wrap">
-        ${staffRegTag(p,tag)}
-        ${sched&&sched.kind==='payroll'?tag('PAYROLL ONLY','#a78bfa'):''}
-        ${p.active===false?tag('INACTIVE','#f87171'):''}
-        ${p.gone?tag('OFF THE SCHEDULE','#fbbf24'):''}
-      </span>
       </div>
       ${open?staffDetail(p):''}
     </div>`;
