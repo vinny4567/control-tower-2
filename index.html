@@ -9769,10 +9769,21 @@ async function staffPushRegister(p,what){
   try{
     const r=what==='role'
       ? await posSrv('/api/employees/role',{method:'POST',body:JSON.stringify({id,role:p.register.role})})
+      : what==='drawer'
+      ? await posSrv('/api/employees/drawer',{method:'POST',body:JSON.stringify({id,drawer:!!p.register.drawer})})
       : await posSrv('/api/employees/active',{method:'POST',body:JSON.stringify({id,active:!!p.register.access})});
+    // ⚠️ 404 IS NOT A REFUSAL. The mini does not have a drawer endpoint yet. Saying "the
+    // register would not take that change" would read as "it said no" when what it said
+    // was "I have never heard of this", and a manager would go looking for a permission
+    // problem that does not exist. The tick is saved here either way.
+    if(r.status===404&&what==='drawer'){
+      staffS.regNote='Drawer permission is saved here, but this register build does not know about it yet.';
+      staffRefreshNotes();return false;
+    }
     if(!r.ok){staffS.regNote='⚠ the register would not take that change: '+((r.body&&r.body.error)||r.status);staffRefreshNotes();return false;}
     p.register.mini=p.register.mini||{};
     if(what==='role')p.register.mini.role=p.register.role;
+    else if(what==='drawer')p.register.mini.drawer=!!p.register.drawer;
     else p.register.mini.active=!!p.register.access;
     staffTouch(p);staffSave();
     return true;
@@ -9787,6 +9798,21 @@ async function staffPushRegister(p,what){
 // typed by a manager, which makes it the data a scheduler pull must never touch —
 // see the merge rules in staffPull.
 const STAFF_JOBS=['Server','Bartender','Busser','Food Runner','Host','Cook','Dishwasher','Manager','Setup'];
+
+// WHO MAY OPEN THE CASH DRAWER. A separate question from who may sign in, and the one
+// worth being narrow about — the drawer is money in a box that anybody standing at the
+// register can reach.
+//
+// Owners and managers have it by their job. Everybody else is off unless a manager says
+// otherwise, which is the whole reason this box exists: a BARTENDER needs the drawer and
+// there is no bartender role here — the bar signs in as a server. Ticking it is an
+// explicit true, and un-ticking it is an explicit FALSE that overrules the job, so a
+// manager who should not be in the till can be taken out of it.
+function staffDrawer(p){
+  const reg=(p&&p.register)||{};
+  if(reg.drawer===true||reg.drawer===false)return{on:reg.drawer,byRole:false};
+  return{on:reg.role==='owner'||reg.role==='manager',byRole:true};
+}
 
 function staffOpen(k){staffS.open=staffS.open===k?null:k;staffRefresh()}
 
@@ -9833,6 +9859,10 @@ function staffEdit(k,f,v){
   else if(f==='paychex')p.paychex_id=String(v||'').trim()||null;
   else if(f==='register'){p.register=p.register||{};p.register.access=!!v;if(!v)p.register.role=null;}
   else if(f==='role'){p.register=p.register||{};p.register.role=v||null;if(v)p.register.access=true;}
+  // ⚠️ STORED AS A REAL true/false, never deleted back to "unset". Un-ticking a manager
+  // has to mean "no", not "fall back to the job that says yes" — otherwise taking a
+  // manager out of the till would silently do nothing.
+  else if(f==='drawer'){p.register=p.register||{};p.register.drawer=!!v;}
   staffTouch(p);
   staffSave();
   staffRefresh();
@@ -9840,6 +9870,7 @@ function staffEdit(k,f,v){
   // was locked out when they were not. Fire-and-report: the panel shows the register's
   // own answer, and says so loudly if the change did not land.
   if(f==='register'||f==='role')staffPushRegister(p,f==='role'?'role':'active').then(()=>staffRefresh());
+  if(f==='drawer')staffPushRegister(p,'drawer').then(()=>staffRefresh());
 }
 // Taking a job off one person. The override goes with it — it was a rate FOR that
 // job, and leaving it behind would put a number on a job they no longer hold.
@@ -9984,6 +10015,7 @@ function staffDetail(p){
   const col='min-width:150px';
   const hd='font-size:10px;font-weight:800;letter-spacing:.6px;color:var(--text-muted);margin-bottom:4px';
   const reg=p.register||{};
+  const drawer=staffDrawer(p);
   const jobs=Object.keys(p.rates||{});
   const known=[...new Set([...(p.positions||[]),...jobs])];
   // THE BOX SHOWS THE DEFAULT WHEN THERE IS NO OVERRIDE, as a placeholder — grey, and
@@ -10046,6 +10078,10 @@ function staffDetail(p){
             ${Object.entries(POS_ROLES).map(([rk,r])=>`<option value="${rk}" ${reg.role===rk?'selected':''}>${esc(r.label)}</option>`).join('')}
           </select>
         </div>
+        <label style="display:flex;gap:7px;align-items:center;font-size:13px;cursor:pointer;margin-top:5px">
+          <input type="checkbox" ${drawer.on?'checked':''} onchange="staffEdit('${esc(k)}','drawer',this.checked)">
+          Can open the cash drawer${drawer.byRole?'<span style="color:var(--text-muted);font-size:11px;margin-left:4px">by job</span>':''}
+        </label>
         <div style="margin-top:5px;display:flex;gap:5px;flex-wrap:wrap">
           ${mini?(mini.has_pin?tag(mini.active?'CODE SET':'CODE SET · OFF',mini.active?'#34d399':'#f87171')
                               :tag('NO CODE','#fbbf24'))
@@ -10307,16 +10343,17 @@ function posStaffHTML(){
     ${posStat('On the schedule',String(all.length-payrollOnly-0),'have a scheduler account')}
     ${posStat('Payroll only',String(payrollOnly),'no account, still paid')}
     ${posStat('No Paychex ID',String(noId),noId?'cannot be exported':'every one can be exported')}
-    ${posStat('On the register',String(all.filter(p=>!p.removed&&p.register&&p.register.mini&&p.register.mini.active&&p.register.mini.has_pin).length),staffS.regAt?'confirmed by the register':'press “Check the register”')}
+    ${posStat('On the register',String(all.filter(p=>!p.removed&&p.register&&p.register.mini&&p.register.mini.active&&p.register.mini.has_pin).length),staffS.regAt?'confirmed by the register':'not yet confirmed by the register')}
   </div>
   <div style="${posCardCss};margin-bottom:14px">
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
-      <button onclick="staffPull()" ${staffS.busy?'disabled':''} style="${posBtn(staffS.busy?'#3f3f46':'#0ea5e9')}">${staffS.busy?'Reading the scheduler…':'⟳ Pull from the schedule app'}</button>
-      <button onclick="staffSetKey()" style="${posBtn('#3f3f46')};padding:8px 12px;font-size:13px">${staffRosterKey()?'Change key':'Set roster key'}</button>
-      <button onclick="staffPullRegister()" title="Read back who can actually sign in" style="${posBtn('#3f3f46')};padding:8px 12px;font-size:13px">Check the register</button>
+      <!-- Pull from the schedule app / Change key / Check the register came off this row
+           at Vinny's call 9/24/2026. staffPull(), staffSetKey() and staffPullRegister()
+           are deliberately still here and still work — the pull is how all 232 people
+           got into this list in the first place, and dropping the button is not the same
+           decision as dropping the importer. Put a button back by calling one. -->
       <input value="${esc(staffS.q||'')}" oninput="staffSearch(this.value)" placeholder="Search name, position, ID"
         style="${posInput};flex:1;min-width:180px">
-      <span style="font-size:12px;color:var(--text-muted)">last pulled ${esc(when)}</span>
     </div>
     <div id="staff-notes">${staffNotesHTML()}</div>
     <div style="display:flex;gap:10px;padding:4px 0;font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px">
