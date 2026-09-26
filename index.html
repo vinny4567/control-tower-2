@@ -6627,6 +6627,7 @@ function posSec(s){posS.sec=s;renderViewport();
   if(s==='items'||s==='printers')posLoadCatalog();
   if(s==='reports'){posS.repShow=null;posS.rep=null;posS.repErr=''}
   if(s==='staff'||s==='jobrates')staffLoad();
+  if(s==='stations')posLoadStations();
   if(s==='grazie')posBoot();
 }
 function posToggleConn(){posS.showConn=!posS.showConn;renderViewport()}
@@ -10509,7 +10510,92 @@ function posStaffHTML(){
   </div>`;
 }
 
-const POS_SECTIONS=[['items','Menu items'],['discounts','Discounts'],['printers','Printers'],['reports','Reports'],['grazie','CRM'],['staff','Staff'],['jobrates','Job rates']];
+// ---- Registers -------------------------------------------------------------------
+//
+// ENROLLING AN iPAD. The device asks (POST /api/stations/claim) and shows a six-digit
+// code; a manager approves that code here; the device collects its token once. Nobody
+// pastes a secret into nine iPads on cutover night, and a mistyped token can no longer
+// masquerade as a network fault.
+//
+// ⚠️ THE MANAGER APPROVES A CODE READ OFF THE DEVICE IN THEIR HAND — NEVER A ROW.
+// The name and hint on a claim are supplied by whatever made it, so anything on the wifi
+// can file a claim calling itself "Bar" and sit in this list looking legitimate. Tapping
+// the convincing row is how it gets approved. Typing the code off the physical iPad
+// cannot approve a different device, because the code IS the binding. So there is a box
+// to type into and deliberately NO approve button on the rows — the list below is
+// awareness, not a control.
+let posStationsS={list:[],pending:[],err:'',busy:false,note:''};
+async function posLoadStations(){
+  if(!posS.srv){posStationsS.err='No register server set — POS tab → Connections.';return renderViewport()}
+  posStationsS.err='';
+  try{
+    const a=await posSrv('/api/stations');
+    posStationsS.list=(a.ok&&a.body&&a.body.stations)||[];
+    const b=await posSrv('/api/stations/pending');
+    posStationsS.pending=(b.ok&&b.body&&(b.body.pending||b.body.claims))||[];
+    if(!a.ok)posStationsS.err=(a.body&&a.body.error)||('the register said '+a.status);
+  }catch(e){posStationsS.err='Could not reach the register — '+(e&&e.message||e)}
+  renderViewport();
+}
+async function posApproveStation(){
+  const el=document.getElementById('station-code');
+  const code=String((el&&el.value)||'').replace(/\D/g,'');
+  if(code.length!==6){posStationsS.note='A code is six digits — read it off the iPad.';return renderViewport()}
+  posStationsS.busy=true;posStationsS.note='';renderViewport();
+  try{
+    const r=await posSrv('/api/stations/claim/approve',{method:'POST',body:JSON.stringify({code})});
+    posStationsS.note=r.ok
+      ? '✓ Approved. The iPad will pick up its token within a couple of seconds.'
+      : '⚠ '+((r.body&&r.body.error)||('the register said '+r.status))
+        +(r.status===404?' — a code expires after ten minutes, and each one can only be used once.':'');
+  }catch(e){posStationsS.note='⚠ could not reach the register — nothing was approved.'}
+  posStationsS.busy=false;
+  await posLoadStations();
+}
+function posStationsHTML(){
+  const S=posStationsS;
+  const seen=S.list.filter(x=>x.seen).length;
+  const row=(x)=>`<div style="display:flex;gap:10px;align-items:baseline;padding:7px 0;border-top:1px solid var(--border);font-size:14px">
+    <span style="flex:1;font-weight:600">${esc(x.name||'(unnamed)')}</span>
+    <span style="font-size:12px;color:${x.seen?'#34d399':'#fbbf24'}">${x.seen?'checked in':'never seen'}</span>
+    ${x.active===false?'<span style="font-size:12px;color:#f87171">revoked</span>':''}</div>`;
+  return `
+  ${posStat('Registers',String(S.list.length),'enrolled')}
+  ${posStat('Checked in',String(seen),seen===S.list.length?'every one has been seen':'some have never called home')}
+  <div style="${posCardCss};margin:14px 0">
+    <div style="font-weight:800;font-size:15px;margin-bottom:2px">Approve an iPad</div>
+    <div style="color:var(--text-muted);font-size:12px;line-height:1.5;margin-bottom:10px">
+      Read the six digits off the iPad in your hand and type them here.
+      <b>Do not approve a device you are not holding</b> — the name a device gives is its own
+      claim about itself, and anything on the wifi can file one calling itself “Bar”. The code
+      is what ties the approval to the iPad in front of you.
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <input id="station-code" inputmode="numeric" maxlength="6" placeholder="000000"
+        onkeydown="if(event.key==='Enter')posApproveStation()"
+        style="${posInput};width:130px;letter-spacing:5px;font-size:20px;text-align:center">
+      <button onclick="posApproveStation()" ${S.busy?'disabled':''} style="${posBtn(S.busy?'#3f3f46':'#0ea5e9')}">${S.busy?'Approving…':'Approve'}</button>
+      <button onclick="posLoadStations()" style="${posBtn('#3f3f46')};padding:8px 12px;font-size:13px">Refresh</button>
+    </div>
+    ${S.note?`<div style="margin-top:9px;font-size:13px;color:${S.note[0]==='✓'?'#34d399':'#fbbf24'}">${esc(S.note)}</div>`:''}
+    ${S.err?`<div style="margin-top:9px;font-size:13px;color:#f87171">${esc(S.err)}</div>`:''}
+  </div>
+  ${S.pending.length?`<div style="${posCardCss};margin-bottom:14px;border-color:#fbbf24">
+    <div style="font-weight:800;font-size:14px;color:#fbbf24">${S.pending.length} device${S.pending.length===1?'':'s'} waiting</div>
+    <div style="color:var(--text-muted);font-size:12px;margin-bottom:4px">What each one calls itself, and where it is asking from. Nothing here is a button — approve by code.</div>
+    ${S.pending.map(c=>`<div style="display:flex;gap:10px;align-items:baseline;padding:6px 0;border-top:1px solid var(--border);font-size:13px">
+      <span style="flex:1;font-weight:600">${esc(c.name||'(unnamed)')}${c.hint?` <span style="color:var(--text-muted);font-weight:400">${esc(c.hint)}</span>`:''}</span>
+      ${c.duplicate_name?'<span style="color:#f87171;font-size:12px;font-weight:700">⚠ same name as another claim</span>':''}
+      <span style="color:var(--text-muted);font-size:12px">${esc(c.source_ip||'')}</span></div>`).join('')}
+  </div>`:''}
+  <div style="${posCardCss}">
+    <div style="font-weight:800;font-size:14px;margin-bottom:2px">Enrolled</div>
+    <div style="color:var(--text-muted);font-size:12px;margin-bottom:4px">“Never seen” means that iPad has been approved but has not called home yet — worth chasing before a cutover, not after.</div>
+    ${S.list.length?S.list.map(row).join(''):'<div style="color:var(--text-dim);font-size:13px;padding:8px 0">No registers enrolled yet.</div>'}
+  </div>`;
+}
+
+const POS_SECTIONS=[['items','Menu items'],['discounts','Discounts'],['printers','Printers'],['reports','Reports'],['grazie','CRM'],['staff','Staff'],['jobrates','Job rates'],['stations','Registers']];
 function posConnHTML(){
   return `<div style="${posCardCss};margin-bottom:14px">
     <div style="font-weight:800;font-size:15px;margin-bottom:6px">Connections</div>
@@ -10528,7 +10614,7 @@ function posConnHTML(){
 //
 // The rail collapses to a horizontal strip on a narrow screen (an iPad in portrait, a
 // phone), because a 150px column out of 400 is most of the page spent on navigation.
-const POS_ICONS={items:'🍝',discounts:'%',printers:'🖨',reports:'📊',grazie:'★',staff:'👤',jobrates:'$'};
+const POS_ICONS={items:'🍝',discounts:'%',printers:'🖨',reports:'📊',grazie:'★',staff:'👤',jobrates:'$',stations:'📱'};
 function posHTML(){
   const nav=POS_SECTIONS.map(([k,l])=>{
     const on=posS.sec===k;
@@ -10543,7 +10629,7 @@ function posHTML(){
       <span style="white-space:nowrap">${l}</span></button>`;
   }).join('');
   const who=(posS.me&&posS.health==='ok'&&posS.sec==='grazie')?`<span style="font-size:13px;color:var(--text-dim)">${esc(posS.me.username)}</span><button onclick="posLogout()" style="${posBtn('#3f3f46')};padding:7px 12px;font-size:13px">Sign out</button>`:'';
-  const body=posS.sec==='items'?posItemsHTML():posS.sec==='discounts'?posDiscountsHTML():posS.sec==='printers'?posPrintersHTML():posS.sec==='reports'?posReportsHTML():posS.sec==='staff'?posStaffHTML():posS.sec==='jobrates'?posJobRatesHTML():posGrazieHTML();
+  const body=posS.sec==='items'?posItemsHTML():posS.sec==='discounts'?posDiscountsHTML():posS.sec==='printers'?posPrintersHTML():posS.sec==='reports'?posReportsHTML():posS.sec==='staff'?posStaffHTML():posS.sec==='jobrates'?posJobRatesHTML():posS.sec==='stations'?posStationsHTML():posGrazieHTML();
   // #viewport is fixed and overflow:hidden, so every tab brings its own scroller —
   // without one, anything past the fold is simply clipped.
   const here=(POS_SECTIONS.find(([k])=>k===posS.sec)||[])[1]||'';
