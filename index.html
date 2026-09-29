@@ -9256,6 +9256,19 @@ function posCrmBodyHTML(d){
     ${posS.crmMember?posMemberHTML():posS.crmResults?posCrmResultsHTML():''}
   </div>`;
 }
+// The CRM sign-in lasts about eight hours, so it lapses mid-shift as a matter of course.
+// When it does, every call here comes back 401 and the old behaviour was a line of red text
+// with no way out of it — the sign-in form only shows when the page knows it is signed out.
+// Clear the session and it comes back on its own, which is the actual fix rather than a
+// message describing one. Returns true when it handled things.
+function posCrmAuthLapsed(r){
+  if(!r||r.status!==401)return false;
+  posSetToken('');posS.me=null;posS.dash=null;
+  posS.err=(r.body&&r.body.error)||'Not signed in — sign in again.';
+  posS.crmResults=null;posS.crmMember=null;
+  renderViewport();
+  return true;
+}
 // Opening Members shows the members — it does not sit there waiting to be asked a second
 // time. The other two views carry their own content already.
 function posCrmView(v){
@@ -9340,7 +9353,8 @@ async function posCrmSearch(){
     posS.crmResults={mode:'search',count:hits.length,shown:hits.length,customers:hits};posCrmPaint();return;
   }
   const r=await posApi('/api/customers?q='+encodeURIComponent(q));
-  posS.crmResults=r.ok?r.body:{count:0,customers:[],error:r.body.error};
+  if(posCrmAuthLapsed(r))return;
+  posS.crmResults=r.ok?r.body:{mode:'search',count:0,customers:[],error:r.body.error};
   posCrmPaint();
 }
 // Re-render WITHOUT throwing the page to the top and losing the search box you just typed
@@ -9372,6 +9386,7 @@ async function posCrmShowAll(tab,offset){
   posCrmPaint();
   const r=await posApi('/api/customers?tab='+encodeURIComponent(posS.crmTab)
     +'&offset='+posS.crmOffset+'&limit='+POS_CRM_PAGE);
+  if(posCrmAuthLapsed(r))return;
   posS.crmResults=r.ok
     ? {mode:'list',tab:posS.crmTab,offset:posS.crmOffset,limit:POS_CRM_PAGE,...r.body}
     : {mode:'list',tab:posS.crmTab,count:0,offset:0,customers:[],error:(r.body&&r.body.error)||('the register answered '+r.status)};
@@ -9381,6 +9396,7 @@ async function posCrmOpen(id){
   if(posS.demo){const m=POS_SAMPLE.members.find(x=>x.id===id);
     posS.crmMember=m?{customer:m,...m}:null;renderViewport();return}
   const r=await posApi('/api/customers/detail?id='+encodeURIComponent(id));
+  if(posCrmAuthLapsed(r))return;
   posS.crmMember=r.ok?r.body:null;
   if(!r.ok)posS.err=r.body.error||'could not load that member';
   renderViewport();
@@ -9393,7 +9409,10 @@ function posCrmResultsHTML(){
   // The two ways to be empty are not the same thing, and saying the wrong one sends
   // somebody hunting for a member who was never there.
   if(r.loading)return '<div style="padding:12px 0;color:var(--text-dim);font-size:14px">Reading the member list…</div>';
-  if(r.error)return `<div style="padding:12px 0;color:#f87171;font-size:14px">Couldn’t read the members — ${esc(String(r.error))}</div>`;
+  if(r.error){const e=String(r.error);
+    // If the server sent a proper sentence, show it as one; only dress up a bare code.
+    const own=/[.!?]$/.test(e.trim())||/\s/.test(e.trim());
+    return `<div style="padding:12px 0;color:#f87171;font-size:14px">${own?esc(e):('Couldn’t read the members — '+esc(e))}</div>`;}
   if(!r.count)return `<div style="padding:12px 0;color:var(--text-dim);font-size:14px">${list
     ?(r.tab==='inactive'?'Nobody is marked inactive.':'No members yet — the Grazie Club roster is empty.')
     :'Nobody by that name, number or address.'}</div>`;
