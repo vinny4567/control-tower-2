@@ -9225,14 +9225,27 @@ function posCrmBodyHTML(d){
   // stacked together — so looking up a member meant reading past everything else. Vinny:
   // "when I hit members, I want that to be the only thing I see on the page".
   const v=posS.crmView||'members';
-  const tab=(k,label,count)=>`<button onclick="posCrmView('${k}')" style="background:${v===k?'var(--accent)':'transparent'};color:${v===k?'#140f02':'var(--text-dim)'};border:1px solid ${v===k?'var(--accent)':'var(--border)'};border-radius:9px;padding:7px 14px;cursor:pointer;font-size:13.5px;font-weight:800;font-family:inherit">${label}${count!=null?` <span style="opacity:.7;font-weight:600">${count}</span>`:''}</button>`;
-  const nav=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+  const tab=(k,label,count)=>{
+    const on=v===k;
+    return `<button onclick="posCrmView('${k}')" style="display:flex;align-items:baseline;gap:7px;width:100%;text-align:left;padding:8px 11px;border:none;border-radius:8px;cursor:pointer;font-family:inherit;font-size:13.5px;font-weight:${on?'800':'600'};background:${on?'var(--accent)':'transparent'};color:${on?'#000':'var(--text-dim)'};-webkit-tap-highlight-color:transparent">
+      <span style="flex:1;white-space:nowrap">${label}</span>
+      ${count!=null?`<span style="opacity:.65;font-weight:600;font-variant-numeric:tabular-nums">${count}</span>`:''}</button>`;
+  };
+  // A rail rather than a strip of tabs — the CRM has grown past what reads as tabs, and the
+  // list of places is going to get longer, not shorter.
+  const nav=`<nav style="width:172px;flex:0 0 172px;display:flex;flex-direction:column;gap:3px;padding-right:12px;border-right:1px solid var(--border)">
     ${tab('members','Members',d.customers||0)}
     ${tab('campaigns','Offers &amp; campaigns',(posS.campaigns&&(posS.campaigns.campaigns||[]).length)||null)}
+    ${tab('signups','Member signups')}
     ${tab('cards','Gift cards')}
-  </div>`;
-  if(v==='campaigns')return nav+posCampaignsHTML();
-  if(v==='cards')return nav+`
+  </nav>`;
+  const page=(inner)=>`<div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">${nav}<div style="flex:1;min-width:280px">${inner}</div></div>`;
+  if(v==='campaigns')return page(posCampaignsHTML());
+  if(v==='signups')return page(`<div style="${posCardCss}">
+    <div style="font-weight:800;font-size:15px;margin-bottom:4px">Member signups</div>
+    <div style="color:var(--text-dim);font-size:13px;line-height:1.6">Not built yet — we are still working out what belongs here (who joined recently, and where they signed up). The tab is in place so it is obvious when it arrives.</div>
+  </div>`);
+  if(v==='cards')return page(`
   <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
     ${posStat('Gift card liability',posMoney(L.total_cents),`${L.cards_with_balance||0} of ${L.cards_total||0} cards carry a balance`)}
     ${posStat('Loaded today',posMoney(T.loaded_cents),`${T.count||0} transactions`)}
@@ -9243,9 +9256,9 @@ function posCrmBodyHTML(d){
     <div style="display:flex;gap:8px;max-width:420px"><input id="pos-card" placeholder="last 7 digits" style="${posInput};flex:1" onkeydown="if(event.key==='Enter')posFindCard()"><button onclick="posFindCard()" style="${posBtn('#3f3f46')}">Find</button></div>
     <div style="color:var(--text-dim);font-size:12px;margin-top:6px">Seven digits never collides across the 6,441 live cards. Fewer works — it asks for more when two cards match.</div>
     ${posS.card?posResultHTML(posS.card,'card'):''}
-  </div>`;
+  </div>`);
   // Members, and only members.
-  return nav+`
+  return page(`
   <div style="${posCardCss}">
     <div style="font-weight:800;font-size:15px;margin-bottom:8px">Find a member</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -9254,7 +9267,7 @@ function posCrmBodyHTML(d){
       <button onclick="posCrmShowAll()" style="${posBtn('#64748b')}" title="Every member, no search needed">Show all</button>
     </div>
     ${posS.crmMember?posMemberHTML():posS.crmResults?posCrmResultsHTML():''}
-  </div>`;
+  </div>`);
 }
 // The CRM sign-in lasts about eight hours, so it lapses mid-shift as a matter of course.
 // When it does, every call here comes back 401 and the old behaviour was a line of red text
