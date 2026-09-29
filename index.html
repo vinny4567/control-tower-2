@@ -6505,6 +6505,7 @@ const POS_SRV_KEY='ct_pos_srv';      // POS server (checks, reports)
 let posS={sec:'items',url:localStorage.getItem(POS_URL_KEY)||'',srv:localStorage.getItem(POS_SRV_KEY)||'',
   health:'unknown',me:null,dash:null,err:'',card:null,cust:null,busy:false,
   cat:null,catErr:'',q:'',catFilter:'all',crmQ:'',crmResults:null,crmMember:null,demo:false,
+  crmMode:'search',crmTab:'active',crmOffset:0,
   rep:null,repRange:null,repShow:null,repErr:'',repBusy:false,showConn:false};
 
 const posBaseUrl=(u)=>(u||'').replace(/\/+$/,'');
@@ -9225,13 +9226,16 @@ function posCrmBodyHTML(d){
     ${posStat('Gift card liability',posMoney(L.total_cents),`${L.cards_with_balance||0} of ${L.cards_total||0} cards carry a balance`)}
     ${posStat('Loaded today',posMoney(T.loaded_cents),`${T.count||0} transactions`)}
     ${posStat('Redeemed today',posMoney(T.redeemed_cents),'')}
-    ${posStat('Members',String(d.customers||0),'Grazie Club records')}
+    ${posStat('Members',String(d.customers||0),
+      posS.crmMode==='list'?('showing the '+(posS.crmTab==='inactive'?'inactive':'active')+' list'):'tap to see them all',
+      'posCrmShowAll()',posS.crmMode==='list')}
   </div>
   <div style="${posCardCss};margin-bottom:14px">
     <div style="font-weight:800;font-size:15px;margin-bottom:8px">Find a member</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <input id="pos-crm-q" value="${esc(posS.crmQ||'')}" placeholder="name, phone or email" style="${posInput};flex:1;min-width:220px" onkeydown="if(event.key==='Enter')posCrmSearch()">
       <button onclick="posCrmSearch()" style="${posBtn('#f59e0b')}">Search</button>
+      <button onclick="posCrmShowAll()" style="${posBtn('#64748b')}" title="Every member, no search needed">Show all</button>
     </div>
     ${posS.crmMember?posMemberHTML():posS.crmResults?posCrmResultsHTML():''}
   </div>
@@ -9324,7 +9328,7 @@ async function posLoadCampaigns(){
 // tap away from putting a reward on the wrong Bianchi's check.
 async function posCrmSearch(){
   const q=((document.getElementById('pos-crm-q')||{}).value||'').trim();
-  posS.crmQ=q;posS.crmMember=null;
+  posS.crmQ=q;posS.crmMember=null;posS.crmMode='search';posS.crmOffset=0;
   if(!q){posS.crmResults=null;renderViewport();return}
   if(posS.demo){
     const t=q.toLowerCase(),d=t.replace(/\D/g,'');
@@ -9334,6 +9338,30 @@ async function posCrmSearch(){
   }
   const r=await posApi('/api/customers?q='+encodeURIComponent(q));
   posS.crmResults=r.ok?r.body:{count:0,customers:[],error:r.body.error};
+  renderViewport();
+}
+// THE WHOLE ROSTER, no search needed. Pressing the Members number did nothing — it was a
+// figure, and the only way to a person was typing a name you already knew. That is fine for
+// looking somebody up and useless for "who are my members".
+const POS_CRM_PAGE=50;
+async function posCrmShowAll(tab,offset){
+  posS.crmMode='list';posS.crmMember=null;posS.crmQ='';
+  posS.crmTab=tab||posS.crmTab||'active';
+  posS.crmOffset=Math.max(0,offset||0);
+  const box=document.getElementById('pos-crm-q'); if(box)box.value='';
+  if(posS.demo){
+    const all=POS_SAMPLE.members.filter(m=>posS.crmTab==='inactive'?m.active===false:m.active!==false);
+    posS.crmResults={mode:'list',tab:posS.crmTab,count:all.length,offset:posS.crmOffset,
+      limit:POS_CRM_PAGE,customers:all.slice(posS.crmOffset,posS.crmOffset+POS_CRM_PAGE)};
+    renderViewport();return;
+  }
+  posS.crmResults={mode:'list',tab:posS.crmTab,count:null,offset:posS.crmOffset,limit:POS_CRM_PAGE,customers:[],loading:true};
+  renderViewport();
+  const r=await posApi('/api/customers?tab='+encodeURIComponent(posS.crmTab)
+    +'&offset='+posS.crmOffset+'&limit='+POS_CRM_PAGE);
+  posS.crmResults=r.ok
+    ? {mode:'list',tab:posS.crmTab,offset:posS.crmOffset,limit:POS_CRM_PAGE,...r.body}
+    : {mode:'list',tab:posS.crmTab,count:0,offset:0,customers:[],error:(r.body&&r.body.error)||('the register answered '+r.status)};
   renderViewport();
 }
 async function posCrmOpen(id){
@@ -9348,7 +9376,14 @@ function posCrmBack(){posS.crmMember=null;renderViewport()}
 
 function posCrmResultsHTML(){
   const r=posS.crmResults||{};
-  if(!r.count)return '<div style="padding:12px 0;color:var(--text-dim);font-size:14px">Nobody by that name, number or address.</div>';
+  const list=r.mode==='list';
+  // The two ways to be empty are not the same thing, and saying the wrong one sends
+  // somebody hunting for a member who was never there.
+  if(r.loading)return '<div style="padding:12px 0;color:var(--text-dim);font-size:14px">Reading the member list…</div>';
+  if(r.error)return `<div style="padding:12px 0;color:#f87171;font-size:14px">Couldn’t read the members — ${esc(String(r.error))}</div>`;
+  if(!r.count)return `<div style="padding:12px 0;color:var(--text-dim);font-size:14px">${list
+    ?(r.tab==='inactive'?'Nobody is marked inactive.':'No members yet — the Grazie Club roster is empty.')
+    :'Nobody by that name, number or address.'}</div>`;
   const rows=(r.customers||[]).map(c=>`<div onclick="posCrmOpen('${esc(c.id)}')" style="display:flex;gap:10px;align-items:baseline;padding:9px 0;border-top:1px solid var(--border);font-size:14px;cursor:pointer;flex-wrap:wrap">
       <span style="flex:1;min-width:150px;font-weight:600">${esc([c.first,c.last].filter(Boolean).join(' ')||'(no name)')}
         ${c.active===false?'<span style="color:var(--text-muted);font-size:11px"> inactive</span>':''}</span>
@@ -9357,8 +9392,25 @@ function posCrmResultsHTML(){
       <span style="width:70px;text-align:right;font-variant-numeric:tabular-nums">${c.available_points||0} pts</span>
     </div>`).join('');
   // Never let a cap read as the whole answer.
-  const more=r.shown<r.count?`<div style="padding:8px 0;color:var(--text-dim);font-size:13px">Showing ${r.shown} of ${r.count} — narrow the search for the rest.</div>`:'';
-  return `<div style="margin-top:10px">${rows}${more}</div>`;
+  if(!list){
+    const more=r.shown<r.count?`<div style="padding:8px 0;color:var(--text-dim);font-size:13px">Showing ${r.shown} of ${r.count} — narrow the search for the rest.</div>`:'';
+    return `<div style="margin-top:10px">${rows}${more}</div>`;
+  }
+  // Browsing the roster: say where you are in it, and give a way through.
+  const off=r.offset||0, got=(r.customers||[]).length, from=off+1, to=off+got;
+  const prev=off>0, next=to<r.count;
+  const tabBtn=(t,label)=>`<button onclick="posCrmShowAll('${t}',0)" style="background:${r.tab===t?'var(--accent)':'transparent'};color:${r.tab===t?'#140f02':'var(--text-dim)'};border:1px solid ${r.tab===t?'var(--accent)':'var(--border)'};border-radius:7px;padding:4px 11px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">${label}</button>`;
+  const pageBtn=(on,off2,label)=>`<button ${on?`onclick="posCrmShowAll('${r.tab}',${off2})"`:'disabled'} style="background:transparent;border:1px solid var(--border);color:${on?'var(--text)':'var(--text-muted)'};border-radius:7px;padding:4px 11px;cursor:${on?'pointer':'default'};font-size:12px;font-family:inherit;opacity:${on?1:.45}">${label}</button>`;
+  return `<div style="margin-top:10px">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding-bottom:8px">
+      ${tabBtn('active','Active')}${tabBtn('inactive','Inactive')}
+      <span style="margin-left:auto;color:var(--text-dim);font-size:12.5px;font-variant-numeric:tabular-nums">${from}–${to} of ${r.count}</span>
+    </div>
+    ${rows}
+    ${(prev||next)?`<div style="display:flex;gap:8px;padding:10px 0 2px">
+      ${pageBtn(prev,Math.max(0,off-(r.limit||POS_CRM_PAGE)),'‹ Previous')}
+      ${pageBtn(next,off+got,'Next ›')}</div>`:''}
+  </div>`;
 }
 
 function posMemberHTML(){
