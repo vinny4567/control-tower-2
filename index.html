@@ -6746,6 +6746,9 @@ function posRedraw(){
 // is being charged.
 let posPrices={};
 let posDiscRates={};   // discount id -> rate in cents (percent stored as basis points × 1)
+// Discount TYPES added here rather than shipped with the register. Same shape the register
+// merges over its built-ins: {id,name,kind:'amount'|'percent'|'open',unit?,rate,manager}.
+let posNewDiscounts=[];
 // Mods added to a group here, as {groupNum: [modName, ...]}. Names only — the price
 // is read from the catalog row at render time, so a mod whose price changes does not
 // go stale inside a group.
@@ -6759,19 +6762,19 @@ async function posLoadPrices(){
   // Fetch everything, compare it to what is already on screen, and only redraw when
   // something actually differs. A reload that changes nothing now changes nothing.
   const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
-  const [r,g,ng,at,rt,pc,nm,gn,gd,ml,dm,cc,mn,dg,ce,co,io,di,ni,sa,dr]=await Promise.all([
+  const [r,g,ng,at,rt,pc,nm,gn,gd,ml,dm,cc,mn,dg,ce,co,io,di,ni,sa,dr,nd]=await Promise.all([
     kvGet('ct_pos_prices'),kvGet('ct_pos_group_mods'),kvGet('ct_pos_new_groups'),
     kvGet('ct_pos_group_attach'),kvGet('ct_pos_routing'),kvGet('ct_pos_print_classes'),
     kvGet('ct_pos_new_mods'),kvGet('ct_pos_group_names'),kvGet('ct_pos_group_detach'),
     kvGet('ct_pos_mod_letters'),kvGet('ct_pos_deleted_mods'),kvGet('ct_pos_choice_cuts'),
-    kvGet('ct_pos_mod_names'),kvGet('ct_pos_deleted_groups'),kvGet('ct_pos_choice_edits'),kvGet('ct_pos_choice_order'),kvGet('ct_pos_item_group_order'),kvGet('ct_pos_deleted_items'),kvGet('ct_pos_new_items'),kvGet('ct_pos_section_adds'),kvGet('ct_pos_disc_rates')]);
+    kvGet('ct_pos_mod_names'),kvGet('ct_pos_deleted_groups'),kvGet('ct_pos_choice_edits'),kvGet('ct_pos_choice_order'),kvGet('ct_pos_item_group_order'),kvGet('ct_pos_deleted_items'),kvGet('ct_pos_new_items'),kvGet('ct_pos_section_adds'),kvGet('ct_pos_disc_rates'),kvGet('ct_pos_new_discounts')]);
   const next={
     prices:(r&&r.v)||{}, mods:(g&&g.v)||{}, groups:(ng&&ng.v)||[], attach:(at&&at.v)||{},
     routing:(rt&&rt.v)||{}, classes:(pc&&pc.v)||[], newMods:(nm&&nm.v)||[],
     names:(gn&&gn.v)||{}, detach:(gd&&gd.v)||{}, letters:(ml&&ml.v)||{},
     deleted:(dm&&dm.v)||[], cuts:(cc&&cc.v)||{}, modNames:(mn&&mn.v)||{},
     delGroups:(dg&&dg.v)||[], choiceEdits:(ce&&ce.v)||{}, choiceOrder:(co&&co.v)||{}, itemGroupOrder:(io&&io.v)||{}, delItems:(di&&di.v)||[], newItems:(ni&&ni.v)||[], sectionAdds:(sa&&sa.v)||{},
-    discRates:(dr&&dr.v)||{},
+    discRates:(dr&&dr.v)||{}, newDiscounts:(nd&&nd.v)||[],
   };
   const changed=!same(next.prices,posPrices)||!same(next.mods,posGroupMods)
     ||!same(next.groups,posNewGroups)||!same(next.attach,posGroupAttach)
@@ -6782,14 +6785,14 @@ async function posLoadPrices(){
     ||!same(next.modNames,posModNames)||!same(next.delGroups,posDeletedGroups)
     ||!same(next.choiceEdits,posChoiceEdits)||!same(next.choiceOrder,posChoiceOrder)
     ||!same(next.itemGroupOrder,posItemGroupOrder)||!same(next.delItems,posDeletedItems)||!same(next.newItems,posNewItems)||!same(next.sectionAdds,posSectionAdds)
-    ||!same(next.discRates,posDiscRates);
+    ||!same(next.discRates,posDiscRates)||!same(next.newDiscounts,posNewDiscounts);
   posPrices=next.prices; posGroupMods=next.mods; posNewGroups=next.groups;
   posGroupAttach=next.attach; posRouting=next.routing; posNewClasses=next.classes;
   posNewMods=next.newMods; posGroupNames=next.names; posGroupDetach=next.detach;
   posModLetters=next.letters; posDeletedMods=next.deleted; posChoiceCuts=next.cuts;
   posModNames=next.modNames; posDeletedGroups=next.delGroups;
   posChoiceEdits=next.choiceEdits; posChoiceOrder=next.choiceOrder; posItemGroupOrder=next.itemGroupOrder; posDeletedItems=next.delItems; posNewItems=next.newItems; posSectionAdds=next.sectionAdds;
-  posDiscRates=next.discRates;
+  posDiscRates=next.discRates; posNewDiscounts=next.newDiscounts;
   posPruneOrphans();   // redraws itself only if it actually drops something
   if(changed)posRedraw();
 }
@@ -7279,6 +7282,16 @@ function posBuildLive(){
     // Discount rates, by the discount's stable id. Money coming off a bill, so it
     // travels the same audited path as a price rather than a second one of its own.
     discounts:{...posDiscRates},
+    // Discount TYPES Vinny added himself. The register ships with eleven; this is how a
+    // twelfth gets there without a release. Rate comes from whatever the rate box says
+    // now, falling back to what was typed when it was added; null means "not set", which
+    // the register shows and refuses to take anything off for — same as a built-in.
+    newDiscounts:(posNewDiscounts||[]).map(d=>({
+      id:d.id, name:d.name, kind:d.kind,
+      ...(d.kind==='open'?{unit:d.unit||'amount'}:{}),
+      rate:(posDiscRates[d.id]!=null?posDiscRates[d.id]:(d.rate!=null?d.rate:null)),
+      manager:!!d.manager,
+    })),
     // ⚠️ NEW FOOD MODS TRAVEL. They did not, and the failure was silent in the worst
     // way: adding one SAVED it, SHOWED it in this list as a row marked new, and then
     // never published it — so the back office said the mod existed and the register had
@@ -7603,6 +7616,59 @@ function posSetDiscRate(id,kind,str){
   }
   kvPush('ct_pos_disc_rates',posDiscRates,Date.now());
   posKeepScroll(()=>{renderViewport();});
+}
+// ADDING A DISCOUNT TYPE. The register ships with eleven and a twelfth used to mean a code
+// change; "Grazie" is the one that prompted this. It rides the same publish as a price, so
+// it reaches the iPads by the audited path rather than a second one of its own.
+function posDiscSlug(name){
+  return 'new:'+String(name).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40);
+}
+function posAddDiscount(){
+  const val=id=>{const el=document.getElementById(id);return el?el.value:''};
+  const name=String(val('nd-name')||'').trim().replace(/\s+/g,' ');
+  if(!name){alert('Give it a name first — that is what the server taps on the register.');return;}
+  const kind=val('nd-kind')||'amount';
+  const manager=!!(document.getElementById('nd-mgr')||{}).checked;
+  let rate=null;
+  if(kind!=='open'){
+    const raw=String(val('nd-rate')||'').replace(/[^0-9.]/g,'');
+    if(raw){
+      const n=parseFloat(raw);
+      if(!isFinite(n)||n<0){alert('That rate is not a number.');return;}
+      if(kind==='percent'&&n>100){alert('A percentage discount cannot be more than 100%.');return;}
+      rate=Math.round(n*100);
+    }
+  }
+  // Two discounts with the same name is how a till ends up with two Grazies at different
+  // rates and no way to tell which one anybody pressed.
+  const clash=((posS.cat&&posS.cat.discounts)||[]).find(d=>String(d.name).toLowerCase()===name.toLowerCase());
+  if(clash){alert('The register already has a discount called “'+clash.name+'”.\n\nSet its rate in the list above rather than adding a second one with the same name.');return;}
+  const id=posDiscSlug(name);
+  if(!id||id==='new:'){alert('That name has no letters or numbers in it.');return;}
+  if((posNewDiscounts||[]).some(d=>d.id===id||String(d.name).toLowerCase()===name.toLowerCase())){
+    alert('You have already added one called that.');return;}
+  posNewDiscounts.push({id,name,kind,...(kind==='open'?{unit:val('nd-unit')||'amount'}:{}),rate,manager});
+  kvPush('ct_pos_new_discounts',posNewDiscounts,Date.now());
+  posRedraw();
+}
+function posRemoveNewDiscount(id){
+  const d=(posNewDiscounts||[]).find(x=>x.id===id); if(!d)return;
+  if(!confirm('Remove “'+d.name+'”?\n\nIf it has already been published, the registers keep it until you publish again.'))return;
+  posNewDiscounts=posNewDiscounts.filter(x=>x.id!==id);
+  delete posDiscRates[id];
+  kvPush('ct_pos_new_discounts',posNewDiscounts,Date.now());
+  kvPush('ct_pos_disc_rates',posDiscRates,Date.now());
+  posRedraw();
+}
+// The Kind dropdown decides whether a rate is even a question.
+function posDiscKindChanged(){
+  const k=(document.getElementById('nd-kind')||{}).value||'amount';
+  const r=document.getElementById('nd-rate-wrap'), u=document.getElementById('nd-unit-wrap');
+  if(r)r.style.display=(k==='open')?'none':'';
+  if(u)u.style.display=(k==='open')?'':'none';
+  const pre=document.getElementById('nd-rate-pre'), suf=document.getElementById('nd-rate-suf');
+  if(pre)pre.textContent=(k==='percent')?'':'$';
+  if(suf)suf.textContent=(k==='percent')?'%':'';
 }
 
 function posSetPrice(enc,str){
@@ -8096,7 +8162,8 @@ function posPublishableCount(){
   const b=posBuildLive();
   return Object.keys(b.items).length+b.deleted.length+b.added.length
     +Object.keys(b.groups||{}).length+Object.keys(b.attach||{}).length
-    +Object.keys(b.detach||{}).length+(b.gone||[]).length;
+    +Object.keys(b.detach||{}).length+(b.gone||[]).length
+    +(b.newDiscounts||[]).length;
 }
 
 // Getting everything typed here into the build. No token changes hands — the page
@@ -8111,14 +8178,14 @@ function posClearChanges(){
   posPrices={};posRouting={};posGroupMods={};posNewGroups=[];posGroupAttach={};
   posNewClasses=[];posNewMods=[];posGroupNames={};posGroupDetach={};
   posChoiceCuts={};posModLetters={};posDeletedMods=[];posModNames={};posDeletedGroups=[];
-  posChoiceEdits={};posChoiceOrder={};posItemGroupOrder={};posDeletedItems=[];posNewItems=[];posSectionAdds={};
+  posChoiceEdits={};posChoiceOrder={};posItemGroupOrder={};posDeletedItems=[];posNewItems=[];posSectionAdds={};posNewDiscounts=[];
   for(const k of ['ct_pos_prices','ct_pos_routing','ct_pos_group_mods','ct_pos_new_groups',
                   'ct_pos_group_attach','ct_pos_print_classes','ct_pos_new_mods',
                   'ct_pos_group_names','ct_pos_group_detach','ct_pos_choice_cuts',
                   'ct_pos_mod_letters','ct_pos_deleted_mods','ct_pos_mod_names',
-                  'ct_pos_deleted_groups','ct_pos_choice_edits','ct_pos_choice_order','ct_pos_item_group_order','ct_pos_deleted_items','ct_pos_new_items','ct_pos_section_adds'])
+                  'ct_pos_deleted_groups','ct_pos_choice_edits','ct_pos_choice_order','ct_pos_item_group_order','ct_pos_deleted_items','ct_pos_new_items','ct_pos_section_adds','ct_pos_new_discounts'])
     kvPush(k,(k==='ct_pos_new_groups'||k==='ct_pos_print_classes'||k==='ct_pos_new_mods'
-              ||k==='ct_pos_deleted_mods'||k==='ct_pos_deleted_groups'||k==='ct_pos_deleted_items'||k==='ct_pos_new_items')?[]:{},Date.now());
+              ||k==='ct_pos_deleted_mods'||k==='ct_pos_deleted_groups'||k==='ct_pos_deleted_items'||k==='ct_pos_new_items'||k==='ct_pos_new_discounts')?[]:{},Date.now());
   posRedraw();
 }
 
@@ -9371,7 +9438,9 @@ function posResultHTML(r,kind){
 // a check anywhere.
 function posDiscountsHTML(){
   if(!posS.cat)return `<div style="${posCardCss}"><div style="color:var(--text-dim)">Loading…</div></div>`;
-  const ds=(posS.cat.discounts)||[];
+  const built=(posS.cat.discounts)||[];
+  const mine=(posNewDiscounts||[]).map(d=>({...d,__new:true}));
+  const ds=built.concat(mine);
   if(!ds.length)return `<div style="${posCardCss}">
     <div style="font-weight:700">No discounts in the snapshot</div>
     <div style="color:var(--text-dim);font-size:13px;margin-top:4px">Re-run <code>npm run catalog</code> in the angelis-pos repo.</div></div>`;
@@ -9401,12 +9470,16 @@ function posDiscountsHTML(){
       <span style="color:var(--text-muted);font-size:13px">${d.kind==='percent'?'%':''}</span></span>`;
   };
   const row=d=>`<div style="display:flex;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);font-size:16px;align-items:baseline;max-width:730px">
-      <span style="width:200px;font-weight:600">${esc(d.name)}</span>
+      <span style="width:200px;font-weight:600">${esc(d.name)}${d.__new?' <span style="font-size:10px;font-weight:800;color:#22c55e;background:rgba(34,197,94,0.14);border-radius:5px;padding:2px 6px;vertical-align:middle">added here</span>':''}</span>
       <span style="width:110px;text-align:right;font-variant-numeric:tabular-nums">${rate(d)}</span>
       <span style="width:110px;padding-left:16px">${d.manager
         ? '<span style="font-size:11px;font-weight:800;color:#a78bfa;background:rgba(167,139,250,0.14);border-radius:5px;padding:2px 7px">manager</span>'
         : '<span style="font-size:12px;color:var(--text-muted)">any server</span>'}</span>
-      <span style="flex:1;font-size:13px;color:var(--text-muted);padding-left:8px">${esc(d.why||'')}</span>
+      <span style="flex:1;font-size:13px;color:var(--text-muted);padding-left:8px">${d.__new
+        ? 'Yours — on the registers once you Publish.'
+        : esc(d.why||'')}</span>
+      ${d.__new?`<button onclick="posRemoveNewDiscount('${esc(d.id)}')" title="Remove this discount"
+        style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:15px;padding:0 4px;line-height:1">✕</button>`:''}
     </div>`;
   const group=([k,label,blurb])=>{
     const list=ds.filter(d=>d.kind===k);
@@ -9432,7 +9505,42 @@ function posDiscountsHTML(){
     <div style="font-weight:800;font-size:14px;color:#f59e0b">${unset} discount${unset===1?'':'s'} without a rate</div>
     <div style="font-size:13px;color:var(--text-dim);margin-top:3px">Left blank rather than guessed — a made-up rate is an undercharge that looks like it works. The register will show these and refuse to take anything off until the rate is set.</div>
   </div>`:''}
-  <div style="color:var(--text-muted);font-size:12px;margin-top:10px">Read-only here — the publish path carries prices and print routing, not discount rates. Set them in the register's <code>discounts.js</code>.</div>`;
+  <div style="${posCardCss};margin-top:14px">
+    <div style="font-weight:800;font-size:15px;margin-bottom:2px">Add a discount</div>
+    <div style="color:var(--text-muted);font-size:12.5px;margin-bottom:10px">It appears in the list above straight away and reaches the iPads when you Publish — same trip as a price.</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+      <label style="display:flex;flex-direction:column;gap:3px">
+        <span style="font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px">Name</span>
+        <input id="nd-name" placeholder="Grazie" onkeydown="if(event.key==='Enter')posAddDiscount()"
+          style="width:190px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:7px 10px;font-size:14px;font-family:inherit;outline:none"></label>
+      <label style="display:flex;flex-direction:column;gap:3px">
+        <span style="font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px">Kind</span>
+        <select id="nd-kind" onchange="posDiscKindChanged()"
+          style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:7px 10px;font-size:14px;font-family:inherit;color-scheme:dark">
+          <option value="amount">Dollars off</option>
+          <option value="percent">Percentage off</option>
+          <option value="open">Typed at the register</option>
+        </select></label>
+      <label id="nd-rate-wrap" style="display:flex;flex-direction:column;gap:3px">
+        <span style="font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px">Rate <span style="font-weight:600;text-transform:none;letter-spacing:0">(optional)</span></span>
+        <span style="display:inline-flex;align-items:center;gap:4px">
+          <span id="nd-rate-pre" style="color:var(--text-muted);font-size:13px">$</span>
+          <input id="nd-rate" inputmode="decimal" placeholder="leave blank to set later" onkeydown="if(event.key==='Enter')posAddDiscount()"
+            style="width:170px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:7px 10px;font-size:14px;font-family:inherit;text-align:right;outline:none">
+          <span id="nd-rate-suf" style="color:var(--text-muted);font-size:13px"></span></span></label>
+      <label id="nd-unit-wrap" style="display:none;flex-direction:column;gap:3px">
+        <span style="font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px">Server types</span>
+        <select id="nd-unit" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:7px 10px;font-size:14px;font-family:inherit;color-scheme:dark">
+          <option value="amount">a $ amount</option>
+          <option value="percent">a %</option>
+        </select></label>
+      <label style="display:flex;align-items:center;gap:7px;padding-bottom:9px;cursor:pointer">
+        <input type="checkbox" id="nd-mgr" style="width:16px;height:16px;cursor:pointer">
+        <span style="font-size:13.5px">Manager only</span></label>
+      <button onclick="posAddDiscount()" style="background:var(--accent);border:none;color:#140f02;font-weight:800;border-radius:8px;padding:8px 16px;cursor:pointer;font-size:13.5px;font-family:inherit">Add</button>
+    </div>
+  </div>
+  <div style="color:var(--text-muted);font-size:12px;margin-top:10px">Rates and added discounts ride the same Publish as prices and print routing. Nothing here reaches a register until you press it.</div>`;
 }
 
 // ---- shell ------------------------------------------------------------------
