@@ -9220,7 +9220,7 @@ function posGrazieHTML(){
 }
 
 function posCrmBodyHTML(d){
-  const L=d.liability||{},T=d.today||{},rev=d.review||[];
+  const L=d.liability||{},T=d.today||{};   // d.review still arrives; the Review queue card was removed 9/29
   return `
   <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
     ${posStat('Gift card liability',posMoney(L.total_cents),`${L.cards_with_balance||0} of ${L.cards_total||0} cards carry a balance`)}
@@ -9238,17 +9238,6 @@ function posCrmBodyHTML(d){
       <button onclick="posCrmShowAll()" style="${posBtn('#64748b')}" title="Every member, no search needed">Show all</button>
     </div>
     ${posS.crmMember?posMemberHTML():posS.crmResults?posCrmResultsHTML():''}
-  </div>
-  <div style="${posCardCss};margin-bottom:14px">
-    <div style="font-weight:800;font-size:15px;margin-bottom:4px">Review queue</div>
-    <div style="color:var(--text-dim);font-size:12px;margin-bottom:10px">Adjustments, loads with no check, and loads of $250 or more. The short list worth reading each morning.</div>
-    ${rev.length?rev.map(t=>`<div style="display:flex;gap:10px;align-items:baseline;padding:8px 0;border-top:1px solid var(--border);font-size:14px;flex-wrap:wrap">
-        <span style="font-variant-numeric:tabular-nums;font-weight:700;min-width:86px">${posMoney(t.amount_cents)}</span>
-        <span style="color:var(--text-dim);min-width:92px">${esc(t.kind||'')}</span>
-        ${t.kind==='load'&&!t.check_id?'<span style="color:#f59e0b;font-size:12px;font-weight:700">no check</span>':''}
-        <span style="flex:1;min-width:140px">${esc(t.reason||t.card||'')}</span>
-        <span style="color:var(--text-muted);font-size:12px">${esc((t.who||'')+' · '+String(t.when||'').slice(0,10))}</span>
-      </div>`).join(''):'<div style="color:var(--text-dim);font-size:14px">Nothing flagged.</div>'}
   </div>
   ${posCampaignsHTML()}
   <div style="${posCardCss}">
@@ -9328,17 +9317,29 @@ async function posLoadCampaigns(){
 // tap away from putting a reward on the wrong Bianchi's check.
 async function posCrmSearch(){
   const q=((document.getElementById('pos-crm-q')||{}).value||'').trim();
+  // Enter on an empty box used to clear the card and leave you looking at nothing, which
+  // reads as "it didn't work". An empty search is a request to see everyone.
+  if(!q)return posCrmShowAll();   // returned, not fired-and-forgotten, so callers can wait on it
   posS.crmQ=q;posS.crmMember=null;posS.crmMode='search';posS.crmOffset=0;
-  if(!q){posS.crmResults=null;renderViewport();return}
   if(posS.demo){
     const t=q.toLowerCase(),d=t.replace(/\D/g,'');
     const hits=POS_SAMPLE.members.filter(m=>`${m.first} ${m.last}`.toLowerCase().includes(t)
       ||(m.email||'').toLowerCase().includes(t)||(d.length>=3&&m.phone.includes(d)));
-    posS.crmResults={count:hits.length,shown:hits.length,customers:hits};renderViewport();return;
+    posS.crmResults={mode:'search',count:hits.length,shown:hits.length,customers:hits};posCrmPaint();return;
   }
   const r=await posApi('/api/customers?q='+encodeURIComponent(q));
   posS.crmResults=r.ok?r.body:{count:0,customers:[],error:r.body.error};
-  renderViewport();
+  posCrmPaint();
+}
+// Re-render WITHOUT throwing the page to the top and losing the search box you just typed
+// in — the results are meant to appear under your hands, not somewhere you have to go and
+// find. Focus goes back to the box so the next search is just typing.
+function posCrmPaint(keepFocus){
+  const el=document.getElementById('pos-crm-q');
+  const focused=keepFocus!==false&&el&&document.activeElement===el;
+  posKeepScroll(()=>{renderViewport()});
+  if(focused){const again=document.getElementById('pos-crm-q');
+    if(again){try{again.focus();again.setSelectionRange(again.value.length,again.value.length)}catch(e){}}}
 }
 // THE WHOLE ROSTER, no search needed. Pressing the Members number did nothing — it was a
 // figure, and the only way to a person was typing a name you already knew. That is fine for
@@ -9353,16 +9354,16 @@ async function posCrmShowAll(tab,offset){
     const all=POS_SAMPLE.members.filter(m=>posS.crmTab==='inactive'?m.active===false:m.active!==false);
     posS.crmResults={mode:'list',tab:posS.crmTab,count:all.length,offset:posS.crmOffset,
       limit:POS_CRM_PAGE,customers:all.slice(posS.crmOffset,posS.crmOffset+POS_CRM_PAGE)};
-    renderViewport();return;
+    posCrmPaint();return;
   }
   posS.crmResults={mode:'list',tab:posS.crmTab,count:null,offset:posS.crmOffset,limit:POS_CRM_PAGE,customers:[],loading:true};
-  renderViewport();
+  posCrmPaint();
   const r=await posApi('/api/customers?tab='+encodeURIComponent(posS.crmTab)
     +'&offset='+posS.crmOffset+'&limit='+POS_CRM_PAGE);
   posS.crmResults=r.ok
     ? {mode:'list',tab:posS.crmTab,offset:posS.crmOffset,limit:POS_CRM_PAGE,...r.body}
     : {mode:'list',tab:posS.crmTab,count:0,offset:0,customers:[],error:(r.body&&r.body.error)||('the register answered '+r.status)};
-  renderViewport();
+  posCrmPaint();
 }
 async function posCrmOpen(id){
   if(posS.demo){const m=POS_SAMPLE.members.find(x=>x.id===id);
