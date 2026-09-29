@@ -6505,7 +6505,7 @@ const POS_SRV_KEY='ct_pos_srv';      // POS server (checks, reports)
 let posS={sec:'items',url:localStorage.getItem(POS_URL_KEY)||'',srv:localStorage.getItem(POS_SRV_KEY)||'',
   health:'unknown',me:null,dash:null,err:'',card:null,cust:null,busy:false,
   cat:null,catErr:'',q:'',catFilter:'all',crmQ:'',crmResults:null,crmMember:null,demo:false,
-  crmMode:'search',crmTab:'active',crmOffset:0,
+  crmMode:'search',crmTab:'active',crmOffset:0,crmView:'members',
   rep:null,repRange:null,repShow:null,repErr:'',repBusy:false,showConn:false};
 
 const posBaseUrl=(u)=>(u||'').replace(/\/+$/,'');
@@ -9220,17 +9220,33 @@ function posGrazieHTML(){
 }
 
 function posCrmBodyHTML(d){
-  const L=d.liability||{},T=d.today||{};   // d.review still arrives; the Review queue card was removed 9/29
-  return `
+  const L=d.liability||{},T=d.today||{};
+  // THREE VIEWS, ONE AT A TIME. This was one long scroll — members, campaigns and gift cards
+  // stacked together — so looking up a member meant reading past everything else. Vinny:
+  // "when I hit members, I want that to be the only thing I see on the page".
+  const v=posS.crmView||'members';
+  const tab=(k,label,count)=>`<button onclick="posCrmView('${k}')" style="background:${v===k?'var(--accent)':'transparent'};color:${v===k?'#140f02':'var(--text-dim)'};border:1px solid ${v===k?'var(--accent)':'var(--border)'};border-radius:9px;padding:7px 14px;cursor:pointer;font-size:13.5px;font-weight:800;font-family:inherit">${label}${count!=null?` <span style="opacity:.7;font-weight:600">${count}</span>`:''}</button>`;
+  const nav=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+    ${tab('members','Members',d.customers||0)}
+    ${tab('campaigns','Offers &amp; campaigns',(posS.campaigns&&(posS.campaigns.campaigns||[]).length)||null)}
+    ${tab('cards','Gift cards')}
+  </div>`;
+  if(v==='campaigns')return nav+posCampaignsHTML();
+  if(v==='cards')return nav+`
   <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
     ${posStat('Gift card liability',posMoney(L.total_cents),`${L.cards_with_balance||0} of ${L.cards_total||0} cards carry a balance`)}
     ${posStat('Loaded today',posMoney(T.loaded_cents),`${T.count||0} transactions`)}
     ${posStat('Redeemed today',posMoney(T.redeemed_cents),'')}
-    ${posStat('Members',String(d.customers||0),
-      posS.crmMode==='list'?('showing the '+(posS.crmTab==='inactive'?'inactive':'active')+' list'):'tap to see them all',
-      'posCrmShowAll()',posS.crmMode==='list')}
   </div>
-  <div style="${posCardCss};margin-bottom:14px">
+  <div style="${posCardCss}">
+    <div style="font-weight:800;font-size:15px;margin-bottom:8px">Look up a gift card</div>
+    <div style="display:flex;gap:8px;max-width:420px"><input id="pos-card" placeholder="last 7 digits" style="${posInput};flex:1" onkeydown="if(event.key==='Enter')posFindCard()"><button onclick="posFindCard()" style="${posBtn('#3f3f46')}">Find</button></div>
+    <div style="color:var(--text-dim);font-size:12px;margin-top:6px">Seven digits never collides across the 6,441 live cards. Fewer works — it asks for more when two cards match.</div>
+    ${posS.card?posResultHTML(posS.card,'card'):''}
+  </div>`;
+  // Members, and only members.
+  return nav+`
+  <div style="${posCardCss}">
     <div style="font-weight:800;font-size:15px;margin-bottom:8px">Find a member</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <input id="pos-crm-q" value="${esc(posS.crmQ||'')}" placeholder="name, phone or email" style="${posInput};flex:1;min-width:220px" onkeydown="if(event.key==='Enter')posCrmSearch()">
@@ -9238,20 +9254,16 @@ function posCrmBodyHTML(d){
       <button onclick="posCrmShowAll()" style="${posBtn('#64748b')}" title="Every member, no search needed">Show all</button>
     </div>
     ${posS.crmMember?posMemberHTML():posS.crmResults?posCrmResultsHTML():''}
-  </div>
-  ${posCampaignsHTML()}
-  <div style="${posCardCss}">
-    <div style="font-weight:800;font-size:15px;margin-bottom:8px">Look up a gift card</div>
-    <div style="display:flex;gap:8px;max-width:420px"><input id="pos-card" placeholder="last 7 digits" style="${posInput};flex:1" onkeydown="if(event.key==='Enter')posFindCard()"><button onclick="posFindCard()" style="${posBtn('#3f3f46')}">Find</button></div>
-    <div style="color:var(--text-dim);font-size:12px;margin-top:6px">Seven digits never collides across the 6,441 live cards. Fewer works — it asks for more when two cards match.</div>
-    ${posS.card?posResultHTML(posS.card,'card'):''}
   </div>`;
 }
+// Opening Members shows the members — it does not sit there waiting to be asked a second
+// time. The other two views carry their own content already.
+function posCrmView(v){
+  posS.crmView=v;
+  if(v==='members'&&!posS.crmMember&&!posS.crmResults){posCrmShowAll();return}
+  posKeepScroll(()=>{renderViewport()});
+}
 
-// ---- offers & campaigns ------------------------------------------------------
-// What is actually running, read from the CRM. AppSuite lists thirteen campaigns; only
-// these six fire on a trigger. The rest were all-member announcements with no offer, plus
-// three tier campaigns pointing at thresholds that were never configured.
 const posTrigWords={before_birthday:'7 days before a birthday',before_anniversary:'7 days before an anniversary',
   after_signup:'the day after signing up',lapsed:'lapsed since last visit'};
 function posTrigger(t){
