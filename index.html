@@ -10248,17 +10248,56 @@ function staffMicrosParse(text){
   const out=[];
   for(let i=1;i<rows.length;i++){
     const r=rows[i], g=(f)=>at[f]==null?'':String(r[at[f]]||'').trim();
-    const nm=at.name!=null?g('name'):(g('first')+' '+g('last'));
+    let nm=at.name!=null?g('name'):(g('first')+' '+g('last'));
+    nm=nm.trim().replace(/\s+/g,' ');
+    // The SAME alias map the tips roster uses, and for the same reason: MICROS spells
+    // Priscilla "Priscill Lagace", and a second record for her is the failure to avoid.
+    const alias=TIP_NAME_ALIASES[staffKeyOf(nm)];
+    if(alias)nm=alias;
     const key=staffKeyOf(nm);
     if(!key)continue;
-    out.push({key,name:nm.trim().replace(/\s+/g,' '),micros_num:g('micros_num')||null,micros_id:g('micros_id')||null});
+    out.push({key,name:nm,micros_num:g('micros_num')||null,micros_id:g('micros_id')||null});
   }
   return {rows:out};
 }
-// WHAT IT WOULD DO, before it does any of it. 157 rows against the roster that feeds
-// payroll is not something to apply and then read about.
+// NOBODY IS EVER CREATED BY THIS IMPORT — Vinny's instruction, and the only safe rule.
+// A name in MICROS that this roster has never heard of is a question, not a new person:
+// adding it is how you end up with two records for one employee and their hours split
+// across both. So an unmatched row is reported and nothing else.
+//
+// The near-misses are where a duplicate actually gets made, because they do not look like
+// duplicates — MICROS's spelling of a name need not be the roster's ("La Gace"/"Lagace",
+// "Priscill"/"Priscilla"). So a surname that matches once spacing is ignored, plus a first
+// name that is a prefix of the other, is offered as a SUGGESTION Vinny confirms one at a
+// time. Never applied automatically: a wrong guess writes one person's employee number
+// onto another, and two people who share a surname are usually siblings, of whom this
+// roster has several sets.
+const staffNoSpace=(x)=>String(x||'').replace(/\s+/g,'');
+function staffNearPeople(key){
+  const parts=String(key||'').split(' ');
+  const first=parts[0]||'', lastNs=staffNoSpace(parts.slice(1).join(' '));
+  if(!first||!lastNs)return [];
+  const hits=[];
+  Object.values(staffS.people).forEach(p=>{
+    if(p.removed)return;
+    const pk=staffKeyOf(p.name);
+    if(!pk||pk===key)return;
+    const pp=pk.split(' '), pf=pp[0]||'', plNs=staffNoSpace(pp.slice(1).join(' '));
+    if(!pf||plNs!==lastNs)return;
+    // 3 characters, because the nickname IS the common case on this roster — Jen/Jennifer,
+    // Sam/Samantha — and those are exactly the near-misses that would otherwise become a
+    // second record for one person. They are only ever SUGGESTED, so the cost of offering
+    // one is a glance; the cost of not offering it is Vinny spotting it himself among the
+    // unmatched. Siblings still fail outright (Connor vs Katelyn, Frank vs Samantha), and
+    // two candidates is refused as ambiguous rather than guessed.
+    const same=pf===first;
+    const pref=(first.startsWith(pf)||pf.startsWith(first))&&Math.min(first.length,pf.length)>=3;
+    if(same||pref)hits.push(p);
+  });
+  return hits;
+}
 function staffMicrosPlan(parsed){
-  const plan={set:[],same:[],unmatched:[],conflicts:[]};
+  const plan={set:[],same:[],unmatched:[],conflicts:[],maybe:[]};
   // Two CSV rows that resolve to ONE person with different ids is not something to guess
   // at — the export really does contain a repeated name.
   const seen=new Map();
@@ -10273,7 +10312,14 @@ function staffMicrosPlan(parsed){
     }
     seen.set(r.key,r);
     const p=staffS.people[r.key];
-    if(!p||p.removed){plan.unmatched.push(r);return}
+    if(!p||p.removed){
+      const near=staffNearPeople(r.key);
+      // Exactly one candidate is a question worth asking. Two is ambiguous, and guessing
+      // between two people is the thing that must not happen — those stay unmatched.
+      if(near.length===1)plan.maybe.push({r,p:near[0]});
+      else plan.unmatched.push(Object.assign({},r,near.length?{ambiguous:near.map(x=>x.name)}:{}));
+      return;
+    }
     const hasNum=p.micros_num!=null&&p.micros_num!=='';
     const hasId=p.micros_id!=null&&p.micros_id!=='';
     // An id already on a person is never quietly replaced with a different one.
@@ -10305,6 +10351,22 @@ async function staffMicrosFile(input){
   renderViewport();
 }
 function staffMicrosCancel(){staffS.micros=null;renderViewport()}
+// Accept ONE suggestion. It joins the list that will be written; it is not written here.
+function staffMicrosSame(i){
+  const m=staffS.micros;
+  if(!m||!m.plan||!m.plan.maybe[i])return;
+  const pick=m.plan.maybe.splice(i,1)[0];
+  m.plan.set.push({p:pick.p,r:pick.r});
+  renderViewport();
+}
+// Reject one — it becomes an unmatched row, which adds nobody.
+function staffMicrosNotSame(i){
+  const m=staffS.micros;
+  if(!m||!m.plan||!m.plan.maybe[i])return;
+  const pick=m.plan.maybe.splice(i,1)[0];
+  m.plan.unmatched.push(pick.r);
+  renderViewport();
+}
 function staffMicrosApply(){
   const m=staffS.micros;
   if(!m||!m.plan)return;
@@ -10316,7 +10378,8 @@ function staffMicrosApply(){
   const n=m.plan.set.length;
   staffS.note='✓ MICROS ids: '+n+' '+(n===1?'person':'people')+' updated'
     +(m.plan.same.length?('  ·  '+m.plan.same.length+' already had theirs'):'')
-    +(m.plan.unmatched.length?('  ·  '+m.plan.unmatched.length+' not on this roster'):'')
+    +(m.plan.unmatched.length?('  ·  '+m.plan.unmatched.length+' not on this roster (nobody added)'):'')
+    +(m.plan.maybe.length?('  ·  '+m.plan.maybe.length+' suggestion'+(m.plan.maybe.length===1?'':'s')+' left undecided'):'')
     +(m.plan.conflicts.length?('  ·  ⚠ '+m.plan.conflicts.length+(m.plan.conflicts.length===1?' needs':' need')+' a decision'):'');
   staffS.micros=null;
   staffSave();
@@ -10333,22 +10396,35 @@ function staffMicrosHTML(){
   const list=(items,render)=>`<div style="max-height:190px;overflow-y:auto;margin-top:6px">${items.map(render).join('')}</div>`;
   return card(`
     <div style="font-weight:800;font-size:15px;margin-bottom:2px">MICROS ids from ${esc(m.file)}</div>
-    <div style="color:var(--text-dim);font-size:12.5px;margin-bottom:10px">${m.count} row${m.count===1?'':'s'} read. Nothing is saved until you press Add them.</div>
+    <div style="color:var(--text-dim);font-size:12.5px;margin-bottom:10px">${m.count} row${m.count===1?'':'s'} read. Nothing is saved until you press Add them, and <b>no new person is ever created</b> — only ids added to people already on this list.</div>
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">
       ${posStat('Will be added',String(P.set.length),'matched by name')}
       ${posStat('Already had one',String(P.same.length),'left alone')}
-      ${posStat('Not on the roster',String(P.unmatched.length),P.unmatched.length?'nobody here by that name':'everybody matched')}
+      ${posStat('Same person?',String(P.maybe.length),P.maybe.length?'spelled differently — you decide':'no near-misses')}
+      ${posStat('Not on the roster',String(P.unmatched.length),P.unmatched.length?'nobody is added by this':'everybody matched')}
       ${posStat('Need a decision',String(P.conflicts.length),P.conflicts.length?'not touched':'no clashes')}
     </div>
     ${P.conflicts.length?`<div style="border-top:1px solid var(--border);padding-top:8px">
       <div style="font-weight:700;font-size:13px;color:#fbbf24">These are left exactly as they are</div>
       ${list(P.conflicts,c=>`<div style="font-size:13px;padding:3px 0"><b>${esc(c.name)}</b> <span style="color:var(--text-dim)">${esc(c.why)}</span></div>`)}
     </div>`:''}
+    ${P.maybe.length?`<div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px">
+      <div style="font-weight:700;font-size:13px;color:var(--accent2,#38bdf8)">Spelled differently — is this the same person?</div>
+      <div style="color:var(--text-muted);font-size:11.5px">Nothing is guessed. Say yes and the id goes on that person; say no and nobody is touched.</div>
+      ${list(P.maybe,(x,i)=>`<div style="display:flex;gap:8px;align-items:center;padding:5px 0;font-size:13px;flex-wrap:wrap">
+        <span style="flex:1;min-width:190px">MICROS <b>${esc(x.r.name)}</b>
+          <span style="color:var(--text-dim);font-variant-numeric:tabular-nums">${esc([x.r.micros_num,x.r.micros_id].filter(Boolean).join(' / '))}</span>
+          <span style="color:var(--text-muted)"> → </span><b>${esc(x.p.name)}</b> here</span>
+        <button onclick="staffMicrosSame(${i})" style="${posBtn('#10b981')};padding:4px 10px;font-size:12px">Same person</button>
+        <button onclick="staffMicrosNotSame(${i})" style="${posBtn('#3f3f46')};padding:4px 10px;font-size:12px">Not them</button>
+      </div>`)}
+    </div>`:''}
     ${P.unmatched.length?`<div style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px">
       <div style="font-weight:700;font-size:13px">In MICROS, not on this roster</div>
-      <div style="color:var(--text-muted);font-size:11.5px">Nobody is added by this — these are for you to reconcile.</div>
+      <div style="color:var(--text-muted);font-size:11.5px">NOBODY IS ADDED by this import — these are yours to reconcile.</div>
       ${list(P.unmatched,u=>`<div style="font-size:13px;padding:3px 0">${esc(u.name)}
-        <span style="color:var(--text-dim);font-variant-numeric:tabular-nums">${esc([u.micros_num,u.micros_id].filter(Boolean).join(' / '))}</span></div>`)}
+        <span style="color:var(--text-dim);font-variant-numeric:tabular-nums">${esc([u.micros_num,u.micros_id].filter(Boolean).join(' / '))}</span>
+        ${u.ambiguous?`<span style="color:#fbbf24;font-size:11.5px"> — could be ${esc(u.ambiguous.join(' or '))}, so left alone</span>`:''}</div>`)}
     </div>`:''}
     <div style="display:flex;gap:10px;margin-top:12px">
       <button onclick="staffMicrosApply()" style="${posBtn('#f59e0b')};padding:9px 15px;font-size:14px" ${P.set.length?'':'disabled'}>Add them to ${P.set.length} ${P.set.length===1?'person':'people'}</button>
