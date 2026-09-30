@@ -6506,6 +6506,7 @@ let posS={sec:'items',url:localStorage.getItem(POS_URL_KEY)||'',srv:localStorage
   health:'unknown',me:null,dash:null,err:'',card:null,cust:null,busy:false,
   cat:null,catErr:'',q:'',catFilter:'all',crmQ:'',crmResults:null,crmMember:null,demo:false,
   crmMode:'search',crmTab:'active',crmOffset:0,crmView:'members',
+  pts:null,grant:null,rewardCat:null,histAll:false,memberErr:'',
   rep:null,repRange:null,repShow:null,repErr:'',repBusy:false,showConn:false};
 
 const posBaseUrl=(u)=>(u||'').replace(/\/+$/,'');
@@ -9137,6 +9138,7 @@ function posDemoOff(){posS.demo=false;posCrmForget();renderViewport()}
 function posCrmForget(){
   posS.crmResults=null;posS.crmMember=null;posS.crmBackTo=null;
   posS.signups=null;posS.growth=null;posS.roi=null;posS.growthTable=false;posS.growthWin=null;
+  posS.pts=null;posS.grant=null;posS.rewardCat=null;posS.histAll=false;posS.memberErr='';
 }
 const posDemoBanner=()=>`<div style="border:1px dashed #f59e0b;border-radius:10px;padding:9px 12px;margin-bottom:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
   <span style="font-size:13px;color:#f59e0b;font-weight:700">Sample data</span>
@@ -9711,12 +9713,19 @@ async function posCrmOpen(id){
     posS.crmMember=m?{customer:m,...m}:null;renderViewport();return}
   const r=await posApi('/api/customers/detail?id='+encodeURIComponent(id));
   if(posCrmAuthLapsed(r))return;
+  // ⚠️ A HALF-FINISHED ADJUSTMENT MUST NOT FOLLOW YOU TO SOMEBODY ELSE. posCrmOpen is also
+  // how the card reloads after a successful save, and the forms are closed by then either
+  // way, so clearing here is right in both paths.
+  const same=posS.crmMember&&posS.crmMember.customer&&posS.crmMember.customer.id===id;
+  if(!same){posS.pts=null;posS.grant=null;posS.histAll=false;posS.memberErr=''}
   posS.crmMember=r.ok?r.body:null;
   if(!r.ok)posS.err=r.body.error||'could not load that member';
   renderViewport();
 }
 function posCrmBack(){
   posS.crmMember=null;
+  // An adjustment in progress belongs to the member you were looking at, not the next one.
+  posS.pts=null;posS.grant=null;posS.histAll=false;posS.memberErr='';
   if(posS.crmBackTo){posS.crmView=posS.crmBackTo;posS.crmBackTo=null}
   renderViewport();
 }
@@ -9763,6 +9772,59 @@ function posCrmResultsHTML(){
   </div>`;
 }
 
+function posPtsHTML(){
+  const P=posS.pts;
+  if(!P)return '';
+  const inp='padding:9px 11px;border:1px solid var(--border);background:var(--surface2);color:var(--text);border-radius:9px;font-size:15px;font-family:inherit';
+  return `<div style="${posCardCss};margin-bottom:12px;border-color:var(--accent)">
+    <div style="font-weight:800;font-size:14px;margin-bottom:8px">Change their points</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start">
+      <input id="pos-pts-delta" value="${esc(P.delta)}" inputmode="numeric" placeholder="e.g. 50 or -50"
+        style="${inp};width:150px" oninput="posPtsField('delta',this.value)">
+      <input id="pos-pts-reason" value="${esc(P.reason)}" placeholder="Why — goes in their history"
+        style="${inp};flex:1;min-width:220px" oninput="posPtsField('reason',this.value)"
+        onkeydown="if(event.key==='Enter')posPtsSave()">
+    </div>
+    <div id="pos-pts-preview" style="font-size:13px;margin-top:8px">${posPtsPreviewHTML()}</div>
+    ${P.err?`<div style="color:#f87171;font-size:13px;margin-top:8px;line-height:1.5">${esc(P.err)}</div>`:''}
+    <div style="display:flex;gap:10px;margin-top:10px;align-items:center;flex-wrap:wrap">
+      <button onclick="posPtsSave()" ${P.busy?'disabled':''} style="${posBtn('#f59e0b')};padding:9px 15px;font-size:14px;opacity:${P.busy?.6:1}">${P.busy?'Saving…':'Save it'}</button>
+      <button onclick="posPtsClose()" style="${posBtn('#3f3f46')};padding:9px 15px;font-size:14px">Cancel</button>
+      ${P.err?'<span style="color:var(--text-muted);font-size:11.5px">Safe to press again — it repeats this one adjustment, it cannot double it.</span>':''}
+    </div>
+  </div>`;
+}
+function posGrantHTML(){
+  const G=posS.grant;
+  if(!G)return '';
+  const inp='padding:9px 11px;border:1px solid var(--border);background:var(--surface2);color:var(--text);border-radius:9px;font-size:15px;font-family:inherit';
+  const cat=(posS.rewardCat&&posS.rewardCat.catalog)||[];
+  const worth=(o)=>o.kind==='amount_off'?posMoney(o.value_cents)
+    :o.kind==='percent_off'?((o.percent||0)+'% off')
+    :(o.item||'free item');
+  return `<div style="${posCardCss};margin:8px 0 10px;border-color:var(--accent)">
+    <div style="font-weight:800;font-size:14px;margin-bottom:8px">Give them an offer</div>
+    ${G.busy&&!cat.length?'<div style="color:var(--text-dim);font-size:13px">Reading the offer list…</div>':`
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start">
+      <select onchange="posGrantField('id',this.value)" style="${inp};flex:1;min-width:240px">
+        <option value="">Which offer…</option>
+        ${cat.map(o=>`<option value="${esc(o.id)}" ${G.id===String(o.id)?'selected':''}>${esc(o.name)}${
+          o.cost_points?' — '+o.cost_points+' pts':''} — ${esc(worth(o))}${
+          o.min_spend_cents?', min '+posMoney(o.min_spend_cents):''}</option>`).join('')}
+      </select>
+      <input type="date" value="${esc(G.expires)}" title="Leave empty for no expiry"
+        style="${inp};width:170px" onchange="posGrantField('expires',this.value)">
+    </div>
+    <input value="${esc(G.note)}" placeholder="Note (optional)" style="${inp};width:100%;margin-top:8px;box-sizing:border-box"
+      oninput="posGrantField('note',this.value)">
+    ${cat.length?'':'<div style="color:var(--text-dim);font-size:12.5px;margin-top:8px">No offers in the catalogue yet.</div>'}`}
+    ${G.err?`<div style="color:#f87171;font-size:13px;margin-top:8px">${esc(G.err)}</div>`:''}
+    <div style="display:flex;gap:10px;margin-top:10px">
+      <button onclick="posGrantSave()" ${G.busy?'disabled':''} style="${posBtn('#10b981')};padding:9px 15px;font-size:14px;opacity:${G.busy?.6:1}">${G.busy?'…':'Give it to them'}</button>
+      <button onclick="posGrantClose()" style="${posBtn('#3f3f46')};padding:9px 15px;font-size:14px">Cancel</button>
+    </div>
+  </div>`;
+}
 function posMemberHTML(){
   const m=posS.crmMember||{},c=m.customer||{};
   const name=[c.first,c.last].filter(Boolean).join(' ').trim()||'(no name on file)';
@@ -9775,11 +9837,14 @@ function posMemberHTML(){
       <span style="color:var(--text-dim);font-variant-numeric:tabular-nums">${esc(c.phone_pretty||'')}</span>
       <button onclick="posCrmBack()" style="${posBtn('#3f3f46')};margin-left:auto;padding:7px 12px;font-size:13px">Back to results</button>
     </div>
+    ${posS.memberErr?`<div style="margin-bottom:10px;padding:9px 12px;border-radius:9px;background:rgba(248,113,113,.12);color:#f87171;font-size:13px;line-height:1.5">${esc(String(posS.memberErr))}
+      <button onclick="posS.memberErr='';renderViewport()" style="background:transparent;border:none;color:inherit;cursor:pointer;font-family:inherit;font-size:13px;text-decoration:underline;margin-left:6px">dismiss</button></div>`:''}
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">
       ${posStat('Status',esc(m.tier_name||'—'),m.next_tier?`${m.points_to_next} points to ${m.next_tier}`:'top tier')}
       ${posStat('Earned this year',String(m.earned_this_year||0),'drives the tier')}
-      ${posStat('Available',String(m.balance||0),'points they can spend')}
+      ${posStat('Available',String(m.balance||0),posS.pts?'changing it below':'press to change it','posPtsOpen()',!!posS.pts)}
     </div>
+    ${posPtsHTML()}
     <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px">
       ${field('Email',c.email)}${field('Birthday',c.birthday)}${field('Anniversary',c.anniversary)}
       ${field('Member since',String(c.created_at||'').slice(0,10))}${field('Source',c.source)}
@@ -9787,22 +9852,165 @@ function posMemberHTML(){
       <div style="min-width:130px"><div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px">Marketing</div>
         <div style="font-size:14px">${c.marketing_ok?'opted in':'<span style="color:var(--text-muted)">no consent on file</span>'}</div></div>
     </div>
-    <div style="font-weight:700;font-size:14px;margin-bottom:4px">Offers they can use tonight</div>
+    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px">
+      <div style="font-weight:700;font-size:14px">Offers they can use tonight</div>
+      <button onclick="posGrantOpen()" style="margin-left:auto;background:transparent;border:1px solid var(--border);color:var(--text-dim);border-radius:7px;padding:4px 10px;cursor:pointer;font-size:12px;font-family:inherit">Give them an offer</button>
+    </div>
+    ${posGrantHTML()}
     ${offers.length?offers.map(o=>`<div style="display:flex;gap:10px;align-items:baseline;padding:7px 0;border-top:1px solid var(--border);font-size:14px;flex-wrap:wrap">
         <span style="flex:1;min-width:150px">${esc(o.name||'')}</span>
         ${o.min_spend_cents?`<span style="color:#f59e0b;font-size:12px;font-weight:700">${posMoney(o.min_spend_cents)} min</span>`:''}
         ${o.max_value_cents?`<span style="color:var(--text-dim);font-size:12px">max ${posMoney(o.max_value_cents)}</span>`:''}
         <span style="color:var(--text-dim);font-size:12px;width:110px;text-align:right">${o.cost_points?o.cost_points+' pts':(o.expires_at?'expires '+String(o.expires_at).slice(0,10):'granted')}</span>
+        ${o.grant_id?`<button onclick="posUngrant('${esc(o.grant_id)}','${esc(String(o.name||'').replace(/'/g,"&#39;"))}')" title="Take this offer back off them"
+          style="background:transparent;border:1px solid var(--border);color:var(--text-muted);border-radius:6px;width:26px;height:26px;cursor:pointer;font-size:14px;font-family:inherit;line-height:1">×</button>`
+        :'<span style="width:26px"></span>'}
       </div>`).join(''):'<div style="color:var(--text-dim);font-size:14px;padding:4px 0">None available.</div>'}
-    <div style="font-weight:700;font-size:14px;margin:14px 0 4px">Points history</div>
-    ${hist.length?hist.slice(0,12).map(t=>`<div style="display:flex;gap:10px;padding:6px 0;border-top:1px solid var(--border);font-size:13px">
+    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:14px 0 4px">
+      <div style="font-weight:700;font-size:14px">Points history</div>
+      ${hist.length>12?`<button onclick="posHistMore()" style="margin-left:auto;background:transparent;border:1px solid var(--border);color:var(--text-dim);border-radius:7px;padding:4px 10px;cursor:pointer;font-size:12px;font-family:inherit">${posS.histAll?'Show less':'All '+hist.length}</button>`:''}
+    </div>
+    ${hist.length?(posS.histAll?hist:hist.slice(0,12)).map(t=>`<div style="display:flex;gap:10px;padding:6px 0;border-top:1px solid var(--border);font-size:13px;flex-wrap:wrap">
         <span style="width:74px;color:var(--text-muted)">${esc(String(t.created_at||'').slice(0,10))}</span>
         <span style="width:64px;color:var(--text-dim)">${esc(t.kind||'')}</span>
         <span style="width:56px;text-align:right;font-variant-numeric:tabular-nums;font-weight:700">${t.delta_points>0?'+':''}${t.delta_points}</span>
-        <span style="flex:1;color:var(--text-dim)">${esc(t.reason||(t.check_id?'check '+t.check_id:''))}</span>
+        <span style="flex:1;min-width:120px;color:var(--text-dim)">${esc(t.reason||(t.check_id?'check '+t.check_id:''))}</span>
+        ${/* WHO changed it is the point of an audit line — an adjustment with no name on it
+             is not much of a record. */''}
+        ${t.employee?`<span style="color:var(--text-muted);font-size:12px">${esc(t.employee)}</span>`:''}
       </div>`).join(''):'<div style="color:var(--text-dim);font-size:14px;padding:4px 0">Nothing yet.</div>'}
+    ${/* ⚠️ VISITS AND SPEND ARE NOT HERE AND MUST NOT BE FAKED. AppSuite shows when somebody
+         was in and what they spent; that is POS transaction data, and MICROS still rings the
+         sales, so we genuinely do not have it before cutover. An empty table with the right
+         headings would read as "this member has never been in". */''}
+    <div style="font-weight:700;font-size:14px;margin:14px 0 4px">Visits and spend</div>
+    <div style="color:var(--text-dim);font-size:13px;line-height:1.6;padding:4px 0">
+      Not here yet — when they came in and what the check came to is rung up by MICROS, and
+      this side never sees it. It starts filling the day the registers go live.
+      <b>This is not saying they have never been in.</b>
+    </div>
   </div>`;
 }
+
+// ---- changing a member: points, and the offers they hold ---------------------
+//
+// ⚠️ THIS IS THE FIRST PLACE THE WATCH TOWER CHANGES A MEMBER'S BALANCE. Everything in
+// the CRM until now was read-only, and points are money to the person holding them — so
+// the rules here are about not doing a thing twice and not doing it by accident.
+//
+// THE IDEMPOTENCY KEY IS KEPT ON FAILURE, DELIBERATELY. A timeout does not tell you
+// whether the adjustment landed; retrying with a fresh key would apply it twice, which is
+// the one outcome worse than it not applying at all. So the key is minted once per
+// intended action and only thrown away on a confirmed success — a retry after an error
+// replays the SAME action and the server collapses it.
+function posUuid(){
+  if(self.crypto&&self.crypto.randomUUID)return self.crypto.randomUUID();
+  return 'k-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10);
+}
+function posPtsOpen(){
+  posS.pts={delta:'',reason:'',key:posUuid(),busy:false,err:''};
+  renderViewport();
+}
+function posPtsClose(){posS.pts=null;renderViewport()}
+function posPtsField(f,v){
+  if(!posS.pts)return;
+  posS.pts[f]=v;
+  // Repaint only the line that reads back the resulting balance — rebuilding the card
+  // would take the field out from under whoever is typing in it.
+  const el=document.getElementById('pos-pts-preview');
+  if(el)el.innerHTML=posPtsPreviewHTML();
+}
+const posPtsDelta=()=>{const n=parseInt(String((posS.pts&&posS.pts.delta)||'').replace(/[^\d-]/g,''),10);return isNaN(n)?0:n};
+function posPtsPreviewHTML(){
+  const m=posS.crmMember||{}, now=Number(m.balance||0), d=posPtsDelta(), after=now+d;
+  if(!d)return '<span style="color:var(--text-dim)">Type how many points to add, or a minus number to take away.</span>';
+  const bad=after<0;
+  return `<span style="font-variant-numeric:tabular-nums">${now} ${d>0?'+':'−'} ${Math.abs(d)} = <b style="color:${bad?'#f87171':'var(--text)'}">${after}</b> points</span>`
+    +(bad?' <span style="color:#f87171">— that would go below zero</span>':'');
+}
+async function posPtsSave(){
+  const P=posS.pts, m=posS.crmMember||{}, c=m.customer||{};
+  if(!P||P.busy)return;
+  const d=posPtsDelta(), reason=String(P.reason||'').trim();
+  // Checked here as well as on the server, so a missing reason costs a glance and not a
+  // round trip — and so the reason is never invented on the member's behalf.
+  if(!d)               {P.err='Say how many points.';return renderViewport()}
+  if(Number(m.balance||0)+d<0){P.err='That would put them below zero.';return renderViewport()}
+  if(!reason)          {P.err='Say why — it goes in their history and it is the only record of this.';return renderViewport()}
+  P.busy=true;P.err='';renderViewport();
+  let r;
+  try{
+    r=await posApi('/api/points/adjust',{method:'POST',body:JSON.stringify({
+      customer_id:c.id, delta_points:d, reason, idempotency_key:P.key })});
+  }catch(e){
+    // The key SURVIVES. Pressing again replays this same adjustment rather than making a
+    // second one, which is the whole reason it is held in state.
+    P.busy=false;P.err='That did not get through: '+(e&&e.message||e)+' — pressing again repeats this same adjustment, it cannot double it.';
+    return renderViewport();
+  }
+  P.busy=false;
+  if(posCrmAuthLapsed(r))return;
+  if(!r.ok){
+    P.err=(r.body&&r.body.error)||('the portal answered '+r.status)
+      +' — pressing again repeats this same adjustment, it cannot double it.';
+    return renderViewport();
+  }
+  posS.pts=null;
+  await posCrmOpen(c.id);     // re-read rather than patching a number locally
+}
+
+// The offers a member holds. The catalogue is fetched once and kept — it is six rows.
+async function posRewardsCatalog(){
+  if(posS.rewardCat)return posS.rewardCat;
+  let r;
+  try{ r=await posApi('/api/rewards') }catch(e){ return {error:String(e&&e.message||e)} }
+  if(posCrmAuthLapsed(r))return {error:'signed out'};
+  posS.rewardCat = r.ok ? (r.body||{}) : {error:(r.body&&r.body.error)||('the portal answered '+r.status)};
+  return posS.rewardCat;
+}
+async function posGrantOpen(){
+  posS.grant={id:'',expires:'',note:'',busy:true,err:''};
+  renderViewport();
+  const cat=await posRewardsCatalog();
+  if(!posS.grant)return;
+  posS.grant.busy=false;
+  if(cat.error)posS.grant.err=cat.error;
+  renderViewport();
+}
+function posGrantClose(){posS.grant=null;renderViewport()}
+function posGrantField(f,v){if(posS.grant)posS.grant[f]=v}
+async function posGrantSave(){
+  const G=posS.grant, m=posS.crmMember||{}, c=m.customer||{};
+  if(!G||G.busy)return;
+  if(!G.id){G.err='Pick which offer.';return renderViewport()}
+  G.busy=true;G.err='';renderViewport();
+  const body={customer_id:c.id,reward_id:G.id};
+  if(G.expires)body.expires_at=G.expires;
+  if(String(G.note||'').trim())body.note=String(G.note).trim();
+  let r;
+  try{ r=await posApi('/api/customers/grant',{method:'POST',body:JSON.stringify(body)}) }
+  catch(e){ G.busy=false;G.err='That did not get through: '+(e&&e.message||e);return renderViewport() }
+  G.busy=false;
+  if(posCrmAuthLapsed(r))return;
+  if(!r.ok){G.err=(r.body&&r.body.error)||('the portal answered '+r.status);return renderViewport()}
+  posS.grant=null;
+  await posCrmOpen(c.id);
+}
+// Taking an offer BACK off somebody is asked about first — it is not an undo, and the
+// server refuses outright if they have already used it.
+async function posUngrant(grantId,label){
+  const m=posS.crmMember||{}, c=m.customer||{};
+  if(!grantId)return;
+  if(!confirm('Take "'+label+'" away from '+([c.first,c.last].filter(Boolean).join(' ')||'this member')+'?\n\nIf they have already used it, it stays.'))return;
+  let r;
+  try{ r=await posApi('/api/customers/ungrant',{method:'POST',body:JSON.stringify({customer_id:c.id,grant_id:grantId})}) }
+  catch(e){ posS.memberErr='Could not remove that offer: '+(e&&e.message||e);return renderViewport() }
+  if(posCrmAuthLapsed(r))return;
+  if(!r.ok){posS.memberErr=(r.body&&r.body.error)||('the portal answered '+r.status);return renderViewport()}
+  posS.memberErr='';
+  await posCrmOpen(c.id);
+}
+function posHistMore(){posS.histAll=!posS.histAll;renderViewport()}
 
 // The lookups never guess: an ambiguous tail asks for more digits rather than picking
 // one. Show that answer as-is instead of inventing a best match.
