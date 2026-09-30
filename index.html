@@ -9790,7 +9790,7 @@ function posPtsHTML(){
     <div style="display:flex;gap:10px;margin-top:10px;align-items:center;flex-wrap:wrap">
       <button onclick="posPtsSave()" ${P.busy?'disabled':''} style="${posBtn('#f59e0b')};padding:9px 15px;font-size:14px;opacity:${P.busy?.6:1}">${P.busy?'Saving…':'Save it'}</button>
       <button onclick="posPtsClose()" style="${posBtn('#3f3f46')};padding:9px 15px;font-size:14px">Cancel</button>
-      ${P.err?'<span style="color:var(--text-muted);font-size:11.5px">Safe to press again — it repeats this one adjustment, it cannot double it.</span>':''}
+      ${P.retry?'<span style="color:var(--text-muted);font-size:11.5px">Safe to press again — it repeats this one adjustment, it cannot double it.</span>':''}
     </div>
   </div>`;
 }
@@ -9907,8 +9907,12 @@ function posUuid(){
   if(self.crypto&&self.crypto.randomUUID)return self.crypto.randomUUID();
   return 'k-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10);
 }
+// A timeout, a 5xx or a dropped connection may have been applied on the far side, so the
+// held key matters and a retry is the right advice. Everything in the 4xx range is the
+// server saying no on purpose.
+const posRetryable=(st)=>!st||st===408||st===429||st>=500;
 function posPtsOpen(){
-  posS.pts={delta:'',reason:'',key:posUuid(),busy:false,err:''};
+  posS.pts={delta:'',reason:'',key:posUuid(),busy:false,err:'',retry:false};
   renderViewport();
 }
 function posPtsClose(){posS.pts=null;renderViewport()}
@@ -9934,10 +9938,10 @@ async function posPtsSave(){
   const d=posPtsDelta(), reason=String(P.reason||'').trim();
   // Checked here as well as on the server, so a missing reason costs a glance and not a
   // round trip — and so the reason is never invented on the member's behalf.
-  if(!d)               {P.err='Say how many points.';return renderViewport()}
-  if(Number(m.balance||0)+d<0){P.err='That would put them below zero.';return renderViewport()}
-  if(!reason)          {P.err='Say why — it goes in their history and it is the only record of this.';return renderViewport()}
-  P.busy=true;P.err='';renderViewport();
+  if(!d)               {P.err='Say how many points.';P.retry=false;return renderViewport()}
+  if(Number(m.balance||0)+d<0){P.err='That would put them below zero.';P.retry=false;return renderViewport()}
+  if(!reason)          {P.err='Say why — it goes in their history and it is the only record of this.';P.retry=false;return renderViewport()}
+  P.busy=true;P.err='';P.retry=false;renderViewport();
   let r;
   try{
     r=await posApi('/api/points/adjust',{method:'POST',body:JSON.stringify({
@@ -9945,14 +9949,18 @@ async function posPtsSave(){
   }catch(e){
     // The key SURVIVES. Pressing again replays this same adjustment rather than making a
     // second one, which is the whole reason it is held in state.
-    P.busy=false;P.err='That did not get through: '+(e&&e.message||e)+' — pressing again repeats this same adjustment, it cannot double it.';
+    P.busy=false;P.err='That did not get through: '+(e&&e.message||e);P.retry=true;
     return renderViewport();
   }
   P.busy=false;
   if(posCrmAuthLapsed(r))return;
   if(!r.ok){
-    P.err=(r.body&&r.body.error)||('the portal answered '+r.status)
-      +' — pressing again repeats this same adjustment, it cannot double it.';
+    P.err=(r.body&&r.body.error)||('the portal answered '+r.status);
+    // ⚠️ "SAFE TO PRESS AGAIN" IS ONLY TRUE OF A FAILURE THAT MIGHT HAVE LANDED. A refused
+    // request — not a manager, below zero, no reason — did NOT happen and will not happen
+    // on a second press, and telling somebody it is safely repeatable when the answer is
+    // "you are not allowed" sends them pressing a button that can only keep saying no.
+    P.retry=posRetryable(r.status);
     return renderViewport();
   }
   posS.pts=null;
