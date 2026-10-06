@@ -9712,13 +9712,17 @@ function posOfferNew(){posS.offerEd={id:null,name:'',kind:'amount_off',value:'',
 function posOfferEdit(id){
   const o=((posS.offers&&posS.offers.offers)||[]).find(x=>String(x.id)===String(id));
   if(!o)return;
+  // 0 IS the empty value for these three on the server (no minimum / no ceiling / costs no
+  // points), so the box shows empty rather than "0.00" — otherwise clearing one, saving and
+  // reopening it reads back as though a $0.00 minimum had been set.
+  const money=(c)=>(c==null||c===0)?'':(c/100).toFixed(2);
   posS.offerEd={id:o.id,name:o.name||'',kind:o.kind||'amount_off',
     value:o.value_cents!=null?(o.value_cents/100).toFixed(2):'',
     percent:o.percent!=null?String(o.percent):'',
     item:o.item||'',
-    min_spend:o.min_spend_cents!=null?(o.min_spend_cents/100).toFixed(2):'',
-    max_value:o.max_value_cents!=null?(o.max_value_cents/100).toFixed(2):'',
-    cost_points:o.cost_points!=null?String(o.cost_points):'',
+    min_spend:money(o.min_spend_cents),
+    max_value:money(o.max_value_cents),
+    cost_points:(o.cost_points==null||o.cost_points===0)?'':String(o.cost_points),
     busy:false,err:'',isNew:false};
   renderViewport();
 }
