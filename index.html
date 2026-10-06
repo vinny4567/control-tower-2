@@ -9357,7 +9357,6 @@ function posCampEditorHTML(){
   // Active offers, plus whatever this campaign already points at — a retired offer must not
   // vanish out of the dropdown and silently become "no offer" on the next save.
   const list=all.filter(o=>o.active!==false||String(o.id)===String(E.offer));
-  let last=''; try{last=localStorage.getItem('ct_test_email')||''}catch(e){}
   const lbl=(t)=>`<div style="font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">${t}</div>`;
   return `<div style="${posCardCss};margin-bottom:14px;border-color:var(--accent)">
     <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px">
@@ -9417,8 +9416,7 @@ function posCampEditorHTML(){
       <button onclick="posCampSave()" ${E.busy?'disabled':''} style="${posBtn('#f59e0b')};padding:9px 15px;font-size:14px;opacity:${E.busy?.6:1}">${E.busy?'…':'Save'}</button>
       <button onclick="posCampClose()" style="${posBtn('#3f3f46')};padding:9px 15px;font-size:14px">Cancel</button>
       <span style="flex:1"></span>
-      <input id="pos-test-to" value="${esc(last)}" placeholder="your@email.com" style="${posFld};width:200px;font-size:13px;padding:7px 10px">
-      <button onclick="posSendTest()" ${E.busy?'disabled':''} style="${posMiniBtn()};padding:8px 12px;font-size:13px" title="Sends a test copy with sample details to that address. No member is emailed.">Send me a test</button>
+      <button onclick="posSendTest()" ${E.busy?'disabled':''} style="${posMiniBtn()};padding:8px 12px;font-size:13px" title="Sends a test copy with sample details to the restaurant inbox. It cannot be aimed at a member.">Send a test</button>
       ${E.id?`<button onclick="posCampDelete('${esc(E.id)}','${esc(String(E.name).replace(/'/g,'&#39;'))}')" style="${posMiniBtn()};padding:8px 12px;font-size:13px;color:#f87171">Delete</button>`:''}
     </div>
   </div>`;
@@ -9506,7 +9504,7 @@ function posCampaignsHTML(){
       <tbody>${(C.campaigns||[]).map(c=>`<tr style="border-top:1px solid var(--border)">
         <td style="padding:8px 8px 8px 0;font-weight:700">${esc(c.name)}</td>
         <td style="padding:8px;color:var(--text-dim)">${esc(posTrigger(c.trigger))}</td>
-        <td style="padding:8px">${esc(c.offer?c.offer.name:c.offer_id)}${c.missing_offer?' <span style="color:#ef4444;font-weight:800">offer missing</span>':''}${c.offer&&c.offer.min_spend_cents?`<div style="color:var(--text-muted);font-size:11px">min ${posMoney(c.offer.min_spend_cents)}</div>`:''}</td>
+        <td style="padding:8px">${esc(c.offer?c.offer.name:c.offer_id)}${c.missing_offer?' <span style="color:#ef4444;font-weight:800">⚠ offer retired or missing — won’t send</span>':(c.offer&&c.offer.active===false?' <span style="color:#fbbf24;font-weight:700">retired</span>':'')}${c.offer&&c.offer.min_spend_cents?`<div style="color:var(--text-muted);font-size:11px">min ${posMoney(c.offer.min_spend_cents)}</div>`:''}</td>
         <td style="padding:8px;font-variant-numeric:tabular-nums">${esc(posOfferWorth(c.offer))}</td>
         <td style="padding:8px;text-align:right;color:var(--text-dim)">${c.days_valid}d</td>
         <td style="padding:8px;text-align:right;font-weight:800;font-variant-numeric:tabular-nums;${c.due_today?'color:#f59e0b':'color:var(--text-muted)'}">${c.due_today||0}</td>
@@ -9634,8 +9632,7 @@ async function posCampToggle(id,on){
   const C=posS.campaigns||{};
   const c=(C.campaigns||[]).find(x=>String(x.id)===String(id));
   if(!c)return;
-  const body={id:c.id,name:c.name,trigger:c.trigger,offer:c.offer_id||(c.offer&&c.offer.id)||null,
-    days_valid:c.days_valid,enabled:!!on,template:(c.template||{subject:'',body:''})};
+  const body={id:c.id,enabled:!!on};   // ONLY the switch — see the warning above
   c.enabled=!!on; renderViewport();                 // answer the press straight away
   let r;
   try{ r=await posApi('/api/campaigns',{method:'POST',body:JSON.stringify(body)}) }
@@ -9694,12 +9691,9 @@ function posMergeIns(tok){
 async function posSendTest(){
   const E=posS.campEd;
   if(!E)return;
-  const el=document.getElementById('pos-test-to');
-  const to=((el&&el.value)||'').trim();
-  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)){E.err='Type the address to send the test to.';return renderViewport()}
-  try{localStorage.setItem('ct_test_email',to)}catch(e){}
+  if(!String(E.subject||'').trim()&&!String(E.body||'').trim()){E.err='Write something first.';return renderViewport()}
   E.busy=true;E.err='';renderViewport();
-  const body={template:{subject:String(E.subject||''),body:String(E.body||'')},to:to};
+  const body={template:{subject:String(E.subject||''),body:String(E.body||'')}};
   if(E.offer)body.offer_id=E.offer;
   let r;
   try{ r=await posApi('/api/email/test-template',{method:'POST',body:JSON.stringify(body)}) }
@@ -9707,7 +9701,7 @@ async function posSendTest(){
   E.busy=false;
   if(posCrmAuthLapsed(r))return;
   if(!r.ok){E.err=(r.body&&r.body.error)||('the portal answered '+r.status);return renderViewport()}
-  E.sent='Test sent to '+to+'.';
+  E.sent='Test sent to '+((r.body&&r.body.to)||'the restaurant inbox')+'.';
   renderViewport();
   setTimeout(()=>{if(posS.campEd)posS.campEd.sent='';renderViewport()},6000);
 }
