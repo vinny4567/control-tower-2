@@ -9735,9 +9735,16 @@ async function posOfferSave(){
   if(E.kind==='amount_off'){ const c=posCents(E.value); if(!(c>0)){E.err='How much comes off?';return renderViewport()} body.value_cents=c; }
   if(E.kind==='percent_off'){ const n=parseFloat(E.percent); if(!(n>0&&n<=100)){E.err='A percentage between 1 and 100.';return renderViewport()} body.percent=n; }
   if(E.kind==='free_item'){ if(!String(E.item||'').trim()){E.err='Which item is free?';return renderViewport()} body.item=String(E.item).trim(); }
-  if(String(E.min_spend||'').trim())body.min_spend_cents=posCents(E.min_spend);
-  if(String(E.max_value||'').trim())body.max_value_cents=posCents(E.max_value);
-  if(String(E.cost_points||'').trim())body.cost_points=parseInt(E.cost_points,10)||0;
+  // ⚠️ EDITS MERGE, so an omitted field is KEPT, not cleared. Emptying the minimum-spend box
+  // and saving would have silently left the old minimum in place — the change looks applied
+  // and isn't. On an edit these three are therefore always sent, as null when the box is
+  // empty, so clearing one actually clears it. A new offer is a full define, so omitting is
+  // fine there and keeps the server's own defaults.
+  const opt=(f,v)=>{ if(String(v||'').trim()!=='')body[f]=f==='cost_points'?(parseInt(v,10)||0):posCents(v);
+                     else if(E.id)body[f]=null; };
+  opt('min_spend_cents',E.min_spend);
+  opt('max_value_cents',E.max_value);
+  opt('cost_points',E.cost_points);
   E.busy=true;E.err='';renderViewport();
   let r;
   try{ r=await posApi('/api/offers',{method:'POST',body:JSON.stringify(body)}) }
