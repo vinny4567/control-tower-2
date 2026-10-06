@@ -6507,6 +6507,7 @@ let posS={sec:'items',url:localStorage.getItem(POS_URL_KEY)||'',srv:localStorage
   cat:null,catErr:'',q:'',catFilter:'all',crmQ:'',crmResults:null,crmMember:null,demo:false,
   crmMode:'search',crmTab:'active',crmOffset:0,crmView:'members',
   pts:null,grant:null,rewardCat:null,histAll:false,memberErr:'',
+  offers:null,campTab:'campaigns',campEd:null,offerEd:null,prev:null,lastField:'body',
   rep:null,repRange:null,repShow:null,repErr:'',repBusy:false,showConn:false};
 
 const posBaseUrl=(u)=>(u||'').replace(/\/+$/,'');
@@ -9139,6 +9140,7 @@ function posCrmForget(){
   posS.crmResults=null;posS.crmMember=null;posS.crmBackTo=null;
   posS.signups=null;posS.growth=null;posS.roi=null;posS.growthTable=false;posS.growthWin=null;
   posS.pts=null;posS.grant=null;posS.rewardCat=null;posS.histAll=false;posS.memberErr='';
+  posS.offers=null;posS.campEd=null;posS.offerEd=null;posS.prev=null;posS.campErr='';posS.offerErr='';
 }
 const posDemoBanner=()=>`<div style="border:1px dashed #f59e0b;border-radius:10px;padding:9px 12px;margin-bottom:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
   <span style="font-size:13px;color:#f59e0b;font-weight:700">Sample data</span>
@@ -9258,7 +9260,12 @@ function posCrmBodyHTML(d){
     ${tab('cards','Gift cards')}
   </nav>`;
   const page=(inner)=>`<div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">${nav}<div style="flex:1;min-width:280px">${inner}</div></div>`;
-  if(v==='campaigns')return page(posCampaignsHTML()+posRoiHTML());
+  if(v==='campaigns'){
+    const sw=(k,label)=>`<button onclick="posCampTab('${k}')" style="background:${posS.campTab===k?'var(--accent)':'transparent'};color:${posS.campTab===k?'#140f02':'var(--text-dim)'};border:1px solid ${posS.campTab===k?'var(--accent)':'var(--border)'};border-radius:8px;padding:5px 13px;cursor:pointer;font-size:12.5px;font-weight:700;font-family:inherit">${label}</button>`;
+    const bar=`<div style="display:flex;gap:8px;margin-bottom:12px">${sw('campaigns','Campaigns')}${sw('offers','Offers')}</div>`;
+    if(posS.campTab==='offers')return page(bar+posOffersHTML());
+    return page(bar+posCampEditorHTML()+posCampaignsHTML()+posRoiHTML());
+  }
   if(v==='signups')return page(posGrowthHTML()+posSignupsHTML());
   if(v==='cards')return page(`
   <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
@@ -9322,6 +9329,158 @@ function posOfferWorth(o){
   if(o.kind==='percent_off') return (o.percent||0)+'% off';
   return o.item||'free item';
 }
+const posFld='padding:9px 11px;border:1px solid var(--border);background:var(--surface2);color:var(--text);border-radius:9px;font-size:15px;font-family:inherit;box-sizing:border-box';
+const posMiniBtn=(bg)=>`background:${bg||'transparent'};border:1px solid var(--border);color:var(--text-dim);border-radius:7px;padding:4px 10px;cursor:pointer;font-size:12px;font-family:inherit;white-space:nowrap`;
+
+function posPrevHTML(){
+  const P=posS.prev;
+  if(!P)return `<div style="color:var(--text-muted);font-size:12.5px;padding:10px 0">Write a subject and a message and the finished email appears here.</div>`;
+  if(P.busy&&!P.html)return `<div style="color:var(--text-dim);font-size:13px;padding:10px 0">Building the preview…</div>`;
+  if(P.err)return `<div style="color:#f87171;font-size:13px;padding:10px 0">${esc(String(P.err))}</div>`;
+  if(!P.html)return '';
+  // Sandboxed: this is email HTML rendered by the server, and it has no business running
+  // scripts or navigating inside this page.
+  return `<div style="font-size:12px;color:var(--text-dim);margin-bottom:6px">Subject: <b style="color:var(--text)">${esc(P.subject||'')}</b>${P.busy?' <span style="color:var(--text-muted)">· updating…</span>':''}</div>
+    <iframe sandbox="" title="Email preview" srcdoc="${String(P.html).replace(/&/g,'&amp;').replace(/"/g,'&quot;')}"
+      style="width:100%;height:420px;border:1px solid var(--border);border-radius:10px;background:#fff"></iframe>
+    <div style="color:var(--text-muted);font-size:11.5px;margin-top:6px">Sample details — the real one uses the member's own name and offer. The unsubscribe link and the address are added for you.</div>`;
+}
+
+function posCampEditorHTML(){
+  const E=posS.campEd;
+  if(!E)return '';
+  const ed=(posS.campaigns&&posS.campaigns.editor)||{};
+  const types=ed.trigger_types&&ed.trigger_types.length?ed.trigger_types:['before_birthday','before_anniversary','after_signup','lapsed'];
+  const merges=ed.merge_fields&&ed.merge_fields.length?ed.merge_fields
+    :[{key:'{{first}}',label:'First name'},{key:'{{last}}',label:'Last name'},{key:'{{offer}}',label:'The offer'},{key:'{{expires}}',label:'Expires'}];
+  const all=(posS.offers&&posS.offers.offers)||[];
+  // Active offers, plus whatever this campaign already points at — a retired offer must not
+  // vanish out of the dropdown and silently become "no offer" on the next save.
+  const list=all.filter(o=>o.active!==false||String(o.id)===String(E.offer));
+  let last=''; try{last=localStorage.getItem('ct_test_email')||''}catch(e){}
+  const lbl=(t)=>`<div style="font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">${t}</div>`;
+  return `<div style="${posCardCss};margin-bottom:14px;border-color:var(--accent)">
+    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+      <div style="font-weight:800;font-size:15px">${E.isNew?'New campaign':'Edit campaign'}</div>
+      <label style="margin-left:auto;display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer">
+        <input type="checkbox" ${E.enabled?'checked':''} onchange="posCampEnabled(this.checked)" style="width:16px;height:16px;cursor:pointer">
+        <span style="font-weight:700;color:${E.enabled?'var(--accent)':'var(--text-muted)'}">${E.enabled?'Switched on':'Switched off'}</span>
+      </label>
+    </div>
+
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+      <div style="flex:2;min-width:220px">${lbl('Name')}
+        <input id="pos-camp-name" value="${esc(E.name)}" placeholder="Birthday treat" style="${posFld};width:100%" oninput="posCampField('name',this.value)"></div>
+      <div style="flex:1;min-width:190px">${lbl('When it fires')}
+        <select style="${posFld};width:100%" onchange="posCampField('type',this.value);renderViewport()">
+          ${types.map(t=>`<option value="${esc(t)}" ${E.type===t?'selected':''}>${esc(POS_TRIG_LABEL[t]||t)}</option>`).join('')}
+        </select></div>
+      <div style="flex:0 0 120px">${lbl(E.type==='lapsed'?'Days away':'Days before')}
+        <input value="${esc(String(E.days))}" inputmode="numeric" style="${posFld};width:100%" oninput="posCampField('days',this.value)"></div>
+    </div>
+
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+      <div style="flex:2;min-width:220px">${lbl('What they get')}
+        <select style="${posFld};width:100%" onchange="posCampField('offer',this.value)">
+          <option value="">No offer — just a message</option>
+          ${list.map(o=>`<option value="${esc(o.id)}" ${String(E.offer)===String(o.id)?'selected':''}>${esc(o.name)}${o.phrase?' — '+esc(o.phrase):''}${o.active===false?' (retired)':''}</option>`).join('')}
+        </select></div>
+      <div style="flex:0 0 140px">${lbl('Good for (days)')}
+        <input value="${esc(String(E.days_valid))}" inputmode="numeric" style="${posFld};width:100%" oninput="posCampField('days_valid',this.value)"></div>
+    </div>
+
+    <div style="border-top:1px solid var(--border);padding-top:12px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+        <div style="font-weight:800;font-size:14px">The email</div>
+        <span style="color:var(--text-muted);font-size:11.5px">Press one of these to drop it in where the cursor is</span>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+        ${merges.map(m=>`<button onclick="posMergeIns('${esc(m.key)}')" style="${posMiniBtn()}" title="${esc(m.sample?('e.g. '+m.sample):m.key)}">${esc(m.label||m.key)}</button>`).join('')}
+      </div>
+      ${lbl('Subject')}
+      <input id="pos-camp-subject" value="${esc(E.subject)}" placeholder="A little something for your birthday"
+        style="${posFld};width:100%;margin-bottom:10px" onfocus="posS.lastField='subject'" oninput="posCampField('subject',this.value)">
+      ${lbl('Message')}
+      <textarea id="pos-camp-body" rows="7" placeholder="Hi {{first}}, happy birthday from all of us at Angeli's…"
+        style="${posFld};width:100%;resize:vertical;font-size:14px;line-height:1.5" onfocus="posS.lastField='body'" oninput="posCampField('body',this.value)">${esc(E.body)}</textarea>
+    </div>
+
+    <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:12px">
+      <div style="font-weight:800;font-size:14px;margin-bottom:6px">What they will get</div>
+      <div id="pos-prev">${posPrevHTML()}</div>
+    </div>
+
+    ${E.err?`<div style="color:#f87171;font-size:13px;margin-top:10px;line-height:1.5">${esc(E.err)}</div>`:''}
+    ${E.sent?`<div style="color:#34d399;font-size:13px;margin-top:10px">${esc(E.sent)}</div>`:''}
+
+    <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;align-items:center">
+      <button onclick="posCampSave()" ${E.busy?'disabled':''} style="${posBtn('#f59e0b')};padding:9px 15px;font-size:14px;opacity:${E.busy?.6:1}">${E.busy?'…':'Save'}</button>
+      <button onclick="posCampClose()" style="${posBtn('#3f3f46')};padding:9px 15px;font-size:14px">Cancel</button>
+      <span style="flex:1"></span>
+      <input id="pos-test-to" value="${esc(last)}" placeholder="your@email.com" style="${posFld};width:200px;font-size:13px;padding:7px 10px">
+      <button onclick="posSendTest()" ${E.busy?'disabled':''} style="${posMiniBtn()};padding:8px 12px;font-size:13px" title="Sends a test copy with sample details to that address. No member is emailed.">Send me a test</button>
+      ${E.id?`<button onclick="posCampDelete('${esc(E.id)}','${esc(String(E.name).replace(/'/g,'&#39;'))}')" style="${posMiniBtn()};padding:8px 12px;font-size:13px;color:#f87171">Delete</button>`:''}
+    </div>
+  </div>`;
+}
+
+function posOffersHTML(){
+  const O=posS.offers;
+  const head=(inner)=>`<div style="${posCardCss};margin-bottom:14px">${inner}</div>`;
+  if(!O)return head('<div style="color:var(--text-dim);font-size:13px">Loading…</div>');
+  if(O.error)return head(`<div style="color:#f87171;font-size:13px">${esc(String(O.error))}</div>`);
+  const all=O.offers||[];
+  const live=all.filter(o=>o.active!==false), retired=all.filter(o=>o.active===false);
+  const E=posS.offerEd;
+  const lbl=(t)=>`<div style="font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">${t}</div>`;
+  const row=(o)=>`<div style="display:flex;gap:10px;align-items:baseline;padding:8px 0;border-top:1px solid var(--border);font-size:14px;flex-wrap:wrap">
+    <span style="flex:1;min-width:160px;font-weight:600;${o.active===false?'color:var(--text-muted)':''}">${esc(o.name)}</span>
+    <span style="flex:1;min-width:120px;color:var(--text-dim);font-size:13px">${esc(o.phrase||'')}</span>
+    ${o.min_spend_cents?`<span style="color:#f59e0b;font-size:12px;font-weight:700">${posMoney(o.min_spend_cents)} min</span>`:''}
+    ${o.cost_points?`<span style="color:var(--text-dim);font-size:12px">${o.cost_points} pts</span>`:''}
+    <button onclick="posOfferEdit('${esc(o.id)}')" style="${posMiniBtn()}">Edit</button>
+    <button onclick="posOfferActive('${esc(o.id)}',${o.active===false?'true':'false'},'${esc(String(o.name).replace(/'/g,'&#39;'))}')" style="${posMiniBtn()}">${o.active===false?'Put back':'Retire'}</button>
+  </div>`;
+  const editor=E?`<div style="${posCardCss};margin-bottom:14px;border-color:var(--accent)">
+    <div style="font-weight:800;font-size:15px;margin-bottom:10px">${E.isNew?'New offer':'Edit offer'}</div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px">
+      <div style="flex:2;min-width:200px">${lbl('Name')}<input value="${esc(E.name)}" placeholder="Free Dessert" style="${posFld};width:100%" oninput="posOfferField('name',this.value)"></div>
+      <div style="flex:1;min-width:170px">${lbl('Kind')}
+        <select style="${posFld};width:100%" onchange="posOfferKind(this.value)">
+          <option value="amount_off" ${E.kind==='amount_off'?'selected':''}>Money off</option>
+          <option value="percent_off" ${E.kind==='percent_off'?'selected':''}>Percent off</option>
+          <option value="free_item" ${E.kind==='free_item'?'selected':''}>A free item</option>
+        </select></div>
+      <div style="flex:1;min-width:150px">
+        ${E.kind==='amount_off'?lbl('How much off ($)')+`<input value="${esc(E.value)}" inputmode="decimal" placeholder="10.00" style="${posFld};width:100%" oninput="posOfferField('value',this.value)">`:''}
+        ${E.kind==='percent_off'?lbl('Percent off')+`<input value="${esc(E.percent)}" inputmode="numeric" placeholder="10" style="${posFld};width:100%" oninput="posOfferField('percent',this.value)">`:''}
+        ${E.kind==='free_item'?lbl('Which item')+`<input value="${esc(E.item)}" placeholder="dessert" style="${posFld};width:100%" oninput="posOfferField('item',this.value)">`:''}
+      </div>
+    </div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      <div style="flex:1;min-width:140px">${lbl('Minimum spend ($)')}<input value="${esc(E.min_spend)}" inputmode="decimal" placeholder="optional" style="${posFld};width:100%" oninput="posOfferField('min_spend',this.value)"></div>
+      <div style="flex:1;min-width:140px">${lbl('Most it can be worth ($)')}<input value="${esc(E.max_value)}" inputmode="decimal" placeholder="optional" style="${posFld};width:100%" oninput="posOfferField('max_value',this.value)"></div>
+      <div style="flex:1;min-width:140px">${lbl('Costs points')}<input value="${esc(E.cost_points)}" inputmode="numeric" placeholder="optional" style="${posFld};width:100%" oninput="posOfferField('cost_points',this.value)"></div>
+    </div>
+    ${E.err?`<div style="color:#f87171;font-size:13px;margin-top:10px">${esc(E.err)}</div>`:''}
+    <div style="display:flex;gap:10px;margin-top:12px">
+      <button onclick="posOfferSave()" ${E.busy?'disabled':''} style="${posBtn('#f59e0b')};padding:9px 15px;font-size:14px;opacity:${E.busy?.6:1}">${E.busy?'…':'Save'}</button>
+      <button onclick="posOfferClose()" style="${posBtn('#3f3f46')};padding:9px 15px;font-size:14px">Cancel</button>
+    </div>
+  </div>`:'';
+  return editor+head(`
+    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px">
+      <div style="font-weight:800;font-size:15px">Offers</div>
+      <button onclick="posOfferNew()" style="${posMiniBtn()};margin-left:auto">Add an offer</button>
+    </div>
+    <div style="color:var(--text-dim);font-size:12px;margin-bottom:6px">${live.length} being offered${retired.length?', '+retired.length+' retired':''}. Retiring one stops it being given out — anybody already holding it keeps it.</div>
+    ${posS.offerErr?`<div style="color:#f87171;font-size:13px;padding:6px 0">${esc(posS.offerErr)}</div>`:''}
+    ${live.map(row).join('')||'<div style="color:var(--text-dim);font-size:14px;padding:6px 0">Nothing being offered yet.</div>'}
+    ${retired.length?`<div style="margin-top:14px;padding-top:8px;border-top:1px solid var(--border)">
+      <div style="font-weight:700;font-size:13px;color:var(--text-muted);margin-bottom:2px">Retired</div>
+      ${retired.map(row).join('')}</div>`:''}`);
+}
+
 function posCampaignsHTML(){
   const C=posS.campaigns;
   if(!C) return `<div style="${posCardCss};margin-bottom:14px">
@@ -9331,8 +9490,10 @@ function posCampaignsHTML(){
   return `<div style="${posCardCss};margin-bottom:14px">
     <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px">
       <div style="font-weight:800;font-size:15px">Offers &amp; campaigns</div>
+      <button onclick="posCampNew()" style="${posMiniBtn()};order:9;margin-left:auto">Add a campaign</button>
       ${mult.length?`<span style="font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:5px;background:rgba(245,158,11,.15);color:#f59e0b">${esc(mult[0].name)} — active today</span>`:''}
     </div>
+    ${posS.campErr?`<div style="color:#f87171;font-size:13px;margin:6px 0">${esc(posS.campErr)}</div>`:''}
     <div style="color:var(--text-dim);font-size:12px;margin-bottom:10px">
       ${(C.campaigns||[]).length} campaigns fire on a trigger. ${C.due_today_total||0} member${C.due_today_total===1?'':'s'} qualify today${C.to_notify_today?`, ${C.to_notify_today} opted in to email`:''}.
     </div>
@@ -9340,14 +9501,19 @@ function posCampaignsHTML(){
       <thead><tr style="text-align:left;color:var(--text-muted);font-size:11px;letter-spacing:.06em;text-transform:uppercase">
         <th style="padding:6px 8px 6px 0">Campaign</th><th style="padding:6px 8px">Fires</th>
         <th style="padding:6px 8px">Offer</th><th style="padding:6px 8px">Worth</th>
-        <th style="padding:6px 8px;text-align:right">Good for</th><th style="padding:6px 0;text-align:right">Due today</th></tr></thead>
+        <th style="padding:6px 8px;text-align:right">Good for</th><th style="padding:6px 8px;text-align:right">Due today</th>
+        <th style="padding:6px 0;text-align:right">On</th><th style="padding:6px 0"></th></tr></thead>
       <tbody>${(C.campaigns||[]).map(c=>`<tr style="border-top:1px solid var(--border)">
         <td style="padding:8px 8px 8px 0;font-weight:700">${esc(c.name)}</td>
         <td style="padding:8px;color:var(--text-dim)">${esc(posTrigger(c.trigger))}</td>
         <td style="padding:8px">${esc(c.offer?c.offer.name:c.offer_id)}${c.missing_offer?' <span style="color:#ef4444;font-weight:800">offer missing</span>':''}${c.offer&&c.offer.min_spend_cents?`<div style="color:var(--text-muted);font-size:11px">min ${posMoney(c.offer.min_spend_cents)}</div>`:''}</td>
         <td style="padding:8px;font-variant-numeric:tabular-nums">${esc(posOfferWorth(c.offer))}</td>
         <td style="padding:8px;text-align:right;color:var(--text-dim)">${c.days_valid}d</td>
-        <td style="padding:8px 0;text-align:right;font-weight:800;font-variant-numeric:tabular-nums;${c.due_today?'color:#f59e0b':'color:var(--text-muted)'}">${c.due_today||0}</td></tr>`).join('')}</tbody>
+        <td style="padding:8px;text-align:right;font-weight:800;font-variant-numeric:tabular-nums;${c.due_today?'color:#f59e0b':'color:var(--text-muted)'}">${c.due_today||0}</td>
+        <td style="padding:8px 0;text-align:right">
+          <button onclick="posCampToggle('${esc(c.id)}',${c.enabled===false?'true':'false'})" title="${c.enabled===false?'Switched off — press to turn it on':'Switched on — press to turn it off'}"
+            style="background:${c.enabled===false?'transparent':'rgba(245,158,11,.18)'};border:1px solid ${c.enabled===false?'var(--border)':'var(--accent)'};color:${c.enabled===false?'var(--text-muted)':'var(--accent)'};border-radius:999px;padding:2px 10px;cursor:pointer;font-size:11px;font-weight:800;font-family:inherit">${c.enabled===false?'off':'on'}</button></td>
+        <td style="padding:8px 0;text-align:right"><button onclick="posCampEdit('${esc(c.id)}')" style="${posMiniBtn()}">Edit</button></td></tr>`).join('')}</tbody>
     </table></div>
     <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:10px">
       <div style="font-weight:700;font-size:13px;margin-bottom:6px">Points catalogue</div>
@@ -9362,6 +9528,246 @@ function posCampaignsHTML(){
     </div>
   </div>`;
 }
+// ---- the offers & campaigns editor ------------------------------------------
+//
+// This page was read-only, and the reason given at the time was good: there was nowhere for
+// an edit to go. The CRM now takes writes, so the guard comes off — but every one of these
+// writes is a real marketing offer attached to real money, so nothing here saves on a
+// keystroke. You open a thing, change it, and press Save.
+//
+// ⚠️ THE RENDERER REBUILDS THE WHOLE PAGE, so the editor's own inputs must NEVER go through
+// renderViewport while they are being typed in — that replaces the element under the cursor
+// and drops characters. Everything in the editor writes to state directly and repaints only
+// the preview, exactly like the member search.
+async function posLoadOffers(force){
+  if(posS.offers&&!force)return posS.offers;
+  if(posS.demo){posS.offers={offers:[]};return posS.offers}
+  let r;
+  try{ r=await posApi('/api/offers') }catch(e){ r={ok:false,status:0,body:{error:String(e&&e.message||e)}} }
+  if(posCrmAuthLapsed(r))return null;
+  posS.offers = r.ok ? (r.body||{offers:[]}) : {offers:[],error:(r.body&&r.body.error)||('the portal answered '+r.status)};
+  return posS.offers;
+}
+function posCampTab(t){posS.campTab=t;posS.campEd=null;posS.offerEd=null;posS.prev=null;
+  if(t==='offers')posLoadOffers().then(()=>posKeepScroll(()=>renderViewport()));
+  else posKeepScroll(()=>renderViewport());}
+
+const POS_TRIG_LABEL={before_birthday:'Before their birthday',before_anniversary:'Before their anniversary',
+  after_signup:'After they sign up',lapsed:'When they stop coming in'};
+
+// A campaign the user is about to change, held apart from posS.campaigns so cancelling is
+// free and a half-finished edit never leaks into the list behind it.
+function posCampEdit(id){
+  const C=posS.campaigns||{};
+  const c=(C.campaigns||[]).find(x=>String(x.id)===String(id));
+  if(!c)return;
+  posS.campEd={
+    id:c.id, name:c.name||'',
+    type:(c.trigger&&c.trigger.type)||'before_birthday',
+    days:(c.trigger&&c.trigger.days!=null)?c.trigger.days:7,
+    offer:c.offer_id||(c.offer&&c.offer.id)||'',
+    days_valid:c.days_valid!=null?c.days_valid:14,
+    enabled:c.enabled!==false,
+    subject:(c.template&&c.template.subject)||'',
+    body:(c.template&&c.template.body)||'',
+    busy:false,err:'',isNew:false,
+  };
+  posS.prev=null;
+  posLoadOffers().then(()=>{renderViewport();posPrevSoon()});
+  renderViewport();
+}
+function posCampNew(){
+  posS.campEd={id:null,name:'',type:'before_birthday',days:7,offer:'',days_valid:14,enabled:false,
+    subject:'',body:'',busy:false,err:'',isNew:true};
+  posS.prev=null;
+  posLoadOffers().then(()=>renderViewport());
+  renderViewport();
+}
+function posCampClose(){posS.campEd=null;posS.prev=null;renderViewport()}
+// Writes to state WITHOUT a re-render — see the warning at the top of this block.
+function posCampField(f,v){
+  if(!posS.campEd)return;
+  posS.campEd[f]=(f==='days'||f==='days_valid')?(String(v).replace(/[^0-9]/g,'')):v;
+  if(f==='subject'||f==='body'||f==='offer'||f==='days_valid')posPrevSoon();
+}
+function posCampEnabled(v){ if(posS.campEd){posS.campEd.enabled=!!v; renderViewport()} }
+async function posCampSave(){
+  const E=posS.campEd;
+  if(!E||E.busy)return;
+  if(!String(E.name||'').trim()){E.err='Give it a name.';return renderViewport()}
+  if(E.type==='lapsed'&&!(+E.days>0)){E.err='Say how many days since their last visit.';return renderViewport()}
+  if(E.enabled&&!String(E.subject||'').trim()){E.err='An email needs a subject before it can be switched on.';return renderViewport()}
+  if(E.enabled&&!String(E.body||'').trim()){E.err='An email needs a message before it can be switched on.';return renderViewport()}
+  E.busy=true;E.err='';renderViewport();
+  const body={
+    name:String(E.name).trim(),
+    trigger:{type:E.type,days:+E.days||0},
+    offer:E.offer||null,
+    days_valid:+E.days_valid||0,
+    enabled:!!E.enabled,
+    template:{subject:String(E.subject||''),body:String(E.body||'')},
+  };
+  if(E.id)body.id=E.id;
+  let r;
+  try{ r=await posApi('/api/campaigns',{method:'POST',body:JSON.stringify(body)}) }
+  catch(e){ E.busy=false;E.err='That did not get through: '+(e&&e.message||e);return renderViewport() }
+  E.busy=false;
+  if(posCrmAuthLapsed(r))return;
+  if(!r.ok){E.err=(r.body&&r.body.error)||('the portal answered '+r.status);return renderViewport()}
+  posS.campEd=null;posS.prev=null;
+  await posLoadCampaigns();
+}
+// Deleting is asked about by name, because "Campaign 3" tells nobody what is going away.
+async function posCampDelete(id,name){
+  if(!confirm('Delete the "'+name+'" campaign?\n\nIt stops firing for everybody. Offers already given out are not touched.'))return;
+  let r;
+  try{ r=await posApi('/api/campaigns/delete',{method:'POST',body:JSON.stringify({id})}) }
+  catch(e){ posS.campErr='Could not delete it: '+(e&&e.message||e);return renderViewport() }
+  if(posCrmAuthLapsed(r))return;
+  if(!r.ok){posS.campErr=(r.body&&r.body.error)||('the portal answered '+r.status);return renderViewport()}
+  posS.campErr='';posS.campEd=null;posS.prev=null;
+  await posLoadCampaigns();
+}
+// The on/off switch from the LIST, which is the one thing worth doing without opening the
+// editor — it is how you stop a campaign in a hurry.
+async function posCampToggle(id,on){
+  const C=posS.campaigns||{};
+  const c=(C.campaigns||[]).find(x=>String(x.id)===String(id));
+  if(!c)return;
+  const body={id:c.id,name:c.name,trigger:c.trigger,offer:c.offer_id||(c.offer&&c.offer.id)||null,
+    days_valid:c.days_valid,enabled:!!on,template:(c.template||{subject:'',body:''})};
+  c.enabled=!!on; renderViewport();                 // answer the press straight away
+  let r;
+  try{ r=await posApi('/api/campaigns',{method:'POST',body:JSON.stringify(body)}) }
+  catch(e){ c.enabled=!on; posS.campErr='Could not change that: '+(e&&e.message||e); return renderViewport() }
+  if(posCrmAuthLapsed(r))return;
+  if(!r.ok){c.enabled=!on; posS.campErr=(r.body&&r.body.error)||('the portal answered '+r.status); return renderViewport()}
+  posS.campErr='';
+  await posLoadCampaigns();
+}
+
+// ---- the preview -------------------------------------------------------------
+// The server renders the finished email; this page never guesses what it looks like. It is
+// re-asked as they type, debounced, and it paints into its own node so the box they are
+// typing in is left alone.
+let posPrevTimer=null;
+function posPrevSoon(){ if(posPrevTimer)clearTimeout(posPrevTimer); posPrevTimer=setTimeout(()=>{posPrevTimer=null;posPrevNow()},500); }
+async function posPrevNow(){
+  const E=posS.campEd;
+  if(!E)return;
+  if(!String(E.subject||'').trim()&&!String(E.body||'').trim()){posS.prev=null;posPrevPaint();return}
+  posS.prev=Object.assign({},posS.prev||{},{busy:true,err:''});
+  posPrevPaint();
+  const body={template:{subject:String(E.subject||''),body:String(E.body||'')},days_valid:+E.days_valid||0};
+  if(E.offer)body.offer_id=E.offer;
+  let r;
+  try{ r=await posApi('/api/email/preview',{method:'POST',body:JSON.stringify(body)}) }
+  catch(e){ posS.prev={busy:false,err:String(e&&e.message||e)};return posPrevPaint() }
+  if(posCrmAuthLapsed(r))return;
+  posS.prev = r.ok ? {busy:false,err:'',subject:r.body.subject||'',html:r.body.html||'',sample:r.body.sample}
+                   : {busy:false,err:(r.body&&r.body.error)||('the portal answered '+r.status)};
+  posPrevPaint();
+}
+function posPrevPaint(){
+  const el=document.getElementById('pos-prev');
+  if(el)el.innerHTML=posPrevHTML();
+}
+
+// Merge fields go in at the cursor, so they land mid-sentence where you want them rather
+// than tacked on the end.
+function posMergeIns(tok){
+  const id=posS.lastField==='subject'?'pos-camp-subject':'pos-camp-body';
+  const el=document.getElementById(id);
+  if(!el||!posS.campEd)return;
+  const a=el.selectionStart==null?el.value.length:el.selectionStart;
+  const b=el.selectionEnd==null?a:el.selectionEnd;
+  el.value=el.value.slice(0,a)+tok+el.value.slice(b);
+  posCampField(posS.lastField==='subject'?'subject':'body',el.value);
+  el.focus();
+  const c=a+tok.length;
+  try{el.setSelectionRange(c,c)}catch(e){}
+}
+
+// ⚠️ THIS SENDS A REAL EMAIL. It is a test copy with sample data to an address typed here,
+// never to a member — but it leaves the building, so it is a deliberate press with the
+// address in front of you, not a side effect of anything else.
+async function posSendTest(){
+  const E=posS.campEd;
+  if(!E)return;
+  const el=document.getElementById('pos-test-to');
+  const to=((el&&el.value)||'').trim();
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)){E.err='Type the address to send the test to.';return renderViewport()}
+  try{localStorage.setItem('ct_test_email',to)}catch(e){}
+  E.busy=true;E.err='';renderViewport();
+  const body={template:{subject:String(E.subject||''),body:String(E.body||'')},to:to};
+  if(E.offer)body.offer_id=E.offer;
+  let r;
+  try{ r=await posApi('/api/email/test-template',{method:'POST',body:JSON.stringify(body)}) }
+  catch(e){ E.busy=false;E.err='Could not send it: '+(e&&e.message||e);return renderViewport() }
+  E.busy=false;
+  if(posCrmAuthLapsed(r))return;
+  if(!r.ok){E.err=(r.body&&r.body.error)||('the portal answered '+r.status);return renderViewport()}
+  E.sent='Test sent to '+to+'.';
+  renderViewport();
+  setTimeout(()=>{if(posS.campEd)posS.campEd.sent='';renderViewport()},6000);
+}
+
+// ---- offers ------------------------------------------------------------------
+function posOfferNew(){posS.offerEd={id:null,name:'',kind:'amount_off',value:'',percent:'',item:'',
+  min_spend:'',max_value:'',cost_points:'',busy:false,err:'',isNew:true};renderViewport()}
+function posOfferEdit(id){
+  const o=((posS.offers&&posS.offers.offers)||[]).find(x=>String(x.id)===String(id));
+  if(!o)return;
+  posS.offerEd={id:o.id,name:o.name||'',kind:o.kind||'amount_off',
+    value:o.value_cents!=null?(o.value_cents/100).toFixed(2):'',
+    percent:o.percent!=null?String(o.percent):'',
+    item:o.item||'',
+    min_spend:o.min_spend_cents!=null?(o.min_spend_cents/100).toFixed(2):'',
+    max_value:o.max_value_cents!=null?(o.max_value_cents/100).toFixed(2):'',
+    cost_points:o.cost_points!=null?String(o.cost_points):'',
+    busy:false,err:'',isNew:false};
+  renderViewport();
+}
+function posOfferClose(){posS.offerEd=null;renderViewport()}
+function posOfferField(f,v){if(posS.offerEd)posS.offerEd[f]=v}
+function posOfferKind(k){if(posS.offerEd){posS.offerEd.kind=k;renderViewport()}}
+const posCents=(v)=>{const n=parseFloat(String(v).replace(/[^0-9.]/g,''));return isNaN(n)?null:Math.round(n*100)};
+async function posOfferSave(){
+  const E=posS.offerEd;
+  if(!E||E.busy)return;
+  if(!String(E.name||'').trim()){E.err='Give it a name.';return renderViewport()}
+  const body={name:String(E.name).trim(),kind:E.kind};
+  if(E.id)body.id=E.id;
+  if(E.kind==='amount_off'){ const c=posCents(E.value); if(!(c>0)){E.err='How much comes off?';return renderViewport()} body.value_cents=c; }
+  if(E.kind==='percent_off'){ const n=parseFloat(E.percent); if(!(n>0&&n<=100)){E.err='A percentage between 1 and 100.';return renderViewport()} body.percent=n; }
+  if(E.kind==='free_item'){ if(!String(E.item||'').trim()){E.err='Which item is free?';return renderViewport()} body.item=String(E.item).trim(); }
+  if(String(E.min_spend||'').trim())body.min_spend_cents=posCents(E.min_spend);
+  if(String(E.max_value||'').trim())body.max_value_cents=posCents(E.max_value);
+  if(String(E.cost_points||'').trim())body.cost_points=parseInt(E.cost_points,10)||0;
+  E.busy=true;E.err='';renderViewport();
+  let r;
+  try{ r=await posApi('/api/offers',{method:'POST',body:JSON.stringify(body)}) }
+  catch(e){ E.busy=false;E.err='That did not get through: '+(e&&e.message||e);return renderViewport() }
+  E.busy=false;
+  if(posCrmAuthLapsed(r))return;
+  if(!r.ok){E.err=(r.body&&r.body.error)||('the portal answered '+r.status);return renderViewport()}
+  posS.offerEd=null;
+  await posLoadOffers(true);
+  renderViewport();
+}
+// Retire, never delete — a campaign and every offer already handed out point at this id.
+async function posOfferActive(id,on,name){
+  if(!on&&!confirm('Retire "'+name+'"?\n\nIt stops being offered. Anybody already holding it keeps it, and you can put it back.'))return;
+  let r;
+  try{ r=await posApi('/api/offers/active',{method:'POST',body:JSON.stringify({id,active:!!on})}) }
+  catch(e){ posS.offerErr='Could not change that: '+(e&&e.message||e);return renderViewport() }
+  if(posCrmAuthLapsed(r))return;
+  if(!r.ok){posS.offerErr=(r.body&&r.body.error)||('the portal answered '+r.status);return renderViewport()}
+  posS.offerErr='';
+  await posLoadOffers(true);
+  renderViewport();
+}
+
 async function posLoadCampaigns(){
   if(posS.demo){posS.campaigns=POS_SAMPLE.campaigns;return renderViewport()}
   try{ const r=await posApi('/api/campaigns'); posS.campaigns = r.ok ? r.body : {campaigns:[],catalog:[],multipliers:[]}; }
