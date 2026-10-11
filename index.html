@@ -9119,9 +9119,9 @@ const POS_SAMPLE={
      birthday:'04-11',anniversary:'06-02',created_at:'2019-03-14',source:'catering',marketing_ok:true,active:true,
      tier_name:'Gold Rewards Member',next_tier:'Platinum Rewards Member',points_to_next:167,earned_this_year:833,balance:412,
      rewards:[{name:'Free Dessert!',min_spend_cents:2500,expires_at:'2026-09-30',grant_id:'g1'},
-              {name:'$25 Reward',cost_points:250}],
+              {name:'$10 Reward',cost_points:100}],
      history:[{created_at:'2026-08-24',kind:'earn',delta_points:47,check_id:'1146'},
-              {created_at:'2026-08-11',kind:'redeem',delta_points:-250,reason:'$25 Reward'},
+              {created_at:'2026-08-11',kind:'redeem',delta_points:-100,reason:'$10 Reward'},
               {created_at:'2026-07-30',kind:'earn',delta_points:61,check_id:'0987'}]},
     {id:'s2',first:'Tom',last:'Crowley',phone:'6304046396',phone_pretty:'(630) 404-6396',email:'tc@example.com',
      birthday:'11-02',anniversary:null,created_at:'2024-08-26',source:'pos',marketing_ok:false,active:true,
@@ -9518,7 +9518,9 @@ function posRulesHTML(){
     + dim(`A member has to be on the check before it is paid to earn. A manager can add a member to a just-closed check the same night — not a previous night.`))}
 
   ${card('Redeeming rewards',
-    p(`${big('10 points = $1 off')} — so 100 points = $10, and 250 points = $25.`)
+    p(`${big('10 points = $1 off')} — points turn into a ${big('$10 reward at 100 points')}.`)
+    + dim(`That is the <b>only</b> points reward — there is no $25 or $50 one. 100 points is about
+       $200 spent, or half that on a Double Points Tuesday.`)
     + dim(`A reward is either bought with points or given by a campaign — birthday, anniversary, win-back.`))}
 
   ${card('What earns and what doesn’t', ul([
