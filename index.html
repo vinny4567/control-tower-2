@@ -9196,6 +9196,12 @@ async function posFindCust(){const q=((document.getElementById('pos-cust')||{}).
   const r=await posApi('/api/customer?q='+encodeURIComponent(q));posS.cust=r.body;renderViewport()}
 
 function posGrazieHTML(){
+  // ⚠️ THE RULES PAGE DOES NOT WAIT FOR THE PORTAL. Everything else in here reads member
+  // records and has to have a connection, but the rules are written down, not fetched —
+  // and the moment somebody actually needs them is mid-shift on an iPad, which is exactly
+  // the device that cannot reach the mini. Gating them behind the portal would have made
+  // them unavailable precisely when they are wanted.
+  if((posS.crmView||'members')==='rules')return posCrmBodyHTML(posS.dash||{});
   if(posS.demo){
     const S=POS_SAMPLE;
     posS.dash={...S.dash,review:S.review};
@@ -9258,6 +9264,7 @@ function posCrmBodyHTML(d){
     ${tab('campaigns','Offers &amp; campaigns',(posS.campaigns&&(posS.campaigns.campaigns||[]).length)||null)}
     ${tab('signups','Member signups',(posS.signups&&posS.signups.count)||null)}
     ${tab('cards','Gift cards')}
+    ${tab('rules','Rules')}
   </nav>`;
   const page=(inner)=>`<div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">${nav}<div style="flex:1;min-width:280px">${inner}</div></div>`;
   if(v==='campaigns'){
@@ -9267,6 +9274,7 @@ function posCrmBodyHTML(d){
     return page(bar+posCampEditorHTML()+posCampaignsHTML()+posRoiHTML());
   }
   if(v==='signups')return page(posGrowthHTML()+posSignupsHTML());
+  if(v==='rules')return page(posRulesHTML());
   if(v==='cards')return page(`
   <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
     ${posStat('Gift card liability',posMoney(L.total_cents),`${L.cards_with_balance||0} of ${L.cards_total||0} cards carry a balance`)}
@@ -9477,6 +9485,65 @@ function posOffersHTML(){
     ${retired.length?`<div style="margin-top:14px;padding-top:8px;border-top:1px solid var(--border)">
       <div style="font-weight:700;font-size:13px;color:var(--text-muted);margin-bottom:2px">Retired</div>
       ${retired.map(row).join('')}</div>`:''}`);
+}
+
+// ---- the Grazie Club rules ---------------------------------------------------
+//
+// Static, on purpose. This is the page somebody opens mid-shift to settle "does this check
+// earn?" — so it must answer without the portal running, and it must not be able to
+// disagree with itself. The live offer LIST is managed on the Offers & campaigns page; what
+// is written here is the policy, and the two are linked rather than duplicated.
+//
+// ⚠️ ONE WORDING CHANGE FROM THE PORTAL'S COPY: the 70% Costco gift-card rule is Vinny's
+// policy but the register does not apply it yet — there is no way to flag a discounted card
+// at payment. Stating it flatly on a rules screen would have staff believing the till is
+// doing something it isn't, so it is marked as hand-applied until that lands.
+function posRulesHTML(){
+  const card=(title,inner)=>`<div style="${posCardCss};margin-bottom:14px">
+    <div style="font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">${title}</div>
+    ${inner}</div>`;
+  const p=(t)=>`<div style="font-size:14px;line-height:1.6;margin-bottom:6px">${t}</div>`;
+  const dim=(t)=>`<div style="font-size:12.5px;line-height:1.6;color:var(--text-dim)">${t}</div>`;
+  const ul=(items)=>`<ul style="margin:4px 0 0;padding-left:20px;line-height:1.65;font-size:14px">${items.map(i=>`<li style="margin-bottom:5px">${i}</li>`).join('')}</ul>`;
+  const big=(t)=>`<b style="color:var(--accent)">${t}</b>`;
+  return `
+  <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+    <div style="font-weight:800;font-size:15px">How the Grazie Club works</div>
+    <span style="color:var(--text-muted);font-size:11.5px">The rules behind the points — what earns, what doesn't, and what a reward is worth</span>
+  </div>
+
+  ${card('Earning points',
+    p(`Earn ${big('1 point for every $2 spent')} — on food &amp; drink, before tax and tip, after any discounts.`)
+    + p(`${big('Double Points Tuesdays')} — 2× points all day, every Tuesday.`)
+    + dim(`A member has to be on the check before it is paid to earn. A manager can add a member to a just-closed check the same night — not a previous night.`))}
+
+  ${card('Redeeming rewards',
+    p(`${big('10 points = $1 off')} — so 100 points = $10, and 250 points = $25.`)
+    + dim(`A reward is either bought with points or given by a campaign — birthday, anniversary, win-back.`))}
+
+  ${card('What earns and what doesn’t', ul([
+    `${big('Rewards and promotions don’t combine.')} A check carrying a half-price item (Wine Wednesday, say) can’t <i>redeem</i> a reward — but it still <i>earns</i> points on what was bought.`,
+    `${big('Private parties &amp; catering')} — no earning and no redeeming.`,
+    `${big('Discounted gift cards (Costco)')} — the part of a bill paid with one earns on <b>70%</b> of that amount; the rest of the bill earns normally.
+      <div style="margin-top:4px;font-size:12px;color:#fbbf24">Done by hand for now — the register can’t tell a discounted card from a normal one yet, so it will earn full points unless somebody adjusts it.</div>`,
+  ]))}
+
+  ${card('Live offers &amp; campaigns', ul([
+    `${big('Happy Birthday')} — $10 off, 7 days before a birthday (good 14 days)`,
+    `${big('Happy Anniversary')} — free dessert, 7 days before (good 14 days)`,
+    `${big('Welcome')} — free dessert, min $25, the day after signing up (good 14 days)`,
+    `${big('We miss you')} — $5 off at 30 and 45 days, $10 off at 60 days since the last visit`,
+    `${big('Points catalogue')} — a $10 reward for 100 points`,
+  ]) + `<div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      ${dim(`Tiers (Silver / Gold / Platinum) are <b>not</b> running.`)}
+      <button onclick="posCrmView('campaigns')" style="${posMiniBtn()};margin-left:auto">Open Offers &amp; campaigns</button>
+    </div>`)}
+
+  <div style="color:var(--text-muted);font-size:11.5px;line-height:1.6">
+    These are the rules as agreed, written down so the floor and the office answer a guest the same way.
+    Changing what a campaign actually sends is done on the Offers &amp; campaigns page; changing the rules
+    themselves is a conversation, not a setting.
+  </div>`;
 }
 
 function posCampaignsHTML(){
