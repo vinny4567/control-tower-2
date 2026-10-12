@@ -2240,7 +2240,13 @@ function kvSendMini(k,p,keepalive){
       const ac=new AbortController();opts.signal=ac.signal;
       setTimeout(()=>{try{ac.abort()}catch(e){}},5000);        // never let it hang around
     }
-    fetch(KV_MINI+encodeURIComponent(k)+'?token='+encodeURIComponent(KV_TOKEN()),opts).catch(()=>{});
+    // The token rides a HEADER, not the query string — a secret in a URL lands in proxy
+    // logs and browser history. The mini reads `?token=` or `x-sync-token`; verified against
+    // it with a real token (200 on the header form, 401 on a bogus one, so it is genuinely
+    // validated rather than waved through). The cloud write below still uses the query form
+    // because that server has not been checked yet — see kvSend.
+    opts.headers['x-sync-token']=KV_TOKEN();
+    fetch(KV_MINI+encodeURIComponent(k),opts).catch(()=>{});
   }catch(e){}
 }
 function kvSend(k,p,keepalive){
