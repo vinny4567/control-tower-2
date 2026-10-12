@@ -2219,8 +2219,13 @@ const KV_URL='https://order.angeliscatering.com/api/kv/';
   // anything in the source is readable by anyone with the URL, and it lives on in git
   // history. Keys are pasted once per device and kept in localStorage, exactly like
   // the Email tab's access key.
+  // ⚠️ THE TOKEN GOES IN THE x-sync-token HEADER, NEVER IN THE URL. A query string lands in
+  // proxy logs, server access logs and browser history, and this one key reaches every ct_* key
+  // in the store. Both the cloud and the mini accept either form today; both were verified on
+  // the wire with a real token (200 on the header, 401 on a bogus one, so it is genuinely
+  // checked). The `?token=` form is being retired — do not reintroduce it.
   const KV_TOKEN=()=>localStorage.getItem('ct_kv_key')||'';
-async function kvGet(k){try{const r=await fetch(KV_URL+encodeURIComponent(k)+'?token='+encodeURIComponent(KV_TOKEN()));if(!r.ok)return null;return await r.json()}catch(e){return null}}
+async function kvGet(k){try{const r=await fetch(KV_URL+encodeURIComponent(k),{headers:{'x-sync-token':KV_TOKEN()}});if(!r.ok)return null;return await r.json()}catch(e){return null}}
 const kvPushTimers={};
 const kvPending={}; // k -> {v,at} not yet sent (debounce window)
 // Phase 1 of bringing the store in-house: every write also goes to the mini on the
@@ -2250,7 +2255,7 @@ function kvSendMini(k,p,keepalive){
   }catch(e){}
 }
 function kvSend(k,p,keepalive){
-  try{fetch(KV_URL+encodeURIComponent(k)+'?token='+encodeURIComponent(KV_TOKEN()),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({v:p.v,at:p.at}),keepalive:!!keepalive}).catch(()=>{})}catch(e){}
+  try{fetch(KV_URL+encodeURIComponent(k),{method:'POST',headers:{'Content-Type':'application/json','x-sync-token':KV_TOKEN()},body:JSON.stringify({v:p.v,at:p.at}),keepalive:!!keepalive}).catch(()=>{})}catch(e){}
   kvSendMini(k,p,keepalive);   // after the cloud write, and it can't affect it
 }
 function kvPush(k,v,at){kvPending[k]={v,at};clearTimeout(kvPushTimers[k]);kvPushTimers[k]=setTimeout(()=>{const p=kvPending[k];delete kvPending[k];if(p)kvSend(k,p,false)},1200)}
@@ -3031,8 +3036,9 @@ function liqPosDoc(){return `<div class="liq-doc">
     <h3>Wiring the POS into this page</h3>
     <p>When the new POS knows what it poured, it posts a day's depletion here and the Order tab
     starts working off real sales instead of counts. One HTTP call, no other changes:</p>
-    <pre class="liq-pre">POST ${KV_URL}ct_liq_sales?token=&lt;CT token&gt;
+    <pre class="liq-pre">POST ${KV_URL}ct_liq_sales
 Content-Type: application/json
+x-sync-token: &lt;CT token&gt;
 
 {
   "v": {
@@ -7326,8 +7332,8 @@ function posBuildLive(){
 // kvPush is debounced and fire-and-forget, which is right for an edit and wrong for a
 // deliberate Publish — the operator needs to know it landed. This awaits the response.
 async function posPublishSend(blob){
-  const r=await fetch(KV_URL+encodeURIComponent(POS_LIVE_KEY)+'?token='+encodeURIComponent(KV_TOKEN()),
-    {method:'POST',headers:{'Content-Type':'application/json'},
+  const r=await fetch(KV_URL+encodeURIComponent(POS_LIVE_KEY),
+    {method:'POST',headers:{'Content-Type':'application/json','x-sync-token':KV_TOKEN()},
      body:JSON.stringify({v:blob,at:blob.at})});
   if(!r.ok)throw new Error('server said '+r.status);
   return true;
