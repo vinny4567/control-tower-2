@@ -6241,7 +6241,11 @@ function tsCheckRow(r,where,seenKey){
   const add=(rule,detail)=>out.push({rule,sev:TS_RULES[rule].sev,why:TS_RULES[rule].why,detail,
     where,name:nm||'(no name)',date:r.date,job:r.job||r.section||'',inT:r.inTime,outT:r.outTime});
   if(!nm||/(.)\1{3,}/.test(nm)||/^(test|asdf|qwer)/i.test(nm.replace(/\s+/g,''))||nm.replace(/[^a-z]/gi,'').length<3)add('junk','"'+nm+'"');
-  const hasIn=!!tsDec(r.inTime),hasOut=!!tsDec(r.outTime);
+  // ⚠️ `!!tsDec(...)` WAS WRONG: midnight parses to 0, and !!0 is false, so a clock-out at
+  // 12:00am read as NO clock-out — a wedding that finished at midnight got reported as half
+  // a shift worth ZERO hours when the hours were on the sheet all along. Missing is null,
+  // not falsy. (It also made the midnightIn rule below unreachable, which is the tell.)
+  const hasIn=tsDec(r.inTime)!==null, hasOut=tsDec(r.outTime)!==null;
   if(hasIn!==hasOut)add('missingHalf',hasIn?('in '+tsFmt(r.inTime)+', no clock-out'):('no clock-in, out '+tsFmt(r.outTime)));
   if(!hasIn&&!hasOut)return out;                       // an empty placeholder row — nothing to check
   if(hasIn&&tsDec(r.inTime)===0)add('midnightIn','in 12:00am → out '+tsFmt(r.outTime));
