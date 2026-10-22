@@ -11626,7 +11626,7 @@ function staffDetail(p){
       <div style="display:flex;gap:5px;align-items:center;margin-top:5px">
         <select id="staff-job-${kid}" style="${inp};width:auto">
           <option value="">add a job…</option>
-          ${STAFF_JOBS.filter(j=>known.indexOf(j)<0).map(j=>`<option>${esc(j)}</option>`).join('')}
+          ${staffAllJobNames().filter(j=>!known.some(h=>staffJobKey(h)===staffJobKey(j))).map(j=>`<option>${esc(j)}</option>`).join('')}
         </select>
         <button onclick="staffAddJob('${esc(k)}')" style="${posBtn('#3f3f46')};padding:3px 9px;font-size:12px">Add</button>
       </div>
@@ -11848,24 +11848,31 @@ function staffDelJobRow(job){
 }
 function posJobRatesRefresh(){const el=document.getElementById('jobrates-body');if(el)el.innerHTML=posJobRatesBody();}
 
-function posJobRatesBody(){
+// The one list of jobs — the Job Rates screen AND the per-person "add a job" menu both
+// read from this, so the two can never drift. (They did: the menu was a hardcoded subset
+// of STAFF_JOBS, so a job added here — Salads, training — was never selectable on a person.)
+function staffAllJobNames(){
   const jobs=staffJobs();
   // Every job anybody actually holds, plus any rate row typed here, plus the
-  // standard list — so a job in use can never be missing from this screen.
+  // standard list — so a job in use can never be missing from either place.
   const held=new Set();
   Object.values(staffS.people).forEach(p=>{
     if(p.removed)return;
     (p.positions||[]).forEach(j=>held.add(j));
     Object.keys(p.rates||{}).forEach(j=>held.add(j));
   });
-  // Grouped by canonical key, so two spellings of one job are one row.
+  // Grouped by canonical key, so two spellings of one job are one entry.
   const byKey=new Map();
   [...Object.keys(jobs),...held,...STAFF_JOBS].forEach(n=>{
     const k=staffJobKey(n);if(!k)return;
     const pretty=STAFF_JOBS.find(j=>staffJobKey(j)===k)||staffJobCanon(n);
     if(!byKey.has(k))byKey.set(k,pretty);
   });
-  const names=[...byKey.values()].sort();
+  return [...byKey.values()].sort();
+}
+
+function posJobRatesBody(){
+  const names=staffAllJobNames();
   const inp='background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-family:inherit;font-size:14px;width:86px;text-align:right';
   return names.map(job=>{
     const r=staffJobRate(job);
