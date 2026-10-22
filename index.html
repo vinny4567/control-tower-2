@@ -1706,7 +1706,15 @@ async function sendViaGmailApi(acct,payload){
   if(!r.ok){const t=await r.text();throw new Error('Gmail '+r.status+': '+t.slice(0,160));}
   return r.json();
 }
-function gmailConnectAccount(email){window.open(GMAIL_AUTH_ENDPOINT+'?account='+encodeURIComponent(email),'_blank');}
+// Reservations predates multi-mailbox support, so its refresh token lives in the scheduler's
+// ORIGINAL no-?account slot — see the same exception on the read side in gmailTokenFor(). Without
+// it here, connecting wrote `gmail_refresh_token:<email>` while every read looked in
+// `gmail_refresh_token`, so sending stayed "not connected" and re-prompted forever: a sign-in loop
+// no number of retries could clear. The two sides must agree on the slot.
+function gmailConnectAccount(email){
+  const q=email==='angelisreservations1478@gmail.com'?'':('?account='+encodeURIComponent(email));
+  window.open(GMAIL_AUTH_ENDPOINT+q,'_blank');
+}
 // Gmail accounts send via the Gmail HTTPS API; SBCGlobal/AT&T (SMTP-blocked on Render) sends through the
 // Mac bridge: we queue it to jarvis-voice and the always-on Mac (sbc-sender.js) does the AT&T SMTP send.
 async function mailSend(acct,payload){
