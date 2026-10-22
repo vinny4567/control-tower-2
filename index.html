@@ -11538,7 +11538,7 @@ async function staffSetPin(k,given){
   // use is four-digit (1004, 7080) and a rule that rejects the numbers people are
   // already punching is a rule that is wrong, not a rule that is strict. The shape
   // check is repeated on the mini regardless, where it counts.
-  const code=given!=null?given:prompt('Sign-in code for '+p.name+'\n\n4 to 8 digits — their own choice, typed on the register keypad.\n\nIt goes straight to the register and is stored hashed there. It is never kept in this browser or in the cloud, and it can never be read back — only replaced.');
+  const code=given!=null?given:prompt('Sign-in code for '+p.name+'\n\n4 to 8 digits, typed on the register keypad.\n\nStored hashed on the register for sign-in, AND (Vinny\'s call 10/21) shown in plain on this person\'s row here so you can look it up later.');
   if(!code)return;
   const pin=String(code).trim();
   if(!/^\d{4,8}$/.test(pin))return alert('A sign-in code must be 4 to 8 digits.\n\nThe register\'s keypad has no letters on it.');
@@ -11551,7 +11551,7 @@ async function staffSetPin(k,given){
     }
     if(r.status===401)return alert(posAuthNote().replace(/^⚠ /,'')+'\n\nNothing was stored.');
     if(!r.ok)return alert('The register would not take that code:\n\n'+((r.body&&r.body.error)||('HTTP '+r.status)));
-    p.register=p.register||{};p.register.access=true;p.register.pin_set=true;delete p.register.pin_pending;
+    p.register=p.register||{};p.register.access=true;p.register.pin_set=true;p.register.signin=pin;delete p.register.pin_pending;
     // The mini's own id for this person, so a later role change can target the row
     // rather than re-resolving a name. paychex_id alone would do; this is cheaper.
     if(r.body&&r.body.id!=null)p.register.emp_id=r.body.id;
@@ -11565,11 +11565,14 @@ async function staffSetPin(k,given){
 // button that appeared AFTER ticking "Can sign in", so the common act (hire somebody,
 // give them a number) was two steps with a prompt box in the middle.
 //
-// ⚠️ THE NUMBER IS NOT KEPT HERE. It goes straight to the mini, which stores it hashed;
-// this box empties itself the moment it is saved and never shows an existing one,
-// because there is nothing to show — a sign-in number can be replaced, never read back.
-// That is also why it is not a `value=` bound to anything: a credential that round-trips
-// through this page's state is a credential in this page's state.
+// The number box: type a sign-in number and Save. It POSTs to the mini, which stores it
+// HASHED for actual sign-in (register auth unchanged).
+// ⚠️ CHANGED 10/21 at Vinny's explicit call, after being shown the tradeoff: the plain
+// number is now ALSO kept in ct_staff (`register.signin`) and shown as text on the person's
+// row, so he can look anyone's code up in the app. This re-exposes what the original design
+// deliberately never stored — a register credential now lives in plaintext in the cloud KV
+// store, so a leak of ct_staff hands over everyone's sign-in. His decision, his business.
+// The box still clears after save; the saved number shows as text just below it.
 async function staffSaveNumber(k,el){
   const v=String(el.value||'').trim();
   if(!v)return;
@@ -11646,6 +11649,7 @@ function staffDetail(p){
         <button onclick="staffSaveNumber('${esc(k)}',document.getElementById('staff-num-${kid}'))"
           style="${posBtn('#0ea5e9')};padding:3px 9px;font-size:12px">Save</button>
       </div>
+      ${reg.signin?`<div style="margin-top:6px;font-size:13px;color:var(--text-dim)">Sign-in #: <b style="color:var(--text);letter-spacing:2px">${esc(reg.signin)}</b></div>`:''}
       ${reg.access?`
         <div style="display:flex;gap:6px;align-items:center;margin-top:10px">
           <select onchange="staffEdit('${esc(k)}','role',this.value)" style="${inp};width:auto">
