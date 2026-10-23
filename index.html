@@ -6804,13 +6804,23 @@ async function posLoadPrices(){
     kvGet('ct_pos_new_mods'),kvGet('ct_pos_group_names'),kvGet('ct_pos_group_detach'),
     kvGet('ct_pos_mod_letters'),kvGet('ct_pos_deleted_mods'),kvGet('ct_pos_choice_cuts'),
     kvGet('ct_pos_mod_names'),kvGet('ct_pos_deleted_groups'),kvGet('ct_pos_choice_edits'),kvGet('ct_pos_choice_order'),kvGet('ct_pos_item_group_order'),kvGet('ct_pos_deleted_items'),kvGet('ct_pos_new_items'),kvGet('ct_pos_section_adds'),kvGet('ct_pos_disc_rates'),kvGet('ct_pos_new_discounts')]);
+  // ⛔ A FAILED FETCH IS NOT AN EMPTY VALUE. `kvGet` returns null for ANY non-200 — a dropped
+  // connection, a rejected key, a restart — and this block used to read `(x&&x.v)||[]`, which turns
+  // that null into an EMPTY LIST and then assigns it over the live one below. The pending edits are
+  // gone, and the next publish ships the empty set. Because the register REPLACES its whole overlay
+  // from each blob, "missing" means "undone": items previously deleted come back on the iPads.
+  // The 22 fetches fail independently, so one bad response wipes exactly one list — which is why
+  // on 10/22 the renames and prices survived while four deletions vanished between two publishes.
+  // Same shape as the tips grid that nearly lost a payroll — see [[reference_data_shape_traps]] #3.
+  // `got` null ⇒ we learned NOTHING, so keep what we hold. `got` present ⇒ trust it, empty included.
+  const take=(got,cur,empty)=>got?(got.v==null?empty:got.v):cur;
   const next={
-    prices:(r&&r.v)||{}, mods:(g&&g.v)||{}, groups:(ng&&ng.v)||[], attach:(at&&at.v)||{},
-    routing:(rt&&rt.v)||{}, classes:(pc&&pc.v)||[], newMods:(nm&&nm.v)||[],
-    names:(gn&&gn.v)||{}, detach:(gd&&gd.v)||{}, letters:(ml&&ml.v)||{},
-    deleted:(dm&&dm.v)||[], cuts:(cc&&cc.v)||{}, modNames:(mn&&mn.v)||{},
-    delGroups:(dg&&dg.v)||[], choiceEdits:(ce&&ce.v)||{}, choiceOrder:(co&&co.v)||{}, itemGroupOrder:(io&&io.v)||{}, delItems:(di&&di.v)||[], newItems:(ni&&ni.v)||[], sectionAdds:(sa&&sa.v)||{},
-    discRates:(dr&&dr.v)||{}, newDiscounts:(nd&&nd.v)||[],
+    prices:take(r,posPrices,{}), mods:take(g,posGroupMods,{}), groups:take(ng,posNewGroups,[]), attach:take(at,posGroupAttach,{}),
+    routing:take(rt,posRouting,{}), classes:take(pc,posNewClasses,[]), newMods:take(nm,posNewMods,[]),
+    names:take(gn,posGroupNames,{}), detach:take(gd,posGroupDetach,{}), letters:take(ml,posModLetters,{}),
+    deleted:take(dm,posDeletedMods,[]), cuts:take(cc,posChoiceCuts,{}), modNames:take(mn,posModNames,{}),
+    delGroups:take(dg,posDeletedGroups,[]), choiceEdits:take(ce,posChoiceEdits,{}), choiceOrder:take(co,posChoiceOrder,{}), itemGroupOrder:take(io,posItemGroupOrder,{}), delItems:take(di,posDeletedItems,[]), newItems:take(ni,posNewItems,[]), sectionAdds:take(sa,posSectionAdds,{}),
+    discRates:take(dr,posDiscRates,{}), newDiscounts:take(nd,posNewDiscounts,[]),
   };
   const changed=!same(next.prices,posPrices)||!same(next.mods,posGroupMods)
     ||!same(next.groups,posNewGroups)||!same(next.attach,posGroupAttach)
