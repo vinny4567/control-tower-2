@@ -6902,6 +6902,9 @@ let posDeletedMods=[];    // [row key]
 // across categories (there is a House Salad on the golf menu as well as the dining
 // one) and a name would take both.
 let posDeletedItems=[];
+// Deletions posPruneOrphans discarded because their key no longer resolves in the catalog. Kept so
+// Publish can SAY so — see the note at the prune. Cleared each time the prune runs clean.
+let posPrunedDeletes=[];
 // Menu items created here. {cat,name,cents}. They render in their section, green, and
 // reach the register when the change is applied — same contract as everything else on
 // this page: it is a request, not a live edit.
@@ -7122,8 +7125,14 @@ function posPruneOrphans(){
     const before=posNewItems.length;
     posNewItems=posNewItems.filter(x=>!(cat.items||[]).some(i=>i.cat===x.cat&&i.name===x.name));
     if(posNewItems.length!==before)dirty.add('ct_pos_new_items');
+    // ⚠️ A DROPPED DELETION IS NOT THE SAME AS AN APPLIED ONE, and this filter cannot tell them
+    // apart: "the row is gone from the catalog" also matches "its key CHANGED and I can no longer
+    // resolve it". On 10/22 Vinny deleted two renamed Sides, published, and the deletions were
+    // pruned away here — the items stayed on the iPads and nothing said so. Silence is what made
+    // it a mystery instead of a five-second fix, so say what was discarded.
     const li=posDeletedItems.filter(k=>byItem[k]);
     if(li.length!==posDeletedItems.length){
+      posPrunedDeletes=posDeletedItems.filter(k=>!byItem[k]);
       posDeletedItems=li; dirty.add('ct_pos_deleted_items');
     }
   }
@@ -7360,6 +7369,16 @@ async function posPublish(){
   try{
     await posPublishSend(blob);
     posS.published=Date.now();posS.publishedCount=n;
+    // The one failure this tab used to hide: a deletion dropped by the prune never reaches the
+    // registers, the row quietly un-strikes, and the item is still on the iPads. Never silent.
+    if(posPrunedDeletes.length){
+      const list=posPrunedDeletes.slice(0,6).map(k=>'• '+k).join('\n');
+      alert(`⚠️ ${posPrunedDeletes.length} deletion${posPrunedDeletes.length>1?'s were':' was'} NOT published.\n\n`+
+            `Their rows could no longer be matched in the catalog, so they were dropped instead of sent — `+
+            `those items are STILL on the registers.\n\n${list}${posPrunedDeletes.length>6?'\n• …':''}\n\n`+
+            `Delete them again and publish; if they keep vanishing, the row's key is changing underneath (renames are the known cause).`);
+      posPrunedDeletes=[];
+    }
   }catch(e){ posS.publishErr=String((e&&e.message)||e); }
   posS.publishing=false;renderViewport();
 }
