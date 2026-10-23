@@ -7075,7 +7075,14 @@ function posDeleteItem(encKey,encName){
   if(posDeletedItems.includes(key)){
     posDeletedItems=posDeletedItems.filter(k=>k!==key);
   }else{
-    if(!confirm(`Delete “${name}” from the menu?\n\nIt stays on the iPads until you Publish.`))return;
+    // ASK ABOUT THE NAME HE CAN SEE. The row passes the ORIGINAL name (the key is built from it),
+    // so after a rename this dialog said «Delete "1 CHK BREAST"?» about a row reading "CHK BREAST"
+    // — a name he had just got rid of. Cancelling that is the correct instinct, and it recorded
+    // nothing, which is why rename-then-delete silently failed while delete-then-rename worked.
+    // Show the current label, and the original underneath so the row is still identifiable.
+    const shown=posModNames[key]||name;
+    const also=(posModNames[key]&&name&&posModNames[key]!==name)?`\n(originally “${name}”)`:'';
+    if(!confirm(`Delete “${shown}” from the menu?${also}\n\nIt stays on the iPads until you Publish.`))return;
     posDeletedItems=[...posDeletedItems,key];
   }
   kvPush('ct_pos_deleted_items',posDeletedItems,Date.now());
