@@ -6508,7 +6508,16 @@ Picking a date range automatically pulls the nightly <b>tip-out log</b> (restaur
 }
 
 function renderViewport(){if(activeTab===WED){document.getElementById('viewport').innerHTML=wedHTML();wedInit();return}if(activeTab===DOCS){docsSetNS('ct_docs');docsPullSync();document.getElementById('viewport').innerHTML=docsHTML();return}if(activeTab===MAIL){document.getElementById('viewport').innerHTML=mailHTML();restoreGmailListScroll();return}if(activeTab===LIQ){document.getElementById('viewport').innerHTML=liqHTML();return}if(activeTab===BANK){document.getElementById('viewport').innerHTML=bankHTML();return}
-   if(activeTab===TIPS){document.getElementById('viewport').innerHTML=tipsHTML();tipsRefresh();return}if(activeTab===POS){document.getElementById('viewport').innerHTML=posHTML();return}if(activeTab===ONLINE){document.getElementById('viewport').innerHTML=onlineHTML();renderChat();if(ordersKey())loadCmdConsole();return}if(activeTab===DASH){const vp=document.getElementById('viewport');const sc=vp.querySelector('.dashboard');const top=sc?sc.scrollTop:0;const al=vp.querySelector('.ag-list');const alTop=al?al.scrollTop:0;vp.innerHTML=dashboardHTML();if(top){const sc2=vp.querySelector('.dashboard');if(sc2)sc2.scrollTop=top}if(alTop){const al2=vp.querySelector('.ag-list');if(al2)al2.scrollTop=alTop}return}const p=cfg.panels.find(x=>x.id===activeTab);if(!p){document.getElementById('viewport').innerHTML='';return}document.getElementById('viewport').innerHTML=bodyHTML(p);if(activeTab===3)restoreGmailListScroll()}
+   if(activeTab===TIPS){document.getElementById('viewport').innerHTML=tipsHTML();tipsRefresh();return}if(activeTab===POS){document.getElementById('viewport').innerHTML=posHTML();return}if(activeTab===ONLINE){document.getElementById('viewport').innerHTML=onlineHTML();renderChat();if(ordersKey())loadCmdConsole();return}if(activeTab===DASH){const vp=document.getElementById('viewport');
+   // EVERY scroller on the dash must be listed here. This rebuilds the whole tab, and the Gmail
+   // poll fires it every few seconds, so anything not restored snaps back to the top WHILE VINNY
+   // IS READING IT. `.rq-list` (Upcoming Orders) was added after this code and left out, which is
+   // exactly that bug. Add the class when you add a scrolling card — do not re-derive this.
+   const keep=['.dashboard','.ag-list','.rq-list'];
+   const tops=keep.map(s=>{const e=vp.querySelector(s);return e?e.scrollTop:0});
+   vp.innerHTML=dashboardHTML();
+   keep.forEach((s,i)=>{if(!tops[i])return;const e=vp.querySelector(s);if(e)e.scrollTop=tops[i]});
+   return}const p=cfg.panels.find(x=>x.id===activeTab);if(!p){document.getElementById('viewport').innerHTML='';return}document.getElementById('viewport').innerHTML=bodyHTML(p);if(activeTab===3)restoreGmailListScroll()}
 
 // ── POS TAB: the Angeli's POS back office ──────────────────────────
 // Four sections, and they do NOT all need the mini:
