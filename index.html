@@ -6513,7 +6513,7 @@ function renderViewport(){if(activeTab===WED){document.getElementById('viewport'
    // poll fires it every few seconds, so anything not restored snaps back to the top WHILE VINNY
    // IS READING IT. `.rq-list` (Upcoming Orders) was added after this code and left out, which is
    // exactly that bug. Add the class when you add a scrolling card — do not re-derive this.
-   const keep=['.dashboard','.ag-list','.rq-list'];
+   const keep=['.dashboard','.ag-list','.rq-list','.co-list'];
    const tops=keep.map(s=>{const e=vp.querySelector(s);return e?e.scrollTop:0});
    vp.innerHTML=dashboardHTML();
    keep.forEach((s,i)=>{if(!tops[i])return;const e=vp.querySelector(s);if(e)e.scrollTop=tops[i]});
