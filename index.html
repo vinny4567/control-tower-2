@@ -7458,6 +7458,44 @@ async function posNewGroup(){
   posNewGroups.push({key:'new:'+n,name:name.trim(),required:req});
   posSaveGroups();
 }
+// Copy a group's CHOICES into a new one, so a second version with different prices is a rename and
+// a re-price rather than thirty re-typings. Takes what is on SCREEN — catalog choices with any
+// rename/re-price applied, cuts left out, ones added here included, in the order shown — because
+// that is the list he is looking at when he asks for a copy.
+// Attachments are deliberately NOT copied: a duplicate exists to go on DIFFERENT items (10" vs 14"),
+// and silently attaching it to the original's items would put two near-identical questions on the
+// same item, which is worse than attaching it by hand.
+function posDuplicateGroup(encKey){
+  const k=decodeURIComponent(encKey);
+  const g=posNewGroups.find(x=>posGroupKey(x)===k)
+        ||((posS.cat&&posS.cat.mod_groups||[]).find(x=>posGroupKey(x)===k));
+  if(!g){alert('That group is not loaded yet — give the catalog a moment.');return}
+  const name=prompt('Name for the copy\n\nIt starts with the same choices and prices. Change them on the copy and the original is untouched.',
+    posGroupLabel(g)+' copy');
+  if(name===null)return;
+  if(!name.trim()){alert('A group needs a name.');return}
+  const cuts=posCutsFor(k), edits=posChoiceEdits[String(k)]||{};
+  // Sort on the ORIGINAL name — posChoiceOrder is keyed by it, not by a renamed label.
+  let items=[
+    ...((g.choices||[]).filter(o=>!cuts.includes(o.name)).map(o=>{
+      const e=edits[o.name];
+      return {sort:o.name,name:e?e.name:o.name,cents:(e?e.cents:o.cents)||0};
+    })),
+    ...posAddedTo(k).map(m=>({sort:m.name,name:m.name,cents:m.cents||0})),
+  ];
+  const order=posChoiceOrder[String(k)]||null;
+  if(order){
+    const at=(x)=>{const i=order.indexOf(x.sort);return i<0?9999:i};
+    items=items.map((x,i)=>[x,i]).sort((a,b)=>at(a[0])-at(b[0])||a[1]-b[1]).map(([x])=>x);
+  }
+  const n=posNewGroups.reduce((m,x)=>Math.max(m,Number(String(x.key).split(':')[1]||0)),0)+1;
+  const nk='new:'+n;
+  posNewGroups.push({key:nk,name:name.trim(),required:!!g.required});
+  if(items.length)posGroupMods[nk]=items.map(x=>({name:x.name,cents:x.cents}));
+  posSaveGroups();
+  alert(`“${name.trim()}” created with ${items.length} choice${items.length===1?'':'s'} at the same prices.\n\n`+
+        `It is NOT on any item yet — put it on the ones it belongs to, or the register will never ask it.`);
+}
 function posDeleteNewGroup(enc){
   const k=decodeURIComponent(enc);
   if(!confirm('Delete this group and everything set on it?'))return;
@@ -8707,6 +8745,8 @@ function posGroupsHTML(){
       ${posGroupNames[posGroupKey(g)]?`<span style="font-size:12px;color:var(--text-muted)">was ${esc(g.name)}</span>`:''}
       <button onclick="posRenameGroup('${posEnc(posGroupKey(g))}','${posEnc(g.name)}')"
         style="border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-size:12px;font-family:inherit">rename</button>
+      <button onclick="posDuplicateGroup('${posEnc(posGroupKey(g))}')" title="make a copy of this group with the same choices and prices"
+        style="border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-size:12px;font-family:inherit">duplicate</button>
       <span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;border:1px solid currentColor;color:${g.required?'#ef4444':'var(--text-muted)'}">${g.required?'required':'optional'}</span>
       <button onclick="posDeleteNewGroup('${posEnc(g.key)}')" title="delete this group"
         style="margin-left:auto;border:none;background:transparent;color:#ef4444;cursor:pointer;
@@ -8736,6 +8776,8 @@ function posGroupsHTML(){
       ${posGroupNames[posGroupKey(g)]?`<span style="font-size:12px;color:var(--text-muted)">was ${esc(g.name)}</span>`:''}
       <button onclick="posRenameGroup('${posEnc(posGroupKey(g))}','${posEnc(g.name)}')"
         style="border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-size:12px;font-family:inherit">rename</button>
+      <button onclick="posDuplicateGroup('${posEnc(posGroupKey(g))}')" title="make a copy of this group with the same choices and prices"
+        style="border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-size:12px;font-family:inherit">duplicate</button>
       <span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;border:1px solid currentColor;color:${g.required?'#ef4444':'var(--text-muted)'}">${g.required?'required':'optional'}</span>
       ${g.declared?'<span style="font-size:11px;color:#f59e0b;font-weight:700" title="It exists and keeps its prices, but no item asks it">defined, not in use</span>':''}
       <button onclick="posDeleteGroup('${posEnc(posGroupKey(g))}','${posEnc(g.name)}',${(g.used_by||[]).length})"
