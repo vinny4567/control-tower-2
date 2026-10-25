@@ -8886,7 +8886,8 @@ async function posLoadReports(){
       if(res&&!res.ok&&res.status!==404&&k===want[0])throw new Error((res.body&&res.body.error)||(k+' '+res.status));}));
     posS.rep={sales:got.sales||null,items:got.items||null,voids:got.voids||null,
               payouts:got.payouts!==undefined?got.payouts:null,nights:got.nights!==undefined?got.nights:null,
-              labor:got.labor!==undefined?got.labor:null};
+              labor:got.labor!==undefined?got.labor:null,
+              discounts:got.discounts!==undefined?got.discounts:null};
   }catch(e){posS.rep=null;posS.repErr=String(e&&e.message||e)}
   posS.repBusy=false;renderViewport();
 }
@@ -8907,16 +8908,18 @@ const POS_REPORTS = [
   { k:'payouts', name:'Pay outs' },
   { k:'nights',  name:'Nightly cash count' },
   { k:'checks',  name:'Every check' },
+  { k:'discounts', name:'Discounts & offers' },
 ];
 // What each one has to fetch. Sales rides along with labor because labor as a share of
 // sales is the number that report exists for.
 const POS_REPORT_NEEDS = {
   sales:['sales'], menu:['items'], labor:['labor','sales'], voids:['voids'],
-  payouts:['payouts'], nights:['nights'], checks:['nights'],
+  payouts:['payouts'], nights:['nights'], checks:['nights'], discounts:['discounts'],
 };
 const POS_REPORT_PATHS = {
   sales:'/api/reports/sales', items:'/api/reports/items', voids:'/api/reports/voids',
   payouts:'/api/reports/payouts', nights:'/api/reports/nights', labor:'/api/reports/labor',
+  discounts:'/api/reports/discounts',
 };
 function posRepOpen(k){posS.repShow=k;posLoadReports()}
 function posRepBack(){posS.repShow=null;posS.rep=null;posS.repErr='';renderViewport()}
@@ -9057,6 +9060,85 @@ function posRepVoids(r){
   </div>`;
 }
 
+// ── Discounts & offers ────────────────────────────────────────────────────────
+// What came off checks, which kind it was, and WHO SIGNED FOR IT.
+//
+// Three things this screen must never get wrong, because the whole point of it is to
+// ask somebody a question about their own shift:
+//
+//  1. `by` and `approved_by` are DIFFERENT PEOPLE. `by` is whoever applied it; `approved_by`
+//     is the manager the approval receipt actually verifies. Printing `by` under "approved"
+//     would turn "nobody approved this" into "this person approved it" — the worst available
+//     error here, and an invisible one.
+//  2. Discounts recorded before `attribution_since` have NO approver stored. That is not
+//     "nobody approved it", it is "we were not writing it down". It says so in a banner over
+//     the range, not only per row: a column of "unknown" still reads as a pattern.
+//  3. The total comes from the mini's `total_cents`, never re-added from the rows — voided
+//     discounts are IN the list (deliberately: applied-then-voided is what you open this to
+//     find) and OUT of the totals, so re-deriving would disagree with the register.
+function posRepDiscounts(r){
+  const d=r.discounts;
+  if(d===null)return posRepMissing('discounts and offers','It needs a mini that records who approved each one.');
+  const list=d.discounts||[];
+  const srcLabel={manual:'Discount',reward:'Offer',unknown:'—'};
+  const srcColor={manual:'var(--text)',reward:'#22c55e',unknown:'var(--text-muted)'};
+
+  // Does this range reach back before anyone was recording the approver?
+  let banner='';
+  const since=Number(d.attribution_since)||0;
+  if(since){
+    const rg=posRange(), startMs=Date.parse((rg.from||'')+'T00:00:00');
+    if(isFinite(startMs)&&startMs<since)
+      banner=`<div style="margin-bottom:12px;padding:9px 12px;border-radius:8px;background:rgba(251,191,36,0.12);color:#fbbf24;font-size:13px;line-height:1.5">
+        ⚠ Who approved a discount was not recorded before ${esc(new Date(since).toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}))}.
+        Anything earlier shows <b>unknown</b> — that means it was never written down, not that nobody approved it.</div>`;
+  }
+  if(!list.length)return banner+posRepEmpty('Nothing came off a check in this range.');
+
+  const voided=Number(d.voided_count)||0;
+  const headline=`<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+    <div style="color:var(--text-dim);font-size:13px">${(Number(d.count)||list.length)} off checks${voided?` · ${voided} later voided, not counted in the total`:''}</div>
+    <div style="margin-left:auto;font-size:20px;font-weight:800;font-variant-numeric:tabular-nums">${posRepMoney(Number(d.total_cents)||0)}</div>
+  </div>`;
+
+  const split=(arr,label,key)=>{
+    const rows=(arr||[]).filter(x=>x&&(x.cents||x.total_cents));
+    if(!rows.length)return '';
+    return `<div style="margin-bottom:10px"><div style="font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">${label}</div>
+      ${rows.map(x=>`<div style="display:flex;gap:10px;font-size:13px;padding:2px 0">
+        <span style="flex:1">${esc(srcLabel[x[key]]!==undefined?srcLabel[x[key]]:(x[key]||x.name||'—'))}</span>
+        <span style="font-variant-numeric:tabular-nums">${posRepMoney(x.cents||x.total_cents||0)}</span></div>`).join('')}</div>`;
+  };
+
+  const row=(x)=>{
+    const when=x.at?new Date(x.at).toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'';
+    const src=String(x.source||'unknown');
+    // Never `by` here. No approval recorded ⇒ say which of the two it is.
+    const appr=x.approved_by ? esc(x.approved_by)
+      : (since&&Number(x.at)<since ? '<span style="color:var(--text-muted)">unknown</span>'
+                                   : '<span style="color:#f59e0b">no approval</span>');
+    return `<div style="display:flex;gap:8px;align-items:baseline;padding:6px 0;border-top:1px solid var(--border);font-size:14px;${x.voided?'opacity:.6':''}">
+      <span style="color:var(--text-muted);width:118px;font-size:12px;font-variant-numeric:tabular-nums">${esc(when)}</span>
+      <span style="width:74px;font-variant-numeric:tabular-nums;${x.voided?'text-decoration:line-through':''}">${posRepMoney(x.cents||0)}</span>
+      <span style="flex:1;min-width:0">${esc(x.name||'—')}${x.pct?`<span style="color:var(--text-muted)"> ${esc(String(x.pct))}%</span>`:''}
+        <div style="font-size:12px;color:var(--text-muted)">${esc([x.table?('Table '+x.table):'',x.server||'',x.check_id?('#'+x.check_id):''].filter(Boolean).join(' · '))}</div></span>
+      <span style="width:72px;font-size:12px;color:${srcColor[src]||'var(--text-muted)'}">${esc(srcLabel[src]||src)}</span>
+      <span style="width:104px;font-size:12px;color:var(--text-dim)" title="who applied it">${esc(x.by||'—')}</span>
+      <span style="width:112px;font-size:12px" title="the manager the approval verifies">${appr}</span>
+      ${x.voided?'<span style="width:50px;font-size:11px;font-weight:700;color:#ef4444">VOID</span>':'<span style="width:50px"></span>'}
+    </div>`;
+  };
+
+  const head=`<div style="display:flex;gap:8px;padding:0 0 4px;font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px">
+    <span style="width:118px">When</span><span style="width:74px">Amount</span><span style="flex:1">What</span>
+    <span style="width:72px">Type</span><span style="width:104px">Applied by</span><span style="width:112px">Approved by</span><span style="width:50px"></span></div>`;
+
+  return banner+`<div style="${posCardCss}">${headline}
+    ${split(d.by_source,'By type','source')}${split(d.by_type,'By discount','name')}
+    <div style="overflow-x:auto"><div style="min-width:760px">${head}${list.map(row).join('')}</div></div>
+  </div>`;
+}
+
 function posRepPayouts(r){
   const po=r.payouts;
   if(po===null)return posRepMissing('pay outs','The registers are recording them and they will appear here once it does.');
@@ -9127,7 +9209,8 @@ function posRepChecks(r){
 }
 
 const POS_REPORT_RENDER={sales:posRepSales,menu:posRepMenuItems,labor:posRepLabor,
-  voids:posRepVoids,payouts:posRepPayouts,nights:posRepNights,checks:posRepChecks};
+  voids:posRepVoids,payouts:posRepPayouts,nights:posRepNights,checks:posRepChecks,
+  discounts:posRepDiscounts};
 
 const posRepEmpty=(msg)=>`<div style="${posCardCss};max-width:620px;color:var(--text-dim);font-size:13px;line-height:1.6">${esc(msg)}</div>`;
 // An endpoint the mini has not learned yet is NOT an empty report, and must never look
