@@ -1365,7 +1365,10 @@ async function mailLoadUnseen(acctId){
 if(!window._mailLabTick)window._mailLabTick=setInterval(()=>{if(activeTab===MAIL&&mailx.acct)mailLoadUnseen(mailx.acct)},60000);
 function switchMailFolder(f){if(f===mailx.folder&&!mailx.smart)return;mailx.smart=null;mailx.smartRes=null;mailx.folder=f;mailx.limit=50;mailx.selUid=null;mailx.selMsg=null;mailx.composing=false;mailx.composeNew=false;mailx.search='';mailx.searchResults=null;mailx.searching=false;mailx.error=null;renderViewport();loadMailList();}
 function mailKey(){return localStorage.getItem('ct_mail_key')||''}
-function setMailKey(){const k=prompt('Paste the Email access key (MAIL_TOKEN value from Render):');if(k&&k.trim()){localStorage.setItem('ct_mail_key',k.trim());mailx.accts=null;mailx.error=null;loadMailAccounts();}}
+// Hand off to the one key form. This was its own prompt(), which iPad Safari silently discards
+// pastes into — and it stored the raw value, so an autocapitalised or smart-dashed key became a
+// 401 that looked like a wrong key. One form, one normaliser, one place to fix it next time.
+function setMailKey(){setCtKeys()}
 async function mailFetch(path,opts){const sep=path.includes('?')?'&':'?';const r=await fetch(MAIL_BASE+path+sep+'key='+encodeURIComponent(mailKey()),opts);if(r.status===401)throw new Error('unauth');return r;}
 // ── Instant paint: the last accounts + inbox lists are snapshotted on-device, shown immediately,
 // then refreshed in the background. A cold backend never leaves the user staring at a spinner. ──
