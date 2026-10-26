@@ -13018,98 +13018,17 @@ function ctNotesKey(f){try{f.contentWindow.postMessage({ctKvKey:localStorage.get
 function ctSyncBadge(){const b=document.getElementById('ct-nosync');
   if(b)b.style.display=localStorage.getItem('ct_kv_key')?'none':'';}
 function ctKeysMissing(){const m=[];if(!localStorage.getItem('ct_kv_key'))m.push('Sync');if(!localStorage.getItem('ct_office_key'))m.push('Back office');if(!localStorage.getItem('ct_sched_key'))m.push('Schedule');if(!localStorage.getItem('ct_mail_key'))m.push('Email');return m}
-// Four keys in one form, not four prompt() dialogs in a row.
-//
-// Two things the prompt chain got wrong, both of which cost real time on 10/22:
-//  • iPad Safari SILENTLY DISCARDS a paste into prompt() and returns the original defaultText, so
-//    the stored key never changed and every retry produced an identical fingerprint — which reads
-//    exactly like "wrong key". Four rounds of re-entering something being dropped on arrival.
-//  • OK on an emptied box DELETED that key. Tabbing through four dialogs could silently remove
-//    three keys you never meant to touch.
-// A real input fixes the first (paste works, and you can SEE what landed). Deleting is now an
-// explicit per-row button rather than a side effect of clearing a field.
-function ctNormKey(k){
-  // iOS rewrites as you type: smart punctuation turns "-" into an en/em dash, autocapitalise sends
-  // "Ctsync-", and a space or newline rides along on paste. Each produces a 401 that looks like a
-  // wrong key. Repair them rather than blame the user.
-  return (k||'').replace(/[‐-―−]/g,'-').replace(/[‘’“”]/g,'')
-                .replace(/\s+/g,'').replace(/^Ct(sync|sched|mail)-/,'ct$1-');
-}
-const CT_KEY_FIELDS=[
-  {k:'ct_kv_key',    label:'Sync key',        pre:'ctsync-',  note:'Saves and loads everything here. SYNC_TOKEN in Render → angelis-backend.'},
-  {k:'ct_office_key',label:'Back-office key', pre:'',         note:'The register’s sales reports and staff list. OFFICE_TOKEN on the mini — separate from the sync key on purpose, so the sync key alone can’t open the money screens.'},
-  {k:'ct_sched_key', label:'Schedule key',    pre:'ctsched-', note:'Weddings, time sheets, tips — and the mail the Tower reads. ROSTER_API_KEY in Render → restaurant-scheduler.'},
-  {k:'ct_mail_key',  label:'Email key',       pre:'ctmail-',  note:'The catering inboxes. MAIL_TOKEN in Render → jarvis-voice.'},
-];
 function setCtKeys(){
-  const cur=k=>{try{return localStorage.getItem(k)||''}catch(e){return ''}};
-  const wrap=document.createElement('div');
-  wrap.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.5);display:flex;align-items:flex-start;justify-content:center;padding:20px;overflow:auto';
-  const inp='width:100%;padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font:13px/1.3 ui-monospace,Menlo,monospace';
-  wrap.innerHTML='<div style="background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:12px;max-width:560px;width:100%;padding:20px;margin:auto">'
-    +'<div style="font-size:17px;font-weight:800;margin-bottom:4px">Access keys</div>'
-    +'<div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">Only on this device and this address. Leave one blank to keep it as it is.</div>'
-    +CT_KEY_FIELDS.map(f=>'<div style="margin-bottom:14px">'
-      +'<div style="display:flex;align-items:baseline;gap:8px"><div style="font-weight:700;font-size:14px">'+f.label+'</div>'
-      +'<div data-has="'+f.k+'" style="font-size:11px;font-weight:700"></div>'
-      +'<button data-clear="'+f.k+'" style="margin-left:auto;border:none;background:transparent;color:#ef4444;cursor:pointer;font-size:12px;font-family:inherit">remove</button></div>'
-      +'<div style="font-size:12px;color:var(--text-muted);line-height:1.45;margin:2px 0 6px">'+f.note+'</div>'
-      +'<input data-key="'+f.k+'" type="text" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" placeholder="'+(f.pre||'paste the key')+'…" style="'+inp+'">'
-      +'<div data-live="'+f.k+'" style="font-size:11px;color:var(--text-muted);min-height:1.1em;margin-top:3px"></div></div>').join('')
-    +'<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px">'
-    +'<button data-a="no" style="padding:9px 18px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Cancel</button>'
-    +'<button data-a="yes" style="padding:9px 18px;border-radius:8px;border:1px solid var(--accent);background:var(--accent);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Save</button>'
-    +'</div></div>';
-  const close=()=>{wrap.remove();document.removeEventListener('keydown',onKey)};
-  const onKey=(e)=>{if(e.key==='Escape')close()};
-  const paint=(f)=>{
-    const has=wrap.querySelector('[data-has="'+f.k+'"]');
-    const on=!!cur(f.k);
-    has.textContent=on?'set':'not set'; has.style.color=on?'#22c55e':'#f59e0b';
-    wrap.querySelector('[data-clear="'+f.k+'"]').style.display=on?'':'none';
-  };
-  CT_KEY_FIELDS.forEach(f=>{
-    paint(f);
-    const el=wrap.querySelector('[data-key="'+f.k+'"]');
-    const live=wrap.querySelector('[data-live="'+f.k+'"]');
-    el.addEventListener('input',()=>{
-      const v=ctNormKey(el.value);
-      if(!v){live.textContent='';return}
-      // Say what actually landed, so a dropped or mangled paste is visible BEFORE saving.
-      live.textContent=v.length+' characters'+(f.pre?(v.startsWith(f.pre)?' · begins '+f.pre+' ✓':' · does not begin '+f.pre+' ✗'):'');
-      live.style.color=(f.pre&&!v.startsWith(f.pre))?'#f59e0b':'var(--text-muted)';
-    });
-  });
-  wrap.addEventListener('click',(e)=>{
-    const clr=e.target.closest('button[data-clear]');
-    if(clr){
-      const f=CT_KEY_FIELDS.find(x=>x.k===clr.dataset.clear);
-      if(confirm('Remove the '+f.label.toLowerCase()+' from this device?\n\nWhatever it opens stops working here until you put it back.')){
-        try{localStorage.removeItem(f.k)}catch(err){}
-        paint(f);
-      }
-      return;
-    }
-    const b=e.target.closest('button[data-a]');
-    if(b){
-      if(b.dataset.a==='yes'){
-        let changed=0;
-        CT_KEY_FIELDS.forEach(f=>{
-          const v=ctNormKey(wrap.querySelector('[data-key="'+f.k+'"]').value);
-          if(!v)return;                       // blank = leave alone. Deleting is the remove button.
-          try{localStorage.setItem(f.k,v);changed++}catch(err){}
-        });
-        close();
-        if(changed)location.reload();
-        return;
-      }
-      close();return;
-    }
-    if(e.target===wrap)close();
-  });
-  document.addEventListener('keydown',onKey);
-  document.body.appendChild(wrap);
-  const first=wrap.querySelector('input[data-key]'); if(first)first.focus();
+  const cur=k=>localStorage.getItem(k)||'';
+  const kv=prompt('Sync key \u2014 saves and loads everything in the Watch Tower.\n(SYNC_TOKEN in Render \u2192 angelis-backend)',cur('ct_kv_key'));
+  if(kv!==null)kv.trim()?localStorage.setItem('ct_kv_key',kv.trim()):localStorage.removeItem('ct_kv_key');
+  const of=prompt('Back-office key — the register’s sales reports and staff list.\n(OFFICE_TOKEN on the mini. Separate from the sync key on purpose, so\nthe sync key alone can’t open the money screens.)',cur('ct_office_key'));
+  if(of!==null)of.trim()?localStorage.setItem('ct_office_key',of.trim()):localStorage.removeItem('ct_office_key');
+  const sc=prompt('Schedule key \u2014 weddings, time sheets and tips.\n(ROSTER_API_KEY in Render \u2192 restaurant-scheduler)',cur('ct_sched_key'));
+  if(sc!==null)sc.trim()?localStorage.setItem('ct_sched_key',sc.trim()):localStorage.removeItem('ct_sched_key');
+  const ml=prompt('Email key \u2014 the inboxes.\n(MAIL_TOKEN in Render \u2192 jarvis-voice)',cur('ct_mail_key'));
+  if(ml!==null)ml.trim()?localStorage.setItem('ct_mail_key',ml.trim()):localStorage.removeItem('ct_mail_key');
+  location.reload();
 }
 function openSettings(){draft=cfg.panels.map(p=>({...p}));renderEditList();renderGmailStatus();stampBuild();
   const ks=document.getElementById('ct-keys-state');
