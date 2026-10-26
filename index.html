@@ -6637,7 +6637,25 @@ const posApi=(p,o)=>posFetch(posS.url,p,o);
 // posFetch attaches the key itself, so a new endpoint can't forget it — and so it is
 // gated by the same trusted-host check rather than going to whatever address is typed in.
 const posSyncToken=()=>posOfficeToken()||localStorage.getItem('ct_kv_key')||'';
-const posSrv=(p,o)=>posFetch(posS.srv,p,o);
+// EVERY call to the register goes through here, so the dead-address recovery belongs here and
+// not in one screen. A tailscale node CANNOT reach its OWN serve URL: a Watch Tower running ON
+// the mini with ct_pos_srv set to the :8443 tailnet address — the value that is CORRECT on the
+// Mac and the laptop — gets a thrown fetch on every request, surfacing as "Load failed". That is
+// a network error, not a 4xx, so no amount of CORS or token work touches it.
+// One retry against localhost when the pinned address throws, then stay there. Costs nothing on a
+// machine where the pinned address works, because it only runs after a throw.
+let posSrvRetried=false;
+async function posSrv(p,o){
+  try{ return await posFetch(posS.srv,p,o); }
+  catch(e){
+    if(posSrvRetried||!posS.srv||posS.srv===POS_LOCAL_SERVER)throw e;
+    if(!await posProbe(POS_LOCAL_SERVER))throw e;
+    posSrvRetried=true;
+    posS.srv=POS_LOCAL_SERVER;
+    try{localStorage.setItem(POS_SRV_KEY,POS_LOCAL_SERVER)}catch(_){}
+    return await posFetch(posS.srv,p,o);
+  }
+}
 // A 401 from the mini means one of two things and they need different answers, so say
 // which: no key on this device at all, or a key it does not accept.
 // A 401 has THREE causes now, not two, and they need three different fixes. The third
@@ -8878,7 +8896,6 @@ async function posLoadReports(){
   // connection-refused every time, while the same setting is correct on the laptop. Falling back
   // to localhost costs one 1.2s probe and only when the pinned one is already broken.
   if(!posS.srv){await posFindLocal('srv')}
-  else if(posS.srv!==POS_LOCAL_SERVER&&!await posProbe(posS.srv)){await posFindLocal('srv')}
   if(!posS.srv){renderViewport();return}
   posS.repBusy=true;posS.repErr='';renderViewport();
   try{
