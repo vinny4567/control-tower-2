@@ -6546,7 +6546,19 @@ let posS={sec:'items',url:localStorage.getItem(POS_URL_KEY)||'',srv:localStorage
   offers:null,campTab:'campaigns',campEd:null,offerEd:null,prev:null,lastField:'body',
   rep:null,repRange:null,repShow:null,repErr:'',repBusy:false,showConn:false};
 
-const posBaseUrl=(u)=>(u||'').replace(/\/+$/,'');
+// AN ADDRESS CAN BE WRONG AND LOOK PERFECT. A zero-width space, a non-breaking space or a smart
+// dash pasted into the Connections field renders byte-identical to a clean URL, survives .trim()
+// (\s does not match U+200B), and makes fetch throw before any request leaves — which Safari
+// reports as "Load failed" and Chrome as "Failed to fetch". Indistinguishable from "the mini is
+// off", and the field looks right while you stare at it. Same family as the iPad key pastes.
+// Strip them wherever the address is used, not only where it is saved, so a value already stored
+// from before this existed is repaired on read.
+const posCleanUrl=(u)=>(u||'')
+  .replace(/[​-‍﻿ ]/g,'')   // zero-width + BOM + non-breaking space
+  .replace(/[‐-―−]/g,'-')        // en/em/figure dashes, minus
+  .replace(/\s+/g,'')                            // every other space, not just the ends
+  .trim();
+const posBaseUrl=(u)=>posCleanUrl(u).replace(/\/+$/,'');
 // An https page cannot call a plain-http box — the browser blocks it before the request
 // leaves, and that failure looks exactly like "the mini is off". Say which it is.
 const posMixedFor=(u)=>location.protocol==='https:'&&/^http:\/\//i.test(u||'')&&!/^http:\/\/(localhost|127\.0\.0\.1)/i.test(u||'');
@@ -6675,7 +6687,7 @@ const posAuthNote=()=>{
 function posSaveConn(){
   const u=(document.getElementById('pos-url')||{}).value||'';
   const s=(document.getElementById('pos-srv')||{}).value||'';
-  posS.url=u.trim();posS.srv=s.trim();
+  posS.url=posCleanUrl(u);posS.srv=posCleanUrl(s);
   localStorage.setItem(POS_URL_KEY,posS.url);localStorage.setItem(POS_SRV_KEY,posS.srv);
   posS.health='unknown';posS.me=null;posS.err='';posS.showConn=false;
   renderViewport();posBoot();
@@ -9451,7 +9463,8 @@ function posGrazieHTML(){
   if(posS.health!=='ok')return `<div style="${posCardCss};max-width:560px">
     <div style="font-weight:800;font-size:16px;margin-bottom:6px">Can't reach the portal</div>
     <div style="color:var(--text-dim);font-size:13px;line-height:1.6">Nothing answered at <code>${esc(posS.url)}</code>. Usually: this device isn't on the tailnet, the mini is asleep, or the address changed.
-    ${posS.err?`<div style="margin-top:8px;color:var(--text-muted)">${esc(posS.err)}</div>`:''}</div>
+    ${posS.err?`<div style="margin-top:8px;color:var(--text-muted)">${esc(posS.err)}</div>`:''}
+    <div style="margin-top:6px;color:var(--text-muted);font-size:12px">Address as stored: ${posS.url.length} characters${posS.url.length!==posCleanUrl(posS.url).length?' — <b style="color:#f59e0b">contains invisible characters</b>, which is why it looks right and fails':''}.</div></div>
     <div style="display:flex;gap:10px;margin-top:12px"><button onclick="posBoot()" style="${posBtn('#f59e0b')}">Try again</button>
     <button onclick="posToggleConn()" style="${posBtn('#3f3f46')}">Connections</button></div></div>`;
   if(!posS.me)return `<div style="${posCardCss};max-width:420px">
