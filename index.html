@@ -13057,7 +13057,7 @@ function setCtKeys(){
       +'<div data-has="'+f.k+'" style="font-size:11px;font-weight:700"></div>'
       +'<button data-clear="'+f.k+'" style="margin-left:auto;border:none;background:transparent;color:#ef4444;cursor:pointer;font-size:12px;font-family:inherit">remove</button></div>'
       +'<div style="font-size:12px;color:var(--text-muted);line-height:1.45;margin:2px 0 6px">'+f.note+'</div>'
-      +'<input data-key="'+f.k+'" type="text" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" placeholder="'+(f.pre||'paste the key')+'…" style="'+inp+'">'
+      +'<input data-key="'+f.k+'" type="text" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" value="'+esc(cur(f.k))+'" placeholder="'+(f.pre||'paste the key')+'…" style="'+inp+'">'
       +'<div data-live="'+f.k+'" style="font-size:11px;color:var(--text-muted);min-height:1.1em;margin-top:3px"></div></div>').join('')
     +'<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px">'
     +'<button data-a="no" style="padding:9px 18px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Cancel</button>'
@@ -13075,13 +13075,14 @@ function setCtKeys(){
     paint(f);
     const el=wrap.querySelector('[data-key="'+f.k+'"]');
     const live=wrap.querySelector('[data-live="'+f.k+'"]');
-    el.addEventListener('input',()=>{
+    const show=()=>{
       const v=ctNormKey(el.value);
       if(!v){live.textContent='';return}
       // Say what actually landed, so a dropped or mangled paste is visible BEFORE saving.
       live.textContent=v.length+' characters'+(f.pre?(v.startsWith(f.pre)?' · begins '+f.pre+' ✓':' · does not begin '+f.pre+' ✗'):'');
       live.style.color=(f.pre&&!v.startsWith(f.pre))?'#f59e0b':'var(--text-muted)';
-    });
+    };
+    el.addEventListener('input',show); show();   // describe what is ALREADY there, not just edits
   });
   wrap.addEventListener('click',(e)=>{
     const clr=e.target.closest('button[data-clear]');
@@ -13099,7 +13100,9 @@ function setCtKeys(){
         let changed=0;
         CT_KEY_FIELDS.forEach(f=>{
           const v=ctNormKey(wrap.querySelector('[data-key="'+f.k+'"]').value);
-          if(!v)return;                       // blank = leave alone. Deleting is the remove button.
+          // Blank = leave alone, NOT delete. Emptying a box is how the old prompt chain silently
+          // removed keys nobody meant to touch; removing one is the explicit button instead.
+          if(!v||v===cur(f.k))return;
           try{localStorage.setItem(f.k,v);changed++}catch(err){}
         });
         close();
