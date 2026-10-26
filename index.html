@@ -8872,7 +8872,13 @@ function posRangeHonored(){
   return Math.abs(got-asked)<36*3600e3;   // an older mini: a day's slack for the 4am cutoff
 }
 async function posLoadReports(){
+  // A PINNED ADDRESS THAT NO LONGER ANSWERS IS WORSE THAN NONE — it skips the probe and fails
+  // for ever. It bites hardest on the mini: a tailscale node CANNOT reach its OWN serve URL, so a
+  // Watch Tower running ON the mini with ct_pos_srv set to the :8443 tailnet address gets
+  // connection-refused every time, while the same setting is correct on the laptop. Falling back
+  // to localhost costs one 1.2s probe and only when the pinned one is already broken.
   if(!posS.srv){await posFindLocal('srv')}
+  else if(posS.srv!==POS_LOCAL_SERVER&&!await posProbe(posS.srv)){await posFindLocal('srv')}
   if(!posS.srv){renderViewport();return}
   posS.repBusy=true;posS.repErr='';renderViewport();
   try{
@@ -12265,6 +12271,10 @@ function posConnHTML(){
         <input id="pos-url" value="${esc(posS.url)}" placeholder="https://mini.your-tailnet.ts.net" style="${posInput};width:100%;margin-top:4px"></label>
       <label style="font-size:12px;color:var(--text-dim)">POS server — checks, reports
         <input id="pos-srv" value="${esc(posS.srv)}" placeholder="https://mini.your-tailnet.ts.net:4320" style="${posInput};width:100%;margin-top:4px"></label>
+      <div style="font-size:12px;color:var(--text-muted);line-height:1.5;padding:6px 9px;background:var(--surface2);border-radius:7px">
+        <b>On the mini itself</b> these are <code>http://localhost:4320</code> and <code>http://localhost:4350</code> — not the tailnet address.
+        A machine cannot reach its own <code>tailscale serve</code> URL, so the <code>.ts.net</code> address that is right on the Mac and the laptop
+        is refused here. Leave them blank and they are found automatically.</div>
       <div><button onclick="posSaveConn()" style="${posBtn('#f59e0b')}">Save</button></div>
     </div></div>`;
 }
