@@ -11690,6 +11690,43 @@ function staffAddJob(k){
 // REMOVING SOMEBODY IS A TOMBSTONE, not an erase. The next scheduler pull would
 // otherwise hand them straight back, and deleting the same person every week is not
 // a feature. The row is kept so the removal itself is undoable and auditable.
+// Add somebody who is not in the scheduler and not in a MICROS export.
+//
+// Everyone here arrived by import, which is fine until a new hire starts before anyone has put
+// them in the schedule app — and then the one master staff list cannot be told about the person
+// standing in the building. This creates the same record shape an import creates, so a later pull
+// MERGES onto it rather than making a second row: the key is staffKeyOf(name), identical to what
+// staffPull computes, and `sources` stays empty so nothing claims the row came from somewhere.
+//
+// A name that matches somebody already here is an EDIT, not a second person — including somebody
+// previously removed, where adding them back is exactly what clearing the tombstone means.
+function staffAddPerson(){
+  const name=prompt('Add somebody to the staff list\n\nTheir full name, spelled the way the schedule app spells it — that is how a later pull recognises them as the same person.');
+  if(name===null)return;
+  const nm=String(name).replace(/\s+/g,' ').trim();
+  if(!nm){alert('A person needs a name.');return}
+  const k=staffKeyOf(nm);
+  if(!k){alert('That name has no letters in it.');return}
+  const existing=staffS.people[k];
+  if(existing&&!existing.removed){
+    alert('“'+existing.name+'” is already on the list.\n\nEdit that row rather than adding a second one — they would merge back together anyway.');
+    staffSearch(nm);return;
+  }
+  if(existing&&existing.removed){
+    if(!confirm('“'+existing.name+'” was removed from this list.\n\nPut them back, with whatever was recorded about them before?'))return;
+    delete existing.removed; delete existing.removedAt;
+    existing.name=nm; existing.at=Date.now();
+  }else{
+    staffS.people[k]={key:k,pid:staffNewPid(),name:nm,sources:{},addedAt:Date.now(),at:Date.now()};
+  }
+  staffSave();
+  staffS.q=nm;                      // land on the new row rather than leaving them to find it
+  staffS.filter='';
+  renderViewport();
+  // Deliberately NOT given a Paychex id, a job or register access here. Those are separate,
+  // consequential decisions with their own buttons — and a half-filled row that LOOKS complete
+  // is how somebody ends up missing from an export.
+}
 async function staffRemove(k){
   const p=staffS.people[k];if(!p)return;
   const onReg=!!(p.register&&p.register.emp_id);
@@ -12173,6 +12210,8 @@ function posStaffHTML(){
            this row on 9/24 — it is a once-in-a-while import, not a daily action. -->
       <input type="file" id="staff-micros-file" accept=".csv,text/csv" style="display:none"
         onchange="staffMicrosFile(this)">
+      <button onclick="staffAddPerson()" title="Add somebody who is not in the schedule app yet"
+        style="${posBtn('#22c55e')};padding:7px 13px;font-size:13px">+ Add person</button>
       <button onclick="staffMicrosPick()" title="Read the MICROS Emp List export and put each person's MICROS id on their row"
         style="background:transparent;border:1px solid var(--border);color:var(--text-dim);border-radius:9px;padding:9px 13px;cursor:pointer;font-size:13px;font-family:inherit;white-space:nowrap">MICROS ids…</button>
     </div>
