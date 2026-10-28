@@ -9424,6 +9424,93 @@ const POS_ROLES={
   busser:   {label:'Busser',       can:['Clock in and out']},
   clockonly:{label:'Clock in only',can:['Clock in and out','Nothing else — cannot ring, take money, or open the drawer']},
 };
+
+// ── PRIVILEGES ──────────────────────────────────────────────────────────────
+// Vinny, 10/28: "that is where ill set what each role, manager, owner, host, can do.
+// When i give someone a role, it doesnt matter what their clocked in as they will have
+// the privleges i give them. So manager is taking tables and clocked in as a server,
+// their number will work for voids."
+//
+// That is already how the register works and it is worth writing down, because the
+// opposite is the obvious guess: every gate in pos/src reads the PERSON's `e.role` off
+// their employee record, never the job they punched in under. A manager working the
+// floor as a server keeps manager privileges all shift. This screen sets that role's
+// privileges; the clock is a separate question answered by their jobs list.
+//
+// The four here are the four he named. Deliberately NOT a fifth: the cash drawer is
+// already a per-person tick on each row (staffDrawer) and the register already enforces
+// it — duplicating it here would create two controls for one answer, which is the
+// merged-field bug this whole screen exists to undo.
+const POS_PRIVS=[
+  {key:'void',     label:'Voids',            help:'Void an item that has already gone to the kitchen'},
+  {key:'discount', label:'Discounts',        help:'Discount or comp a check'},
+  {key:'timecard', label:'Adjust time card', help:'Change somebody’s punches — this is pay'},
+  {key:'eightysix',label:'86 an item',       help:'Mark an item unavailable for the rest of service'},
+];
+const PRIVS_KEY='ct_privs';
+let privS={m:null,at:0,note:'',loaded:false};
+// Today's register behaviour, so the screen opens showing the truth rather than a blank
+// grid: voids and discounts go through canApprove(), which is manager OR owner.
+function privDefaults(){
+  const m={};
+  POS_PRIVS.forEach(p=>{m[p.key]={};Object.keys(POS_ROLES).forEach(r=>{m[p.key][r]=(r==='owner'||r==='manager')})});
+  return m;
+}
+// Fill in anything a stored blob is missing (a privilege added after it was written, a
+// role added after it was written) WITHOUT discarding what it does say.
+function privNormalize(m){
+  const out=m&&typeof m==='object'?JSON.parse(JSON.stringify(m)):{};
+  const def=privDefaults();
+  POS_PRIVS.forEach(p=>{
+    if(!out[p.key]||typeof out[p.key]!=='object')out[p.key]={};
+    Object.keys(POS_ROLES).forEach(r=>{
+      if(typeof out[p.key][r]!=='boolean')out[p.key][r]=def[p.key][r];
+    });
+  });
+  return out;
+}
+// ⚠️ A FAILED READ IS NOT AN EMPTY MATRIX. reference_data_shape_traps #3: a cloud load
+// that defaults to empty turns the next auto-save into a wipe the moment auth breaks.
+// So a missing/failed kvGet leaves whatever is already here and says so — it never
+// manufactures defaults on top of a real stored answer.
+async function privLoad(force){
+  if(privS.loaded&&!force)return;
+  privS.loaded=true;
+  try{const l=localStorage.getItem(PRIVS_KEY);if(l){const j=JSON.parse(l);if(j&&j.m){privS.m=privNormalize(j.m);privS.at=j.at||0}}}catch(e){}
+  try{
+    const r=await kvGet(PRIVS_KEY);
+    if(r&&r.v&&r.v.m){                       // a real value came back
+      if(!privS.at||(r.at||0)>=privS.at){privS.m=privNormalize(r.v.m);privS.at=r.at||0}
+      privS.note='';
+    }else if(r&&r.v===null){                 // genuinely nothing stored yet
+      if(!privS.m)privS.m=privDefaults();
+      privS.note='';
+    }else{
+      privS.note='⚠ could not read the saved privileges — showing what is on this device';
+    }
+  }catch(e){privS.note='⚠ could not read the saved privileges — showing what is on this device'}
+  if(!privS.m)privS.m=privDefaults();
+  privRefresh();
+}
+function privSave(){
+  privS.at=Date.now();
+  const payload={m:privS.m,at:privS.at};
+  try{localStorage.setItem(PRIVS_KEY,JSON.stringify(payload))}catch(e){}
+  if(!localStorage.getItem('ct_kv_key')){
+    privS.note='⚠ Saved on this computer only — no sync key on this device';privRefresh();return;
+  }
+  privS.note='';
+  kvPush(PRIVS_KEY,payload,payload.at);
+  privRefresh();
+}
+function privToggle(pk,rk,on){
+  if(!privS.m)return;
+  if(!privS.m[pk])privS.m[pk]={};
+  privS.m[pk][rk]=!!on;
+  privSave();
+}
+function privRoleHas(pk,rk){return !!(privS.m&&privS.m[pk]&&privS.m[pk][rk])}
+
 // ---- Grazie (gift cards + customers, via the CRM portal) --------------------
 async function posBoot(){
   if(!posS.url&&!posMixed()){await posFindLocal('portal')}
@@ -12301,8 +12388,69 @@ function posJobRatesHTML(){
   </div>`;
 }
 
+// THE PRIVILEGES GRID. Roles across, privileges down, one tick each.
+//
+// It opens showing what the register does TODAY (voids and discounts = manager or owner)
+// rather than a blank grid, so an untouched screen is not a lie about who can already do
+// what. Every tick saves immediately — there is no Save button to forget.
+function privCardHTML(){
+  if(!privS.m)return `<div style="${posCardCss};margin-bottom:14px"><div style="color:var(--text-dim);font-size:13px">Loading privileges…</div></div>`;
+  const roles=Object.entries(POS_ROLES);
+  const th='padding:7px 10px;text-align:center;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);font-weight:700;white-space:nowrap';
+  const td='padding:8px 10px;text-align:center;border-top:1px solid var(--border)';
+  const rowHd='padding:8px 12px 8px 2px;border-top:1px solid var(--border);white-space:nowrap';
+  return `
+  <div id="priv-card" style="${posCardCss};margin-bottom:14px">
+    <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:4px">
+      <div style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted);font-weight:700">Privileges</div>
+      <div style="font-size:12px;color:var(--text-dim)">What each role may do — whatever they are clocked in as</div>
+    </div>
+    ${privS.note?`<div style="margin:8px 0;font-size:12px;color:#fbbf24">${esc(privS.note)}</div>`:''}
+    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+      <table style="border-collapse:collapse;width:100%;min-width:560px">
+        <thead><tr>
+          <th style="${th};text-align:left;padding-left:2px"></th>
+          ${roles.map(([rk,r])=>`<th style="${th}">${esc(r.label)}</th>`).join('')}
+        </tr></thead>
+        <tbody>
+          ${POS_PRIVS.map(p=>`
+            <tr>
+              <td style="${rowHd}">
+                <div style="font-size:14px;color:var(--text);font-weight:600">${esc(p.label)}</div>
+                <div style="font-size:11.5px;color:var(--text-muted);margin-top:1px">${esc(p.help)}</div>
+              </td>
+              ${roles.map(([rk])=>`
+                <td style="${td}">
+                  <input type="checkbox" ${privRoleHas(p.key,rk)?'checked':''}
+                    onchange="privToggle('${esc(p.key)}','${esc(rk)}',this.checked)"
+                    aria-label="${esc(p.label)} — ${esc(POS_ROLES[rk].label)}"
+                    style="width:17px;height:17px;cursor:pointer;accent-color:var(--accent)">
+                </td>`).join('')}
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div style="margin-top:10px;font-size:12px;color:var(--text-muted);line-height:1.5">
+      A role is a <b>privilege level, not a job</b>. A manager working the floor as a server
+      keeps these all shift — their number works for a void whatever they punched in under.
+      <div style="margin-top:6px;color:#fbbf24">⚠ The register does not read this grid yet — it still has voids and
+      discounts hard-coded to manager-or-owner. Ticks save and sync now; they start
+      <i>deciding</i> anything once the register reads them.</div>
+    </div>
+  </div>`;
+}
+function privRefresh(){
+  const el=document.getElementById('priv-card');
+  if(!el)return;
+  const d=document.createElement('div');
+  d.innerHTML=privCardHTML();
+  const fresh=d.firstElementChild;
+  if(fresh)el.replaceWith(fresh);
+}
+
 function posStaffHTML(){
   staffLoad();
+  privLoad();
   const all=Object.values(staffS.people);
   const noId=all.filter(p=>!p.paychex_id).length;
   const payrollOnly=all.filter(p=>p.sources&&p.sources.scheduler&&p.sources.scheduler.kind==='payroll').length;
@@ -12321,6 +12469,7 @@ function posStaffHTML(){
       staffS.filter==='noid'?'showing them':(noId?'press to see them — they cannot be exported':'every one can be exported'),
       noId?"staffFilter('noid')":'',staffS.filter==='noid')}
   </div>
+  ${privCardHTML()}
   <div style="${posCardCss};margin-bottom:14px">
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
       <!-- Pull from the schedule app / Change key / Check the register came off this row
