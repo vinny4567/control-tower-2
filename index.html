@@ -9548,12 +9548,25 @@ async function staffRetireRoles(){
 // section becomes visible.
 const POS_PRIVS=[
   // ── CHECKS ──
-  {key:'checkpickup',group:'Checks',label:'Pick up any check',help:'Open a check that is not theirs'},
-  {key:'payment',    group:'Checks',label:'Take a payment',   help:'Settle a check and take the money for it'},
+  // Overstated before as "Open a check that is not theirs" — the button FINDS a check by
+  // number from the host stand; whether they may open somebody else's is seeallchecks.
+  {key:'checkpickup',group:'Checks',label:'Pick up any check',help:'Find a check by its number from the host stand'},
+  // ⚠️ def INCLUDES server AND bar. The row was first written from the host stand's
+  // Payment button and defaulted manager-or-owner — but taking a payment is far bigger
+  // than that button: a server reaches PAY straight off their own check
+  // (OrderScreen:1049) and never passes the host stand. Verified in the code, not taken
+  // on report. Published as server:false this row would have been a loaded gun: the day
+  // anyone gated the floor's PAY button on it, every server would lose the ability to
+  // take money mid-service.
+  // THIS ROW MEANS "may take a payment at all". WHOSE check they can reach is seeallchecks.
+  {key:'payment',    group:'Checks',label:'Take a payment',   def:['owner','manager','server','bar'],redefault:'2026-10-28a',help:'Take money for a check. Which checks they can reach is a separate row.'},
   // Its own row because of Transfer: handing a whole check to another server is a change
   // of custody, and $$ Packages and Corkage put money on. Finding a check and
   // restructuring one are not the same power.
-  {key:'checkfuncs', group:'Checks',label:'Change a check',   help:'Split, combine, rename, transfer to another server, party pricing, corkage'},
+  // ⚠️ Same shape as payment, same fix: FUNCTIONS is a side button on the ordering
+  // screen (OrderScreen:976), so a server splits and combines their own check without
+  // the host stand.
+  {key:'checkfuncs', group:'Checks',label:'Change a check',   def:['owner','manager','server','bar'],redefault:'2026-10-28a',help:'Split, combine, rename, transfer to another server, party pricing, corkage. Which checks they can reach is a separate row.'},
   {key:'reopen',     group:'Checks',label:'Reopen a settled check',help:'Bring back a check that was already closed out'},
   // ⚠️ NOT the last step of taking money — close to the opposite. The POS session read
   // the condition: CLOSE OUT only appears when due===0 AND paid===0, and is hidden the
@@ -9615,7 +9628,7 @@ const PRIVS_KEY='ct_privs';
 // the owner is a grid that can lock the only person who can fix it out of his own
 // register, mid-service, with no way back in.
 const PRIV_ALWAYS={owner:true};
-let privS={m:null,at:0,note:'',loaded:false};
+let privS={m:null,at:0,note:'',loaded:false,fixes:{}};
 // Today's register behaviour, so the screen opens showing the truth rather than a blank
 // grid: voids and discounts go through canApprove(), which is manager OR owner.
 // ⚠️ THE DEFAULT IS PER ROW, and it is not a style choice — it is the whole safety
@@ -9670,9 +9683,30 @@ async function privLoad(force){
         // itself. Normalising fills it in; writing it back is what makes the stored
         // answer match the screen. Idempotent: once repaired, nothing more is written,
         // so two devices cannot ping-pong over it.
+        // ⚠️ A CHANGED DEFAULT DOES NOT REACH A ROW THAT IS ALREADY STORED.
+        //
+        // privNormalize only FILLS IN what is missing — correctly, because overwriting a
+        // stored answer with a default would throw away Vinny's decisions every reload.
+        // But that means fixing a default I shipped wrong does nothing to the blob that
+        // already carries the wrong value, and `payment` was published `server:false`
+        // while every server on the floor takes payments all night. The row was a loaded
+        // gun: the day the register gated the floor's PAY button on it, service stops.
+        //
+        // So a row whose default was CORRECTED carries a `redefault` stamp. Seeing a
+        // stamp it has not applied, this resets that row to its new default once, records
+        // the stamp, and never touches it again — so a later deliberate change by Vinny
+        // survives every reload after it.
+        const stamps=(r.v.fixes&&typeof r.v.fixes==='object')?Object.assign({},r.v.fixes):{};
+        const defs=privDefaults();
+        let restamped=false;
+        POS_PRIVS.forEach(p=>{
+          if(!p.redefault||stamps[p.key]===p.redefault)return;
+          filled[p.key]=Object.assign({},defs[p.key]);
+          stamps[p.key]=p.redefault;restamped=true;
+        });
         const repaired=JSON.stringify(filled)!==JSON.stringify(r.v.m);
-        privS.m=filled;privS.at=r.at||0;
-        if(repaired){privSave();return}
+        privS.m=filled;privS.at=r.at||0;privS.fixes=stamps;
+        if(repaired||restamped){privSave();return}
       }
       privS.note='';
     }else if(r&&r.v===null){                 // genuinely nothing stored yet
@@ -9752,7 +9786,9 @@ function privSave(){
   // from a device whose clock runs ahead, and two ticks inside the same millisecond would
   // otherwise tie. Monotonic by construction rather than by trusting the clock.
   privS.at=Math.max(Date.now(),(privS.at||0)+1);
-  const payload={m:privS.m,at:privS.at};
+  // `fixes` rides alongside the matrix, NOT inside it — a stamp inside `m` would be
+  // served to the register as if it were a privilege key.
+  const payload={m:privS.m,at:privS.at,fixes:privS.fixes||{}};
   try{localStorage.setItem(PRIVS_KEY,JSON.stringify(payload))}catch(e){}
   if(!localStorage.getItem('ct_kv_key')){
     privS.note='⚠ Saved on this computer only — no sync key on this device';privS.mini='nokey';privRefresh();return;
