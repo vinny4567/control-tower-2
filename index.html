@@ -9590,7 +9590,18 @@ async function privLoad(force){
   try{
     const r=await kvGet(PRIVS_KEY);
     if(r&&r.v&&r.v.m){                       // a real value came back
-      if(!privS.at||(r.at||0)>=privS.at){privS.m=privNormalize(r.v.m);privS.at=r.at||0}
+      if(!privS.at||(r.at||0)>=privS.at){
+        const filled=privNormalize(r.v.m);
+        // ⚠️ AN OMITTED ROLE IS NOT A DENIAL. The register counts only an EXPLICIT
+        // boolean and falls back to its hard-coded rule for anything missing — so a blob
+        // written before a role existed (Host, added 10/28) leaves that role deciding
+        // itself. Normalising fills it in; writing it back is what makes the stored
+        // answer match the screen. Idempotent: once repaired, nothing more is written,
+        // so two devices cannot ping-pong over it.
+        const repaired=JSON.stringify(filled)!==JSON.stringify(r.v.m);
+        privS.m=filled;privS.at=r.at||0;
+        if(repaired){privSave();return}
+      }
       privS.note='';
     }else if(r&&r.v===null){                 // genuinely nothing stored yet
       if(!privS.m)privS.m=privDefaults();
@@ -9602,15 +9613,43 @@ async function privLoad(force){
   if(!privS.m)privS.m=privDefaults();
   privRefresh();
 }
+// ⚠️ DID THE REGISTER ACTUALLY GET THIS?
+//
+// kvSend mirrors every ct_* key to the mini (kvSendMini), and the register reads the
+// MINI's copy — Jarvis folds `ct_privs` into /api/menu as menu.privs. But that mirror is
+// deliberately fire-and-forget: `fetch(...).catch(()=>{})`, best-effort, because off the
+// tailnet that host does not resolve and a cloud write must never wait on it.
+//
+// For every other key that is the right trade. For this one it is not. Set privileges
+// from home or off cellular and the mirror silently misses, the cloud copy is fine, the
+// register finds no privs and falls back to its hard-coded rules — and EVERY layer
+// reports success. The grid would decide nothing while looking correct on all three
+// sides. So this one key is written to the mini again, checked, and the answer shown.
+// The second POST is the same value as the mirror's, so it is idempotent.
+async function privVerifyMini(payload){
+  if(localStorage.getItem('ct_kv_mini')==='off'){privS.mini='off';privRefresh();return}
+  if(!KV_TOKEN()){privS.mini='nokey';privRefresh();return}
+  privS.mini='checking';privRefresh();
+  try{
+    const ac=(typeof AbortController==='function')?new AbortController():null;
+    if(ac)setTimeout(()=>{try{ac.abort()}catch(e){}},6000);
+    const r=await fetch(KV_MINI+encodeURIComponent(PRIVS_KEY),{method:'POST',
+      headers:{'Content-Type':'application/json','x-sync-token':KV_TOKEN()},
+      body:JSON.stringify({v:payload,at:payload.at}),...(ac?{signal:ac.signal}:{})});
+    privS.mini=r.ok?'ok':'fail';
+  }catch(e){privS.mini='fail'}
+  privRefresh();
+}
 function privSave(){
   privS.at=Date.now();
   const payload={m:privS.m,at:privS.at};
   try{localStorage.setItem(PRIVS_KEY,JSON.stringify(payload))}catch(e){}
   if(!localStorage.getItem('ct_kv_key')){
-    privS.note='⚠ Saved on this computer only — no sync key on this device';privRefresh();return;
+    privS.note='⚠ Saved on this computer only — no sync key on this device';privS.mini='nokey';privRefresh();return;
   }
   privS.note='';
   kvPush(PRIVS_KEY,payload,payload.at);
+  privVerifyMini(payload);
   privRefresh();
 }
 function privToggle(pk,rk,on){
@@ -12550,6 +12589,18 @@ function privCardHTML(){
       <div style="font-size:12px;color:var(--text-dim)">What each role may do — whatever they are clocked in as</div>
     </div>
     ${privS.note?`<div style="margin:8px 0;font-size:12px;color:#fbbf24">${esc(privS.note)}</div>`:''}
+    ${(()=>{
+      // Whether the REGISTER got it, not just the cloud. The register reads the mini's
+      // copy; the mirror to the mini is best-effort and silent, so without this line a
+      // save made off the restaurant network looks identical to one that landed.
+      const m=privS.mini;
+      if(!m)return '';
+      if(m==='checking')return `<div style="margin:8px 0;font-size:12px;color:var(--text-dim)">Checking the register…</div>`;
+      if(m==='ok')return `<div style="margin:8px 0;font-size:12px;color:#22c55e">✓ Saved, and the register has them.</div>`;
+      if(m==='off')return `<div style="margin:8px 0;font-size:12px;color:#fbbf24">Saved to the cloud. Sending to the register is switched off on this device, so the register is still on its old rules.</div>`;
+      if(m==='nokey')return '';
+      return `<div style="margin:8px 0;font-size:12px;color:#fbbf24">⚠ Saved to the cloud, but <b>the register did not get them</b> — you are probably not on the restaurant network. It keeps its old rules until you open this screen there and change something.</div>`;
+    })()}
     ${(()=>{
       // Anyone still on a retired privilege. Shown here rather than migrated silently on
       // load: this GRANTS people powers they did not have, and 232 records quietly
