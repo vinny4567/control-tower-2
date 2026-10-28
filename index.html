@@ -9450,7 +9450,7 @@ const POS_ROLES={
 const POS_PRIVS=[
   {key:'void',     label:'Voids',            help:'Void an item that has already gone to the kitchen'},
   {key:'discount', label:'Discounts',        help:'Discount or comp a check'},
-  {key:'discountdel',label:'Delete a discount',help:'Take a discount back off a check after it is applied'},
+  {key:'discountdel',label:'Delete a discount',help:'Take a discount back off a check after it is applied',missing:true},
   {key:'timecard', label:'Adjust time card', help:'Change somebody’s punches — this is pay',adds:true},
   {key:'eightysix',label:'86 an item',       help:'Mark an item unavailable on the register for the rest of service. Does not reach Otter — delivery is a separate switch.',adds:true},
 ];
@@ -9525,6 +9525,15 @@ function privToggle(pk,rk,on){
   privSave();
 }
 function privRoleHas(pk,rk){return PRIV_ALWAYS[rk]?true:!!(privS.m&&privS.m[pk]&&privS.m[pk][rk])}
+// OWNER-ONLY IS A REAL POLICY AND ALSO A TRAP. "Only I can void" is a perfectly normal
+// thing for an owner to want, and the register can honour it safely because owner is
+// unremovable on both sides. But if Vinny is not in the building that night, nobody on
+// the floor can approve anything, and the only way to undo it is this screen. So it is
+// allowed, and it says so on the row the moment it becomes true — not in a dialog he
+// clicks through, and not in a chat message he read once.
+function privOwnerOnly(pk){
+  return Object.keys(POS_ROLES).every(r=>PRIV_ALWAYS[r]||!privRoleHas(pk,r));
+}
 
 // ---- Grazie (gift cards + customers, via the CRM portal) --------------------
 async function posBoot(){
@@ -12431,8 +12440,9 @@ function privCardHTML(){
           ${POS_PRIVS.map(p=>`
             <tr>
               <td style="${rowHd}">
-                <div style="font-size:14px;color:var(--text);font-weight:600">${esc(p.label)}${p.adds?`<span title="Nobody is restricted from this today — ticking these takes it away from people who can do it now" style="margin-left:7px;font-size:10px;font-weight:700;letter-spacing:.05em;color:#0b0b0b;background:#fbbf24;border-radius:999px;padding:2px 7px;vertical-align:middle">NEW LIMIT</span>`:''}</div>
+                <div style="font-size:14px;color:var(--text);font-weight:600">${esc(p.label)}${p.adds?`<span title="Nobody is restricted from this today — ticking these takes it away from people who can do it now" style="margin-left:7px;font-size:10px;font-weight:700;letter-spacing:.05em;color:#0b0b0b;background:#fbbf24;border-radius:999px;padding:2px 7px;vertical-align:middle">NEW LIMIT</span>`:''}${p.missing?`<span title="The register has no button for this yet — setting it now decides who gets it when there is one" style="margin-left:7px;font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--text-dim);border:1px solid var(--border);border-radius:999px;padding:2px 7px;vertical-align:middle">NOT BUILT YET</span>`:''}</div>
                 <div style="font-size:11.5px;color:var(--text-muted);margin-top:1px">${esc(p.help)}</div>
+                ${privOwnerOnly(p.key)?`<div style="font-size:11.5px;color:#fbbf24;margin-top:3px;max-width:340px;white-space:normal">⚠ Only you. If you are not in the building, nobody on the floor can do this — and it can only be changed back here.</div>`:''}
               </td>
               ${roles.map(([rk])=>PRIV_ALWAYS[rk]
                 ? `<td style="${td}" title="The owner has everything. This cannot be turned off.">
@@ -12458,6 +12468,9 @@ function privCardHTML(){
         <b style="color:#fbbf24">NEW LIMIT</b> marks a row the register does not restrict at all today —
         anybody who can reach the screen can do it. Ticking those rows <b>takes something away</b> from
         people who have it now, rather than writing down a rule you already had.</div>`:''}
+      ${POS_PRIVS.some(p=>p.missing)?`<div style="margin-top:6px;color:var(--text-dim)">
+        <b>NOT BUILT YET</b> marks a row where the register has no button for it at all — nobody can do it,
+        including you. Setting it now just decides who gets it the day it is built.</div>`:''}
     </div>
   </div>`;
 }
