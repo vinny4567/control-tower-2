@@ -9551,22 +9551,26 @@ const POS_PRIVS=[
   // Overstated before as "Open a check that is not theirs" — the button FINDS a check by
   // number from the host stand; whether they may open somebody else's is seeallchecks.
   {key:'checkpickup',group:'Checks',label:'Pick up any check',help:'Find a check by its number from the host stand'},
-  // ⚠️ def INCLUDES server AND bar. The row was first written from the host stand's
-  // Payment button and defaulted manager-or-owner — but taking a payment is far bigger
-  // than that button: a server reaches PAY straight off their own check
-  // (OrderScreen:1049) and never passes the host stand. Verified in the code, not taken
-  // on report. Published as server:false this row would have been a loaded gun: the day
-  // anyone gated the floor's PAY button on it, every server would lose the ability to
-  // take money mid-service.
+  // ⚠️ THIS ROW NOW GATES THE FLOOR'S OWN PAY BUTTON, not just the host stand's
+  // (angelis-pos c79b9d2). A server reaches PAY straight off their own check
+  // (OrderScreen:1049) — three routes, in fact, and FUNCTIONS has four; the register
+  // found the extras only because a test counted them rather than read for them.
+  //
+  // ⛔ NO `def` OVERRIDE AND NO `redefault` STAMP HERE, deliberately. I had both: the
+  // rows defaulted to include server+bar and carried a stamp that would reset them on
+  // load. Vinny then said "ill set all those privleges myself" — so a default of mine
+  // firing when he opens the screen would be me setting a privilege he had just taken
+  // off me. He is the policy; this file is the switch.
+  //
   // THIS ROW MEANS "may take a payment at all". WHOSE check they can reach is seeallchecks.
-  {key:'payment',    group:'Checks',label:'Take a payment',   def:['owner','manager','server','bar'],redefault:'2026-10-28a',help:'Take money for a check. Which checks they can reach is a separate row.'},
+  {key:'payment',    group:'Checks',label:'Take a payment',   help:'Take money for a check. Which checks they can reach is a separate row.'},
   // Its own row because of Transfer: handing a whole check to another server is a change
   // of custody, and $$ Packages and Corkage put money on. Finding a check and
   // restructuring one are not the same power.
-  // ⚠️ Same shape as payment, same fix: FUNCTIONS is a side button on the ordering
-  // screen (OrderScreen:976), so a server splits and combines their own check without
-  // the host stand.
-  {key:'checkfuncs', group:'Checks',label:'Change a check',   def:['owner','manager','server','bar'],redefault:'2026-10-28a',help:'Split, combine, rename, transfer to another server, party pricing, corkage. Which checks they can reach is a separate row.'},
+  // Same shape as payment: FUNCTIONS is a side button on the ordering screen
+  // (OrderScreen:976), so a server splits and combines their own check without the host
+  // stand. Also gated on the floor route now, and likewise left for Vinny to set.
+  {key:'checkfuncs', group:'Checks',label:'Change a check',   help:'Split, combine, rename, transfer to another server, party pricing, corkage. Which checks they can reach is a separate row.'},
   {key:'reopen',     group:'Checks',label:'Reopen a settled check',help:'Bring back a check that was already closed out'},
   // ⚠️ NOT the last step of taking money — close to the opposite. The POS session read
   // the condition: CLOSE OUT only appears when due===0 AND paid===0, and is hidden the
