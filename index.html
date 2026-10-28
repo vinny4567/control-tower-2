@@ -9641,7 +9641,13 @@ async function privVerifyMini(payload){
   privRefresh();
 }
 function privSave(){
-  privS.at=Date.now();
+  // ⚠️ `at` MUST ALWAYS GO UP. The mini's write is newest-wins (`excluded.at >= kv.at`)
+  // and Jarvis's version bump keys off it, so a save that does not advance `at` no-ops:
+  // Vinny's tick looks saved, the register keeps the old grid, and every layer reports
+  // success. Date.now() normally advances on its own — but privS.at can have been loaded
+  // from a device whose clock runs ahead, and two ticks inside the same millisecond would
+  // otherwise tie. Monotonic by construction rather than by trusting the clock.
+  privS.at=Math.max(Date.now(),(privS.at||0)+1);
   const payload={m:privS.m,at:privS.at};
   try{localStorage.setItem(PRIVS_KEY,JSON.stringify(payload))}catch(e){}
   if(!localStorage.getItem('ct_kv_key')){
