@@ -12602,10 +12602,15 @@ function privCardHTML(){
       const m=privS.mini;
       if(!m)return '';
       if(m==='checking')return `<div style="margin:8px 0;font-size:12px;color:var(--text-dim)">Checking the register…</div>`;
-      if(m==='ok')return `<div style="margin:8px 0;font-size:12px;color:#22c55e">✓ Saved, and the register has them.</div>`;
+      // ⚠️ SAY WHAT WAS ACTUALLY PROVEN. This check gets a 200 from the MINI's KV. That
+      // is not the same as a register having the new rules: the register reads them
+      // through /api/menu and keeps an offline cache, so it picks them up on its next
+      // refresh. Claiming "the register has them" would be the same overclaim the rest of
+      // this feature kept making — a layer reporting its own success as the system's.
+      if(m==='ok')return `<div style="margin:8px 0;font-size:12px;color:#22c55e">✓ Saved, and the restaurant's server has them — the registers pick them up on their next refresh.</div>`;
       if(m==='off')return `<div style="margin:8px 0;font-size:12px;color:#fbbf24">Saved to the cloud. Sending to the register is switched off on this device, so the register is still on its old rules.</div>`;
       if(m==='nokey')return '';
-      return `<div style="margin:8px 0;font-size:12px;color:#fbbf24">⚠ Saved to the cloud, but <b>the register did not get them</b> — you are probably not on the restaurant network. It keeps its old rules until you open this screen there and change something.</div>`;
+      return `<div style="margin:8px 0;font-size:12px;color:#fbbf24">⚠ Saved to the cloud, but <b>it did not reach the restaurant</b> — you are probably not on its network. The registers keep their old rules until you open this screen there and change something.</div>`;
     })()}
     ${(()=>{
       // Anyone still on a retired privilege. Shown here rather than migrated silently on
