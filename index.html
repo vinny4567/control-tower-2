@@ -9441,12 +9441,18 @@ const POS_ROLES={
 // already a per-person tick on each row (staffDrawer) and the register already enforces
 // it — duplicating it here would create two controls for one answer, which is the
 // merged-field bug this whole screen exists to undo.
+// `adds:true` = THE REGISTER DOES NOT GATE THIS AT ALL TODAY, so ticking the row takes
+// something away from people who have it now. Confirmed by the POS session 10/28 reading
+// pos/src rather than guessing: neither time cards nor 86 has a privilege check of its
+// own — both are gated only by WHICH SCREEN they live on (86 on the host screen, time
+// cards on the dashboard), and that routing was itself the isManager bug. So today
+// "can adjust a time card" effectively means "can reach the dashboard".
 const POS_PRIVS=[
   {key:'void',     label:'Voids',            help:'Void an item that has already gone to the kitchen'},
   {key:'discount', label:'Discounts',        help:'Discount or comp a check'},
   {key:'discountdel',label:'Delete a discount',help:'Take a discount back off a check after it is applied'},
-  {key:'timecard', label:'Adjust time card', help:'Change somebody’s punches — this is pay'},
-  {key:'eightysix',label:'86 an item',       help:'Mark an item unavailable for the rest of service'},
+  {key:'timecard', label:'Adjust time card', help:'Change somebody’s punches — this is pay',adds:true},
+  {key:'eightysix',label:'86 an item',       help:'Mark an item unavailable on the register for the rest of service. Does not reach Otter — delivery is a separate switch.',adds:true},
 ];
 const PRIVS_KEY='ct_privs';
 // Vinny, 10/28: "owner is full access no restrictions". So owner is not a tick — it is a
@@ -12425,7 +12431,7 @@ function privCardHTML(){
           ${POS_PRIVS.map(p=>`
             <tr>
               <td style="${rowHd}">
-                <div style="font-size:14px;color:var(--text);font-weight:600">${esc(p.label)}</div>
+                <div style="font-size:14px;color:var(--text);font-weight:600">${esc(p.label)}${p.adds?`<span title="Nobody is restricted from this today — ticking these takes it away from people who can do it now" style="margin-left:7px;font-size:10px;font-weight:700;letter-spacing:.05em;color:#0b0b0b;background:#fbbf24;border-radius:999px;padding:2px 7px;vertical-align:middle">NEW LIMIT</span>`:''}</div>
                 <div style="font-size:11.5px;color:var(--text-muted);margin-top:1px">${esc(p.help)}</div>
               </td>
               ${roles.map(([rk])=>PRIV_ALWAYS[rk]
@@ -12448,6 +12454,10 @@ function privCardHTML(){
       <div style="margin-top:6px;color:#fbbf24">⚠ The register does not read this grid yet — it still has voids and
       discounts hard-coded to manager-or-owner. Ticks save and sync now; they start
       <i>deciding</i> anything once the register reads them.</div>
+      ${POS_PRIVS.some(p=>p.adds)?`<div style="margin-top:6px;color:var(--text-dim)">
+        <b style="color:#fbbf24">NEW LIMIT</b> marks a row the register does not restrict at all today —
+        anybody who can reach the screen can do it. Ticking those rows <b>takes something away</b> from
+        people who have it now, rather than writing down a rule you already had.</div>`:''}
     </div>
   </div>`;
 }
