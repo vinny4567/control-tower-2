@@ -9534,9 +9534,30 @@ async function staffRetireRoles(){
 // own — both are gated only by WHICH SCREEN they live on (86 on the host screen, time
 // cards on the dashboard), and that routing was itself the isManager bug. So today
 // "can adjust a time card" effectively means "can reach the dashboard".
+// ⚠️ STANDING RULE BEFORE ADDING A ROW: ask what SCREEN the thing lives on, and whether
+// that screen is gated by a different row. Vinny ticked 86 for Host and it did nothing,
+// because the only route to the 86 button is the host stand and the host stand was gated
+// separately — the grid said yes and the screen said no. As the POS session put it: a
+// grid that can express an unreachable combination will eventually express one. Same
+// reason `reports` must not gate `timecard`: Time Cards is reached through DASH BOARD, so
+// that button opens on `reports` OR `timecard` and `reports` gates only its own contents.
+//
+// GROUPED, on the POS session's suggestion, at 11 rows rather than waiting for 15.
+// Eleven undifferentiated rows at six columns is already past the point where anybody
+// audits it honestly; three sections read as three decisions, and a row in the wrong
+// section becomes visible.
 const POS_PRIVS=[
-  {key:'void',     label:'Voids',            help:'Void an item that has already gone to the kitchen'},
-  {key:'discount', label:'Discounts',        help:'Discount or comp a check'},
+  // ── CHECKS ──
+  {key:'checkpickup',group:'Checks',label:'Pick up any check',help:'Open a check that is not theirs',pending:true},
+  {key:'payment',    group:'Checks',label:'Take a payment',   help:'Settle a check and take the money for it',pending:true},
+  // Its own row because of Transfer: handing a whole check to another server is a change
+  // of custody, and $$ Packages and Corkage put money on. Finding a check and
+  // restructuring one are not the same power.
+  {key:'checkfuncs', group:'Checks',label:'Change a check',   help:'Split, combine, rename, transfer to another server, party pricing, corkage',pending:true},
+  {key:'reopen',     group:'Checks',label:'Reopen a settled check',help:'Bring back a check that was already closed out',pending:true},
+  // ── MONEY ──
+  {key:'void',     group:'Money',label:'Voids',            help:'Void an item that has already gone to the kitchen'},
+  {key:'discount', group:'Money',label:'Discounts',        help:'Discount or comp a check'},
   // NO "Delete a discount" ROW, for two reasons that arrived in the same minute.
   //
   // 1. It was added 10/28 reading "also let me delete discounts" as a privilege. Vinny
@@ -9547,8 +9568,17 @@ const POS_PRIVS=[
   //
   // Both point the same way, and (2) is the one that should survive: one power, one row.
   // A register gating discount-removal must read `void`.
-  {key:'timecard', label:'Adjust time card', help:'Change somebody’s punches — this is pay',adds:true},
-  {key:'eightysix',label:'86 an item',       help:'Mark an item unavailable on the register for the rest of service. Does not reach Otter — delivery is a separate switch.',adds:true},
+  {key:'drawermoney',  group:'Money',label:'Pay in and pay out',help:'Take money out of the drawer, or put it in. Anyone trusted to take it out is trusted to put it back, so it is one row.',pending:true},
+  {key:'giftcardsell', group:'Money',label:'Sell a gift card',  help:'Sell a gift card at the register',pending:true},
+  // ── OFFICE ──
+  // ⚠️ `reports` must NOT be the route to `timecard` — see the standing rule above.
+  {key:'reports',  group:'Office',label:'See the dashboard',help:'Last night’s numbers — cashier report, checkout, employee IDs',pending:true},
+  // `adds` dropped from these two on 10/28. It meant "nobody is restricted from this
+  // today", which stopped being true the moment Vinny deployed the grid and the registers
+  // started enforcing it. A stale label, same as the "register does not read this grid
+  // yet" line was — and the reason this file now asks the mini rather than asserting.
+  {key:'timecard', group:'Office',label:'Adjust time card',help:'Change somebody’s punches — this is pay'},
+  {key:'eightysix',group:'Office',label:'86 an item',      help:'Mark an item unavailable on the register for the rest of service. Does not reach Otter — delivery is a separate switch.'},
 ];
 const PRIVS_KEY='ct_privs';
 // Vinny, 10/28: "owner is full access no restrictions". So owner is not a tick — it is a
@@ -12672,24 +12702,40 @@ function privCardHTML(){
           ${roles.map(([rk,r])=>`<th style="${th}">${esc(r.label)}${PRIV_ALWAYS[rk]?`<div style="font-size:9.5px;letter-spacing:.06em;color:var(--text-dim);font-weight:600;margin-top:1px">always</div>`:''}</th>`).join('')}
         </tr></thead>
         <tbody>
-          ${POS_PRIVS.map(p=>`
-            <tr>
-              <td style="${rowHd}">
-                <div style="font-size:14px;color:var(--text);font-weight:600">${esc(p.label)}${p.adds?`<span title="Nobody is restricted from this today — ticking these takes it away from people who can do it now" style="margin-left:7px;font-size:10px;font-weight:700;letter-spacing:.05em;color:#0b0b0b;background:#fbbf24;border-radius:999px;padding:2px 7px;vertical-align:middle">NEW LIMIT</span>`:''}${p.missing?`<span title="The register has no button for this yet — setting it now decides who gets it when there is one" style="margin-left:7px;font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--text-dim);border:1px solid var(--border);border-radius:999px;padding:2px 7px;vertical-align:middle">NOT BUILT YET</span>`:''}</div>
-                <div style="font-size:11.5px;color:var(--text-muted);margin-top:1px">${esc(p.help)}</div>
-                ${privOwnerOnly(p.key)?`<div style="font-size:11.5px;color:#fbbf24;margin-top:3px;max-width:340px;white-space:normal">⚠ Only you. If you are not in the building, nobody on the floor can do this — and it can only be changed back here.</div>`:''}
-              </td>
-              ${roles.map(([rk])=>PRIV_ALWAYS[rk]
-                ? `<td style="${td}" title="The owner has everything. This cannot be turned off.">
-                     <span style="color:var(--accent);font-size:15px;font-weight:700" aria-label="${esc(p.label)} — Owner, always">✓</span>
-                   </td>`
-                : `<td style="${td}">
-                     <input type="checkbox" ${privRoleHas(p.key,rk)?'checked':''}
-                       onchange="privToggle('${esc(p.key)}','${esc(rk)}',this.checked)"
-                       aria-label="${esc(p.label)} — ${esc(POS_ROLES[rk].label)}"
-                       style="width:17px;height:17px;cursor:pointer;accent-color:var(--accent)">
-                   </td>`).join('')}
-            </tr>`).join('')}
+          ${(()=>{
+            const tag=(txt,title,solid)=>`<span title="${esc(title)}" style="margin-left:7px;font-size:10px;font-weight:700;letter-spacing:.05em;vertical-align:middle;border-radius:999px;padding:2px 7px;${solid?'color:#0b0b0b;background:#fbbf24':'color:var(--text-dim);border:1px solid var(--border)'}">${txt}</span>`;
+            const rowOf=(p)=>`
+              <tr>
+                <td style="${rowHd}">
+                  <div style="font-size:14px;color:var(--text);font-weight:600">${esc(p.label)}${
+                    p.missing?tag('NOT BUILT YET','The register has no button for this yet — setting it now decides who gets it when there is one',false):''}${
+                    p.pending?tag('NOT WIRED YET','The button exists on the register but is not reading this row yet — it stays manager-or-owner until it is',false):''}</div>
+                  <div style="font-size:11.5px;color:var(--text-muted);margin-top:1px;max-width:360px;white-space:normal">${esc(p.help)}</div>
+                  ${privOwnerOnly(p.key)?`<div style="font-size:11.5px;color:#fbbf24;margin-top:3px;max-width:360px;white-space:normal">⚠ Only you. If you are not in the building, nobody on the floor can do this — and it can only be changed back here.</div>`:''}
+                </td>
+                ${roles.map(([rk])=>PRIV_ALWAYS[rk]
+                  ? `<td style="${td}" title="The owner has everything. This cannot be turned off.">
+                       <span style="color:var(--accent);font-size:15px;font-weight:700" aria-label="${esc(p.label)} — Owner, always">✓</span>
+                     </td>`
+                  : `<td style="${td}">
+                       <input type="checkbox" ${privRoleHas(p.key,rk)?'checked':''}
+                         onchange="privToggle('${esc(p.key)}','${esc(rk)}',this.checked)"
+                         aria-label="${esc(p.label)} — ${esc(POS_ROLES[rk].label)}"
+                         style="width:17px;height:17px;cursor:pointer;accent-color:var(--accent)">
+                     </td>`).join('')}
+              </tr>`;
+            // Group runs in declaration order — a row moved out of its section shows up as
+            // a second heading with the same name, which is the point: a row filed in the
+            // wrong place should be visible rather than quietly sorted into looking right.
+            const runs=[];
+            POS_PRIVS.forEach(p=>{
+              const g=p.group||'';
+              const last=runs[runs.length-1];
+              if(last&&last.name===g)last.rows.push(p); else runs.push({name:g,rows:[p]});
+            });
+            return runs.map(r=>(r.name?`<tr><td colspan="${roles.length+1}" style="padding:14px 2px 2px;font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim)">${esc(r.name)}</td></tr>`:'')
+              +r.rows.map(rowOf).join('')).join('');
+          })()}
         </tbody>
       </table>
     </div>
@@ -12704,11 +12750,10 @@ function privCardHTML(){
            built-in rules — voids and discounts stay manager-or-owner, and <b>nothing here has taken anything away from anybody</b>.
            Your ticks are saved and will apply the moment the restaurant starts serving them.</div>`
         : `<div style="margin-top:6px;color:var(--text-dim)">Checking whether the registers are using this grid yet…</div>`}
-      ${POS_PRIVS.some(p=>p.adds)?`<div style="margin-top:6px;color:var(--text-dim)">
-        <b style="color:#fbbf24">NEW LIMIT</b> marks a row nobody is restricted from today — anybody who can reach
-        the screen can do it. <b>These rows take something away</b> rather than writing down a rule you already
-        had: as the boxes stand, a server loses both the day the registers start using this grid.
-        Tick a column to give it back.</div>`:''}
+      ${POS_PRIVS.some(p=>p.pending)?`<div style="margin-top:6px;color:var(--text-dim)">
+        <b>NOT WIRED YET</b> marks a row whose button exists on the register but is not reading this grid yet.
+        Those stay manager-or-owner however you tick them — set them now and they take effect the day
+        the register starts reading them. Nothing you do to those rows changes anything today.</div>`:''}
       ${POS_PRIVS.some(p=>p.missing)?`<div style="margin-top:6px;color:var(--text-dim)">
         <b>NOT BUILT YET</b> marks a row where the register has no button for it at all — nobody can do it,
         including you. Setting it now just decides who gets it the day it is built.</div>`:''}
