@@ -6828,6 +6828,11 @@ let posDiscRates={};   // discount id -> rate in cents (percent stored as basis 
 // Discount TYPES added here rather than shipped with the register. Same shape the register
 // merges over its built-ins: {id,name,kind:'amount'|'percent'|'open',unit?,rate,manager}.
 let posNewDiscounts=[];
+// Discounts taken OFF the DISC key. The ones Vinny adds here he could always remove
+// again (they only ever existed here); the ones that ship in the catalog had no ✕ at
+// all, so a discount the restaurant has stopped giving stayed on the key for ever.
+// Ids, not names — a rename must not resurrect a deleted discount.
+let posDeletedDiscounts=[];
 // Mods added to a group here, as {groupNum: [modName, ...]}. Names only — the price
 // is read from the catalog row at render time, so a mod whose price changes does not
 // go stale inside a group.
@@ -6841,12 +6846,12 @@ async function posLoadPrices(){
   // Fetch everything, compare it to what is already on screen, and only redraw when
   // something actually differs. A reload that changes nothing now changes nothing.
   const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
-  const [r,g,ng,at,rt,pc,nm,gn,gd,ml,dm,cc,mn,dg,ce,co,io,di,ni,sa,dr,nd]=await Promise.all([
+  const [r,g,ng,at,rt,pc,nm,gn,gd,ml,dm,cc,mn,dg,ce,co,io,di,ni,sa,dr,nd,dd]=await Promise.all([
     kvGet('ct_pos_prices'),kvGet('ct_pos_group_mods'),kvGet('ct_pos_new_groups'),
     kvGet('ct_pos_group_attach'),kvGet('ct_pos_routing'),kvGet('ct_pos_print_classes'),
     kvGet('ct_pos_new_mods'),kvGet('ct_pos_group_names'),kvGet('ct_pos_group_detach'),
     kvGet('ct_pos_mod_letters'),kvGet('ct_pos_deleted_mods'),kvGet('ct_pos_choice_cuts'),
-    kvGet('ct_pos_mod_names'),kvGet('ct_pos_deleted_groups'),kvGet('ct_pos_choice_edits'),kvGet('ct_pos_choice_order'),kvGet('ct_pos_item_group_order'),kvGet('ct_pos_deleted_items'),kvGet('ct_pos_new_items'),kvGet('ct_pos_section_adds'),kvGet('ct_pos_disc_rates'),kvGet('ct_pos_new_discounts')]);
+    kvGet('ct_pos_mod_names'),kvGet('ct_pos_deleted_groups'),kvGet('ct_pos_choice_edits'),kvGet('ct_pos_choice_order'),kvGet('ct_pos_item_group_order'),kvGet('ct_pos_deleted_items'),kvGet('ct_pos_new_items'),kvGet('ct_pos_section_adds'),kvGet('ct_pos_disc_rates'),kvGet('ct_pos_new_discounts'),kvGet('ct_pos_deleted_discounts')]);
   // ⛔ A FAILED FETCH IS NOT AN EMPTY VALUE. `kvGet` returns null for ANY non-200 — a dropped
   // connection, a rejected key, a restart — and this block used to read `(x&&x.v)||[]`, which turns
   // that null into an EMPTY LIST and then assigns it over the live one below. The pending edits are
@@ -6863,7 +6868,7 @@ async function posLoadPrices(){
     names:take(gn,posGroupNames,{}), detach:take(gd,posGroupDetach,{}), letters:take(ml,posModLetters,{}),
     deleted:take(dm,posDeletedMods,[]), cuts:take(cc,posChoiceCuts,{}), modNames:take(mn,posModNames,{}),
     delGroups:take(dg,posDeletedGroups,[]), choiceEdits:take(ce,posChoiceEdits,{}), choiceOrder:take(co,posChoiceOrder,{}), itemGroupOrder:take(io,posItemGroupOrder,{}), delItems:take(di,posDeletedItems,[]), newItems:take(ni,posNewItems,[]), sectionAdds:take(sa,posSectionAdds,{}),
-    discRates:take(dr,posDiscRates,{}), newDiscounts:take(nd,posNewDiscounts,[]),
+    discRates:take(dr,posDiscRates,{}), newDiscounts:take(nd,posNewDiscounts,[]), delDiscounts:take(dd,posDeletedDiscounts,[]),
   };
   const changed=!same(next.prices,posPrices)||!same(next.mods,posGroupMods)
     ||!same(next.groups,posNewGroups)||!same(next.attach,posGroupAttach)
@@ -6874,14 +6879,14 @@ async function posLoadPrices(){
     ||!same(next.modNames,posModNames)||!same(next.delGroups,posDeletedGroups)
     ||!same(next.choiceEdits,posChoiceEdits)||!same(next.choiceOrder,posChoiceOrder)
     ||!same(next.itemGroupOrder,posItemGroupOrder)||!same(next.delItems,posDeletedItems)||!same(next.newItems,posNewItems)||!same(next.sectionAdds,posSectionAdds)
-    ||!same(next.discRates,posDiscRates)||!same(next.newDiscounts,posNewDiscounts);
+    ||!same(next.discRates,posDiscRates)||!same(next.newDiscounts,posNewDiscounts)||!same(next.delDiscounts,posDeletedDiscounts);
   posPrices=next.prices; posGroupMods=next.mods; posNewGroups=next.groups;
   posGroupAttach=next.attach; posRouting=next.routing; posNewClasses=next.classes;
   posNewMods=next.newMods; posGroupNames=next.names; posGroupDetach=next.detach;
   posModLetters=next.letters; posDeletedMods=next.deleted; posChoiceCuts=next.cuts;
   posModNames=next.modNames; posDeletedGroups=next.delGroups;
   posChoiceEdits=next.choiceEdits; posChoiceOrder=next.choiceOrder; posItemGroupOrder=next.itemGroupOrder; posDeletedItems=next.delItems; posNewItems=next.newItems; posSectionAdds=next.sectionAdds;
-  posDiscRates=next.discRates; posNewDiscounts=next.newDiscounts;
+  posDiscRates=next.discRates; posNewDiscounts=next.newDiscounts; posDeletedDiscounts=next.delDiscounts;
   posPruneOrphans();   // redraws itself only if it actually drops something
   if(changed)posRedraw();
 }
@@ -7397,6 +7402,12 @@ function posBuildLive(){
       rate:(posDiscRates[d.id]!=null?posDiscRates[d.id]:(d.rate!=null?d.rate:null)),
       manager:!!d.manager,
     })),
+    // Discounts taken OFF the key. Ids of catalog discounts Vinny has deleted here —
+    // the register drops them from the DISC list on this publish. Ids, not names, so a
+    // rename cannot resurrect one. Deliberately separate from `newDiscounts`: those are
+    // his own and vanish when he removes them, these shipped with the catalog and the
+    // register has to be TOLD to stop offering them.
+    deletedDiscounts:(posDeletedDiscounts||[]).slice(),
     // ⚠️ NEW FOOD MODS TRAVEL. They did not, and the failure was silent in the worst
     // way: adding one SAVED it, SHOWED it in this list as a row marked new, and then
     // never published it — so the back office said the mod existed and the register had
@@ -7811,6 +7822,28 @@ function posRemoveNewDiscount(id){
   delete posDiscRates[id];
   kvPush('ct_pos_new_discounts',posNewDiscounts,Date.now());
   kvPush('ct_pos_disc_rates',posDiscRates,Date.now());
+  posRedraw();
+}
+// TAKING A CATALOG DISCOUNT OFF THE KEY.
+//
+// Same shape as posDeleteItem: a toggle, held as a list of ids, shipped on the next
+// Publish. NOT the same as posRemoveNewDiscount — that one deletes a discount Vinny
+// typed here, which never reached a register unless he published it. These shipped
+// with the catalog, so "deleted" has to survive a reload and travel to the iPads, and
+// un-deleting has to be possible right up until he publishes.
+//
+// Keyed on the discount's stable id, never its name: renaming a discount must not
+// resurrect a deleted one, and must not delete a different one.
+const posDiscDeleted=(d)=>posDeletedDiscounts.includes(d.id);
+function posDeleteDiscount(encId,encName){
+  const id=decodeURIComponent(encId), name=decodeURIComponent(encName||'');
+  if(posDeletedDiscounts.includes(id)){
+    posDeletedDiscounts=posDeletedDiscounts.filter(x=>x!==id);
+  }else{
+    if(!confirm(`Take “${name}” off the DISC key?\n\nIt stays on the iPads until you Publish.`))return;
+    posDeletedDiscounts=[...posDeletedDiscounts,id];
+  }
+  kvPush('ct_pos_deleted_discounts',posDeletedDiscounts,Date.now());
   posRedraw();
 }
 // The Kind dropdown decides whether a rate is even a question.
@@ -8236,7 +8269,13 @@ function posPendingCount(){
     +Object.keys(posChoiceOrder).length+Object.keys(posItemGroupOrder).length+posDeletedItems.length+posNewItems.length
     +Object.values(posSectionAdds).reduce((n,v)=>n+v.length,0)
     +Object.keys(posChoiceCuts).length+Object.keys(posModNames).length
-    +posDeletedGroups.length;
+    +posDeletedGroups.length
+    // ⚠️ DISCOUNT EDITS WERE NOT COUNTED AT ALL. A rate typed on the Discounts tab, a
+    // discount added there, and (now) one deleted there all ride the publish — but none
+    // of them moved this number, so the "N edits in the back office" banner said 0 and
+    // the Publish card stayed grey. That is the same silent shape as the new food mods
+    // that saved, displayed, and never travelled. Counting all three.
+    +Object.keys(posDiscRates).length+posNewDiscounts.length+posDeletedDiscounts.length;
 }
 
 // A GROUP AS THE REGISTER SHOULD SEE IT — base choices with every pending edit already
@@ -8331,14 +8370,14 @@ function posClearChanges(){
   posPrices={};posRouting={};posGroupMods={};posNewGroups=[];posGroupAttach={};
   posNewClasses=[];posNewMods=[];posGroupNames={};posGroupDetach={};
   posChoiceCuts={};posModLetters={};posDeletedMods=[];posModNames={};posDeletedGroups=[];
-  posChoiceEdits={};posChoiceOrder={};posItemGroupOrder={};posDeletedItems=[];posNewItems=[];posSectionAdds={};posNewDiscounts=[];
+  posChoiceEdits={};posChoiceOrder={};posItemGroupOrder={};posDeletedItems=[];posNewItems=[];posSectionAdds={};posNewDiscounts=[];posDeletedDiscounts=[];
   for(const k of ['ct_pos_prices','ct_pos_routing','ct_pos_group_mods','ct_pos_new_groups',
                   'ct_pos_group_attach','ct_pos_print_classes','ct_pos_new_mods',
                   'ct_pos_group_names','ct_pos_group_detach','ct_pos_choice_cuts',
                   'ct_pos_mod_letters','ct_pos_deleted_mods','ct_pos_mod_names',
-                  'ct_pos_deleted_groups','ct_pos_choice_edits','ct_pos_choice_order','ct_pos_item_group_order','ct_pos_deleted_items','ct_pos_new_items','ct_pos_section_adds','ct_pos_new_discounts'])
+                  'ct_pos_deleted_groups','ct_pos_choice_edits','ct_pos_choice_order','ct_pos_item_group_order','ct_pos_deleted_items','ct_pos_new_items','ct_pos_section_adds','ct_pos_new_discounts','ct_pos_deleted_discounts'])
     kvPush(k,(k==='ct_pos_new_groups'||k==='ct_pos_print_classes'||k==='ct_pos_new_mods'
-              ||k==='ct_pos_deleted_mods'||k==='ct_pos_deleted_groups'||k==='ct_pos_deleted_items'||k==='ct_pos_new_items'||k==='ct_pos_new_discounts')?[]:{},Date.now());
+              ||k==='ct_pos_deleted_mods'||k==='ct_pos_deleted_groups'||k==='ct_pos_deleted_items'||k==='ct_pos_new_items'||k==='ct_pos_new_discounts'||k==='ct_pos_deleted_discounts')?[]:{},Date.now());
   posRedraw();
 }
 
@@ -9421,9 +9460,57 @@ const POS_ROLES={
   manager:  {label:'Manager',      can:['Void a sent item','Adjust points and balances','Load a card with no check','Open the back office','Comp a check']},
   server:   {label:'Server',       can:['Ring in orders and fire courses','Take payment','Redeem a gift card or reward against a check']},
   bar:      {label:'Bar',          can:['Ring in orders and fire courses','Take payment','Open the cash drawer']},
-  busser:   {label:'Busser',       can:['Clock in and out']},
-  clockonly:{label:'Clock in only',can:['Clock in and out','Nothing else — cannot ring, take money, or open the drawer']},
+  // HOST. Vinny named it in his first sentence about this screen — "what each role,
+  // manager, owner, host, can do" — and asked for it again on 10/28. I dropped it from
+  // the picker earlier because it appears in zero permission checks on the register,
+  // which was true and the WRONG TEST: the point of the grid is that he decides what a
+  // role may do. A role grants what he ticks, not what the register happens to hard-code.
+  host:     {label:'Host',         can:['Seats guests and works the door','Plus whatever is ticked for Host in Privileges']},
+  clockonly:{label:'Clock in only',can:['Clock in and out','Nothing else unless it is ticked for them']},
 };
+// ⚠️ `can:` IS DESCRIPTION, NOT TRUTH — nothing renders it (grep finds no reader). For
+// the gated powers the PRIVILEGES GRID (POS_PRIVS + ct_privs) is the answer. Kept
+// because it says what a role is FOR, which the grid does not; never read it as what a
+// role may DO, and never let the two drift into disagreeing in a way that matters.
+// BUSSER IS RETIRED AS A PRIVILEGE (Vinny, 10/28: "retire busser", then "get rid of
+// busser here and add server instead"). Its only privilege was "clock in and out",
+// which is `clockonly` wearing a job's name — the exact privilege/job merge this screen
+// exists to undo.
+//
+// ⚠️ THE BUSSER *JOB* IS UNTOUCHED. It is job 204 on the register; bussers still clock
+// in as bussers and are still paid as bussers. Only the privilege level is gone.
+//
+// ⚠️ THEY LAND ON **SERVER**, NOT clock-only — Server was already a column when he said
+// "add server instead", so that reads as where the people go, not a column to add. It is
+// an UPGRADE: Server can ring in orders, take payment, and redeem a gift card against a
+// check, none of which a busser could do before. Flagged on screen before he runs it.
+//
+// Busser stays in the register's own ROLES list on purpose, so anybody still carrying it
+// remains a valid employee record while they are moved across. The picker no longer
+// offers it, and the guard option on the role <select> shows "busser — set on the
+// register" for anyone not yet migrated, rather than silently reading as Owner.
+const PRIV_RETIRED={busser:'server'};
+function staffRetiredList(){
+  return Object.values(staffS.people||{}).filter(p=>p&&!p.removed&&p.register&&PRIV_RETIRED[p.register.role]);
+}
+async function staffRetireRoles(){
+  const list=staffRetiredList();
+  if(!list.length)return;
+  const to=PRIV_RETIRED[list[0].register.role];
+  const label=(POS_ROLES[to]&&POS_ROLES[to].label)||to;
+  const names=list.slice(0,8).map(p=>p.name).join(', ')+(list.length>8?` and ${list.length-8} more`:'');
+  if(!confirm(`Move ${list.length} ${list.length===1?'person':'people'} from Busser to ${label}?\n\n${names}\n\n`
+    +`${label} can ring in orders, take payment, and redeem a gift card against a check — a busser could do none of those.\n\n`
+    +`Their JOB does not change: they still clock in as bussers and are still paid as bussers.`))return;
+  list.forEach(p=>{p.register.role=to;staffTouch(p)});
+  staffSave();
+  let sent=0,failed=0;
+  for(const p of list){ if(await staffPushRegister(p,'role'))sent++; else failed++; }
+  staffS.regNote=failed
+    ? `Moved ${list.length} to ${label} here. ${sent} reached the register, ${failed} did not — they will need pushing again.`
+    : `Moved ${list.length} to ${label}, on the register too.`;
+  staffRefreshNotes();staffRefresh();privRefresh();
+}
 
 // ── PRIVILEGES ──────────────────────────────────────────────────────────────
 // Vinny, 10/28: "that is where ill set what each role, manager, owner, host, can do.
@@ -9450,7 +9537,16 @@ const POS_ROLES={
 const POS_PRIVS=[
   {key:'void',     label:'Voids',            help:'Void an item that has already gone to the kitchen'},
   {key:'discount', label:'Discounts',        help:'Discount or comp a check'},
-  {key:'discountdel',label:'Delete a discount',help:'Take a discount back off a check after it is applied',missing:true},
+  // NO "Delete a discount" ROW, for two reasons that arrived in the same minute.
+  //
+  // 1. It was added 10/28 reading "also let me delete discounts" as a privilege. Vinny
+  //    meant the DISC key's LIST — deleting a discount TYPE off the Discounts tab, which
+  //    is the ✕ there now, not a permission at all.
+  // 2. Vinny, 10/28: "deleting a discount can be classified as a void." So taking a
+  //    discount back off a CHECK is gated by `void`, not by a key of its own.
+  //
+  // Both point the same way, and (2) is the one that should survive: one power, one row.
+  // A register gating discount-removal must read `void`.
   {key:'timecard', label:'Adjust time card', help:'Change somebody’s punches — this is pay',adds:true},
   {key:'eightysix',label:'86 an item',       help:'Mark an item unavailable on the register for the rest of service. Does not reach Otter — delivery is a separate switch.',adds:true},
 ];
@@ -10940,18 +11036,27 @@ function posDiscountsHTML(){
           color:${v!=null?(entered?'#22c55e':'var(--text)'):'#f59e0b'}">
       <span style="color:var(--text-muted);font-size:13px">${d.kind==='percent'?'%':''}</span></span>`;
   };
-  const row=d=>`<div style="display:flex;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);font-size:16px;align-items:baseline;max-width:730px">
-      <span style="width:200px;font-weight:600">${esc(d.name)}${d.__new?' <span style="font-size:10px;font-weight:800;color:#22c55e;background:rgba(34,197,94,0.14);border-radius:5px;padding:2px 6px;vertical-align:middle">added here</span>':''}</span>
-      <span style="width:110px;text-align:right;font-variant-numeric:tabular-nums">${rate(d)}</span>
-      <span style="width:110px;padding-left:16px">${d.manager
+  const row=d=>{
+    const gone=!d.__new&&posDiscDeleted(d);
+    return `<div style="display:flex;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);font-size:16px;align-items:baseline;max-width:730px${gone?';opacity:.5':''}">
+      <span style="width:200px;font-weight:600${gone?';text-decoration:line-through':''}">${esc(d.name)}${d.__new?' <span style="font-size:10px;font-weight:800;color:#22c55e;background:rgba(34,197,94,0.14);border-radius:5px;padding:2px 6px;vertical-align:middle">added here</span>':''}</span>
+      <span style="width:110px;text-align:right;font-variant-numeric:tabular-nums">${gone?'':rate(d)}</span>
+      <span style="width:110px;padding-left:16px">${gone?'':(d.manager
         ? '<span style="font-size:11px;font-weight:800;color:#a78bfa;background:rgba(167,139,250,0.14);border-radius:5px;padding:2px 7px">manager</span>'
-        : '<span style="font-size:12px;color:var(--text-muted)">any server</span>'}</span>
-      <span style="flex:1;font-size:13px;color:var(--text-muted);padding-left:8px">${d.__new
-        ? 'Yours — on the registers once you Publish.'
-        : esc(d.why||'')}</span>
-      ${d.__new?`<button onclick="posRemoveNewDiscount('${esc(d.id)}')" title="Remove this discount"
-        style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:15px;padding:0 4px;line-height:1">✕</button>`:''}
+        : '<span style="font-size:12px;color:var(--text-muted)">any server</span>')}</span>
+      <span style="flex:1;font-size:13px;color:var(--text-muted);padding-left:8px">${gone
+        ? '<span style="color:#f59e0b">Off the key once you Publish.</span>'
+        : (d.__new ? 'Yours — on the registers once you Publish.' : esc(d.why||''))}</span>
+      ${d.__new
+        ? `<button onclick="posRemoveNewDiscount('${esc(d.id)}')" title="Remove this discount"
+             style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:15px;padding:0 4px;line-height:1">✕</button>`
+        : gone
+        ? `<button onclick="posDeleteDiscount('${posEnc(d.id)}','${posEnc(d.name)}')" title="Keep this discount after all"
+             style="background:none;border:1px solid var(--border);color:var(--text-dim);cursor:pointer;font-size:12px;padding:2px 8px;border-radius:6px;line-height:1.4;font-family:inherit">Undo</button>`
+        : `<button onclick="posDeleteDiscount('${posEnc(d.id)}','${posEnc(d.name)}')" title="Take this discount off the DISC key"
+             style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:15px;padding:0 4px;line-height:1">✕</button>`}
     </div>`;
+  };
   const group=([k,label,blurb])=>{
     const list=ds.filter(d=>d.kind===k);
     if(!list.length)return '';
@@ -12430,6 +12535,21 @@ function privCardHTML(){
       <div style="font-size:12px;color:var(--text-dim)">What each role may do — whatever they are clocked in as</div>
     </div>
     ${privS.note?`<div style="margin:8px 0;font-size:12px;color:#fbbf24">${esc(privS.note)}</div>`:''}
+    ${(()=>{
+      // Anyone still on a retired privilege. Shown here rather than migrated silently on
+      // load: this GRANTS people powers they did not have, and 232 records quietly
+      // rewriting themselves because a screen opened is not something he could undo.
+      let n=0; try{n=staffRetiredList().length}catch(e){}
+      if(!n)return '';
+      return `<div style="margin:8px 0;padding:9px 12px;border:1px solid #f59e0b;border-radius:9px;background:rgba(245,158,11,0.10);display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <div style="font-size:12.5px;color:var(--text);flex:1;min-width:240px">
+          <b>${n} ${n===1?'person is':'people are'} still set to Busser.</b>
+          Busser is retired — it only ever meant “clock in and out”. Moving them to Server
+          lets them ring in orders and take payment. Their job does not change.
+        </div>
+        <button onclick="staffRetireRoles()" style="${posBtn('#f59e0b')};padding:6px 12px;font-size:12.5px;white-space:nowrap">Move them to Server</button>
+      </div>`;
+    })()}
     <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
       <table style="border-collapse:collapse;width:100%;min-width:560px">
         <thead><tr>
