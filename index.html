@@ -9555,6 +9555,10 @@ const POS_PRIVS=[
   // restructuring one are not the same power.
   {key:'checkfuncs', group:'Checks',label:'Change a check',   help:'Split, combine, rename, transfer to another server, party pricing, corkage'},
   {key:'reopen',     group:'Checks',label:'Reopen a settled check',help:'Bring back a check that was already closed out'},
+  {key:'closeout',   group:'Checks',label:'Close out a check',help:'Settle and finish a check from the pay screen',pending:true},
+  // ⚠️ "Everyone's" is the question, not "any". A server sees their own and the bar sees
+  // the bar's TODAY — unticked here must keep that, not take their own section away.
+  {key:'seeallchecks',group:'Checks',label:'See everyone’s checks',help:'See the whole floor’s checks, not only their own',pending:true},
   // ── MONEY ──
   {key:'void',     group:'Money',label:'Voids',            help:'Void an item that has already gone to the kitchen'},
   {key:'discount', group:'Money',label:'Discounts',        help:'Discount or comp a check'},
@@ -9568,8 +9572,18 @@ const POS_PRIVS=[
   //
   // Both point the same way, and (2) is the one that should survive: one power, one row.
   // A register gating discount-removal must read `void`.
+  // One row, not three. Refund, voiding a tender already taken, and releasing a card hold
+  // are all "money that was taken is given back" — three rows for one idea is the wall.
+  {key:'refund',       group:'Money',label:'Undo or refund a payment',help:'Refund to a card or in cash, void a payment already taken, or release a card hold',pending:true},
   {key:'drawermoney',  group:'Money',label:'Pay in and pay out',help:'Take money out of the drawer, or put it in. Anyone trusted to take it out is trusted to put it back, so it is one row.'},
   {key:'giftcardsell', group:'Money',label:'Sell a gift card',  help:'Sell a gift card at the register'},
+  {key:'giftcardadjust',group:'Money',label:'Change a gift card balance',help:'Write to the gift-card ledger — the cards carry real money the restaurant owes',pending:true},
+  // ⛔ NO CASH DRAWER ROW, deliberately. canOpenDrawer is manager||bar with a PER-PERSON
+  // override that already exists on each person's row in Staff. A role row would be a
+  // second control over one power, and two controls that can disagree is exactly the bug
+  // that started this whole thread — the drawer checkbox defaulted owner||manager while
+  // the register enforced manager||bar. If it ever is added, the per-person setting has
+  // to be defined as the winner, the row as the default, and the card has to say so.
   // ── OFFICE ──
   // ⚠️ `reports` must NOT be the route to `timecard` — see the standing rule above.
   {key:'reports',  group:'Office',label:'See the dashboard',help:'Last night’s numbers — cashier report, checkout, employee IDs'},
@@ -9578,7 +9592,16 @@ const POS_PRIVS=[
   // started enforcing it. A stale label, same as the "register does not read this grid
   // yet" line was — and the reason this file now asks the mini rather than asserting.
   {key:'timecard', group:'Office',label:'Adjust time card',help:'Change somebody’s punches — this is pay'},
+  // Its own row rather than riding timecard, on the same argument that kept timecard out
+  // of reports: ending somebody's shift and editing their punches afterwards are
+  // different acts, even though both are their pay.
+  {key:'clockout', group:'Office',label:'Clock somebody else out',help:'End another person’s shift from the dashboard',pending:true},
   {key:'eightysix',group:'Office',label:'86 an item',      help:'Mark an item unavailable on the register for the rest of service. Does not reach Otter — delivery is a separate switch.'},
+  // ── ADMIN ──
+  // ⚠️ def:['owner'] — NOT the shared owner+manager default. This is `isOwner` in the
+  // register today, and Vinny's instruction last week was "Only for my number 7080".
+  // Writing the rule down must not quietly widen it.
+  {key:'registeredit',group:'Admin',label:'Rearrange the register',def:['owner'],help:'Press and hold to move buttons around — changes the till for everybody',pending:true},
 ];
 const PRIVS_KEY='ct_privs';
 // Vinny, 10/28: "owner is full access no restrictions". So owner is not a tick — it is a
@@ -9590,9 +9613,23 @@ const PRIV_ALWAYS={owner:true};
 let privS={m:null,at:0,note:'',loaded:false};
 // Today's register behaviour, so the screen opens showing the truth rather than a blank
 // grid: voids and discounts go through canApprove(), which is manager OR owner.
+// ⚠️ THE DEFAULT IS PER ROW, and it is not a style choice — it is the whole safety
+// property of adding a row. A row's default MUST be what the register already does for
+// that button, or adding the row silently changes who can do something.
+//
+// This was owner+manager for every row, which was correct while every row happened to be
+// manager-or-owner. "Rearrange the register" is not: it is `isOwner` in the code, and
+// Vinny's instruction last week was "only for my number 7080". Shipping that row on the
+// shared default would have handed every manager the ability to rebuild the register —
+// a widening nobody asked for, arriving as a side effect of writing a row down. Hence
+// `def` on the privilege, and owner+manager only as the fallback.
 function privDefaults(){
   const m={};
-  POS_PRIVS.forEach(p=>{m[p.key]={};Object.keys(POS_ROLES).forEach(r=>{m[p.key][r]=(r==='owner'||r==='manager')})});
+  POS_PRIVS.forEach(p=>{
+    const def=p.def||['owner','manager'];
+    m[p.key]={};
+    Object.keys(POS_ROLES).forEach(r=>{m[p.key][r]=def.indexOf(r)>=0});
+  });
   return m;
 }
 // Fill in anything a stored blob is missing (a privilege added after it was written, a
