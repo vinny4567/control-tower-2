@@ -11895,7 +11895,13 @@ function staffEdit(k,f,v){
   }
   else if(f==='paychex')p.paychex_id=String(v||'').trim()||null;
   else if(f==='register'){p.register=p.register||{};p.register.access=!!v;if(!v)p.register.role=null;}
-  else if(f==='role'){p.register=p.register||{};p.register.role=v||null;if(v)p.register.access=true;}
+  // ⚠️ SETTING A CLASS MUST NOT GRANT SIGN-IN. This used to also set access=true, which
+  // was harmless only because the dropdown was rendered INSIDE the `reg.access` branch —
+  // it could never fire on somebody who could not sign in. Vinny moved it under the
+  // payroll id on 10/28, where it shows for everybody, and that line would then quietly
+  // hand a register login to anyone he classified. "Can sign in" is its own deliberate
+  // tick that pushes /api/employees/active; classifying somebody is not consent to it.
+  else if(f==='role'){p.register=p.register||{};p.register.role=v||null;}
   // ⚠️ STORED AS A REAL true/false, never deleted back to "unset". Un-ticking a manager
   // has to mean "no", not "fall back to the job that says yes" — otherwise taking a
   // manager out of the till would silently do nothing.
@@ -12243,14 +12249,11 @@ function staffDetail(p){
       </div>
       ${reg.signin?`<div style="margin-top:6px;font-size:13px;color:var(--text-dim)">Sign-in #: <b style="color:var(--text);letter-spacing:2px">${esc(reg.signin)}</b></div>`:''}
       ${reg.access?`
-        <div style="display:flex;gap:6px;align-items:center;margin-top:10px">
-          <select onchange="staffEdit('${esc(k)}','role',this.value)" style="${inp};width:auto">
-            ${!reg.role?`<option value="" selected>— no privileges set —</option>`:''}
-            ${Object.entries(POS_ROLES).map(([rk,r])=>`<option value="${rk}" ${reg.role===rk?'selected':''}>${esc(r.label)}</option>`).join('')}
-            ${(reg.role&&!POS_ROLES[reg.role])?`<option value="${esc(reg.role)}" selected>${esc(reg.role)} — set on the register</option>`:''}
-          </select>
-        </div>
-        <!-- ONE BOX. Vinny's call 9/24: the ROLE DROPDOWN above is where privileges get
+        <!-- The employee class used to sit HERE. Vinny moved it under the payroll id on
+             10/28 ("Label it employee class here on the employee screen and move it over
+             under payroll id") — a class is something a person IS, nearer their payroll
+             id than their sign-in. -->
+        <!-- ONE BOX. Vinny's call 9/24: the EMPLOYEE CLASS dropdown is where privileges get
              set for a person regardless of what they clock in as, so the drawer does not
              also need a "by job / set here" distinction bolted onto it — it just says
              whether this person can open the till.
@@ -12271,6 +12274,18 @@ function staffDetail(p){
       <div style="display:flex;gap:6px;align-items:center">
         <span style="font-size:13px">Paychex</span>
         <input value="${esc(p.paychex_id||'')}" onchange="staffEdit('${esc(k)}','paychex',this.value)" style="${inp}">
+      </div>
+      <!-- EMPLOYEE CLASS. Vinny's name for it, 10/28, and his placement: under the
+           payroll id rather than in REGISTER. It decides what this person may DO
+           (the Privileges grid), never what they clock in as — that is their job. -->
+      <div style="margin-top:8px">
+        <div style="font-size:13px;margin-bottom:3px">Employee class</div>
+        <select onchange="staffEdit('${esc(k)}','role',this.value)" style="${inp};width:auto">
+          ${!reg.role?`<option value="" selected>— not set —</option>`:''}
+          ${Object.entries(POS_ROLES).map(([rk,r])=>`<option value="${rk}" ${reg.role===rk?'selected':''}>${esc(r.label)}</option>`).join('')}
+          ${(reg.role&&!POS_ROLES[reg.role])?`<option value="${esc(reg.role)}" selected>${esc(reg.role)} — set on the register</option>`:''}
+        </select>
+        ${(reg.role&&!reg.access)?`<div style="font-size:11.5px;color:var(--text-muted);margin-top:3px;max-width:220px">They cannot sign in to a register, so this does nothing yet — tick “Can sign in”.</div>`:''}
       </div>
       ${(p.micros_num||p.micros_id)?`<div style="display:flex;gap:6px;align-items:center;margin-top:6px">
         <span style="font-size:13px">MICROS</span>
