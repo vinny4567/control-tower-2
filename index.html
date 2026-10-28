@@ -12687,11 +12687,36 @@ function privCardHTML(){
   const th='padding:7px 10px;text-align:center;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);font-weight:700;white-space:nowrap';
   const td='padding:8px 10px;text-align:center;border-top:1px solid var(--border)';
   const rowHd='padding:8px 12px 8px 2px;border-top:1px solid var(--border);white-space:nowrap';
+  // COLLAPSED BY DEFAULT (Vinny, 10/28). Seventeen rows across six columns is a wall on
+  // a screen whose actual job is the staff list, and it is a thing he sets occasionally
+  // rather than reads daily.
+  //
+  // ⚠️ BUT A WARNING MUST NOT BE COLLAPSIBLE. If a save did not reach the restaurant, or
+  // the registers are not using the grid, that has to be visible on the closed bar too —
+  // hiding bad news behind a chevron is how a privilege change nobody noticed failing
+  // becomes a void nobody could approve on a Saturday.
+  const warn=(privS.mini==='fail'&&'⚠ Last change did not reach the restaurant')
+          || (privS.mini==='off'&&'⚠ Not sending to the register from this device')
+          || (privS.enforced==='no'&&'⚠ The registers are not using this grid yet')
+          || (privS.note||'');
+  if(!privS.open){
+    return `
+    <div id="priv-card" style="${posCardCss};margin-bottom:14px;padding-top:11px;padding-bottom:11px;cursor:pointer"
+         onclick="privSetOpen(true)" title="Open the privileges grid">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <span style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted);font-weight:700">Privileges</span>
+        <span style="font-size:12.5px;color:var(--text-dim)">${POS_PRIVS.length} things each role may do</span>
+        ${warn?`<span style="font-size:12px;color:#fbbf24">${esc(warn)}</span>`:''}
+        <span style="margin-left:auto;font-size:12.5px;color:var(--text-dim)">Open ▾</span>
+      </div>
+    </div>`;
+  }
   return `
   <div id="priv-card" style="${posCardCss};margin-bottom:14px">
     <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:4px">
       <div style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted);font-weight:700">Privileges</div>
       <div style="font-size:12px;color:var(--text-dim)">What each role may do — whatever they are clocked in as</div>
+      <button onclick="privSetOpen(false)" style="margin-left:auto;background:none;border:1px solid var(--border);color:var(--text-dim);border-radius:7px;padding:3px 10px;font-size:12px;cursor:pointer;font-family:inherit">Close ▴</button>
     </div>
     ${privS.note?`<div style="margin:8px 0;font-size:12px;color:#fbbf24">${esc(privS.note)}</div>`:''}
     ${(()=>{
@@ -12800,6 +12825,9 @@ function privCardHTML(){
     </div>
   </div>`;
 }
+// Session state, not stored: "by default" means closed every time the screen is opened,
+// not "closed until he opens it once and then forever".
+function privSetOpen(v){privS.open=!!v;privRefresh()}
 function privRefresh(){
   const el=document.getElementById('priv-card');
   if(!el)return;
