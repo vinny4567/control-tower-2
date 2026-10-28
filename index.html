@@ -12873,16 +12873,20 @@ function posStaffHTML(){
            decision as dropping the importer. Put a button back by calling one. -->
       <input value="${esc(staffS.q||'')}" oninput="staffSearch(this.value)" placeholder="Search name, position, ID"
         style="${posInput};flex:1;min-width:180px">
-      <!-- Deliberately a quiet text control, not one of the filled buttons that came off
-           this row on 9/24 — it is a once-in-a-while import, not a daily action. -->
+      <!-- The "MICROS ids…" button came off this row at Vinny's call 10/28 — the import is
+           done, every MICROS id that was coming is on a row. Same treatment as the three
+           buttons removed on 9/24: the MACHINERY STAYS. staffMicrosPick(), staffMicrosFile(),
+           staffMicrosHTML() and this file input are all still here and still work, so
+           putting it back is one <button> rather than rebuilding a CSV importer nobody
+           remembers the format of. The hidden input is what staffMicrosPick() clicks; it
+           renders nothing on its own, so leaving it costs nothing and removing it would
+           quietly break the restore. -->
       <input type="file" id="staff-micros-file" accept=".csv,text/csv" style="display:none"
         onchange="staffMicrosFile(this)">
       <button onclick="staffBulkJob()" title="Pick a job, then tick everyone who has it"
         style="${posBtn('#3f3f46')};padding:7px 13px;font-size:13px">Assign a job</button>
       <button onclick="staffAddPerson()" title="Add somebody who is not in the schedule app yet"
         style="${posBtn('#22c55e')};padding:7px 13px;font-size:13px">+ Add person</button>
-      <button onclick="staffMicrosPick()" title="Read the MICROS Emp List export and put each person's MICROS id on their row"
-        style="background:transparent;border:1px solid var(--border);color:var(--text-dim);border-radius:9px;padding:9px 13px;cursor:pointer;font-size:13px;font-family:inherit;white-space:nowrap">MICROS ids…</button>
     </div>
     ${staffMicrosHTML()}
     <div id="staff-notes">${staffNotesHTML()}</div>
