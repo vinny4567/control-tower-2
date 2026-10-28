@@ -12647,13 +12647,14 @@ function privCardHTML(){
     <div style="margin-top:10px;font-size:12px;color:var(--text-muted);line-height:1.5">
       A role is a <b>privilege level, not a job</b>. A manager working the floor as a server
       keeps these all shift — their number works for a void whatever they punched in under.
-      <div style="margin-top:6px;color:#fbbf24">⚠ The register does not read this grid yet — it still has voids and
-      discounts hard-coded to manager-or-owner. Ticks save and sync now; they start
-      <i>deciding</i> anything once the register reads them.</div>
+      <div style="margin-top:6px">The register <b>reads this grid</b> — these ticks decide what
+      happens at the till. If a change cannot reach it, it keeps the rules it already has;
+      the line at the top of this card says which happened.</div>
       ${POS_PRIVS.some(p=>p.adds)?`<div style="margin-top:6px;color:var(--text-dim)">
-        <b style="color:#fbbf24">NEW LIMIT</b> marks a row the register does not restrict at all today —
-        anybody who can reach the screen can do it. Ticking those rows <b>takes something away</b> from
-        people who have it now, rather than writing down a rule you already had.</div>`:''}
+        <b style="color:#fbbf24">NEW LIMIT</b> marks a row nobody was restricted from before this grid —
+        anybody who could reach the screen could do it. <b>These rows take something away</b> rather than
+        writing down a rule you already had, and they are live: with the boxes as they stand, a server
+        can no longer do either one. Tick a column to give it back.</div>`:''}
       ${POS_PRIVS.some(p=>p.missing)?`<div style="margin-top:6px;color:var(--text-dim)">
         <b>NOT BUILT YET</b> marks a row where the register has no button for it at all — nobody can do it,
         including you. Setting it now just decides who gets it the day it is built.</div>`:''}
