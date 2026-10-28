@@ -9399,11 +9399,30 @@ const posDemoOffer=()=>`<button onclick="posDemoOn()" style="${posBtn('#3f3f46')
 // print this is gone — register access is a field on a person in Staff now, not a
 // second roster — but these are still the roles that picker offers, and the server
 // enforces them.
+//
+// ⚠️ THESE ARE PRIVILEGE LEVELS, NOT JOBS. Vinny, 10/28: "those options are privleges,
+// and have nothing to do with the persons jobs" — the same thing the 9/24 note on the
+// dropdown already said. What somebody is PAID as (cook, host, busser, bartender) is
+// their job and lives in their jobs list; what they may DO on a register is this. The
+// register briefly conflated the two — it derived the payroll job number from the
+// privilege, so an owner's punches filed under job 0 — which is why `host` and `kitchen`
+// are deliberately absent here: both are jobs that grant nothing, and listing them would
+// re-make that merge from this side.
+//
+// Each entry must correspond to a real check in the register (pos/src), confirmed 10/28:
+//   isManager    role==='manager'                     isOwner  owner===true||role==='owner'
+//   canOpenDrawer role==='manager'||role==='bar'      SERVERS  role==='server'||role==='bar'
+// Every check is a POSITIVE match on a named role; nothing grants by default. So a role
+// the register does not recognise grants nothing — which is exactly what clockonly is.
+// Busser is in that same position (its only privilege is the one everybody has); it stays
+// listed because people are assigned to it today and dropping it would orphan them.
 const POS_ROLES={
-  owner:  {label:'Owner',   can:['Everything','Add and remove staff','Change permissions']},
-  manager:{label:'Manager', can:['Void a sent item','Adjust points and balances','Load a card with no check','Open the back office','Comp a check']},
-  server: {label:'Server',  can:['Ring in orders and fire courses','Take payment','Redeem a gift card or reward against a check']},
-  busser: {label:'Busser',  can:['Clock in and out']},
+  owner:    {label:'Owner',        can:['Everything','Add and remove staff','Change permissions']},
+  manager:  {label:'Manager',      can:['Void a sent item','Adjust points and balances','Load a card with no check','Open the back office','Comp a check']},
+  server:   {label:'Server',       can:['Ring in orders and fire courses','Take payment','Redeem a gift card or reward against a check']},
+  bar:      {label:'Bar',          can:['Ring in orders and fire courses','Take payment','Open the cash drawer']},
+  busser:   {label:'Busser',       can:['Clock in and out']},
+  clockonly:{label:'Clock in only',can:['Clock in and out','Nothing else — cannot ring, take money, or open the drawer']},
 };
 // ---- Grazie (gift cards + customers, via the CRM portal) --------------------
 async function posBoot(){
@@ -11599,15 +11618,21 @@ const STAFF_JOBS=['Server','Bartender','Busser','Food Runner','Host','Cook','Dis
 // worth being narrow about — the drawer is money in a box that anybody standing at the
 // register can reach.
 //
-// Owners and managers have it by their job. Everybody else is off unless a manager says
-// otherwise, which is the whole reason this box exists: a BARTENDER needs the drawer and
-// there is no bartender role here — the bar signs in as a server. Ticking it is an
-// explicit true, and un-ticking it is an explicit FALSE that overrules the job, so a
-// manager who should not be in the till can be taken out of it.
+// Owners, managers and the bar have it by their privilege level. Everybody else is off
+// unless a manager says otherwise. Ticking it is an explicit true, and un-ticking it is an
+// explicit FALSE that overrules the privilege, so a manager who should not be in the till
+// can be taken out of it.
+//
+// This list MIRRORS the register's own canOpenDrawer (role==='manager'||role==='bar', with
+// an explicit per-person drawer flag overruling either way) — plus owner, who has
+// everything. Keep the two in step: if this says no and the register says yes, the box is
+// telling Vinny a comforting lie about who can reach the cash.
+//   ⚠️ It used to say exactly that. Bar was missing here because, as the old note put it,
+//   "there is no bartender role here — the bar signs in as a server". There is one now.
 function staffDrawer(p){
   const reg=(p&&p.register)||{};
   if(reg.drawer===true||reg.drawer===false)return{on:reg.drawer,byRole:false};
-  return{on:reg.role==='owner'||reg.role==='manager',byRole:true};
+  return{on:reg.role==='owner'||reg.role==='manager'||reg.role==='bar',byRole:true};
 }
 
 function staffOpen(k){staffS.open=staffS.open===k?null:k;staffRefresh()}
@@ -12004,7 +12029,9 @@ function staffDetail(p){
       ${reg.access?`
         <div style="display:flex;gap:6px;align-items:center;margin-top:10px">
           <select onchange="staffEdit('${esc(k)}','role',this.value)" style="${inp};width:auto">
+            ${!reg.role?`<option value="" selected>— no privileges set —</option>`:''}
             ${Object.entries(POS_ROLES).map(([rk,r])=>`<option value="${rk}" ${reg.role===rk?'selected':''}>${esc(r.label)}</option>`).join('')}
+            ${(reg.role&&!POS_ROLES[reg.role])?`<option value="${esc(reg.role)}" selected>${esc(reg.role)} — set on the register</option>`:''}
           </select>
         </div>
         <!-- ONE BOX. Vinny's call 9/24: the ROLE DROPDOWN above is where privileges get
