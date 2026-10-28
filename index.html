@@ -9612,6 +9612,7 @@ async function privLoad(force){
   }catch(e){privS.note='⚠ could not read the saved privileges — showing what is on this device'}
   if(!privS.m)privS.m=privDefaults();
   privRefresh();
+  privCheckEnforced();   // is the restaurant actually using it? ask, never assume
 }
 // ⚠️ DID THE REGISTER ACTUALLY GET THIS?
 //
@@ -9626,6 +9627,37 @@ async function privLoad(force){
 // reports success. The grid would decide nothing while looking correct on all three
 // sides. So this one key is written to the mini again, checked, and the answer shown.
 // The second POST is the same value as the mirror's, so it is idempotent.
+// ⚠️ ASK THE RESTAURANT WHETHER IT IS ACTUALLY USING THIS, rather than hard-coding an
+// answer that goes stale the day somebody deploys.
+//
+// This card carried "the register does not read this grid yet" for a while, then I
+// changed it to "the register reads this grid" on a report that the register CODE had
+// shipped enforcement. Both halves of that were true and the conclusion was false: the
+// app enforces, the mini does not yet SERVE the privileges, so every register falls back
+// to its built-in rules. The card then told Vinny a restriction was live on his floor
+// that was not — the same overclaim this whole feature kept producing, this time by me,
+// in text he reads while deciding who can 86 an item.
+//
+// So it is a question now, not a sentence. /api/menu is what the registers read and it
+// needs no token; `privs` present means the chain is live, absent means fallback.
+async function privCheckEnforced(){
+  try{
+    const base=KV_MINI.replace(/\/api\/kv\/?$/,'');
+    const ac=(typeof AbortController==='function')?new AbortController():null;
+    if(ac)setTimeout(()=>{try{ac.abort()}catch(e){}},6000);
+    const r=await fetch(base+'/api/menu?since=0',{...(ac?{signal:ac.signal}:{})});
+    if(!r.ok){privS.enforced='unknown';privRefresh();return}
+    const j=await r.json();
+    const m=(j&&j.menu)||j||{};
+    privS.enforced=(m&&Object.prototype.hasOwnProperty.call(m,'privs'))?'yes':'no';
+  }catch(e){privS.enforced='unknown'}   // off the network ⇒ we do not know, and must not guess
+  privRefresh();
+}
+// ⚠️ THIS ALWAYS READS 'unknown' FROM A LOCAL COPY, and that is not a bug to fix. The
+// mini's CORS allows exactly one origin — verified by asking it: it returns
+// access-control-allow-origin only for https://vinny4567.github.io, and nothing for
+// http://localhost or any other origin. So it answers the real Watch Tower and refuses a
+// dev copy. Test this one on the live site.
 async function privVerifyMini(payload){
   if(localStorage.getItem('ct_kv_mini')==='off'){privS.mini='off';privRefresh();return}
   if(!KV_TOKEN()){privS.mini='nokey';privRefresh();return}
@@ -12658,14 +12690,19 @@ function privCardHTML(){
     <div style="margin-top:10px;font-size:12px;color:var(--text-muted);line-height:1.5">
       A role is a <b>privilege level, not a job</b>. A manager working the floor as a server
       keeps these all shift — their number works for a void whatever they punched in under.
-      <div style="margin-top:6px">The register <b>reads this grid</b> — these ticks decide what
-      happens at the till. If a change cannot reach it, it keeps the rules it already has;
-      the line at the top of this card says which happened.</div>
+      ${privS.enforced==='yes'
+        ? `<div style="margin-top:6px">The registers <b>are using this grid</b> — these ticks decide what happens at the till.
+           If a change cannot reach the restaurant it keeps the rules it already has; the line at the top of this card says which happened.</div>`
+        : privS.enforced==='no'
+        ? `<div style="margin-top:6px;color:#fbbf24">⚠ <b>The registers are not using this grid yet.</b> They are still on their
+           built-in rules — voids and discounts stay manager-or-owner, and <b>nothing here has taken anything away from anybody</b>.
+           Your ticks are saved and will apply the moment the restaurant starts serving them.</div>`
+        : `<div style="margin-top:6px;color:var(--text-dim)">Checking whether the registers are using this grid yet…</div>`}
       ${POS_PRIVS.some(p=>p.adds)?`<div style="margin-top:6px;color:var(--text-dim)">
-        <b style="color:#fbbf24">NEW LIMIT</b> marks a row nobody was restricted from before this grid —
-        anybody who could reach the screen could do it. <b>These rows take something away</b> rather than
-        writing down a rule you already had, and they are live: with the boxes as they stand, a server
-        can no longer do either one. Tick a column to give it back.</div>`:''}
+        <b style="color:#fbbf24">NEW LIMIT</b> marks a row nobody is restricted from today — anybody who can reach
+        the screen can do it. <b>These rows take something away</b> rather than writing down a rule you already
+        had: as the boxes stand, a server loses both the day the registers start using this grid.
+        Tick a column to give it back.</div>`:''}
       ${POS_PRIVS.some(p=>p.missing)?`<div style="margin-top:6px;color:var(--text-dim)">
         <b>NOT BUILT YET</b> marks a row where the register has no button for it at all — nobody can do it,
         including you. Setting it now just decides who gets it the day it is built.</div>`:''}
