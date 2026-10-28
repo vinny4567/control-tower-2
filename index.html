@@ -9548,13 +9548,13 @@ async function staffRetireRoles(){
 // section becomes visible.
 const POS_PRIVS=[
   // ── CHECKS ──
-  {key:'checkpickup',group:'Checks',label:'Pick up any check',help:'Open a check that is not theirs',pending:true},
-  {key:'payment',    group:'Checks',label:'Take a payment',   help:'Settle a check and take the money for it',pending:true},
+  {key:'checkpickup',group:'Checks',label:'Pick up any check',help:'Open a check that is not theirs'},
+  {key:'payment',    group:'Checks',label:'Take a payment',   help:'Settle a check and take the money for it'},
   // Its own row because of Transfer: handing a whole check to another server is a change
   // of custody, and $$ Packages and Corkage put money on. Finding a check and
   // restructuring one are not the same power.
-  {key:'checkfuncs', group:'Checks',label:'Change a check',   help:'Split, combine, rename, transfer to another server, party pricing, corkage',pending:true},
-  {key:'reopen',     group:'Checks',label:'Reopen a settled check',help:'Bring back a check that was already closed out',pending:true},
+  {key:'checkfuncs', group:'Checks',label:'Change a check',   help:'Split, combine, rename, transfer to another server, party pricing, corkage'},
+  {key:'reopen',     group:'Checks',label:'Reopen a settled check',help:'Bring back a check that was already closed out'},
   // ── MONEY ──
   {key:'void',     group:'Money',label:'Voids',            help:'Void an item that has already gone to the kitchen'},
   {key:'discount', group:'Money',label:'Discounts',        help:'Discount or comp a check'},
@@ -9568,11 +9568,11 @@ const POS_PRIVS=[
   //
   // Both point the same way, and (2) is the one that should survive: one power, one row.
   // A register gating discount-removal must read `void`.
-  {key:'drawermoney',  group:'Money',label:'Pay in and pay out',help:'Take money out of the drawer, or put it in. Anyone trusted to take it out is trusted to put it back, so it is one row.',pending:true},
-  {key:'giftcardsell', group:'Money',label:'Sell a gift card',  help:'Sell a gift card at the register',pending:true},
+  {key:'drawermoney',  group:'Money',label:'Pay in and pay out',help:'Take money out of the drawer, or put it in. Anyone trusted to take it out is trusted to put it back, so it is one row.'},
+  {key:'giftcardsell', group:'Money',label:'Sell a gift card',  help:'Sell a gift card at the register'},
   // ── OFFICE ──
   // ⚠️ `reports` must NOT be the route to `timecard` — see the standing rule above.
-  {key:'reports',  group:'Office',label:'See the dashboard',help:'Last night’s numbers — cashier report, checkout, employee IDs',pending:true},
+  {key:'reports',  group:'Office',label:'See the dashboard',help:'Last night’s numbers — cashier report, checkout, employee IDs'},
   // `adds` dropped from these two on 10/28. It meant "nobody is restricted from this
   // today", which stopped being true the moment Vinny deployed the grid and the registers
   // started enforcing it. A stale label, same as the "register does not read this grid
@@ -12754,6 +12754,9 @@ function privCardHTML(){
         <b>NOT WIRED YET</b> marks a row whose button exists on the register but is not reading this grid yet.
         Those stay manager-or-owner however you tick them — set them now and they take effect the day
         the register starts reading them. Nothing you do to those rows changes anything today.</div>`:''}
+      ${POS_PRIVS.some(p=>p.adds)?`<div style="margin-top:6px;color:var(--text-dim)">
+        <b style="color:#fbbf24">NEW LIMIT</b> marks a row the register does not restrict today — ticking it
+        takes something away from people who can do it now.</div>`:''}
       ${POS_PRIVS.some(p=>p.missing)?`<div style="margin-top:6px;color:var(--text-dim)">
         <b>NOT BUILT YET</b> marks a row where the register has no button for it at all — nobody can do it,
         including you. Setting it now just decides who gets it the day it is built.</div>`:''}
