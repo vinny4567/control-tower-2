@@ -8212,8 +8212,8 @@ function posItemsHTML(){
         ${posS.publishing?'Publishing…':'📤 Publish to registers'}</button>
       <span style="font-size:12px;color:var(--text-muted)">${
         posS.publishErr?`<span style="color:#f87171">Failed — ${esc(posS.publishErr)}</span>`
-        :posS.published?`Published ${posS.publishedCount} change${posS.publishedCount===1?'':'s'} — registers pick it up within a minute.`
-        :'Sends these edits to the mini, which serves them to every register.'}</span>
+        :posS.published?`Published ${posS.publishedCount} change${posS.publishedCount===1?'':'s'} — registers pick it up within about two minutes.`
+        :'Sends these edits to the cloud. The mini collects them from there, then the registers collect them from the mini.'}</span>
     </div>
   </div>`:''}
   <div style="${posCardCss}">
@@ -9782,7 +9782,17 @@ async function privVerifyMini(payload){
   }catch(e){privS.mini='fail'}
   privRefresh();
 }
-function privSave(){
+function privSave(opt){
+  // The local copy goes down NOW, whatever happens next — a tick is never lost to a
+  // debounce, a reload or a closed lid. Only the push to the floor waits for the dust.
+  try{localStorage.setItem(PRIVS_KEY,JSON.stringify({m:privS.m,at:privS.at,fixes:privS.fixes||{}}))}catch(e){}
+  if(opt&&opt.debounce){
+    privS.mini='pending';privRefresh();
+    clearTimeout(privPushTimer);
+    privPushTimer=setTimeout(()=>privSave(),1400);
+    return;
+  }
+  clearTimeout(privPushTimer);
   // ⚠️ `at` MUST ALWAYS GO UP. The mini's write is newest-wins (`excluded.at >= kv.at`)
   // and Jarvis's version bump keys off it, so a save that does not advance `at` no-ops:
   // Vinny's tick looks saved, the register keeps the old grid, and every layer reports
@@ -9802,12 +9812,28 @@ function privSave(){
   privVerifyMini(payload);
   privRefresh();
 }
+// ⛔ A TICK IS NOT A POLICY. EVERY SAVE SHIPS THE WHOLE 17×6 MATRIX.
+//
+// privToggle used to call privSave directly, so reorganising a role — nine boxes — put
+// NINE COMPLETE INTERMEDIATE POLICIES on the wire, each with a bumped version, each one
+// a policy the floor will enforce if a register happens to poll between taps. And an
+// explicit grid `false` beats the register's fallback, with a short-circuit for OWNER
+// ONLY — no manager exemption. So the half-second where void/manager is unticked on the
+// way to somewhere else is a half-second in which no manager in the building can
+// authorise a void, with the fix sitting in a back office they may not be able to reach.
+//
+// Survivable at a 60-second poll because the registers barely sample it. Not survivable
+// if that poll gets faster, which is exactly what is being planned.
+//
+// So: the local copy is written immediately (a tick is never lost), and only the PUSH is
+// debounced — what reaches the floor is a settled state rather than a keystroke.
+let privPushTimer=null;
 function privToggle(pk,rk,on){
   if(!privS.m)return;
   if(PRIV_ALWAYS[rk]){privRefresh();return;}   // owner is not negotiable; put the tick back
   if(!privS.m[pk])privS.m[pk]={};
   privS.m[pk][rk]=!!on;
-  privSave();
+  privSave({debounce:true});
 }
 function privRoleHas(pk,rk){return PRIV_ALWAYS[rk]?true:!!(privS.m&&privS.m[pk]&&privS.m[pk][rk])}
 // OWNER-ONLY IS A REAL POLICY AND ALSO A TRAP. "Only I can void" is a perfectly normal
@@ -12770,6 +12796,7 @@ function privCardHTML(){
       // save made off the restaurant network looks identical to one that landed.
       const m=privS.mini;
       if(!m)return '';
+      if(m==='pending')return `<div style="margin:8px 0;font-size:12px;color:var(--text-dim)">Saved here — sending to the restaurant once you stop changing things…</div>`;
       if(m==='checking')return `<div style="margin:8px 0;font-size:12px;color:var(--text-dim)">Checking the register…</div>`;
       // ⚠️ SAY WHAT WAS ACTUALLY PROVEN. This check gets a 200 from the MINI's KV. That
       // is not the same as a register having the new rules: the register reads them
