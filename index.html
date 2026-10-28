@@ -9555,10 +9555,15 @@ const POS_PRIVS=[
   // restructuring one are not the same power.
   {key:'checkfuncs', group:'Checks',label:'Change a check',   help:'Split, combine, rename, transfer to another server, party pricing, corkage'},
   {key:'reopen',     group:'Checks',label:'Reopen a settled check',help:'Bring back a check that was already closed out'},
-  {key:'closeout',   group:'Checks',label:'Close out a check',help:'Settle and finish a check from the pay screen',pending:true},
+  // ⚠️ NOT the last step of taking money — close to the opposite. The POS session read
+  // the condition: CLOSE OUT only appears when due===0 AND paid===0, and is hidden the
+  // moment anything has been tendered. It clears away a check that owes nothing and has
+  // taken nothing. "Close out a check" reads as settling a bill, so the help text has to
+  // say what it actually is or Vinny grants the wrong thing.
+  {key:'closeout',   group:'Checks',label:'Close out a check',help:'Clear away a check that owes nothing and has taken nothing — NOT a paid one'},
   // ⚠️ "Everyone's" is the question, not "any". A server sees their own and the bar sees
   // the bar's TODAY — unticked here must keep that, not take their own section away.
-  {key:'seeallchecks',group:'Checks',label:'See everyone’s checks',help:'See the whole floor’s checks, not only their own',pending:true},
+  {key:'seeallchecks',group:'Checks',label:'See everyone’s checks',help:'See the whole floor’s checks, not only their own'},
   // ── MONEY ──
   {key:'void',     group:'Money',label:'Voids',            help:'Void an item that has already gone to the kitchen'},
   {key:'discount', group:'Money',label:'Discounts',        help:'Discount or comp a check'},
@@ -9574,10 +9579,10 @@ const POS_PRIVS=[
   // A register gating discount-removal must read `void`.
   // One row, not three. Refund, voiding a tender already taken, and releasing a card hold
   // are all "money that was taken is given back" — three rows for one idea is the wall.
-  {key:'refund',       group:'Money',label:'Undo or refund a payment',help:'Refund to a card or in cash, void a payment already taken, or release a card hold',pending:true},
+  {key:'refund',       group:'Money',label:'Undo or refund a payment',help:'Refund to a card or in cash, void a payment already taken, or release a card hold'},
   {key:'drawermoney',  group:'Money',label:'Pay in and pay out',help:'Take money out of the drawer, or put it in. Anyone trusted to take it out is trusted to put it back, so it is one row.'},
   {key:'giftcardsell', group:'Money',label:'Sell a gift card',  help:'Sell a gift card at the register'},
-  {key:'giftcardadjust',group:'Money',label:'Change a gift card balance',help:'Write to the gift-card ledger — the cards carry real money the restaurant owes',pending:true},
+  {key:'giftcardadjust',group:'Money',label:'Change a gift card balance',help:'Write to the gift-card ledger — the cards carry real money the restaurant owes'},
   // ⛔ NO CASH DRAWER ROW, deliberately. canOpenDrawer is manager||bar with a PER-PERSON
   // override that already exists on each person's row in Staff. A role row would be a
   // second control over one power, and two controls that can disagree is exactly the bug
@@ -9595,13 +9600,13 @@ const POS_PRIVS=[
   // Its own row rather than riding timecard, on the same argument that kept timecard out
   // of reports: ending somebody's shift and editing their punches afterwards are
   // different acts, even though both are their pay.
-  {key:'clockout', group:'Office',label:'Clock somebody else out',help:'End another person’s shift from the dashboard',pending:true},
+  {key:'clockout', group:'Office',label:'Clock somebody else out',help:'End another person’s shift from the dashboard'},
   {key:'eightysix',group:'Office',label:'86 an item',      help:'Mark an item unavailable on the register for the rest of service. Does not reach Otter — delivery is a separate switch.'},
   // ── ADMIN ──
   // ⚠️ def:['owner'] — NOT the shared owner+manager default. This is `isOwner` in the
   // register today, and Vinny's instruction last week was "Only for my number 7080".
   // Writing the rule down must not quietly widen it.
-  {key:'registeredit',group:'Admin',label:'Rearrange the register',def:['owner'],help:'Press and hold to move buttons around — changes the till for everybody',pending:true},
+  {key:'registeredit',group:'Admin',label:'Rearrange the register',def:['owner'],help:'Press and hold to move buttons around — changes the till for everybody'},
 ];
 const PRIVS_KEY='ct_privs';
 // Vinny, 10/28: "owner is full access no restrictions". So owner is not a tick — it is a
