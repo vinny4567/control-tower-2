@@ -9444,10 +9444,17 @@ const POS_ROLES={
 const POS_PRIVS=[
   {key:'void',     label:'Voids',            help:'Void an item that has already gone to the kitchen'},
   {key:'discount', label:'Discounts',        help:'Discount or comp a check'},
+  {key:'discountdel',label:'Delete a discount',help:'Take a discount back off a check after it is applied'},
   {key:'timecard', label:'Adjust time card', help:'Change somebody’s punches — this is pay'},
   {key:'eightysix',label:'86 an item',       help:'Mark an item unavailable for the rest of service'},
 ];
 const PRIVS_KEY='ct_privs';
+// Vinny, 10/28: "owner is full access no restrictions". So owner is not a tick — it is a
+// fact, rendered locked-on and refused by privToggle. Two reasons beyond him saying so:
+// the register's own isOwner already means "everything", and a grid that let you untick
+// the owner is a grid that can lock the only person who can fix it out of his own
+// register, mid-service, with no way back in.
+const PRIV_ALWAYS={owner:true};
 let privS={m:null,at:0,note:'',loaded:false};
 // Today's register behaviour, so the screen opens showing the truth rather than a blank
 // grid: voids and discounts go through canApprove(), which is manager OR owner.
@@ -9464,6 +9471,7 @@ function privNormalize(m){
   POS_PRIVS.forEach(p=>{
     if(!out[p.key]||typeof out[p.key]!=='object')out[p.key]={};
     Object.keys(POS_ROLES).forEach(r=>{
+      if(PRIV_ALWAYS[r]){out[p.key][r]=true;return;}   // repairs a blob written before this rule
       if(typeof out[p.key][r]!=='boolean')out[p.key][r]=def[p.key][r];
     });
   });
@@ -9505,11 +9513,12 @@ function privSave(){
 }
 function privToggle(pk,rk,on){
   if(!privS.m)return;
+  if(PRIV_ALWAYS[rk]){privRefresh();return;}   // owner is not negotiable; put the tick back
   if(!privS.m[pk])privS.m[pk]={};
   privS.m[pk][rk]=!!on;
   privSave();
 }
-function privRoleHas(pk,rk){return !!(privS.m&&privS.m[pk]&&privS.m[pk][rk])}
+function privRoleHas(pk,rk){return PRIV_ALWAYS[rk]?true:!!(privS.m&&privS.m[pk]&&privS.m[pk][rk])}
 
 // ---- Grazie (gift cards + customers, via the CRM portal) --------------------
 async function posBoot(){
@@ -12410,7 +12419,7 @@ function privCardHTML(){
       <table style="border-collapse:collapse;width:100%;min-width:560px">
         <thead><tr>
           <th style="${th};text-align:left;padding-left:2px"></th>
-          ${roles.map(([rk,r])=>`<th style="${th}">${esc(r.label)}</th>`).join('')}
+          ${roles.map(([rk,r])=>`<th style="${th}">${esc(r.label)}${PRIV_ALWAYS[rk]?`<div style="font-size:9.5px;letter-spacing:.06em;color:var(--text-dim);font-weight:600;margin-top:1px">always</div>`:''}</th>`).join('')}
         </tr></thead>
         <tbody>
           ${POS_PRIVS.map(p=>`
@@ -12419,13 +12428,16 @@ function privCardHTML(){
                 <div style="font-size:14px;color:var(--text);font-weight:600">${esc(p.label)}</div>
                 <div style="font-size:11.5px;color:var(--text-muted);margin-top:1px">${esc(p.help)}</div>
               </td>
-              ${roles.map(([rk])=>`
-                <td style="${td}">
-                  <input type="checkbox" ${privRoleHas(p.key,rk)?'checked':''}
-                    onchange="privToggle('${esc(p.key)}','${esc(rk)}',this.checked)"
-                    aria-label="${esc(p.label)} — ${esc(POS_ROLES[rk].label)}"
-                    style="width:17px;height:17px;cursor:pointer;accent-color:var(--accent)">
-                </td>`).join('')}
+              ${roles.map(([rk])=>PRIV_ALWAYS[rk]
+                ? `<td style="${td}" title="The owner has everything. This cannot be turned off.">
+                     <span style="color:var(--accent);font-size:15px;font-weight:700" aria-label="${esc(p.label)} — Owner, always">✓</span>
+                   </td>`
+                : `<td style="${td}">
+                     <input type="checkbox" ${privRoleHas(p.key,rk)?'checked':''}
+                       onchange="privToggle('${esc(p.key)}','${esc(rk)}',this.checked)"
+                       aria-label="${esc(p.label)} — ${esc(POS_ROLES[rk].label)}"
+                       style="width:17px;height:17px;cursor:pointer;accent-color:var(--accent)">
+                   </td>`).join('')}
             </tr>`).join('')}
         </tbody>
       </table>
