@@ -11710,6 +11710,93 @@ function staffAddJob(k){
 //
 // A name that matches somebody already here is an EDIT, not a second person — including somebody
 // previously removed, where adding them back is exactly what clearing the tombstone means.
+// Give one job to many people at once.
+//
+// Adding a job meant opening each person, choosing from their dropdown, pressing Add — twenty
+// bussers is sixty interactions and a lost place in the list. Pick the job once, tick the people.
+//
+// Two things it is careful about, because this is the first screen here that changes MANY records
+// at once and a mistake is therefore twenty mistakes:
+//  • It applies the DIFF, never the whole list. Somebody not ticked and not previously holding the
+//    job is untouched — so an override typed on a person this panel never mentions cannot be lost.
+//  • UNTICKING REMOVES THE JOB AND ITS RATE, exactly as the per-person × does. That is destructive,
+//    so removals are counted and confirmed separately from additions, naming the rates at stake.
+function staffBulkJob(){
+  const names=staffAllJobNames();
+  if(!names.length){alert('There are no jobs to assign yet — add one under Job rates first.');return}
+  const job0=names[0];
+  const wrap=document.createElement('div');
+  wrap.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.5);display:flex;align-items:flex-start;justify-content:center;padding:20px;overflow:auto';
+  wrap.innerHTML='<div style="background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:12px;max-width:560px;width:100%;padding:20px;margin:auto">'
+    +'<div style="font-size:17px;font-weight:800;margin-bottom:2px">Give a job to several people</div>'
+    +'<div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">Ticked means they hold it. Unticking takes it off them, and their override for it goes too.</div>'
+    +'<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">'
+    +'<select id="sbj-job" style="'+posInput+';width:auto">'+names.map(n=>'<option>'+esc(n)+'</option>').join('')+'</select>'
+    +'<input id="sbj-q" placeholder="Search names" style="'+posInput+';flex:1;min-width:140px">'
+    +'<span id="sbj-count" style="font-size:12px;color:var(--text-muted)"></span></div>'
+    +'<div id="sbj-list" style="max-height:46vh;overflow:auto;border:1px solid var(--border);border-radius:9px;padding:6px"></div>'
+    +'<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px">'
+    +'<button data-a="no" style="padding:9px 18px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Cancel</button>'
+    +'<button data-a="yes" style="padding:9px 18px;border-radius:8px;border:1px solid var(--accent);background:var(--accent);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Apply</button>'
+    +'</div></div>';
+  const close=()=>{wrap.remove();document.removeEventListener('keydown',onKey)};
+  const onKey=(e)=>{if(e.key==='Escape')close()};
+  const jobSel=()=>wrap.querySelector('#sbj-job').value;
+  const people=()=>Object.values(staffS.people).filter(x=>!x.removed).sort(staffByFirst);
+  const holds=(x,job)=>{const kk=staffJobKey(job);return Object.keys(x.rates||{}).some(n=>staffJobKey(n)===kk)};
+  const ticks={};                               // key -> desired, only for rows touched
+  function paint(){
+    const job=jobSel(), q=(wrap.querySelector('#sbj-q').value||'').toLowerCase().trim();
+    const rows=people().filter(x=>!q||(x.name||'').toLowerCase().includes(q));
+    wrap.querySelector('#sbj-list').innerHTML=rows.map(x=>{
+      const on=(ticks[x.key]!==undefined)?ticks[x.key]:holds(x,job);
+      const own=(x.rates||{})[job];
+      return '<label style="display:flex;gap:9px;align-items:center;padding:4px 5px;border-radius:6px;cursor:pointer;font-size:14px">'
+        +'<input type="checkbox" data-k="'+esc(x.key)+'"'+(on?' checked':'')+'>'
+        +'<span style="flex:1">'+esc(x.name)+'</span>'
+        +(own>0?'<span style="font-size:12px;color:var(--text-muted)">$'+esc(String(own))+'</span>':'')+'</label>';
+    }).join('')||'<div style="color:var(--text-dim);font-size:13px;padding:6px">Nobody matches.</div>';
+    const n=people().filter(x=>((ticks[x.key]!==undefined)?ticks[x.key]:holds(x,job))).length;
+    wrap.querySelector('#sbj-count').textContent=n+' hold it';
+  }
+  wrap.addEventListener('change',(e)=>{
+    if(e.target.id==='sbj-job'){for(const k in ticks)delete ticks[k];paint();return}   // new job = fresh slate
+    const cb=e.target.closest('input[type="checkbox"][data-k]');
+    if(cb){ticks[cb.dataset.k]=cb.checked;paint()}
+  });
+  wrap.addEventListener('input',(e)=>{if(e.target.id==='sbj-q')paint()});
+  wrap.addEventListener('click',(e)=>{
+    const b=e.target.closest('button[data-a]');
+    if(!b){if(e.target===wrap)close();return}
+    if(b.dataset.a!=='yes'){close();return}
+    const job=jobSel(), kk=staffJobKey(job);
+    const add=[],rm=[];
+    Object.keys(ticks).forEach(k=>{
+      const x=staffS.people[k];if(!x)return;
+      const has=holds(x,job);
+      if(ticks[k]&&!has)add.push(x); else if(!ticks[k]&&has)rm.push(x);
+    });
+    if(!add.length&&!rm.length){alert('Nothing changed.');return}
+    if(rm.length){
+      const withRate=rm.filter(x=>((x.rates||{})[job]||0)>0);
+      if(!confirm('Take "'+job+'" off '+rm.length+' '+(rm.length===1?'person':'people')+'?'
+        +(withRate.length?('\n\n'+withRate.length+' of them have an override for it, and that goes too:\n'+withRate.slice(0,8).map(x=>'• '+x.name+' $'+x.rates[job]).join('\n')+(withRate.length>8?'\n• …':'')):'')
+        +(add.length?('\n\n'+add.length+' will also be given it.'):'')))return;
+    }
+    add.forEach(x=>{x.rates=x.rates||{};if(x.rates[job]==null)x.rates[job]=0;staffTouch(x)});
+    rm.forEach(x=>{
+      if(x.rates)Object.keys(x.rates).forEach(n=>{if(staffJobKey(n)===kk)delete x.rates[n]});
+      if(x.positions)x.positions=x.positions.filter(j=>staffJobKey(j)!==kk);
+      staffTouch(x);
+    });
+    staffSave();close();staffRefresh();
+    alert(job+': '+add.length+' given, '+rm.length+' removed.');
+  });
+  document.addEventListener('keydown',onKey);
+  document.body.appendChild(wrap);
+  paint();
+  wrap.querySelector('#sbj-q').focus();
+}
 function staffAddPerson(){
   const name=prompt('Add somebody to the staff list\n\nTheir full name, spelled the way the schedule app spells it — that is how a later pull recognises them as the same person.');
   if(name===null)return;
@@ -12220,6 +12307,8 @@ function posStaffHTML(){
            this row on 9/24 — it is a once-in-a-while import, not a daily action. -->
       <input type="file" id="staff-micros-file" accept=".csv,text/csv" style="display:none"
         onchange="staffMicrosFile(this)">
+      <button onclick="staffBulkJob()" title="Pick a job, then tick everyone who has it"
+        style="${posBtn('#3f3f46')};padding:7px 13px;font-size:13px">Assign a job</button>
       <button onclick="staffAddPerson()" title="Add somebody who is not in the schedule app yet"
         style="${posBtn('#22c55e')};padding:7px 13px;font-size:13px">+ Add person</button>
       <button onclick="staffMicrosPick()" title="Read the MICROS Emp List export and put each person's MICROS id on their row"
