@@ -983,7 +983,47 @@ document.addEventListener('scroll',function(e){
   if(t&&t.classList&&t.classList.contains&&t.classList.contains('gmail-list-tab')){
     gmailListScrollPos=t.scrollTop;
   }
+  if(t&&t.classList&&t.classList.contains&&t.classList.contains('mail-accts')){
+    mailAcctScrollPos=t.scrollLeft;
+  }
 },true);
+// ── THE ACCOUNT TAB STRIP KEEPS ITS PLACE ──────────────────────────────────────
+// Vinny, 10/29: "when i scroll over and hit the reservation inbox here it snaps me back
+// over to the left side". `.mail-accts` scrolls horizontally, and both ways it gets
+// rebuilt — innerHTML in renderMailAccts, and a whole new element from renderViewport —
+// reset scrollLeft to 0. So tapping the tab he had just scrolled to threw the strip back
+// to the start, and the tab he picked went off screen at the moment he picked it.
+//
+// Same shape as the message list (gmailListScrollPos) and the dashboard keep-list: a
+// scroll position belongs to the user, not to the render.
+let mailAcctScrollPos=0, mailAcctSwitched=false;
+function mailAcctsRemember(){
+  const el=document.querySelector('.mail-accts');
+  if(el)mailAcctScrollPos=el.scrollLeft;
+}
+function mailAcctsRestore(){
+  requestAnimationFrame(()=>{
+    const el=document.querySelector('.mail-accts');
+    if(!el)return;
+    if(mailAcctScrollPos>0)el.scrollLeft=mailAcctScrollPos;
+    // ⚠️ ONLY DRAG THE STRIP WHEN HE ACTUALLY SWITCHED ACCOUNTS. Bringing the active tab
+    // into view on EVERY restore re-creates his complaint pointing the other way: a
+    // background mail refresh calls renderMailAccts, and the strip yanks itself back to
+    // wherever the current account happens to sit while he is reading somewhere else.
+    // Caught by the test — with the leftmost tab active, "keep it visible" dragged a
+    // scrolled strip back to 0, which is exactly the snap he reported.
+    if(mailAcctSwitched){
+      mailAcctSwitched=false;
+      const on=el.querySelector('[data-acct-on="1"]');
+      if(on){
+        const l=on.offsetLeft, r=l+on.offsetWidth;
+        if(l<el.scrollLeft)el.scrollLeft=Math.max(0,l-12);
+        else if(r>el.scrollLeft+el.clientWidth)el.scrollLeft=r-el.clientWidth+12;
+      }
+    }
+    mailAcctScrollPos=el.scrollLeft;
+  });
+}
 function restoreGmailListScroll(){
   requestAnimationFrame(function(){
     const list=document.querySelector('.gmail-list-tab');
@@ -1410,7 +1450,7 @@ async function loadMailList(force){
   catch(e){mailx.loadingList=false;mailx.error=e.message==='unauth'?'Access key rejected':'Could not reach that inbox — '+String(e.message||e);}
   if(activeTab===MAIL)renderViewport();
 }
-function switchMailAcct(id){if(id===mailx.acct&&!mailx.smart)return;mailx.smart=null;mailx.smartRes=null;mailx.acct=id;mailx.folder='inbox';mailx.limit=50;mailx.selUid=null;mailx.selMsg=null;mailx.composing=false;mailx.composeNew=false;mailx.search='';mailx.searchResults=null;mailx.searching=false;mailx.error=null;renderViewport();loadMailList();}
+function switchMailAcct(id){if(id===mailx.acct&&!mailx.smart)return;mailAcctsRemember();mailAcctSwitched=true;mailx.smart=null;mailx.smartRes=null;mailx.acct=id;mailx.folder='inbox';mailx.limit=50;mailx.selUid=null;mailx.selMsg=null;mailx.composing=false;mailx.composeNew=false;mailx.search='';mailx.searchResults=null;mailx.searching=false;mailx.error=null;renderViewport();loadMailList();}
 function mailLoadMore(){mailx.limit=Math.min(300,(mailx.limit||50)+50);loadMailList(true);}
 let mailThreadCache={}; // acct|folder|uid -> thread, for the session — reopening an email is instant
 // Pre-download the top few messages (peek=1 → never marks anything read) so tapping one
@@ -1494,8 +1534,8 @@ function renderMailListRegion(){const el=document.getElementById('mail-list-regi
   const sc=el.querySelector('.gmail-list-tab');const top=sc?sc.scrollTop:0;
   el.innerHTML=mailListHTML(window.innerWidth>=900);
   const sc2=el.querySelector('.gmail-list-tab');if(sc2&&top)sc2.scrollTop=top;}
-function mailAcctBtnsHTML(){return (mailx.accts||[]).map(a=>{const unread=(mailx.lists[a.id+'|inbox']||[]).filter(m=>m.unread).length;return `<button class="mail-acct ${mailx.acct===a.id?'active':''}" onclick="switchMailAcct('${a.id}')">${esc(a.label)}${unread?`<span class="mail-acct-badge">${unread}</span>`:''}</button>`}).join('');}
-function renderMailAccts(){const el=document.querySelector('.mail-accts');if(el&&Array.isArray(mailx.accts))el.innerHTML=mailAcctBtnsHTML();}
+function mailAcctBtnsHTML(){return (mailx.accts||[]).map(a=>{const unread=(mailx.lists[a.id+'|inbox']||[]).filter(m=>m.unread).length;return `<button class="mail-acct ${mailx.acct===a.id?'active':''}" ${mailx.acct===a.id?'data-acct-on="1"':''} onclick="switchMailAcct('${a.id}')">${esc(a.label)}${unread?`<span class="mail-acct-badge">${unread}</span>`:''}</button>`}).join('');}
+function renderMailAccts(){const el=document.querySelector('.mail-accts');if(el&&Array.isArray(mailx.accts)){mailAcctsRemember();el.innerHTML=mailAcctBtnsHTML();mailAcctsRestore();}}
 // Silent refresh of the account/folder being viewed — updates the list pane + badges IN PLACE
 // (never re-renders the reading pane, so an open email / draft is untouched).
 async function mailSilentRefresh(){
@@ -6540,7 +6580,7 @@ Picking a date range automatically pulls the nightly <b>tip-out log</b> (restaur
   </div>`;
 }
 
-function renderViewport(){if(activeTab===WED){document.getElementById('viewport').innerHTML=wedHTML();wedInit();return}if(activeTab===DOCS){docsSetNS('ct_docs');docsPullSync();document.getElementById('viewport').innerHTML=docsHTML();return}if(activeTab===MAIL){document.getElementById('viewport').innerHTML=mailHTML();restoreGmailListScroll();return}if(activeTab===LIQ){document.getElementById('viewport').innerHTML=liqHTML();return}if(activeTab===BANK){document.getElementById('viewport').innerHTML=bankHTML();return}
+function renderViewport(){if(activeTab===WED){document.getElementById('viewport').innerHTML=wedHTML();wedInit();return}if(activeTab===DOCS){docsSetNS('ct_docs');docsPullSync();document.getElementById('viewport').innerHTML=docsHTML();return}if(activeTab===MAIL){document.getElementById('viewport').innerHTML=mailHTML();restoreGmailListScroll();mailAcctsRestore();return}if(activeTab===LIQ){document.getElementById('viewport').innerHTML=liqHTML();return}if(activeTab===BANK){document.getElementById('viewport').innerHTML=bankHTML();return}
    if(activeTab===TIPS){document.getElementById('viewport').innerHTML=tipsHTML();tipsRefresh();return}if(activeTab===POS){document.getElementById('viewport').innerHTML=posHTML();return}if(activeTab===ONLINE){document.getElementById('viewport').innerHTML=onlineHTML();renderChat();if(ordersKey())loadCmdConsole();return}if(activeTab===DASH){const vp=document.getElementById('viewport');
    // EVERY scroller on the dash must be listed here. This rebuilds the whole tab, and the Gmail
    // poll fires it every few seconds, so anything not restored snaps back to the top WHILE VINNY
