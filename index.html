@@ -1399,28 +1399,48 @@ async function loadMailAccounts(retry){
 async function mailPrefetch(acctId){
   try{const r=await mailFetch('/mail/list?acct='+encodeURIComponent(acctId)+'&folder=inbox&limit=50');const d=await r.json();
     if(r.ok&&d.messages){d.messages=mailByDate(d.messages);mailx.lists[acctId+'|inbox']=d.messages;mailSnapPut(acctId+'|inbox',d.messages);
-      if(activeTab===MAIL)renderMailAccts();mailPrecacheTop(acctId,d.messages,2);}}catch(e){}
+      if(activeTab===MAIL)renderMailAccts();mailPrecacheTop(acctId,d.messages,2,'inbox');}}catch(e){}
 }
 async function loadMailList(force){
   if(!mailx.acct)return;const key=mailListKey();
   if(!mailx.lists[key]&&mailx.folder==='inbox'){const snap=mailSnapGet(mailx.acct+'|inbox');if(snap)mailx.lists[key]=snap;}
   const cached=mailx.lists[key];mailx.loadingList=!cached||!!force;if(activeTab===MAIL)renderViewport();
   try{const r=await mailFetch('/mail/list?acct='+encodeURIComponent(mailx.acct)+'&folder='+encodeURIComponent(mailx.folder)+'&limit='+(mailx.limit||50)+(force?'&fresh=1':''));const d=await r.json();
-    if(d&&d.total!=null){mailx.totals=mailx.totals||{};mailx.totals[mailListKey()]=d.total;}if(!r.ok)throw new Error(d.detail||d.error||'mailbox error');d.messages=mailByDate(d.messages);mailx.lists[key]=d.messages;if(mailx.folder==='inbox'&&(mailx.limit||50)<=50)mailSnapPut(mailx.acct+'|inbox',d.messages||[]);mailx.loadingList=false;mailx.error=null;if(mailx.folder==="inbox")mailPrecacheTop(mailx.acct,d.messages,3);}
+    if(d&&d.total!=null){mailx.totals=mailx.totals||{};mailx.totals[mailListKey()]=d.total;}if(!r.ok)throw new Error(d.detail||d.error||'mailbox error');d.messages=mailByDate(d.messages);mailx.lists[key]=d.messages;if(mailx.folder==='inbox'&&(mailx.limit||50)<=50)mailSnapPut(mailx.acct+'|inbox',d.messages||[]);mailx.loadingList=false;mailx.error=null;mailPrecacheTop(mailx.acct,d.messages,3,mailx.folder);}
   catch(e){mailx.loadingList=false;mailx.error=e.message==='unauth'?'Access key rejected':'Could not reach that inbox — '+String(e.message||e);}
   if(activeTab===MAIL)renderViewport();
 }
 function switchMailAcct(id){if(id===mailx.acct&&!mailx.smart)return;mailx.smart=null;mailx.smartRes=null;mailx.acct=id;mailx.folder='inbox';mailx.limit=50;mailx.selUid=null;mailx.selMsg=null;mailx.composing=false;mailx.composeNew=false;mailx.search='';mailx.searchResults=null;mailx.searching=false;mailx.error=null;renderViewport();loadMailList();}
 function mailLoadMore(){mailx.limit=Math.min(300,(mailx.limit||50)+50);loadMailList(true);}
 let mailThreadCache={}; // acct|folder|uid -> thread, for the session — reopening an email is instant
-// Pre-download the top unread messages (peek=1 → stays unread) so tapping a NEW email is instant.
+// Pre-download the top few messages (peek=1 → never marks anything read) so tapping one
+// is instant instead of waiting on a cold IMAP fetch.
+//
+// ⚠️ THIS USED TO COVER ALMOST NOTHING HE OPENS. Two limits, both wrong:
+//   - callers only invoked it `if(mailx.folder==="inbox")`, so SENT, Starred and Trash
+//     were never pre-cached at all — every message in them a cold open;
+//   - it filtered to `m.unread`, so even in the inbox an already-read message was cold,
+//     and in Sent (where nothing is ever unread) it would have pre-cached zero even if
+//     it had been called.
+// Vinny reported "sbc global is still loading slow", and earlier "especially when looking
+// through the sent folder" — this is the half of that which is ours. The other half is
+// the mini serialising every fetch onto one IMAP connection, which is Jarvis's.
+//
+// Deliberately still only THREE. Every fetch queues on that one connection, so a bigger
+// pre-cache would compete with the very click it is meant to make fast. Three is "the
+// ones he is most likely to tap", not "warm the folder".
 let mailPeekInFlight={};
-function mailPrecacheTop(acctId,list,n){
-  (list||[]).filter(m=>m.unread).slice(0,n||3).forEach(m=>{
-    const ck=acctId+'|inbox|'+m.uid;
+function mailPrecacheTop(acctId,list,n,folder){
+  folder=folder||'inbox';
+  const rows=(list||[]);
+  // Unread first — a new email is the likeliest tap — then the top of the list, which is
+  // what Sent and an already-read inbox actually need.
+  const pick=rows.filter(m=>m.unread).concat(rows.filter(m=>!m.unread)).slice(0,n||3);
+  pick.forEach(m=>{
+    const ck=acctId+'|'+folder+'|'+m.uid;
     if(mailThreadCache[ck]||mailPeekInFlight[ck])return;
     mailPeekInFlight[ck]=1;
-    mailFetch('/mail/msg?acct='+encodeURIComponent(acctId)+'&uid='+m.uid+'&folder=inbox&peek=1').then(r=>r.json()).then(d=>{
+    mailFetch('/mail/msg?acct='+encodeURIComponent(acctId)+'&uid='+m.uid+'&folder='+encodeURIComponent(folder)+'&peek=1').then(r=>r.json()).then(d=>{
       if(d&&d.message&&!mailThreadCache[ck])mailThreadCache[ck]={subject:d.message.subject,messages:[d.message],provisional:true};
     }).catch(()=>{}).finally(()=>{delete mailPeekInFlight[ck]});
   });
@@ -1483,7 +1503,7 @@ async function mailSilentRefresh(){
   const key=mailListKey();
   try{const r=await mailFetch('/mail/list?acct='+encodeURIComponent(mailx.acct)+'&folder='+encodeURIComponent(mailx.folder)+'&limit='+(mailx.limit||50));const d=await r.json();
     if(r.ok&&d.messages){mailx.lists[key]=d.messages;if(mailx.folder==='inbox'&&(mailx.limit||50)<=50)mailSnapPut(mailx.acct+'|inbox',d.messages);
-      if(!mailx.search)renderMailListRegion();renderMailAccts();if(mailx.folder==="inbox")mailPrecacheTop(mailx.acct,d.messages,3);}}catch(e){}
+      if(!mailx.search)renderMailListRegion();renderMailAccts();mailPrecacheTop(mailx.acct,d.messages,3,mailx.folder);}}catch(e){}
 }
 function mailSearchInput(v){mailx.search=v;clearTimeout(mailSearchTimer);if(!v.trim()){mailx.searchResults=null;mailx.searching=false;renderMailListRegion();return;}mailSearchTimer=setTimeout(mailDoSearch,450);}
 async function mailDoSearch(){const q=(mailx.search||'').trim();if(!q){mailx.searchResults=null;mailx.searching=false;renderMailListRegion();return;}mailx.searching=true;renderMailListRegion();try{const r=await mailFetch('/mail/search?acct='+encodeURIComponent(mailx.acct)+'&q='+encodeURIComponent(q));const d=await r.json();if(!r.ok)throw new Error(d.detail||d.error||'search failed');mailx.searchResults=d.messages||[];mailx.searchErr=null;}catch(e){mailx.searchResults=[];mailx.searchErr='Search failed — '+String(e.message||e);}mailx.searching=false;renderMailListRegion();}
