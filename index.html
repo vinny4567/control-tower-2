@@ -7448,6 +7448,7 @@ async function posPublish(){
   posS.publishing=true;posS.publishErr=null;renderViewport();
   try{
     await posPublishSend(blob);
+    miniPoke();   // transitional: stop the mini waiting up to 60s to notice — dies with this button
     posS.published=Date.now();posS.publishedCount=n;
     // The one failure this tab used to hide: a deletion dropped by the prune never reaches the
     // registers, the row quietly un-strikes, and the item is still on the iPads. Never silent.
@@ -9768,6 +9769,36 @@ async function privCheckEnforced(){
 // access-control-allow-origin only for https://vinny4567.github.io, and nothing for
 // http://localhost or any other origin. So it answers the real Watch Tower and refuses a
 // dev copy. Test this one on the live site.
+// ⏳ TRANSITIONAL — THIS DIES WITH THE PUBLISH BUTTON. Deliberately one function and two
+// call sites so it leaves no trace when pulled; nothing may come to depend on it.
+//
+// The mini's /api/menu caches its upstream read for ~60s, so a change can sit in the
+// cloud for up to a minute before the mini even looks — that is the first of the two
+// 60-second hops between Vinny and an iPad. `?force=1` makes it re-read now: ~0.5s, no
+// token needed. Jarvis sized the timing rather than me guessing — their reader change
+// sits behind the mail fix and the gift-card cutover, so this earns its keep for months.
+//
+// ⚠️ ONLY WHERE THE VALUE THE MINI READS ACTUALLY CHANGED, which today is a PUBLISH
+// (ct_pos_live) and a PRIVILEGES save (ct_privs) — NOT every field edit. Jarvis described
+// it as "force-on-edit"; that is right for the world where the reader serves working
+// state, and wrong for this one. A price typed here does not move ct_pos_live until
+// Publish, so poking on edit would spend a request re-reading a blob that has not
+// changed. When the reader flips, this moves to the edit path and then dies.
+let miniPokeAt=0;
+function miniPoke(){
+  if(localStorage.getItem('ct_kv_mini')==='off')return;
+  const now=Date.now();
+  if(now-miniPokeAt<3000)return;   // bounds the worst case Jarvis asked about: a tab held open through heavy editing
+  miniPokeAt=now;
+  try{
+    const base=KV_MINI.replace(/\/api\/kv\/?$/,'');
+    const ac=(typeof AbortController==='function')?new AbortController():null;
+    if(ac)setTimeout(()=>{try{ac.abort()}catch(e){}},5000);
+    // Fire and forget on purpose: this is an optimisation, never a dependency. If it
+    // fails, everything still arrives on the ordinary 60-second path.
+    fetch(base+'/api/menu?force=1',{...(ac?{signal:ac.signal}:{})}).catch(()=>{});
+  }catch(e){}
+}
 async function privVerifyMini(payload){
   if(localStorage.getItem('ct_kv_mini')==='off'){privS.mini='off';privRefresh();return}
   if(!KV_TOKEN()){privS.mini='nokey';privRefresh();return}
@@ -9779,6 +9810,7 @@ async function privVerifyMini(payload){
       headers:{'Content-Type':'application/json','x-sync-token':KV_TOKEN()},
       body:JSON.stringify({v:payload,at:payload.at}),...(ac?{signal:ac.signal}:{})});
     privS.mini=r.ok?'ok':'fail';
+    if(r.ok)miniPoke();   // the mini has the new grid; make it rebuild /api/menu now rather than on its cache expiry
   }catch(e){privS.mini='fail'}
   privRefresh();
 }
