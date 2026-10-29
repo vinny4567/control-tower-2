@@ -12867,7 +12867,19 @@ function privCardHTML(){
               const last=runs[runs.length-1];
               if(last&&last.name===g)last.rows.push(p); else runs.push({name:g,rows:[p]});
             });
-            return runs.map(r=>(r.name?`<tr><td colspan="${roles.length+1}" style="padding:14px 2px 2px;font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim)">${esc(r.name)}</td></tr>`:'')
+            // ⚠️ EVERY SECTION REPEATS THE COLUMN LABELS. Vinny, 10/28: "when i scroll down
+            // here i cant see which row is which class". With seventeen rows the header
+            // scrolls off long before the last one, and a grid of unlabelled ticks is worse
+            // than no grid — he would be setting who can refund money by counting columns.
+            //
+            // Repeated headings rather than a sticky <thead>: this table lives inside an
+            // overflow-x container, which makes it its own scroll context, so page-level
+            // sticky does not reliably apply. A header every four rows always works and
+            // needs no assumptions about what is scrolling.
+            return runs.map(r=>(r.name?`<tr>
+                <td style="padding:16px 2px 3px;font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim)">${esc(r.name)}</td>
+                ${roles.map(([rk,ro])=>`<td style="padding:16px 10px 3px;text-align:center;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);white-space:nowrap">${esc(ro.label)}</td>`).join('')}
+              </tr>`:'')
               +r.rows.map(rowOf).join('')).join('');
           })()}
         </tbody>
