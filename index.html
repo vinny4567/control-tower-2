@@ -1002,28 +1002,32 @@ function mailAcctsRemember(){
   if(el)mailAcctScrollPos=el.scrollLeft;
 }
 function mailAcctsRestore(){
-  requestAnimationFrame(()=>{
+  const apply=()=>{
     const el=document.querySelector('.mail-accts');
     if(!el)return;
     if(mailAcctScrollPos>0)el.scrollLeft=mailAcctScrollPos;
-    // ⚠️ ONLY DRAG THE STRIP WHEN HE ACTUALLY SWITCHED ACCOUNTS. Bringing the active tab
-    // into view on EVERY restore re-creates his complaint pointing the other way: a
-    // background mail refresh calls renderMailAccts, and the strip yanks itself back to
-    // wherever the current account happens to sit while he is reading somewhere else.
-    // Caught by the test — with the leftmost tab active, "keep it visible" dragged a
-    // scrolled strip back to 0, which is exactly the snap he reported.
     if(mailAcctSwitched){
-      mailAcctSwitched=false;
       const on=el.querySelector('[data-acct-on="1"]');
       if(on){
-        const l=on.offsetLeft, r=l+on.offsetWidth;
-        if(l<el.scrollLeft)el.scrollLeft=Math.max(0,l-12);
-        else if(r>el.scrollLeft+el.clientWidth)el.scrollLeft=r-el.clientWidth+12;
+        // ⚠️ RECTS, NOT offsetLeft. offsetLeft is measured from the nearest POSITIONED
+        // ancestor, and .mail-accts is not positioned — so it gave the tab's place on the
+        // PAGE and the arithmetic against scrollLeft was meaningless. It passed a unit
+        // test only because the test strip sat at x≈0, which is the kind of agreement
+        // that proves nothing. getBoundingClientRect needs no assumption about layout.
+        const er=el.getBoundingClientRect(), tr=on.getBoundingClientRect();
+        if(tr.left<er.left)       el.scrollLeft -= (er.left-tr.left)+12;
+        else if(tr.right>er.right)el.scrollLeft += (tr.right-er.right)+12;
       }
     }
     mailAcctScrollPos=el.scrollLeft;
-  });
+  };
+  // Twice, on purpose. Switching accounts paints immediately and THEN the list load
+  // finishes and re-renders a moment later — so restoring once leaves the second render
+  // to throw the strip back, which is the snap still being reported.
+  requestAnimationFrame(apply);
+  setTimeout(()=>{apply();mailAcctSwitched=false;},400);
 }
+
 function restoreGmailListScroll(){
   requestAnimationFrame(function(){
     const list=document.querySelector('.gmail-list-tab');
