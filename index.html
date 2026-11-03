@@ -6080,15 +6080,48 @@ function tipMovePerson(name,sec){if(!tipsState.moves)tipsState.moves={};if(tipBa
 // Default range = the current 14-day pay period (anchor Mar 23 2026, same as the tip-out app).
 function tipCurrentPeriod(){
   const anchor=new Date(2026,2,23),now=new Date(),today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
-  const idx=Math.floor((today-anchor)/(14*86400000));
-  const start=new Date(anchor.getTime()+idx*14*86400000);
-  return {start,end:new Date(start.getTime()+13*86400000)};
+  // Count whole DAYS, then step the calendar. Adding 14*86400000 ms to the
+  // anchor looked the same but isn't: the anchor is CDT, so once the clocks go
+  // back every period started at 23:00 the night BEFORE. Today that put the
+  // period on Sun Nov 1 instead of Mon Nov 2 — which also meant tipDays() ran
+  // 11/1…11/14, so Nov 1 (last period's night) had a column and 11/15, the
+  // real last night of this one, had none to type into.
+  // new Date(y,m,d+n) normalises on the calendar, so every start is a true
+  // local midnight Monday in either half of the year. CDT-era keys are byte
+  // identical to what this returned before — verified against Mar 23, Jun 1
+  // and Oct 19 — so no past period is orphaned.
+  const idx=Math.floor(Math.round((today-anchor)/86400000)/14);
+  const start=new Date(2026,2,23+idx*14);
+  return {start,end:new Date(2026,2,23+idx*14+13)};
 }
-function tipEnsureRange(){if(!tipsState.start||!tipsState.end){const p=tipCurrentPeriod();tipsState.start=p.start;tipsState.end=p.end;}}
+// The period he PICKED has to outlive a refresh, or everything typed into it
+// looks lost. Payroll is done for the fortnight that just ended, so he is
+// almost never on the default period — he would pick Oct 19, type a sheet full
+// of hours (saved correctly under ct_hours_2026_10_19), refresh, land back on
+// the current period's key and find an empty grid. The data was never gone; the
+// page had stopped looking at it.
+// localStorage, not the cloud: tipHoursKey() is called synchronously from
+// tipsSaveHoursSoon, so the range has to be readable without awaiting.
+const TIP_RANGE_LS='ct_tips_range';
+function tipRangeRemember(){try{localStorage.setItem(TIP_RANGE_LS,JSON.stringify({s:tipISO(tipsState.start),e:tipISO(tipsState.end)}));}catch(e){}}
+function tipRangeForget(){try{localStorage.removeItem(TIP_RANGE_LS);}catch(e){}}
+function tipEnsureRange(){if(!tipsState.start||!tipsState.end){
+  try{const r=JSON.parse(localStorage.getItem(TIP_RANGE_LS)||'null');const a=r&&tipParseISO(r.s),b=r&&tipParseISO(r.e);
+    if(a&&b&&b>=a){tipsState.start=a;tipsState.end=b;return;}}catch(e){}
+  const p=tipCurrentPeriod();tipsState.start=p.start;tipsState.end=p.end;}}
 function tipDays(){tipEnsureRange();const out=[];let d=new Date(tipsState.start.getFullYear(),tipsState.start.getMonth(),tipsState.start.getDate());let g=0;while(d<=tipsState.end&&g<400){out.push(new Date(d));d=new Date(d.getTime()+86400000);g++;}return out;}
 function tipDayLabel(d){return (d.getMonth()+1)+'/'+d.getDate();}
 function tipISO(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function tipParseISO(ds){const p=(ds||'').split('-');return p.length===3?new Date(+p[0],+p[1]-1,+p[2]):null;}
+// Carry a period over the DST key shift. The fix above moved this fortnight's
+// key forward a day (ct_hours_2026_11_1 -> ct_hours_2026_11_2), and whatever is
+// already typed into it sits under the old one — so when the new key is empty,
+// read the old one instead. The old doc is only ever READ; the next edit saves
+// the full payload under the new key and from then on the new key wins.
+// A start-minus-one-day candidate can never collide with another real period
+// (they are 14 days apart), and in the CDT half of the year it simply misses.
+function tipLegacyKey(prefix){tipEnsureRange();const s=tipsState.start,d=new Date(s.getFullYear(),s.getMonth(),s.getDate()-1);return prefix+d.getFullYear()+'_'+(d.getMonth()+1)+'_'+d.getDate();}
+async function kvGetOrLegacy(key,legacy){const r=await kvGet(key);if(r&&r.v&&Object.keys(r.v).length)return r;const l=await kvGet(legacy);return (l&&l.v&&Object.keys(l.v).length)?l:r;}
 function tipPeriodKey(){tipEnsureRange();const s=tipsState.start;return 'ct_tips_'+s.getFullYear()+'_'+(s.getMonth()+1)+'_'+s.getDate();}
 function tipMoney(n){return '$'+(Math.round(n*100)/100).toFixed(2);}
 function tipId(name){return name.replace(/[^a-z0-9]/gi,'_');}
@@ -6131,11 +6164,11 @@ async function tipsInit(){
   if(tipsState.loaded)return;
   const g=++tipsGen;tipsState.loading=true;   // any newer reload bumps tipsGen and supersedes this load
   await tipsFetchRoster();if(g!==tipsGen)return;
-  const remote=await kvGet(tipPeriodKey());if(g!==tipsGen)return;   // period changed mid-load — abort so cells never cross periods
+  const remote=await kvGetOrLegacy(tipPeriodKey(),tipLegacyKey('ct_tips_'));if(g!==tipsGen)return;   // period changed mid-load — abort so cells never cross periods
   tipsState.cells=(remote&&remote.v&&remote.v.cells)?remote.v.cells:{};
   tipsState.adds=(remote&&remote.v&&remote.v.adds)?remote.v.adds:{};
   const rm=await kvGet('ct_tips_moves');if(g!==tipsGen)return;tipsState.moves=(rm&&rm.v&&rm.v.moves)?rm.v.moves:{};
-  const rh=await kvGet(tipHoursKey());if(g!==tipsGen)return;tipsState.hours=(rh&&rh.v&&rh.v.hours)?rh.v.hours:{};const ge=await kvGet('ct_emp_ids');if(g!==tipsGen)return;const globalEmp=(ge&&ge.v&&ge.v.emp)?ge.v.emp:{};   // emp-IDs never change → remembered globally across periods
+  const rh=await kvGetOrLegacy(tipHoursKey(),tipLegacyKey('ct_hours_'));if(g!==tipsGen)return;tipsState.hours=(rh&&rh.v&&rh.v.hours)?rh.v.hours:{};const ge=await kvGet('ct_emp_ids');if(g!==tipsGen)return;const globalEmp=(ge&&ge.v&&ge.v.emp)?ge.v.emp:{};   // emp-IDs never change → remembered globally across periods
 tipsState.empIds=Object.assign({},(rh&&rh.v&&rh.v.empIds)?rh.v.empIds:{},globalEmp);   // global wins
 tipsState.busserSplit=(rh&&rh.v&&rh.v.busserSplit)?rh.v.busserSplit:{};tipsState.busserSplitByDay=(rh&&rh.v&&rh.v.busserSplitByDay)?rh.v.busserSplitByDay:{};tipsState.punches=(rh&&rh.v&&rh.v.punches)?rh.v.punches:[];tipsState.hoursOut=(rh&&rh.v&&rh.v.hoursOut)?rh.v.hoursOut:{};   // per-person + per-night busser pool split, and who he took out by hand
   let _mig=tipMigrateCells();if(tipCleanAdds())_mig=true;if(_mig)tipsSaveSoon();   // upgrade legacy {v,upt,wed} cells + heal stale adds
@@ -6171,9 +6204,9 @@ function tipsReload(){tipsGen++;tipsState.loaded=false;tipsState.loading=false;t
   // last fortnight's shares sat on the new one until the load finished overwriting them.
   tipsState.hours={};tipsState.busserSplit={};tipsState.busserSplitByDay={};tipsState.punches=[];tipsState.checks=null;tipsState.hoursOut={};
   document.getElementById('viewport').innerHTML=tipsHTML();tipsInit();}
-function tipsSetStart(ds){const d=tipParseISO(ds);if(!d)return;tipsState.start=d;tipsState.end=new Date(d.getTime()+13*86400000);tipsReload();} // snap to a 14-day period; adjust the end for a custom length
-function tipsSetEnd(ds){const d=tipParseISO(ds);if(!d)return;tipsState.end=d;if(tipsState.start>d)tipsState.start=new Date(d.getTime()-13*86400000);tipsReload();}
-function tipsThisPeriod(){const p=tipCurrentPeriod();tipsState.start=p.start;tipsState.end=p.end;tipsReload();}
+function tipsSetStart(ds){const d=tipParseISO(ds);if(!d)return;tipsState.start=d;tipsState.end=new Date(d.getFullYear(),d.getMonth(),d.getDate()+13);tipRangeRemember();tipsReload();} // snap to a 14-day period; adjust the end for a custom length
+function tipsSetEnd(ds){const d=tipParseISO(ds);if(!d)return;tipsState.end=d;if(tipsState.start>d)tipsState.start=new Date(d.getFullYear(),d.getMonth(),d.getDate()-13);tipRangeRemember();tipsReload();}
+function tipsThisPeriod(){tipRangeForget();const p=tipCurrentPeriod();tipsState.start=p.start;tipsState.end=p.end;tipsReload();}
 
 // Manual entry: click a day cell → a small editor with Paid / Unpaid / Wedding
 // fields opens. Any combination can be set — one day can hold a paid day-party
