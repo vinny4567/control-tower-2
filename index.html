@@ -2310,7 +2310,27 @@ const KV_URL='https://order.angeliscatering.com/api/kv/';
   // the wire with a real token (200 on the header, 401 on a bogus one, so it is genuinely
   // checked). The `?token=` form is being retired — do not reintroduce it.
   const KV_TOKEN=()=>localStorage.getItem('ct_kv_key')||'';
-async function kvGet(k){try{const r=await fetch(KV_URL+encodeURIComponent(k),{headers:{'x-sync-token':KV_TOKEN()}});if(!r.ok)return null;return await r.json()}catch(e){return null}}
+// "Nothing saved there" and "I could not ask" used to come back identically as
+// null, and every caller turns null into an EMPTY default. So a dropped wifi,
+// an expired token or a 500 loaded a pay period as {} — and the next autosave
+// wrote that {} straight over a real fortnight of hours. That is how the tips
+// were nearly lost on 10/21; it is the same shape as the POS sync losing
+// deletions. The store has to be able to say which one happened.
+//
+// KV_FAIL is returned for a failure, null for a genuinely absent key. It is an
+// object with no `v`, so every existing `(r&&r.v&&...)` test still reads falsy
+// exactly as null did — callers that have not been taught about it behave
+// exactly as before. Callers that CAN destroy data check kvFailed() and refuse
+// to write.
+const KV_FAIL=Object.freeze({__kvFail:true});
+function kvFailed(r){return r===KV_FAIL;}
+// Verified against the store itself (angelis-backend/server.js, GET
+// /api/kv/:key): a key that was never written comes back 200 {v:null,at:0}, NOT
+// 404. So an ok response always means "the store answered", and every non-ok
+// status — 401 bad token, 500 store error, 503 no store — is a real failure.
+// That is what makes this split exact: an absent key can never be mistaken for
+// a failure, so guarding on kvFailed() cannot block a brand-new pay period.
+async function kvGet(k){try{const r=await fetch(KV_URL+encodeURIComponent(k),{headers:{'x-sync-token':KV_TOKEN()}});if(!r.ok)return KV_FAIL;return await r.json()}catch(e){return KV_FAIL}}
 const kvPushTimers={};
 const kvPending={}; // k -> {v,at} not yet sent (debounce window)
 // Phase 1 of bringing the store in-house: every write also goes to the mini on the
@@ -4051,7 +4071,14 @@ function wedMetaSet(id,field,val){
   const m=wedMetaLoad();const k='sched-'+id;m[k]={...(m[k]||{})};m[k][field]=val;m[k][field+'At']=Date.now();
   wedMetaPersist(m);
   // merge with the cloud before pushing so we never erase the other screen's entries
-  kvGet('ct_wed_meta').then(remote=>{const merged=wedMetaMerge(wedMetaLoad(),(remote&&remote.v)||{});wedMetaPersist(merged);kvPush('ct_wed_meta',merged,Date.now());}).catch(()=>{kvPush('ct_wed_meta',wedMetaLoad(),Date.now())});
+  // ⚠️ This merges the cloud copy with THIS device's local copy and writes the
+  // result straight back, with nobody touching anything. A failed read used to
+  // mean merging against {} — i.e. pushing this one laptop's copy over every
+  // other device's work — and the old .catch() did it deliberately. A read we
+  // could not make is not an empty store, so now it writes nothing at all.
+  // A genuinely absent key still comes back 200 {v:null}, so a first-ever
+  // write is unaffected.
+  kvGet('ct_wed_meta').then(remote=>{if(kvFailed(remote))return;const merged=wedMetaMerge(wedMetaLoad(),(remote&&remote.v)||{});wedMetaPersist(merged);kvPush('ct_wed_meta',merged,Date.now());}).catch(()=>{});
 }
 function wedName(fe){const m=wedMetaLoad()['sched-'+fe.id];return (m&&m.name)||fe.label}
 function wedRenameEvent(){const fe=wedFeedEvent(wed.evId);if(!fe)return;
@@ -4404,7 +4431,9 @@ function wedSheetSet(id,field,val){
     if(wedSheetGet(id,'lemonIce'))shAutoField(id,'liMint',shMintPrep(id),shIsAutoMint);
     if(wedSheetGet(id,'chicken'))shAutoField(id,'chickenNote',shChickenPrep(id),shIsAutoChickenNote);
   }
-  kvGet('ct_wed_sheet').then(r=>{const merged=wedSheetMerge(wedSheetLoad(),(r&&r.v)||{});wedSheetPersist(merged);kvPush('ct_wed_sheet',merged,Date.now())})
+  // Same load-merge-and-write-back shape, same guard: a read that failed must
+  // not be mistaken for an empty store and pushed over.
+  kvGet('ct_wed_sheet').then(r=>{if(kvFailed(r))return;const merged=wedSheetMerge(wedSheetLoad(),(r&&r.v)||{});wedSheetPersist(merged);kvPush('ct_wed_sheet',merged,Date.now())})
     .catch(()=>kvPush('ct_wed_sheet',wedSheetLoad(),Date.now()));
 }
 async function wedSheetPull(){try{
@@ -5941,6 +5970,7 @@ function tipHoursPosPay(p){const r=+(p&&p.r)||0;return Math.round((r*(+(p&&p.h)|
 function tipHoursPersonTot(name){const h=tipHours(name);let reg=0,ot=0,pay=0;Object.keys(h).forEach(sec=>{reg+=+h[sec].h||0;ot+=+h[sec].o||0;pay+=tipHoursPosPay(h[sec]);});return {reg:Math.round(reg*100)/100,ot:Math.round(ot*100)/100,pay:Math.round(pay*100)/100};}
 let tipsHoursSaveTimer=null;
 function tipsSaveHoursSoon(){
+  if(tipsState.loadFailed){tipsSetStatus('⚠ not saved — the store could not be reached. Reload before typing.','#f87171');return;}
   // Work out WHICH period this save belongs to now, not when the timer fires 600ms later.
   // Change the dates inside that window and the old period's hours and busser split were
   // written under the new period's key — data that is correct, in the wrong fortnight, and
@@ -6074,7 +6104,7 @@ function tipCleanAdds(){
   return changed;
 }
 function tipEffSection(name){return (tipsState.moves&&tipsState.moves[name])||tipBaseSection(name);}
-function tipsSaveMoves(){try{kvPush('ct_tips_moves',{moves:tipsState.moves},Date.now());}catch(e){}}
+function tipsSaveMoves(){if(tipsState.loadFailed)return;try{kvPush('ct_tips_moves',{moves:tipsState.moves},Date.now());}catch(e){}}
 function tipMovePerson(name,sec){if(!tipsState.moves)tipsState.moves={};if(tipBaseSection(name)===sec)delete tipsState.moves[name];else tipsState.moves[name]=sec;tipsSaveMoves();document.getElementById('viewport').innerHTML=tipsHTML();}
 
 // Default range = the current 14-day pay period (anchor Mar 23 2026, same as the tip-out app).
@@ -6149,7 +6179,7 @@ function tipCellComps(c){const out=[];if(!c)return out;if(c.p)out.push({txt:tipN
 function tipCompsHTML(c){const comps=tipCellComps(c);if(!comps.length)return '';const multi=comps.length>1;return `<div style="display:flex;gap:5px;justify-content:flex-end;align-items:baseline;white-space:nowrap">`+comps.map(x=>`<span style="color:${x.color};font-size:${multi?'10px':'12px'};line-height:1.2;font-weight:${multi?'700':'500'}">${x.txt}</span>`).join('')+`</div>`;}
 function tipRowTotals(name){let paid=0,upt=0;const p=tipsState.cells[name]||{};Object.keys(p).forEach(k=>{const c=p[k];paid+=c.p||0;upt+=(c.u||0)+(c.w||0);});return {paid:Math.round(paid*100)/100,upt:Math.round(upt*100)/100};}
 let tipsSaveTimer=null;
-function tipsSaveSoon(){clearTimeout(tipsSaveTimer);tipsSaveTimer=setTimeout(()=>{try{kvPush(tipPeriodKey(),{cells:tipsState.cells,adds:tipsState.adds},Date.now());tipsSetStatus('Saved ✓','var(--text-dim)');}catch(e){tipsSetStatus('⚠ not saved','#f87171');}},600);tipsSetStatus('Saving…','var(--text-dim)');}
+function tipsSaveSoon(){if(tipsState.loadFailed){tipsSetStatus('⚠ not saved — the store could not be reached. Reload before typing.','#f87171');return;}clearTimeout(tipsSaveTimer);tipsSaveTimer=setTimeout(()=>{try{kvPush(tipPeriodKey(),{cells:tipsState.cells,adds:tipsState.adds},Date.now());tipsSetStatus('Saved ✓','var(--text-dim)');}catch(e){tipsSetStatus('⚠ not saved','#f87171');}},600);tipsSetStatus('Saving…','var(--text-dim)');}
 function tipSectionPeople(sec){
   const all=[],seen={},add=n=>{if(n&&!seen[n]){seen[n]=1;all.push(n);}};
   Object.keys(tipsState.roster||{}).forEach(s=>((tipsState.roster[s])||[]).forEach(add));
@@ -6164,11 +6194,28 @@ async function tipsInit(){
   if(tipsState.loaded)return;
   const g=++tipsGen;tipsState.loading=true;   // any newer reload bumps tipsGen and supersedes this load
   await tipsFetchRoster();if(g!==tipsGen)return;
+  // Fetch EVERYTHING first, then decide whether the answer can be trusted.
+  // Nothing is assigned into tipsState until we know the store actually
+  // answered — an empty default written into state is one autosave away from
+  // being written back over a real fortnight.
   const remote=await kvGetOrLegacy(tipPeriodKey(),tipLegacyKey('ct_tips_'));if(g!==tipsGen)return;   // period changed mid-load — abort so cells never cross periods
+  const rm=await kvGet('ct_tips_moves');if(g!==tipsGen)return;
+  const rh=await kvGetOrLegacy(tipHoursKey(),tipLegacyKey('ct_hours_'));if(g!==tipsGen)return;
+  const ge=await kvGet('ct_emp_ids');if(g!==tipsGen)return;
+  // ⛔ Could not reach the store. STOP — do not fall through to empty defaults.
+  // `loaded` deliberately stays false, so tipsRefresh/visibilitychange retries
+  // this on its own, and loadFailed makes every save refuse in the meantime.
+  if(kvFailed(remote)||kvFailed(rm)||kvFailed(rh)||kvFailed(ge)){
+    tipsState.loading=false;tipsState.loadFailed=true;
+    if(activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();
+    tipsSetStatus('⚠ Could not reach the store — this screen is NOT your data, and nothing will be saved.','#f87171');
+    return;
+  }
+  tipsState.loadFailed=false;
   tipsState.cells=(remote&&remote.v&&remote.v.cells)?remote.v.cells:{};
   tipsState.adds=(remote&&remote.v&&remote.v.adds)?remote.v.adds:{};
-  const rm=await kvGet('ct_tips_moves');if(g!==tipsGen)return;tipsState.moves=(rm&&rm.v&&rm.v.moves)?rm.v.moves:{};
-  const rh=await kvGetOrLegacy(tipHoursKey(),tipLegacyKey('ct_hours_'));if(g!==tipsGen)return;tipsState.hours=(rh&&rh.v&&rh.v.hours)?rh.v.hours:{};const ge=await kvGet('ct_emp_ids');if(g!==tipsGen)return;const globalEmp=(ge&&ge.v&&ge.v.emp)?ge.v.emp:{};   // emp-IDs never change → remembered globally across periods
+  tipsState.moves=(rm&&rm.v&&rm.v.moves)?rm.v.moves:{};
+  tipsState.hours=(rh&&rh.v&&rh.v.hours)?rh.v.hours:{};const globalEmp=(ge&&ge.v&&ge.v.emp)?ge.v.emp:{};   // emp-IDs never change → remembered globally across periods
 tipsState.empIds=Object.assign({},(rh&&rh.v&&rh.v.empIds)?rh.v.empIds:{},globalEmp);   // global wins
 tipsState.busserSplit=(rh&&rh.v&&rh.v.busserSplit)?rh.v.busserSplit:{};tipsState.busserSplitByDay=(rh&&rh.v&&rh.v.busserSplitByDay)?rh.v.busserSplitByDay:{};tipsState.punches=(rh&&rh.v&&rh.v.punches)?rh.v.punches:[];tipsState.hoursOut=(rh&&rh.v&&rh.v.hoursOut)?rh.v.hoursOut:{};   // per-person + per-night busser pool split, and who he took out by hand
   let _mig=tipMigrateCells();if(tipCleanAdds())_mig=true;if(_mig)tipsSaveSoon();   // upgrade legacy {v,upt,wed} cells + heal stale adds
@@ -6477,6 +6524,16 @@ function tsChecksHTML(){
 }
 
 function hoursHTML(){
+  // A failed load must not look like an empty pay period. Without this the grid
+  // renders blank and reads as "my work is gone", which is also the moment
+  // somebody starts retyping it on top of data that is still fine in the store.
+  if(tipsState.loadFailed)return `<div style="padding:40px 20px;max-width:640px">
+    <div style="border:1px solid rgba(248,113,113,.4);background:rgba(248,113,113,.08);border-radius:12px;padding:20px 22px">
+      <b style="color:#f87171;font-size:15px">⚠ Could not reach the store</b>
+      <p style="color:var(--text-dim);line-height:1.65;margin:10px 0 0">This screen is <b>not your data</b> — it could not be loaded, so it is showing nothing rather than pretending the period is empty.</p>
+      <p style="color:var(--text-dim);line-height:1.65;margin:8px 0 0"><b style="color:var(--text)">Your hours and tips are safe in the cloud.</b> Saving is switched off until this loads properly, so nothing on screen can be written over them. Don't retype anything.</p>
+      <button onclick="tipsReload()" style="margin-top:14px;background:var(--accent);color:#000;border:none;border-radius:8px;padding:8px 16px;font-weight:700;cursor:pointer;font-family:inherit;font-size:13px">Try again</button>
+    </div></div>`;
   const _checks=tsChecksHTML();
   const di='background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:5px 8px;font-family:inherit;font-size:13px;color-scheme:dark;cursor:pointer';
   const bb='border-bottom:1px solid var(--border)';
