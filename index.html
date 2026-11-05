@@ -828,7 +828,9 @@ const WED='weddings';
 const LIQ='liquor';
 const BANK='banking';
 const TIPS='tips';
-const CALC='calcs';
+// Calculations lives in the POS BACK OFFICE rail (posS.sec==='calcs'), with
+// Staff and Job rates — not on the top tab bar. The back office is where the
+// numbers that run the business get set.
 const CMD_API='https://jarvis-voicejarvis-voice.onrender.com/cmd';
 let cmdConsoleTimer=null;
 let cfg=loadCfg(),focused=null,editing=null,activeTab=cfg.activeTab||DASH;
@@ -5670,7 +5672,7 @@ function tabBarInit(){const el=document.getElementById('tab-list');if(!el||el._w
   el.addEventListener('wheel',e=>{if(Math.abs(e.deltaY)>Math.abs(e.deltaX)){e.preventDefault();el.scrollLeft+=e.deltaY}},{passive:false});
   el.addEventListener('scroll',tabNavSync);
   window.addEventListener('resize',tabNavSync);}
-function renderTabs(){const list=document.getElementById('tab-list');list.innerHTML=`<div class="tab ${activeTab===DASH?'active':''}" onclick="switchTab('${DASH}')">📊 Dashboard</div>`+`<div class="tab ${activeTab===MAIL?'active':''}" onclick="switchTab('${MAIL}')">📧 Email</div>`+`<div class="tab ${activeTab===DOCS?'active':''}" onclick="switchTab('${DOCS}')">📝 Docs</div>`+cfg.panels.map(p=>{const t=`<div class="tab ${activeTab===p.id?'active':''}" onclick="switchTab(${p.id})">${esc(p.name)}</div>`;return p.id===4?t+`<div class="tab ${activeTab===WED?'active':''}" onclick="switchTab('${WED}')">💍 Weddings</div>`:t;}).join('')+`<div class="tab ${activeTab===LIQ?'active':''}" onclick="switchTab('${LIQ}')">🥃 Liquor</div>`+`<div class="tab ${activeTab===BANK?'active':''}" onclick="switchTab('${BANK}')">🏦 Banking</div>`+`<div class="tab ${activeTab===TIPS?'active':''}" onclick="switchTab('${TIPS}')">🧾 Tips</div>`+`<div class="tab ${activeTab===CALC?'active':''}" onclick="switchTab('${CALC}')">🧮 Calculations</div>`+`<div class="tab ${activeTab===POS?'active':''}" onclick="switchTab('${POS}')">🍽️ POS</div>`+`<div class="tab ${activeTab===ONLINE?'active':''}" onclick="switchTab('${ONLINE}')">🤖 Jarvis</div>`+`<div class="tab tab-split ${splitState().on?'active':''}" onclick="splitToggle()" title="Split screen — keep a second tab open beside this one">▥</div>`+`<div class="tab tab-add" onclick="openSettings()" title="Add panel">＋</div>`;tabBarInit();
+function renderTabs(){const list=document.getElementById('tab-list');list.innerHTML=`<div class="tab ${activeTab===DASH?'active':''}" onclick="switchTab('${DASH}')">📊 Dashboard</div>`+`<div class="tab ${activeTab===MAIL?'active':''}" onclick="switchTab('${MAIL}')">📧 Email</div>`+`<div class="tab ${activeTab===DOCS?'active':''}" onclick="switchTab('${DOCS}')">📝 Docs</div>`+cfg.panels.map(p=>{const t=`<div class="tab ${activeTab===p.id?'active':''}" onclick="switchTab(${p.id})">${esc(p.name)}</div>`;return p.id===4?t+`<div class="tab ${activeTab===WED?'active':''}" onclick="switchTab('${WED}')">💍 Weddings</div>`:t;}).join('')+`<div class="tab ${activeTab===LIQ?'active':''}" onclick="switchTab('${LIQ}')">🥃 Liquor</div>`+`<div class="tab ${activeTab===BANK?'active':''}" onclick="switchTab('${BANK}')">🏦 Banking</div>`+`<div class="tab ${activeTab===TIPS?'active':''}" onclick="switchTab('${TIPS}')">🧾 Tips</div>`+`<div class="tab ${activeTab===POS?'active':''}" onclick="switchTab('${POS}')">🍽️ POS</div>`+`<div class="tab ${activeTab===ONLINE?'active':''}" onclick="switchTab('${ONLINE}')">🤖 Jarvis</div>`+`<div class="tab tab-split ${splitState().on?'active':''}" onclick="splitToggle()" title="Split screen — keep a second tab open beside this one">▥</div>`+`<div class="tab tab-add" onclick="openSettings()" title="Add panel">＋</div>`;tabBarInit();
   // keep the active tab in view for wheel-only mice
   setTimeout(()=>{const a=document.querySelector('#tab-list .tab.active');if(a&&a.scrollIntoView)a.scrollIntoView({block:'nearest',inline:'nearest'});tabNavSync()},30);}
 // ═══ TIPS TAB — private per-period restaurant tip sheet ════════════════
@@ -6762,7 +6764,7 @@ Picking a date range automatically pulls the nightly <b>tip-out log</b> (restaur
 }
 
 function renderViewport(){if(activeTab===WED){document.getElementById('viewport').innerHTML=wedHTML();wedInit();return}if(activeTab===DOCS){docsSetNS('ct_docs');docsPullSync();document.getElementById('viewport').innerHTML=docsHTML();return}if(activeTab===MAIL){document.getElementById('viewport').innerHTML=mailHTML();restoreGmailListScroll();mailAcctsRestore();return}if(activeTab===LIQ){document.getElementById('viewport').innerHTML=liqHTML();return}if(activeTab===BANK){document.getElementById('viewport').innerHTML=bankHTML();return}
-   if(activeTab===TIPS){document.getElementById('viewport').innerHTML=tipsHTML();tipsRefresh();return}if(activeTab===CALC){document.getElementById('viewport').innerHTML=calcHTML();return}if(activeTab===POS){document.getElementById('viewport').innerHTML=posHTML();return}if(activeTab===ONLINE){document.getElementById('viewport').innerHTML=onlineHTML();renderChat();if(ordersKey())loadCmdConsole();return}if(activeTab===DASH){const vp=document.getElementById('viewport');
+   if(activeTab===TIPS){document.getElementById('viewport').innerHTML=tipsHTML();tipsRefresh();return}if(activeTab===POS){document.getElementById('viewport').innerHTML=posHTML();return}if(activeTab===ONLINE){document.getElementById('viewport').innerHTML=onlineHTML();renderChat();if(ordersKey())loadCmdConsole();return}if(activeTab===DASH){const vp=document.getElementById('viewport');
    // EVERY scroller on the dash must be listed here. This rebuilds the whole tab, and the Gmail
    // poll fires it every few seconds, so anything not restored snaps back to the top WHILE VINNY
    // IS READING IT. `.rq-list` (Upcoming Orders) was added after this code and left out, which is
@@ -13368,7 +13370,7 @@ function posStationsHTML(){
   </div>`;
 }
 
-const POS_SECTIONS=[['items','Menu items'],['discounts','Discounts'],['printers','Printers'],['reports','Reports'],['grazie','CRM'],['staff','Staff'],['jobrates','Job rates'],['stations','Registers']];
+const POS_SECTIONS=[['items','Menu items'],['discounts','Discounts'],['printers','Printers'],['reports','Reports'],['grazie','CRM'],['staff','Staff'],['jobrates','Job rates'],['calcs','Calculations'],['stations','Registers']];
 function posConnHTML(){
   return `<div style="${posCardCss};margin-bottom:14px">
     <div style="font-weight:800;font-size:15px;margin-bottom:6px">Connections</div>
@@ -13391,7 +13393,7 @@ function posConnHTML(){
 //
 // The rail collapses to a horizontal strip on a narrow screen (an iPad in portrait, a
 // phone), because a 150px column out of 400 is most of the page spent on navigation.
-const POS_ICONS={items:'🍝',discounts:'%',printers:'🖨',reports:'📊',grazie:'★',staff:'👤',jobrates:'$',stations:'📱'};
+const POS_ICONS={items:'🍝',discounts:'%',printers:'🖨',reports:'📊',grazie:'★',staff:'👤',jobrates:'$',calcs:'🧮',stations:'📱'};
 function posHTML(){
   const nav=POS_SECTIONS.map(([k,l])=>{
     const on=posS.sec===k;
@@ -13406,7 +13408,7 @@ function posHTML(){
       <span style="white-space:nowrap">${l}</span></button>`;
   }).join('');
   const who=(posS.me&&posS.health==='ok'&&posS.sec==='grazie')?`<span style="font-size:13px;color:var(--text-dim)">${esc(posS.me.username)}</span><button onclick="posLogout()" style="${posBtn('#3f3f46')};padding:7px 12px;font-size:13px">Sign out</button>`:'';
-  const body=posS.sec==='items'?posItemsHTML():posS.sec==='discounts'?posDiscountsHTML():posS.sec==='printers'?posPrintersHTML():posS.sec==='reports'?posReportsHTML():posS.sec==='staff'?posStaffHTML():posS.sec==='jobrates'?posJobRatesHTML():posS.sec==='stations'?posStationsHTML():posGrazieHTML();
+  const body=posS.sec==='items'?posItemsHTML():posS.sec==='discounts'?posDiscountsHTML():posS.sec==='printers'?posPrintersHTML():posS.sec==='reports'?posReportsHTML():posS.sec==='staff'?posStaffHTML():posS.sec==='jobrates'?posJobRatesHTML():posS.sec==='calcs'?calcHTML():posS.sec==='stations'?posStationsHTML():posGrazieHTML();
   // #viewport is fixed and overflow:hidden, so every tab brings its own scroller —
   // without one, anything past the fold is simply clipped.
   const here=(POS_SECTIONS.find(([k])=>k===posS.sec)||[])[1]||'';
@@ -14081,7 +14083,7 @@ function calcResetAll(){
   if(!confirm('Put every rule back to what the forms ship with?\n\nThis clears all your changes.'))return;
   calcS.v={};calcRender();
 }
-function calcRender(){if(activeTab===CALC)document.getElementById('viewport').innerHTML=calcHTML();}
+function calcRender(){if(activeTab===POS&&posS.sec==='calcs')renderViewport();}
 
 function calcHTML(){
   if(!calcS.loaded&&!calcS.err&&!calcS.busy){calcLoad();}
