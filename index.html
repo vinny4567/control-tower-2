@@ -11708,13 +11708,24 @@ function staffMergeOne(a,b){
   out.positions=(newer.positions&&newer.positions.length)?newer.positions:(older.positions||[]);
   out.register=Object.assign({},older.register||{},newer.register||{});
   out.sources=Object.assign({},older.sources||{},newer.sources||{});
-  // A REMOVAL IS A FACT WITH A TIME. It only loses to an edit made after it — which is
-  // exactly what "put them back" is. Otherwise a stale screen resurrects them.
-  const rmA=a.removed&&a.removed.at||0, rmB=b.removed&&b.removed.at||0;
-  const rm=Math.max(rmA,rmB);
-  if(rm&&rm>=(out.at||0)-1)out.removed={at:rm};
-  else if(rm&&Math.max(a.at||0,b.at||0)>rm)delete out.removed;
-  else if(rm)out.removed={at:rm};
+  // ⚠️ A REMOVAL AND A RESTORE ARE THE ONLY TWO THINGS THAT DECIDE THIS, and they
+  // are compared against EACH OTHER — never against the row's `at`.
+  //
+  // The old rule was "a removal loses to an edit made after it", which is right for a
+  // human edit and wrong for a PULL: /api/roster/all hands back a row carrying a fresh
+  // timestamp whether or not a soul touched it, so the next sync looked like an edit
+  // and undid the removal. Vinny deleted a duplicate of himself and watched it come
+  // straight back. A sync is not an opinion about whether somebody works here.
+  //
+  // Now: removed if the last REMOVE is newer than the last RESTORE. Both are explicit
+  // button presses, both merge by max independently, so two screens converge on the
+  // same answer and nothing a pull does can flip it either way.
+  const rmA=(a.removed&&a.removed.at)||0, rmB=(b.removed&&b.removed.at)||0;
+  const rsA=(a.restored&&a.restored.at)||0, rsB=(b.restored&&b.restored.at)||0;
+  const rm=Math.max(rmA,rmB), rs=Math.max(rsA,rsB);
+  if(rm)out.removed={at:rm};else delete out.removed;
+  if(rs)out.restored={at:rs};else delete out.restored;
+  if(rm&&rm<=rs)delete out.removed;        // put back after the last removal
   return out;
 }
 function staffMerge(mine,theirs){
@@ -12595,12 +12606,14 @@ async function staffRemove(k){
   }
 
   p.removed={at:Date.now()};
+  delete p.restored;              // a fresh removal supersedes any earlier put-back
   staffTouch(p);
   staffSave();staffRedraw();
 }
 function staffRestore(k){
   const p=staffS.people[k];if(!p)return;
   delete p.removed;
+  p.restored={at:Date.now()};     // stamped, so another screen's stale tombstone can't re-remove them
   // Access does NOT come back with them. It was switched off on the register when they
   // were removed, and quietly restoring it would be a door reopening because a name
   // reappeared on a list. A manager grants it again deliberately.
