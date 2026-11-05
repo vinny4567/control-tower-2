@@ -14017,19 +14017,19 @@ const CALC_GROUPS=[
   ]},
   {id:'partyItems',title:'Private party — single items',note:'An item listed here ignores its section rule.',rows:[
     {k:'Stuffed Mushrooms',            label:'Stuffed Mushrooms',            d:1,   unit:'pieces per guest', mode:'count'},
-    {k:'Arancini',                     label:'Arancini',                     d:1,   unit:'pieces per guest', mode:'count'},
+    {dead:1, k:'Arancini',                     label:'Arancini',                     d:1,   unit:'pieces per guest', mode:'count'},
     {k:'Toasted Ravioli',              label:'Toasted Ravioli',              d:1.5, unit:'pieces per guest', mode:'count'},
     {k:'Bruschetta',                   label:'Bruschetta',                   d:1,   unit:'pieces per guest', mode:'count'},
-    {k:'Caprese Crostini',             label:'Caprese Crostini',             d:1,   unit:'pieces per guest', mode:'count'},
-    {k:'Caprese Kabobs',               label:'Caprese Kabobs',               d:1,   unit:'pieces per guest', mode:'count'},
-    {k:'Prosciutto Wrapped Asparagus', label:'Prosciutto Wrapped Asparagus', d:1,   unit:'pieces per guest', mode:'count'},
+    {dead:1, k:'Caprese Crostini',             label:'Caprese Crostini',             d:1,   unit:'pieces per guest', mode:'count'},
+    {dead:1, k:'Caprese Kabobs',               label:'Caprese Kabobs',               d:1,   unit:'pieces per guest', mode:'count'},
+    {dead:1, k:'Prosciutto Wrapped Asparagus', label:'Prosciutto Wrapped Asparagus', d:1,   unit:'pieces per guest', mode:'count'},
     {k:'Garlic Cheese Bread',          label:'Garlic Cheese Bread',          d:1.5, unit:'pieces per guest', mode:'count'},
-    {k:'Garlic Bread',                 label:'Garlic Bread',                 d:1.5, unit:'pieces per guest', mode:'count'},
+    {dead:1, k:'Garlic Bread',                 label:'Garlic Bread',                 d:1.5, unit:'pieces per guest', mode:'count'},
     {k:'Meatballs',                    label:'Meatballs',                    d:1,   unit:'pieces per guest', mode:'count'},
     {k:'Fried Calamari',               label:'Fried Calamari',               d:8,   unit:'guests per order', mode:'divisor'},
     {k:'Mozzarella Sticks',            label:'Mozzarella Sticks',            d:6,   unit:'guests per order', mode:'divisor'},
     {k:'Fried Artichokes',             label:'Fried Artichokes',             d:6,   unit:'guests per order', mode:'divisor'},
-    {k:'Fried Artichoke Hearts',       label:'Fried Artichoke Hearts',       d:6,   unit:'guests per order', mode:'divisor'},
+    {dead:1, k:'Fried Artichoke Hearts',       label:'Fried Artichoke Hearts',       d:6,   unit:'guests per order', mode:'divisor'},
     {k:'Sausage & Peppers',            label:'Sausage & Peppers',            d:5,   unit:'guests per bowl',  mode:'divisor'},
   ]},
   {id:'partyOther',title:'Private party — the odd ones',rows:[
@@ -14085,13 +14085,22 @@ function calcRender(){if(activeTab===CALC)document.getElementById('viewport').in
 
 function calcHTML(){
   if(!calcS.loaded&&!calcS.err&&!calcS.busy){calcLoad();}
-  const changed=CALC_GROUPS.reduce((n,g)=>n+g.rows.filter(r=>calcVal(g.id,r.k)!==undefined).length,0);
+  const changed=CALC_GROUPS.reduce((n,g)=>n+g.rows.filter(r=>!r.dead&&calcVal(g.id,r.k)!==undefined).length,0);
   const row=(g,r)=>{
     const ov=calcVal(g.id,r.k), on=ov!==undefined&&ov!=='';
     const shown=on?ov:r.d;
     const example=r.mode==='divisor'
       ? `50 guests → ${Math.ceil(50/(+shown||1))}`
       : `50 guests → ${(()=>{const t=(+shown||0)*50;return (t%1===0)?t:Math.ceil(t)})()}`;
+    // A rule nobody can trigger must not look editable. These six sit in the
+    // party form's PORTION_RULES but appear on no menu list there, so no booking
+    // can ever select them — typing a number here would change nothing and look
+    // like it had. Checked by name against the form, not assumed.
+    if(r.dead)return `<div style="display:flex;align-items:center;gap:10px;padding:7px 2px;border-bottom:1px solid var(--border);flex-wrap:wrap;opacity:.5">
+      <span style="flex:1;min-width:190px;font-size:13.5px">${esc(r.label)}</span>
+      <span style="width:74px;text-align:right;font-size:13px;color:var(--text-muted)">${esc(String(r.d))}</span>
+      <span style="flex:1;min-width:200px;font-size:12px;color:var(--text-muted)">not on the party menu — nothing can order it, so changing this does nothing</span>
+    </div>`;
     return `<div style="display:flex;align-items:center;gap:10px;padding:7px 2px;border-bottom:1px solid var(--border);flex-wrap:wrap">
       <span style="flex:1;min-width:190px;font-size:13.5px">${esc(r.label)}</span>
       <input inputmode="decimal" value="${on?esc(String(ov)):''}" placeholder="${esc(String(r.d))}"
