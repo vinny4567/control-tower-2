@@ -11751,12 +11751,15 @@ async function staffLoad(){
   if(staffS.loaded)return;
   staffS.loaded=true;
   try{const local=localStorage.getItem(STAFF_KEY);if(local){const j=JSON.parse(local);
-    if(j&&j.people){staffS.people=j.people;staffS.jobs=j.jobs||{};staffS.at=j.at||0}}}catch(e){}
+    if(j&&j.people){staffS.people=j.people;staffS.jobs=j.jobs||{};staffS.aliases=j.aliases||{};staffS.at=j.at||0}}}catch(e){}
   const r=await kvGet(STAFF_KEY);
   // MERGED, not replaced: this device may hold edits the cloud has never seen.
   if(r&&r.v&&r.v.people){
     staffS.people=staffMerge(staffS.people,r.v.people);
     staffS.jobs=staffMergeJobs(staffS.jobs,r.v.jobs);
+    // Renames made on another screen. UNION, never replace — losing an alias
+    // means the next pull recreates a name somebody already tidied away.
+    staffS.aliases=Object.assign({},r.v.aliases||{},staffS.aliases||{});
     staffS.at=Math.max(staffS.at||0,r.at||0);
   }
   // ⚠️ AFTER the merge, never before. Backfilling first would mint an id on this device
@@ -11771,7 +11774,7 @@ async function staffLoad(){
 let staffPushTimer=null;
 function staffSave(){
   staffS.at=Date.now();
-  try{localStorage.setItem(STAFF_KEY,JSON.stringify({people:staffS.people,jobs:staffS.jobs||{},at:staffS.at}))}catch(e){}
+  try{localStorage.setItem(STAFF_KEY,JSON.stringify({people:staffS.people,jobs:staffS.jobs||{},aliases:staffS.aliases||{},at:staffS.at}))}catch(e){}
   clearTimeout(staffPushTimer);
   staffPushTimer=setTimeout(staffPushMerged,700);
 }
@@ -11805,7 +11808,7 @@ async function staffPushMerged(){
                                 j:staffMergeJobs(r.v.jobs,r.v.jobs)});
     if(same){staffS.at=r.at||staffS.at;return;}
   }
-  const payload={people:staffS.people,jobs:staffS.jobs||{},at:Date.now()};
+  const payload={people:staffS.people,jobs:staffS.jobs||{},aliases:staffS.aliases||{},at:Date.now()};
   staffS.at=payload.at;
   try{localStorage.setItem(STAFF_KEY,JSON.stringify(payload))}catch(e){}
   kvPush(STAFF_KEY,payload,payload.at);
@@ -11831,7 +11834,14 @@ async function staffPull(){
   const seen=new Set();
   let added=0,updated=0;
   rows.forEach(r=>{
-    const k=staffKeyOf(r.name);if(!k)return;
+    let k=staffKeyOf(r.name);if(!k)return;
+    // ⚠️ FOLLOW A RENAME. The scheduler keeps sending the name it knows. Without
+    // this, renaming somebody here moves their record to a new key and the very
+    // next pull recreates the old one — a blank duplicate of the person, made by
+    // the act of tidying their name up. The alias is written by staffRename and
+    // is the only thing that stops it.
+    const al=(staffS.aliases||{})[k];
+    if(al&&staffS.people[al])k=al;
     seen.add(k);
     const p=staffS.people[k]||(staffS.people[k]={key:k,pid:staffNewPid(),name:r.name,sources:{},addedAt:now});
     if(!p.pid)p.pid=staffNewPid();          // a row from before ids existed
@@ -12612,6 +12622,52 @@ async function staffRemove(k){
   staffTouch(p);
   staffSave();staffRedraw();
 }
+// ── RENAME ──────────────────────────────────────────────────────────────────
+//
+// Safe because identity here is the permanent `pid`, not the name — the name is
+// a label on the record. (Which is also why the scheduler's own copy is left
+// alone: this renames the person on THIS list, it does not reach into their app
+// account.)
+//
+// The whole job is the key. This store is keyed by staffKeyOf(name), so a
+// rename MOVES the record, and the next pull would helpfully recreate the old
+// name as a fresh blank row — a duplicate manufactured by tidying a name up.
+// So the move leaves an alias behind and the pull follows it.
+function staffRename(k){
+  const p=staffS.people[k];if(!p)return;
+  const typed=prompt('Name for this person:\n\n(It is only a label — their hours, rates, Paychex ID and register access all stay with them.)',p.name||'');
+  if(typed===null)return;
+  const name=String(typed).replace(/\s+/g,' ').trim();
+  if(!name){alert('A name cannot be empty.');return}
+  if(name===p.name)return;
+  const nk=staffKeyOf(name);
+  if(!nk){alert('That name has nothing to key on — it needs at least one word longer than a single letter.');return}
+
+  // Same key: a spelling or capitalisation fix. Nothing moves.
+  if(nk===k){p.name=name;staffTouch(p);staffSave();staffRedraw();return}
+
+  // Different key, and somebody is already there: that is a MERGE of two people,
+  // not a rename, and it is a one-way door across payroll, the schedule and the
+  // register. Refuse rather than silently fold one record into another.
+  const other=staffS.people[nk];
+  if(other&&!other.removed){
+    alert('There is already a '+(other.name||name)+' on the list.\n\nRenaming this person onto them would merge two records, which affects payroll, the schedule and the register at once. That needs to be done deliberately, not as a side effect of a rename.');
+    return;
+  }
+
+  const old=p.name;
+  p.name=name;p.key=nk;
+  staffS.people[nk]=p;
+  delete staffS.people[k];
+  if(!staffS.aliases)staffS.aliases={};
+  staffS.aliases[k]=nk;
+  // Point any alias that led to the old key at the new one, so a second rename
+  // doesn't leave a chain that only resolves one hop.
+  Object.keys(staffS.aliases).forEach(from=>{if(staffS.aliases[from]===k)staffS.aliases[from]=nk});
+  staffTouch(p);staffSave();staffRedraw();
+  staffS.regNote='Renamed “'+old+'” to “'+name+'”. Their hours, rates and Paychex ID stayed with them; the schedule app still has their own spelling.';
+  staffRefreshNotes();
+}
 function staffRestore(k){
   const p=staffS.people[k];if(!p)return;
   delete p.removed;
@@ -12796,8 +12852,11 @@ function staffDetail(p){
       </div>`:''}
     </div>
 
+    <button onclick="staffRename('${esc(k)}')" title="Fix or change this person's name"
+      style="margin-left:auto;background:none;border:1px solid var(--border);color:var(--text-dim);border-radius:6px;
+             padding:3px 9px;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap">Rename</button>
     <button onclick="staffRemove('${esc(k)}')" title="Take them off the list, and off the register"
-      style="margin-left:auto;background:none;border:1px solid #7f1d1d;color:#f87171;border-radius:6px;
+      style="background:none;border:1px solid #7f1d1d;color:#f87171;border-radius:6px;
              padding:3px 9px;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap">Remove</button>
   </div>`;
 }
