@@ -8403,8 +8403,8 @@ function posItemsHTML(){
   ${posPendingCount()?`<div style="border:1px solid #f59e0b;border-radius:12px;background:rgba(245,158,11,0.10);padding:12px 16px;margin-bottom:14px">
     <div style="font-weight:800;font-size:14px;color:#f59e0b">${posPendingCount()===1?'1 edit':posPendingCount()+' edits'} in the back office</div>
     <div style="font-size:13px;color:var(--text-dim);margin-top:3px">${posPublishableCount()
-      ? 'Publishing sends '+posPublishableCount()+' of them — prices, print routing, deleted and new items. Mod groups, their choices and attachments are saved here but are not carried to the registers yet.'
-      : '<b>None of these can be published yet.</b> Publishing carries prices, print routing, deleted and new items. Mod groups, their choices and attachments are saved here and stay here until the register can read them.'}</div>
+      ? 'Publishing sends '+posPublishableCount()+' of them — prices, print routing, deleted and new items, mod groups with their choices and attachments, and discounts.'
+      : '<b>None of these can be published yet.</b> Publishing carries prices, print routing, deleted and new items, mod groups with their choices and attachments, and discounts.'}</div>
     <div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <button onclick="posPublish()" ${posS.publishing?'disabled':''}
         style="border:0;background:#f59e0b;color:#111;font-weight:800;border-radius:9px;padding:8px 16px;
@@ -8412,7 +8412,7 @@ function posItemsHTML(){
         ${posS.publishing?'Publishing…':'📤 Publish to registers'}</button>
       <span style="font-size:12px;color:var(--text-muted)">${
         posS.publishErr?`<span style="color:#f87171">Failed — ${esc(posS.publishErr)}</span>`
-        :posS.published?`Published ${posS.publishedCount} change${posS.publishedCount===1?'':'s'} — registers pick it up within about two minutes.`
+        :posS.published?`Published ${posS.publishedCount} change${posS.publishedCount===1?'':'s'} — registers pick it up straight away.`
         :'Sends these edits to the cloud. The mini collects them from there, then the registers collect them from the mini.'}</span>
     </div>
   </div>`:''}
