@@ -828,6 +828,7 @@ const WED='weddings';
 const LIQ='liquor';
 const BANK='banking';
 const TIPS='tips';
+const CALC='calcs';
 const CMD_API='https://jarvis-voicejarvis-voice.onrender.com/cmd';
 let cmdConsoleTimer=null;
 let cfg=loadCfg(),focused=null,editing=null,activeTab=cfg.activeTab||DASH;
@@ -5669,7 +5670,7 @@ function tabBarInit(){const el=document.getElementById('tab-list');if(!el||el._w
   el.addEventListener('wheel',e=>{if(Math.abs(e.deltaY)>Math.abs(e.deltaX)){e.preventDefault();el.scrollLeft+=e.deltaY}},{passive:false});
   el.addEventListener('scroll',tabNavSync);
   window.addEventListener('resize',tabNavSync);}
-function renderTabs(){const list=document.getElementById('tab-list');list.innerHTML=`<div class="tab ${activeTab===DASH?'active':''}" onclick="switchTab('${DASH}')">📊 Dashboard</div>`+`<div class="tab ${activeTab===MAIL?'active':''}" onclick="switchTab('${MAIL}')">📧 Email</div>`+`<div class="tab ${activeTab===DOCS?'active':''}" onclick="switchTab('${DOCS}')">📝 Docs</div>`+cfg.panels.map(p=>{const t=`<div class="tab ${activeTab===p.id?'active':''}" onclick="switchTab(${p.id})">${esc(p.name)}</div>`;return p.id===4?t+`<div class="tab ${activeTab===WED?'active':''}" onclick="switchTab('${WED}')">💍 Weddings</div>`:t;}).join('')+`<div class="tab ${activeTab===LIQ?'active':''}" onclick="switchTab('${LIQ}')">🥃 Liquor</div>`+`<div class="tab ${activeTab===BANK?'active':''}" onclick="switchTab('${BANK}')">🏦 Banking</div>`+`<div class="tab ${activeTab===TIPS?'active':''}" onclick="switchTab('${TIPS}')">🧾 Tips</div>`+`<div class="tab ${activeTab===POS?'active':''}" onclick="switchTab('${POS}')">🍽️ POS</div>`+`<div class="tab ${activeTab===ONLINE?'active':''}" onclick="switchTab('${ONLINE}')">🤖 Jarvis</div>`+`<div class="tab tab-split ${splitState().on?'active':''}" onclick="splitToggle()" title="Split screen — keep a second tab open beside this one">▥</div>`+`<div class="tab tab-add" onclick="openSettings()" title="Add panel">＋</div>`;tabBarInit();
+function renderTabs(){const list=document.getElementById('tab-list');list.innerHTML=`<div class="tab ${activeTab===DASH?'active':''}" onclick="switchTab('${DASH}')">📊 Dashboard</div>`+`<div class="tab ${activeTab===MAIL?'active':''}" onclick="switchTab('${MAIL}')">📧 Email</div>`+`<div class="tab ${activeTab===DOCS?'active':''}" onclick="switchTab('${DOCS}')">📝 Docs</div>`+cfg.panels.map(p=>{const t=`<div class="tab ${activeTab===p.id?'active':''}" onclick="switchTab(${p.id})">${esc(p.name)}</div>`;return p.id===4?t+`<div class="tab ${activeTab===WED?'active':''}" onclick="switchTab('${WED}')">💍 Weddings</div>`:t;}).join('')+`<div class="tab ${activeTab===LIQ?'active':''}" onclick="switchTab('${LIQ}')">🥃 Liquor</div>`+`<div class="tab ${activeTab===BANK?'active':''}" onclick="switchTab('${BANK}')">🏦 Banking</div>`+`<div class="tab ${activeTab===TIPS?'active':''}" onclick="switchTab('${TIPS}')">🧾 Tips</div>`+`<div class="tab ${activeTab===CALC?'active':''}" onclick="switchTab('${CALC}')">🧮 Calculations</div>`+`<div class="tab ${activeTab===POS?'active':''}" onclick="switchTab('${POS}')">🍽️ POS</div>`+`<div class="tab ${activeTab===ONLINE?'active':''}" onclick="switchTab('${ONLINE}')">🤖 Jarvis</div>`+`<div class="tab tab-split ${splitState().on?'active':''}" onclick="splitToggle()" title="Split screen — keep a second tab open beside this one">▥</div>`+`<div class="tab tab-add" onclick="openSettings()" title="Add panel">＋</div>`;tabBarInit();
   // keep the active tab in view for wheel-only mice
   setTimeout(()=>{const a=document.querySelector('#tab-list .tab.active');if(a&&a.scrollIntoView)a.scrollIntoView({block:'nearest',inline:'nearest'});tabNavSync()},30);}
 // ═══ TIPS TAB — private per-period restaurant tip sheet ════════════════
@@ -6761,7 +6762,7 @@ Picking a date range automatically pulls the nightly <b>tip-out log</b> (restaur
 }
 
 function renderViewport(){if(activeTab===WED){document.getElementById('viewport').innerHTML=wedHTML();wedInit();return}if(activeTab===DOCS){docsSetNS('ct_docs');docsPullSync();document.getElementById('viewport').innerHTML=docsHTML();return}if(activeTab===MAIL){document.getElementById('viewport').innerHTML=mailHTML();restoreGmailListScroll();mailAcctsRestore();return}if(activeTab===LIQ){document.getElementById('viewport').innerHTML=liqHTML();return}if(activeTab===BANK){document.getElementById('viewport').innerHTML=bankHTML();return}
-   if(activeTab===TIPS){document.getElementById('viewport').innerHTML=tipsHTML();tipsRefresh();return}if(activeTab===POS){document.getElementById('viewport').innerHTML=posHTML();return}if(activeTab===ONLINE){document.getElementById('viewport').innerHTML=onlineHTML();renderChat();if(ordersKey())loadCmdConsole();return}if(activeTab===DASH){const vp=document.getElementById('viewport');
+   if(activeTab===TIPS){document.getElementById('viewport').innerHTML=tipsHTML();tipsRefresh();return}if(activeTab===CALC){document.getElementById('viewport').innerHTML=calcHTML();return}if(activeTab===POS){document.getElementById('viewport').innerHTML=posHTML();return}if(activeTab===ONLINE){document.getElementById('viewport').innerHTML=onlineHTML();renderChat();if(ordersKey())loadCmdConsole();return}if(activeTab===DASH){const vp=document.getElementById('viewport');
    // EVERY scroller on the dash must be listed here. This rebuilds the whole tab, and the Gmail
    // poll fires it every few seconds, so anything not restored snaps back to the top WHILE VINNY
    // IS READING IT. `.rq-list` (Upcoming Orders) was added after this code and left out, which is
@@ -13971,6 +13972,145 @@ function startDashboardClock(){
   if(!window.__dashClockTimer)window.__dashClockTimer=setInterval(tick,1000);
 }
 function renderAll(){renderTabs();renderViewport();renderSplit()}
+
+// ── CALCULATIONS ────────────────────────────────────────────────────────────
+//
+// Every rule that turns a head count into an amount of food, in one place, so
+// Vinny can change one without anybody editing a form.
+//
+// ⚠️ THE NUMBERS BELOW ARE A MIRROR of what the two forms ship with. The forms
+// are the source of truth: each one merges whatever is saved here OVER its own
+// defaults, one key at a time. So a rule nobody has touched uses the form's
+// value even if this mirror is stale, and a rule that fails to load stays as
+// the form has it — never zero. If you change a default IN a form, change it
+// here too, or this screen will describe the old number.
+//
+// Saved to kv as `ct_calcs`; the forms read it from the public, read-only
+// GET /api/calcs on the same host (they are public pages and cannot carry the
+// sync token — that is how a key ends up on GitHub).
+const CALC_KEY='ct_calcs';
+let calcS={loaded:false,busy:false,v:{},err:'',saved:0};
+
+// group → rows. `d` is the form's shipped default; `path` is where the override
+// is stored in ct_calcs; `unit` is what the number means in Vinny's words.
+const CALC_GROUPS=[
+  {id:'partySections',title:'Private party — by section',note:'Applies to every item in that part of the menu unless the item has its own rule below.',rows:[
+    {k:'chicken', label:'Chicken',           d:0.75, unit:'pieces per guest',  mode:'count'},
+    {k:'pasta',   label:'Pasta',             d:5,    unit:'guests per bowl',   mode:'divisor'},
+    {k:'pastas',  label:'Pasta (2-pasta packages)', d:5, unit:'guests per bowl', mode:'divisor'},
+    {k:'veggie',  label:'Vegetable',         d:6,    unit:'guests per bowl',   mode:'divisor'},
+    {k:'side',    label:'Side',              d:5,    unit:'guests per bowl',   mode:'divisor'},
+    {k:'desserts',label:'Desserts',          d:1,    unit:'pieces per guest, per kind', mode:'count'},
+  ]},
+  {id:'partyItems',title:'Private party — single items',note:'An item listed here ignores its section rule.',rows:[
+    {k:'Stuffed Mushrooms',            label:'Stuffed Mushrooms',            d:1,   unit:'pieces per guest', mode:'count'},
+    {k:'Arancini',                     label:'Arancini',                     d:1,   unit:'pieces per guest', mode:'count'},
+    {k:'Toasted Ravioli',              label:'Toasted Ravioli',              d:1.5, unit:'pieces per guest', mode:'count'},
+    {k:'Bruschetta',                   label:'Bruschetta',                   d:1,   unit:'pieces per guest', mode:'count'},
+    {k:'Caprese Crostini',             label:'Caprese Crostini',             d:1,   unit:'pieces per guest', mode:'count'},
+    {k:'Caprese Kabobs',               label:'Caprese Kabobs',               d:1,   unit:'pieces per guest', mode:'count'},
+    {k:'Prosciutto Wrapped Asparagus', label:'Prosciutto Wrapped Asparagus', d:1,   unit:'pieces per guest', mode:'count'},
+    {k:'Garlic Cheese Bread',          label:'Garlic Cheese Bread',          d:1.5, unit:'pieces per guest', mode:'count'},
+    {k:'Garlic Bread',                 label:'Garlic Bread',                 d:1.5, unit:'pieces per guest', mode:'count'},
+    {k:'Meatballs',                    label:'Meatballs',                    d:1,   unit:'pieces per guest', mode:'count'},
+    {k:'Fried Calamari',               label:'Fried Calamari',               d:8,   unit:'guests per order', mode:'divisor'},
+    {k:'Mozzarella Sticks',            label:'Mozzarella Sticks',            d:6,   unit:'guests per order', mode:'divisor'},
+    {k:'Fried Artichokes',             label:'Fried Artichokes',             d:6,   unit:'guests per order', mode:'divisor'},
+    {k:'Fried Artichoke Hearts',       label:'Fried Artichoke Hearts',       d:6,   unit:'guests per order', mode:'divisor'},
+    {k:'Sausage & Peppers',            label:'Sausage & Peppers',            d:5,   unit:'guests per bowl',  mode:'divisor'},
+  ]},
+  {id:'partyOther',title:'Private party — the odd ones',rows:[
+    {k:'dessertSingleKindCount', label:'Desserts when only ONE kind is chosen', d:2, unit:'pieces per guest', mode:'count', flat:true},
+  ]},
+  {id:'catering',title:'Catering — appetizer packages',note:'The only head-count maths on the catering form; everything else there is sold by the pan.',rows:[
+    {k:'app1DisplayDivisor',  label:'Package 1 · antipasto display sized for', d:2,  unit:'1 guest in N', mode:'divisor'},
+    {k:'app1PiecesPerGuest',  label:'Package 1 · pieces per guest',            d:8,  unit:'pieces per guest, split across the other 4', mode:'count'},
+    {k:'app2PiecesPerGuest',  label:'Package 2 · pieces per guest',            d:10, unit:'pieces per guest, split across 6', mode:'count'},
+    {k:'app2ChkParmPerGuest', label:'Package 2 · chicken parm',                d:1,  unit:'per guest', mode:'count'},
+  ]},
+];
+
+function calcVal(gid,k){const g=(calcS.v||{})[gid]||{};const row=g[k];
+  if(gid==='partyOther'||gid==='catering')return (calcS.v||{})[gid]&&(calcS.v||{})[gid][k];
+  if(row&&typeof row==='object')return row.count!==undefined?row.count:row.divisor;
+  return undefined;}
+function calcSet(gid,k,mode,raw){
+  const v=String(raw==null?'':raw).trim();
+  if(!calcS.v)calcS.v={};
+  if(!calcS.v[gid])calcS.v[gid]={};
+  if(v===''){delete calcS.v[gid][k];if(!Object.keys(calcS.v[gid]).length)delete calcS.v[gid];}
+  else{
+    const n=Number(v);
+    if(!Number.isFinite(n)||n<=0){alert('That needs to be a number bigger than zero.');calcRender();return}
+    // partyItems / partySections carry the shape the form expects; the other two are plain numbers.
+    if(gid==='partyItems'||gid==='partySections')calcS.v[gid][k]=(mode==='divisor')?{divisor:n}:{count:n};
+    else calcS.v[gid][k]=n;
+  }
+  calcRender();
+}
+async function calcLoad(){
+  calcS.busy=true;calcRender();
+  const r=await kvGet(CALC_KEY);
+  calcS.busy=false;
+  if(kvFailed(r)){calcS.err='Could not reach the store — nothing shown here is your saved set. Don’t edit until this loads.';calcS.loaded=false;calcRender();return}
+  calcS.err='';calcS.v=(r&&r.v&&typeof r.v==='object')?r.v:{};calcS.loaded=true;calcRender();
+}
+async function calcPush(){
+  if(!calcS.loaded){alert('These haven’t loaded yet — reload before pushing, or you could write over the real set with nothing.');return}
+  calcS.busy=true;calcRender();
+  try{
+    kvPush(CALC_KEY,calcS.v,Date.now());
+    calcS.saved=Date.now();calcS.err='';
+  }catch(e){calcS.err='Could not save: '+(e.message||e)}
+  calcS.busy=false;calcRender();
+}
+function calcResetAll(){
+  if(!confirm('Put every rule back to what the forms ship with?\n\nThis clears all your changes.'))return;
+  calcS.v={};calcRender();
+}
+function calcRender(){if(activeTab===CALC)document.getElementById('viewport').innerHTML=calcHTML();}
+
+function calcHTML(){
+  if(!calcS.loaded&&!calcS.err&&!calcS.busy){calcLoad();}
+  const changed=CALC_GROUPS.reduce((n,g)=>n+g.rows.filter(r=>calcVal(g.id,r.k)!==undefined).length,0);
+  const row=(g,r)=>{
+    const ov=calcVal(g.id,r.k), on=ov!==undefined&&ov!=='';
+    const shown=on?ov:r.d;
+    const example=r.mode==='divisor'
+      ? `50 guests → ${Math.ceil(50/(+shown||1))}`
+      : `50 guests → ${(()=>{const t=(+shown||0)*50;return (t%1===0)?t:Math.ceil(t)})()}`;
+    return `<div style="display:flex;align-items:center;gap:10px;padding:7px 2px;border-bottom:1px solid var(--border);flex-wrap:wrap">
+      <span style="flex:1;min-width:190px;font-size:13.5px">${esc(r.label)}</span>
+      <input inputmode="decimal" value="${on?esc(String(ov)):''}" placeholder="${esc(String(r.d))}"
+        onchange="calcSet('${g.id}','${esc(r.k).replace(/'/g,"\\'")}','${r.mode}',this.value)"
+        style="width:74px;text-align:right;background:${on?'rgba(251,191,36,.08)':'var(--surface2)'};border:1px solid ${on?'var(--accent)':'var(--border)'};color:var(--text);border-radius:7px;padding:4px 8px;font-family:inherit;font-size:13px">
+      <span style="min-width:200px;font-size:12px;color:var(--text-dim)">${esc(r.unit)}</span>
+      <span style="min-width:120px;font-size:12px;color:var(--text-muted)">${example}</span>
+      ${on?`<button onclick="calcSet('${g.id}','${esc(r.k).replace(/'/g,"\\'")}','${r.mode}','')" title="Back to the form's own number (${esc(String(r.d))})" style="background:none;border:none;color:#fbbf24;cursor:pointer;font-size:12px">reset</button>`:''}
+    </div>`;};
+  const group=(g)=>`<div style="margin-bottom:20px">
+      <div style="font-weight:800;font-size:14px;color:var(--accent);margin-bottom:2px">${esc(g.title)}</div>
+      ${g.note?`<div style="font-size:12px;color:var(--text-dim);margin-bottom:6px">${esc(g.note)}</div>`:''}
+      ${g.rows.map(r=>row(g,r)).join('')}
+    </div>`;
+  return `<div style="height:100%;overflow-y:auto;padding:16px 18px 60px;max-width:1000px">
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:6px">
+      <b style="font-size:16px">Calculations</b>
+      <span style="font-size:12.5px;color:var(--text-dim)">how a head count becomes an amount of food</span>
+      <span style="flex:1"></span>
+      <span style="font-size:12px;color:var(--text-muted)">${changed?changed+' changed':'all on the form defaults'}</span>
+      <button onclick="calcPush()" ${calcS.busy?'disabled':''} style="background:var(--accent);color:#111;border:0;border-radius:8px;padding:7px 15px;font-weight:800;font-family:inherit;font-size:13px;cursor:pointer;${calcS.busy?'opacity:.6':''}">${calcS.busy?'…':'Push to the forms'}</button>
+      <button onclick="calcResetAll()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:7px 12px;font-family:inherit;font-size:12.5px;cursor:pointer">Reset all</button>
+    </div>
+    ${calcS.err?`<div style="border:1px solid rgba(248,113,113,.4);background:rgba(248,113,113,.08);border-radius:9px;padding:10px 13px;color:#f87171;font-size:13px;margin-bottom:12px">${esc(calcS.err)}</div>`:''}
+    ${calcS.saved?`<div style="font-size:12.5px;color:#34d399;margin-bottom:10px">Pushed ✓ — the forms pick it up when they next open. Someone with a form already open needs to reload it.</div>`:''}
+    <div style="font-size:12.5px;color:var(--text-dim);margin-bottom:14px;line-height:1.55">
+      An empty box means the form uses its own number — shown in grey. Type over one to change it everywhere, and <b>Push</b> to send it.
+      The example column shows what 50 guests would get, so you can see the effect before you push it.
+    </div>
+    ${CALC_GROUPS.map(group).join('')}
+  </div>`;
+}
 
 // ── SPLIT SCREEN ────────────────────────────────────────────────────────────
 //
