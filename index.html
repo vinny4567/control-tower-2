@@ -12637,6 +12637,88 @@ async function staffRemove(k){
   staffTouch(p);
   staffSave();staffRedraw();
 }
+// ── MERGE TWO RECORDS INTO ONE PERSON ───────────────────────────────────────
+//
+// Vinny's bar is "they all need to be one in the same" — one record per person,
+// not two kept in agreement. This is how two become one.
+//
+// ⚠️ THE LOSING SPELLING IS KEPT AS AN ALIAS, NOT DELETED. "Guadalope" is in
+// the payroll seed as a typo fix because that is the spelling the MICROS export
+// actually produces; delete it and her hours stop matching — silently, at
+// payroll, not here. The alias is what makes a merge safe rather than lossy.
+//
+// Refuses the two cases that would cost money:
+//  · two different Paychex IDs — that is payroll saying they are two people,
+//    and it outranks a name that looks similar
+//  · both sides able to sign in at a register — two live credentials means two
+//    humans until somebody says otherwise
+function staffMergeInto(loserKey){
+  const loser=staffS.people[loserKey];if(!loser)return;
+  const others=Object.values(staffS.people)
+    .filter(p=>p.key!==loserKey&&!p.removed)
+    .sort(staffByFirst);
+  if(!others.length){alert('There is nobody else on the list to merge into.');return}
+  const typed=prompt('Merge “'+(loser.name||'')+'” INTO which person?\n\n'
+    +'Type the name to KEEP. “'+(loser.name||'')+'” becomes an alias of them — their hours still match if that spelling turns up on a timesheet.');
+  if(typed===null)return;
+  const want=staffKeyOf(String(typed));
+  const keeper=staffS.people[want]||others.find(p=>staffKeyOf(p.name)===want);
+  if(!keeper){alert('No “'+typed+'” on the list. Type the name exactly as it appears.');return}
+  if(keeper.key===loserKey){alert('That is the same record.');return}
+
+  const lid=(loser.paychex_id||'').trim(), kid=(keeper.paychex_id||'').trim();
+  if(lid&&kid&&lid!==kid){
+    alert('Payroll has these as two different people — Paychex '+lid+' and '+kid+'.\n\n'
+      +'Two Paychex IDs outrank two similar names. If one of them is wrong, fix the ID first; if they really are one person, payroll has to retire one of the numbers.');
+    return;
+  }
+  const bothSignIn=!!(loser.register&&loser.register.emp_id)&&!!(keeper.register&&keeper.register.emp_id);
+  if(bothSignIn){
+    alert('Both of these can sign in at a register, with their own numbers.\n\n'
+      +'Two live sign-ins means two people until somebody says otherwise — exactly the Kamrin/Kristina case. Take the sign-in off the one you are merging away first, if it really is a duplicate.');
+    return;
+  }
+  if(!confirm('Merge “'+loser.name+'” into “'+keeper.name+'”?\n\n'
+    +'“'+keeper.name+'” is the name that stays. “'+loser.name+'” is kept as an alias, so that spelling still finds this person on a timesheet.\n\n'
+    +'Anything on the merged record that '+keeper.name+' is missing — Paychex ID, rates, register — moves across. Nothing already set on '+keeper.name+' is overwritten.'))return;
+
+  // Fill the gaps on the keeper; never overwrite what is already there. A typed
+  // value is usually the only copy — same rule the pull merge follows.
+  const fill=(f)=>{if((keeper[f]==null||keeper[f]==='')&&loser[f]!=null&&loser[f]!=='')keeper[f]=loser[f]};
+  ['paychex_id','micros_num','micros_id','phone','since','nickname','role','empclass'].forEach(fill);
+  keeper.rates=Object.assign({},loser.rates||{},keeper.rates||{});
+  keeper.positions=(keeper.positions&&keeper.positions.length)?keeper.positions:(loser.positions||[]);
+  keeper.register=Object.assign({},loser.register||{},keeper.register||{});
+  keeper.sources=Object.assign({},loser.sources||{},keeper.sources||{});
+
+  delete staffS.people[loserKey];
+  if(!staffS.aliases)staffS.aliases={};
+  staffS.aliases[loserKey]=keeper.key;
+  Object.keys(staffS.aliases).forEach(from=>{if(staffS.aliases[from]===loserKey)staffS.aliases[from]=keeper.key});
+  staffTouch(keeper);staffSave();staffRedraw();
+  staffS.regNote='Merged “'+loser.name+'” into “'+keeper.name+'”. The old spelling still resolves to them.';
+  staffRefreshNotes();
+}
+
+// "These two are NOT the same person." Worth storing as firmly as a merge:
+// a later pass runs the same surname-and-initial scan, finds the pair again,
+// and it looks just as suspicious the second time. Kamrin and Kristina Mastrino
+// are the live example — two Paychex IDs, two register sign-ins, one surname.
+function staffMarkDistinct(k){
+  const p=staffS.people[k];if(!p)return;
+  const typed=prompt('Who has this person been confused with?\n\nType their name. Both records stay exactly as they are — this just records that you have checked, so nobody merges them later.');
+  if(typed===null)return;
+  const other=staffKeyOf(String(typed));
+  if(!other){alert('Type the other person’s name.');return}
+  if(!p.distinct)p.distinct={};
+  p.distinct[other]=Date.now();
+  const o=staffS.people[other];
+  if(o){if(!o.distinct)o.distinct={};o.distinct[k]=Date.now();staffTouch(o);}
+  staffTouch(p);staffSave();staffRedraw();
+  staffS.regNote='Recorded: “'+p.name+'” and “'+String(typed).trim()+'” are two different people.';
+  staffRefreshNotes();
+}
+
 // ── RENAME ──────────────────────────────────────────────────────────────────
 //
 // Safe because identity here is the permanent `pid`, not the name — the name is
@@ -12666,7 +12748,7 @@ function staffRename(k){
   // register. Refuse rather than silently fold one record into another.
   const other=staffS.people[nk];
   if(other&&!other.removed){
-    alert('There is already a '+(other.name||name)+' on the list.\n\nRenaming this person onto them would merge two records, which affects payroll, the schedule and the register at once. That needs to be done deliberately, not as a side effect of a rename.');
+    alert('There is already a '+(other.name||name)+' on the list.\n\nIf they are the same person, use MERGE — it keeps this spelling as an alias so timesheets with the old name still find them. A rename would just move the record and leave the other one sitting there.');
     return;
   }
 
@@ -12867,8 +12949,14 @@ function staffDetail(p){
       </div>`:''}
     </div>
 
-    <button onclick="staffRename('${esc(k)}')" title="Fix or change this person's name"
+    <button onclick="staffMergeInto('${esc(k)}')" title="This is the same person as somebody else on the list — fold them together"
       style="margin-left:auto;background:none;border:1px solid var(--border);color:var(--text-dim);border-radius:6px;
+             padding:3px 9px;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap">Merge</button>
+    <button onclick="staffMarkDistinct('${esc(k)}')" title="Record that this is NOT the same person as a similar name, so nobody merges them later"
+      style="background:none;border:1px solid var(--border);color:var(--text-dim);border-radius:6px;
+             padding:3px 9px;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap">Not a dupe</button>
+    <button onclick="staffRename('${esc(k)}')" title="Fix or change this person's name"
+      style="background:none;border:1px solid var(--border);color:var(--text-dim);border-radius:6px;
              padding:3px 9px;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap">Rename</button>
     <button onclick="staffRemove('${esc(k)}')" title="Take them off the list, and off the register"
       style="background:none;border:1px solid #7f1d1d;color:#f87171;border-radius:6px;
