@@ -7738,6 +7738,24 @@ function posRefreshLiveBadge(){
   const el=document.getElementById('pos-live-badge');
   if(el)el.outerHTML=posLiveBadgeHTML();
 }
+// What replaced the Publish card. Not a gate and not a button — just the
+// answer to "did that reach the registers", which is the only question the old
+// card was really answering. Shown only when there is something to say.
+function posLiveCardHTML(){
+  const st=posS.liveState;
+  if(!st||st==='idle')return '';
+  const bad=(st==='failed'||st==='nokey');
+  if(st==='sent'&&Date.now()-(posS.liveAt||0)>12000)return '';   // fades once it's old news
+  return `<div style="border:1px solid ${bad?'#f87171':'var(--border)'};border-radius:12px;
+      background:${bad?'rgba(248,113,113,0.08)':'var(--surface)'};padding:9px 14px;margin-bottom:14px;
+      display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    ${posLiveBadgeHTML()}
+    <span style="font-size:12.5px;color:var(--text-dim)">${bad
+      ? 'Your change is saved here but the registers still have the old one.'
+      : 'Changes go to the registers on their own — there is nothing to press.'}</span>
+    ${bad?`<button onclick="posLiveSoon()" style="margin-left:auto;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:5px 12px;font-size:12.5px;cursor:pointer;font-family:inherit">Try again</button>`:''}
+  </div>`;
+}
 function posLiveBadgeHTML(){
   const st=posS.liveState;
   const base='id="pos-live-badge" style="font-size:12px;padding:2px 8px;border-radius:999px;white-space:nowrap;';
@@ -8502,38 +8520,14 @@ function posItemsHTML(){
     ${posStat('Items',String((s.total||0)+posNewMods.length),'menu + food mods')}
     ${posStat('No price',String(posNoPriceNow()),'priced items still at $0')}
 
-    <div style="${posCardCss};padding:14px 16px;min-width:150px;flex:1;position:relative;
-        border-color:${posPendingCount()?'#f59e0b':'var(--border)'};
-        background:${posPendingCount()?'rgba(245,158,11,0.10)':'var(--surface)'}">
-        <div style="font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.6px">Unpublished</div>
-        <div style="font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;margin-top:4px;color:${posPendingCount()?'#f59e0b':'var(--text-muted)'}">${posPendingCount()}</div>
-        <div style="font-size:12px;color:var(--text-dim);margin-top:2px">${posPendingCount()
-          ? (posPublishableCount()
-              ? posPublishableCount()+' of them will publish'
-              : 'none of these publish yet')
-          : 'everything is published'}</div>
-        ${posPendingCount()?`<button onclick="event.stopPropagation();posClearChanges()" title="Throw away every pending change"
-          style="position:absolute;top:10px;right:12px;border:1px solid var(--border);background:transparent;
-            color:var(--text-muted);border-radius:7px;padding:3px 9px;font-family:inherit;font-size:12px;cursor:pointer">clear</button>`:''}
-    </div>
-  </div>
-  ${posPendingCount()?`<div style="border:1px solid #f59e0b;border-radius:12px;background:rgba(245,158,11,0.10);padding:12px 16px;margin-bottom:14px">
-    <div style="font-weight:800;font-size:14px;color:#f59e0b">${posPendingCount()===1?'1 edit':posPendingCount()+' edits'} in the back office</div>
-    <div style="font-size:13px;color:var(--text-dim);margin-top:3px">${posPublishableCount()
-      ? 'Publishing sends '+posPublishableCount()+' of them — prices, print routing, deleted and new items, mod groups with their choices and attachments, and discounts.'
-      : '<b>None of these can be published yet.</b> Publishing carries prices, print routing, deleted and new items, mod groups with their choices and attachments, and discounts.'}</div>
-    <div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-      <button onclick="posPublish()" ${posS.publishing?'disabled':''}
-        style="border:0;background:#f59e0b;color:#111;font-weight:800;border-radius:9px;padding:8px 16px;
-          font-family:inherit;font-size:14px;cursor:pointer;${posS.publishing?'opacity:.6':''}">
-        ${posS.publishing?'Sending…':'📤 Send again'}</button>
-      ${posLiveBadgeHTML()}
-      <span style="font-size:12px;color:var(--text-muted)">${
-        posS.publishErr?`<span style="color:#f87171">Failed — ${esc(posS.publishErr)}</span>`
-        :posS.published?`Published ${posS.publishedCount} change${posS.publishedCount===1?'':'s'} — registers pick it up straight away.`
-        :'Sends these edits to the cloud. The mini collects them from there, then the registers collect them from the mini.'}</span>
-    </div>
-  </div>`:''}
+    <!-- The UNPUBLISHED card and its "clear" button are gone. There is no such
+         thing as an unpublished change any more: every edit writes through to
+         the registers on its own (posLiveSoon). The card counted drafts that
+         no longer exist, and "clear" — which told him "they have not reached
+         the iPads, so this cannot be undone" — had quietly become "revert
+         every price, on every register, right now". That is how Vinny lost the
+         grilled calamari price. -->
+  ${posLiveCardHTML()}
   <div style="${posCardCss}">
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
       <input id="pos-q" value="${esc(posS.q)}" placeholder="search name or category…" style="${posInput};flex:1;min-width:200px" oninput="posSetQ(this.value)">
@@ -8681,10 +8675,17 @@ function posPublishableCount(){
 // Throwing the lot away. Changes here are not in the register yet, so clearing them
 // loses work that exists nowhere else — hence the count in the confirm, and a second
 // look when there is a lot to lose.
+// ⚠️ NOT REACHABLE FROM THE UI ANY MORE, AND IT MUST NOT BECOME SO AGAIN.
+// This was "throw away your unpublished drafts", and its own confirm promised
+// "they have not reached the iPads". That stopped being true the moment the
+// back office started writing through on its own: every one of these edits is
+// already live, so this is now "revert every price on every register", and it
+// says the opposite while doing it. Vinny lost a grilled calamari price to
+// exactly that. The wording below is what it actually does.
 function posClearChanges(){
   const n=posPendingCount(); if(!n)return;
-  if(!confirm(`Throw away ${n} pending change${n===1?'':'s'}?\n\nThey have not reached the iPads, so this cannot be undone.`))return;
-  if(n>=5&&!confirm(`Really discard all ${n}? Publish them first if you want them on the registers.`))return;
+  if(!confirm(`Undo ${n} change${n===1?'':'s'} and put every one of them back to the catalogue price?\n\n⚠️ These are LIVE on the registers. Undoing them here changes them there too, within a second. There is no way back.`))return;
+  if(n>=5&&!confirm(`Really revert all ${n} on the floor?`))return;
   posPrices={};posRouting={};posGroupMods={};posNewGroups=[];posGroupAttach={};
   posNewClasses=[];posNewMods=[];posGroupNames={};posGroupDetach={};
   posChoiceCuts={};posModLetters={};posDeletedMods=[];posModNames={};posDeletedGroups=[];
