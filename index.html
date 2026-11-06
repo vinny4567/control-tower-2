@@ -7802,6 +7802,25 @@ function posDriftAgo(ms){
   const h=Math.round(m/60); if(h<48)return h+' hours';
   return Math.round(h/24)+' days';
 }
+// The cloud's side of the comparison, in ONE request instead of five.
+//
+// Reading five `at`s used to mean GETting five full payloads — the whole menu and
+// 225 staff — every time the POS tab opened, on his phone included. The backend
+// now answers /api/kv/_keys with {keys:[{k,at}]}, the same shape the mini uses.
+//
+// Returns null (never an empty map) when the listing is unavailable, so the caller
+// falls back to per-key reads instead of concluding "nothing is written anywhere"
+// and reporting everything in sync. An empty object here would be the quiet lie.
+async function posDriftCloudAts(){
+  try{
+    const r=await fetch(KV_URL+'_keys',{headers:{'x-sync-token':KV_TOKEN()}});
+    if(!r.ok)return null;                            // older backend → fall back, don't guess
+    const j=await r.json();
+    if(!j||!Array.isArray(j.keys))return null;
+    const m={};j.keys.forEach(x=>{if(x&&x.k)m[x.k]=Number(x.at)||0});
+    return m;
+  }catch(e){return null}
+}
 async function posDriftCheck(force){
   if(posDrift.checking)return;
   if(!force&&posDrift.at&&Date.now()-posDrift.at<45000)return;
@@ -7824,11 +7843,17 @@ async function posDriftCheck(force){
     posDrift.err=(e&&e.name==='AbortError')?'timed out':((e&&e.message)||String(e));
     posDrift.checking=false;posDrift.at=Date.now();posDriftRefresh();return;
   }
+  const cloudMap=await posDriftCloudAts();
   const rows=[];let unknown=0;
   for(const [k,label] of POS_SYNC_KEYS){
-    const c=await kvGet(k);
-    if(kvFailed(c)){unknown++;continue}              // cloud unreadable → can't tell, don't guess
-    const cloudAt=Number(c&&c.at)||0;
+    let cloudAt;
+    if(cloudMap){
+      cloudAt=cloudMap[k]||0;                        // absent from the listing = never written
+    }else{
+      const c=await kvGet(k);
+      if(kvFailed(c)){unknown++;continue}            // cloud unreadable → can't tell, don't guess
+      cloudAt=Number(c&&c.at)||0;
+    }
     if(!cloudAt)continue;                            // never written anywhere → nothing to prove
     const miniAt=(mini[k]==null)?null:mini[k];
     if(miniAt===null){rows.push({k,label,kind:'missing',cloudAt});continue}
