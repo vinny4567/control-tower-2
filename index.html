@@ -12186,7 +12186,22 @@ function staffBodyHTML(){
       ${open?staffDetail(p):''}
     </div>`;
   };
-  return rows.map(line).join('');
+  // Letter dividers. 232 names is a long scroll and Vinny is working down it by
+  // hand — a sticky A / B / C tells him where he is without counting. Only when
+  // the list is actually alphabetical: a search or a filter makes a short list
+  // where the headers are noise, and "no Paychex ID" is a work queue, not an index.
+  const banded = !staffS.q && (!staffS.filter || staffS.filter === 'all');
+  if (!banded) return rows.map(line).join('');
+  let lastInitial = '';
+  return rows.map(p => {
+    const ch = (String(p.name || '').trim()[0] || '#').toUpperCase();
+    const L = /[A-Z]/.test(ch) ? ch : '#';
+    if (L === lastInitial) return line(p);
+    lastInitial = L;
+    return `<div style="position:sticky;top:0;z-index:3;background:var(--surface);
+      border-top:1px solid var(--border);padding:5px 0 3px;margin-top:3px;
+      font-size:11px;font-weight:800;letter-spacing:.14em;color:var(--accent)">${L}</div>` + line(p);
+  }).join('');
 }
 
 // ---- WHAT THE REGISTER ACTUALLY HAS ----------------------------------------
