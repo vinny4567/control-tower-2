@@ -13969,16 +13969,61 @@ async function posApproveStation(){
   posStationsS.busy=false;
   await posLoadStations();
 }
+// ⚠️ "HAS IT EVER CALLED HOME" IS NOT "IS IT ALIVE", and this screen used to show
+// only the first while RECEIVING the second. /api/stations already returns
+// `last_seen` per station (mini store.js:255 — "last request that presented this
+// token", stamped by stationOf on every authenticated request, throttled to 60s)
+// and we were rendering it as a one-way boolean: a register that checked in once
+// in August and has been dead since read "checked in", in green.
+//
+// That is the same shape as the menu key sitting 50 days stale while every layer
+// said ✓, one hop further down — and the hop where the food actually gets sold.
+// A register that has gone deaf CANNOT report that it has gone deaf, so the alarm
+// has to come from the absence of news, and silence has to be LOUDER than any row
+// that did arrive.
+//
+// Thresholds: a healthy terminal refreshes last_seen at most once a minute (the
+// mini's own throttle), so under 3 minutes is current, and a quarter of an hour of
+// nothing during service means something is wrong. Deliberately not tighter —
+// crying wolf at the pass is how a warning gets ignored.
+const STATION_QUIET_MS=3*60*1000, STATION_SILENT_MS=15*60*1000;
+function posStationAge(x,now){
+  if(!x||!x.last_seen)return {kind:'never',label:'never seen',color:'#fbbf24'};
+  const ms=now-Number(x.last_seen);
+  // A negative age means THIS computer's clock is behind the mini's, not that the
+  // register is from the future. Never render a negative — say the true thing.
+  if(ms<0)return {kind:'skew',label:'seen just now',color:'#34d399',skew:-ms};
+  if(ms<STATION_QUIET_MS)return {kind:'live',label:'seen just now',color:'#34d399'};
+  if(ms<STATION_SILENT_MS)return {kind:'quiet',label:'last heard '+posDriftAgo(ms)+' ago',color:'#fbbf24'};
+  return {kind:'silent',label:'SILENT FOR '+posDriftAgo(ms),color:'#f87171'};
+}
 function posStationsHTML(){
   const S=posStationsS;
-  const seen=S.list.filter(x=>x.seen).length;
-  const row=(x)=>`<div style="display:flex;gap:10px;align-items:baseline;padding:7px 0;border-top:1px solid var(--border);font-size:14px">
+  const now=Date.now();
+  const ages=S.list.map(x=>posStationAge(x,now));
+  const silent=ages.filter(a=>a.kind==='silent').length;
+  const never=ages.filter(a=>a.kind==='never').length;
+  const live=ages.filter(a=>a.kind==='live'||a.kind==='skew').length;
+  const skewed=ages.some(a=>a.skew>120000);
+  const row=(x,i)=>{const a=ages[i];
+    return `<div style="display:flex;gap:10px;align-items:baseline;padding:7px 0;border-top:1px solid var(--border);font-size:14px">
     <span style="flex:1;font-weight:600">${esc(x.name||'(unnamed)')}</span>
-    <span style="font-size:12px;color:${x.seen?'#34d399':'#fbbf24'}">${x.seen?'checked in':'never seen'}</span>
-    ${x.active===false?'<span style="font-size:12px;color:#f87171">revoked</span>':''}</div>`;
+    <span style="font-size:12px;color:${a.color};font-weight:${a.kind==='silent'?'800':'400'}">${esc(a.label)}</span>
+    ${x.active===false?'<span style="font-size:12px;color:#f87171">revoked</span>':''}</div>`};
   return `
   ${posStat('Registers',String(S.list.length),'enrolled')}
-  ${posStat('Checked in',String(seen),seen===S.list.length?'every one has been seen':'some have never called home')}
+  ${posStat('Talking now',String(live),
+      silent?`${silent} silent — check ${silent===1?'it':'them'}`
+      :never===S.list.length&&S.list.length?'none has ever called home'
+      :never?`${never} never seen`:'all current')}
+  ${silent?`<div style="${posCardCss};margin:14px 0;border-color:#f87171;background:rgba(248,113,113,0.08)">
+    <div style="font-weight:800;font-size:14px;color:#f87171">${silent} register${silent>1?'s have':' has'} gone quiet</div>
+    <div style="font-size:12.5px;color:var(--text-dim);line-height:1.55;margin-top:4px">
+      A register that stops listening keeps taking orders on whatever it last heard — old prices, and an
+      86 list from before the kitchen ran out. It cannot tell you it has gone deaf, which is why this
+      counts silence rather than waiting for bad news.</div></div>`:''}
+  ${skewed?`<div style="${posCardCss};margin:14px 0">
+    <div style="font-size:12.5px;color:var(--text-dim)">⚠ This computer's clock is behind the register server's, so these ages are approximate.</div></div>`:''}
   <div style="${posCardCss};margin:14px 0">
     <div style="font-weight:800;font-size:15px;margin-bottom:2px">Approve an iPad</div>
     <div style="color:var(--text-muted);font-size:12px;line-height:1.5;margin-bottom:10px">
