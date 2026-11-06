@@ -8827,16 +8827,15 @@ function posItemGroupsHTML(r){
 function posPriceCell(r){
   const enc=posEnc(r.key);
   const v=posPriceOf(r);
-  const entered=posEntered(r);
   const shown=v?(v/100).toFixed(2):'';
   return `<input value="${shown}" placeholder="—" inputmode="decimal"
     onchange="posSetPrice('${enc}',this.value)"
     onkeydown="if(event.key==='Enter')this.blur()"
     style="width:100%;text-align:right;font-variant-numeric:tabular-nums;font-size:16px;
       padding:4px 7px;border-radius:6px;font-family:inherit;
-      border:1px solid ${entered?'#22c55e':'var(--border)'};
-      background:${entered?'rgba(34,197,94,0.10)':'var(--surface2)'};
-      color:${v?(entered?'#22c55e':'var(--text)'):'var(--text-muted)'}">`;
+      border:1px solid var(--border);
+      background:var(--surface2);
+      color:${v?'var(--text)':'var(--text-muted)'}">`;
 }
 
 // Adding a food mod to a group. The <datalist> is the whole Food Mods vocabulary, so
@@ -11848,6 +11847,7 @@ async function staffLoad(){
 }
 
 let staffPushTimer=null;
+let staffWriteAt=0;   // monotonic clock for ct_staff.at — see staffPushMerged
 function staffSave(){
   staffS.at=Date.now();
   try{localStorage.setItem(STAFF_KEY,JSON.stringify({people:staffS.people,jobs:staffS.jobs||{},aliases:staffS.aliases||{},at:staffS.at}))}catch(e){}
@@ -11884,7 +11884,14 @@ async function staffPushMerged(){
                                 j:staffMergeJobs(r.v.jobs,r.v.jobs)});
     if(same){staffS.at=r.at||staffS.at;return;}
   }
-  const payload={people:staffS.people,jobs:staffS.jobs||{},aliases:staffS.aliases||{},at:Date.now()};
+  // ⚠️ MONOTONIC, same as privS.at and posBuildLive. Two staff edits tying on
+  // one millisecond would leave `ct_staff.at` unchanged — and because the
+  // register only re-fetches /api/roster when `rosterAt` moves, and rosterAt is
+  // max(ct_staff.at, ct_job_rates.at), a tied edit stays INVISIBLE to the floor
+  // until something else changes staff. It does not self-heal in between.
+  // Unticking register access down a list is exactly the burst that ties.
+  staffWriteAt=Math.max(Date.now(),(staffWriteAt||0)+1,(staffS.at||0)+1);
+  const payload={people:staffS.people,jobs:staffS.jobs||{},aliases:staffS.aliases||{},at:staffWriteAt};
   staffS.at=payload.at;
   try{localStorage.setItem(STAFF_KEY,JSON.stringify(payload))}catch(e){}
   kvPush(STAFF_KEY,payload,payload.at);
@@ -13306,7 +13313,12 @@ function staffJobRatesForMini(){
   });
   return out;
 }
-function staffPublishJobRates(){kvPush('ct_job_rates',staffJobRatesForMini(),Date.now())}
+// Same monotonic rule — ct_job_rates is the other half of the mini's rosterAt.
+let staffRatesAt=0;
+function staffPublishJobRates(){
+  staffRatesAt=Math.max(Date.now(),(staffRatesAt||0)+1);
+  kvPush('ct_job_rates',staffJobRatesForMini(),staffRatesAt);
+}
 function staffJobRate(job){
   const jobs=staffJobs();
   const j=jobs[job];
