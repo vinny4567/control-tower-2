@@ -6776,7 +6776,7 @@ Picking a date range automatically pulls the nightly <b>tip-out log</b> (restaur
 }
 
 function renderViewport(){if(activeTab===WED){document.getElementById('viewport').innerHTML=wedHTML();wedInit();return}if(activeTab===DOCS){docsSetNS('ct_docs');docsPullSync();document.getElementById('viewport').innerHTML=docsHTML();return}if(activeTab===MAIL){document.getElementById('viewport').innerHTML=mailHTML();restoreGmailListScroll();mailAcctsRestore();return}if(activeTab===LIQ){document.getElementById('viewport').innerHTML=liqHTML();return}if(activeTab===BANK){document.getElementById('viewport').innerHTML=bankHTML();return}
-   if(activeTab===TIPS){document.getElementById('viewport').innerHTML=tipsHTML();tipsRefresh();return}if(activeTab===POS){document.getElementById('viewport').innerHTML=posHTML();return}if(activeTab===ONLINE){document.getElementById('viewport').innerHTML=onlineHTML();renderChat();if(ordersKey())loadCmdConsole();return}if(activeTab===DASH){const vp=document.getElementById('viewport');
+   if(activeTab===TIPS){document.getElementById('viewport').innerHTML=tipsHTML();tipsRefresh();return}if(activeTab===POS){document.getElementById('viewport').innerHTML=posHTML();posDriftCheck();return}if(activeTab===ONLINE){document.getElementById('viewport').innerHTML=onlineHTML();renderChat();if(ordersKey())loadCmdConsole();return}if(activeTab===DASH){const vp=document.getElementById('viewport');
    // EVERY scroller on the dash must be listed here. This rebuilds the whole tab, and the Gmail
    // poll fires it every few seconds, so anything not restored snaps back to the top WHILE VINNY
    // IS READING IT. `.rq-list` (Upcoming Orders) was added after this code and left out, which is
@@ -7764,6 +7764,108 @@ function posLiveBadgeHTML(){
   if(st==='nokey')  return `<span ${base}background:rgba(248,113,113,.12);color:#f87171">⚠ no sync key — nothing leaves this device</span>`;
   if(st==='sent')   return `<span ${base}background:rgba(52,211,153,.12);color:#34d399">✓ on the registers</span>`;
   return `<span ${base}color:var(--text-muted)"></span>`;
+}
+
+// ── DID IT ACTUALLY LAND? cloud → mini drift ────────────────────────────────
+//
+// The check this building never had. Every write-through reports success on OUR
+// side — the cloud 200s, kvSendMini is fire-and-forget — and `ct_pos_live` still
+// sat FIFTY DAYS stale on the mini with nothing anywhere showing it. "I sent it"
+// and "it arrived" are two different claims and we only ever tested the first;
+// the gap was found by a person asking another session a question, which is not
+// a mechanism.
+//
+// The mini already answers it: GET /api/kv/_keys → {k, at} for every key it
+// holds (server/index.js:1806 → store.kvKeys()). Probed unauthenticated: 401
+// "bad token" on both no-token and a bogus one, so it is genuinely gated and
+// takes the same x-sync-token kvSendMini already uses.
+//
+// ⚠️ THE ENTIRE VALUE IS THAT A FAILED CHECK MUST NOT READ AS A PASS. Off the
+// tailnet the mini is unreachable; a cloud read can fail on its own (kvGet hands
+// back KV_FAIL, which is NOT an absent key). Both say "can't tell" out loud.
+// Silence from this card is only ever allowed to mean "compared, and they match".
+const POS_SYNC_KEYS=[
+  ['ct_pos_live','Menu, prices, routing'],
+  ['ct_privs','Privileges'],
+  ['ct_staff','Staff'],
+  ['ct_job_rates','Job rates'],
+  ['ct_calcs','Calculations'],
+];
+const posDrift={state:'idle',rows:[],at:0,err:'',checking:false};
+// Writes are debounced 1400ms and the mirror is fire-and-forget, so a key can be
+// legitimately in flight. Anything under this is "just sent", not "stale".
+const POS_DRIFT_GRACE_MS=10000;
+function posDriftAgo(ms){
+  const s=Math.round(ms/1000);
+  if(s<90)return s+' seconds';
+  const m=Math.round(s/60); if(m<90)return m+' minutes';
+  const h=Math.round(m/60); if(h<48)return h+' hours';
+  return Math.round(h/24)+' days';
+}
+async function posDriftCheck(force){
+  if(posDrift.checking)return;
+  if(!force&&posDrift.at&&Date.now()-posDrift.at<45000)return;
+  if(!KV_TOKEN()){posDrift.state='nokey';posDrift.at=Date.now();posDriftRefresh();return}
+  if(localStorage.getItem('ct_kv_mini')==='off'){posDrift.state='off';posDrift.at=Date.now();posDriftRefresh();return}
+  posDrift.checking=true;
+  let mini=null;
+  try{
+    const ac=new AbortController();
+    const t=setTimeout(()=>{try{ac.abort()}catch(e){}},6000);
+    const r=await fetch(KV_MINI+'_keys',{headers:{'x-sync-token':KV_TOKEN()},signal:ac.signal});
+    clearTimeout(t);
+    if(!r.ok)throw new Error('mini said '+r.status);
+    const j=await r.json();
+    mini={};(j.keys||[]).forEach(row=>{if(row&&row.k)mini[row.k]=Number(row.at)||0});
+  }catch(e){
+    // Being off the tailnet is NORMAL (he reads this on his phone) and is not a
+    // fault — but it is also not a pass, so it gets its own honest wording.
+    posDrift.state='unreachable';
+    posDrift.err=(e&&e.name==='AbortError')?'timed out':((e&&e.message)||String(e));
+    posDrift.checking=false;posDrift.at=Date.now();posDriftRefresh();return;
+  }
+  const rows=[];let unknown=0;
+  for(const [k,label] of POS_SYNC_KEYS){
+    const c=await kvGet(k);
+    if(kvFailed(c)){unknown++;continue}              // cloud unreadable → can't tell, don't guess
+    const cloudAt=Number(c&&c.at)||0;
+    if(!cloudAt)continue;                            // never written anywhere → nothing to prove
+    const miniAt=(mini[k]==null)?null:mini[k];
+    if(miniAt===null){rows.push({k,label,kind:'missing',cloudAt});continue}
+    const by=cloudAt-miniAt;
+    if(by>POS_DRIFT_GRACE_MS)rows.push({k,label,kind:'behind',cloudAt,miniAt,by});
+  }
+  posDrift.rows=rows;
+  posDrift.state=rows.length?'behind':(unknown?'partial':'ok');
+  posDrift.err=unknown?(unknown+' key'+(unknown>1?'s':'')+' unreadable in the cloud'):'';
+  posDrift.checking=false;posDrift.at=Date.now();
+  posDriftRefresh();
+}
+function posDriftRefresh(){
+  const el=document.getElementById('pos-drift-card');
+  if(el)el.outerHTML=posDriftCardHTML();
+}
+// Speaks only when there is something to say — same rule as posLiveCardHTML. 'ok'
+// renders an empty shell deliberately: the element must still exist so
+// posDriftRefresh can find it later, and so a clean result is SILENT rather than
+// another green badge (he asked for the green highlight to go).
+function posDriftCardHTML(){
+  const st=posDrift.state,wrap=s=>`<div id="pos-drift-card">${s}</div>`;
+  if(st==='ok'||st==='idle'||st==='off')return wrap('');
+  const box=(border,bg,inner)=>wrap(`<div style="border:1px solid ${border};border-radius:12px;
+      background:${bg};padding:10px 14px;margin-bottom:14px;font-size:12.5px;line-height:1.55">${inner}</div>`);
+  if(st==='nokey')return wrap('');     // the header badge already says this louder
+  if(st==='unreachable')return box('var(--border)','var(--surface)',
+    `<b>Can't check the registers from here.</b> <span style="color:var(--text-dim)">The mini is only reachable on the tailnet — normal on a phone or off the network. This is <b>not</b> a sign anything is wrong, but nothing has been verified either. <span style="color:var(--text-muted)">(${esc(posDrift.err||'')})</span></span>`);
+  if(st==='partial')return box('var(--border)','var(--surface)',
+    `<b>Partly checked.</b> <span style="color:var(--text-dim)">${esc(posDrift.err)} — the rest match.</span>`);
+  const rows=posDrift.rows.map(r=>`<li style="margin-top:3px"><b>${esc(r.label)}</b> — ${
+    r.kind==='missing'?'the mini has never received this'
+    :'the mini is '+posDriftAgo(r.by)+' behind'}</li>`).join('');
+  return box('#f87171','rgba(248,113,113,0.08)',
+    `<b>The registers are behind on ${posDrift.rows.length} thing${posDrift.rows.length>1?'s':''}.</b>
+     <ul style="margin:4px 0 0 18px;padding:0">${rows}</ul>
+     <div style="color:var(--text-dim);margin-top:7px">Changing one of these again will push it. If it stays behind, the mini is taking writes but not keeping them.</div>`);
 }
 
 async function posPublishSend(blob){
@@ -13971,6 +14073,7 @@ function posHTML(){
           <span style="margin-left:auto;display:flex;gap:10px;align-items:center">${who}</span>
         </div>
         ${posS.showConn?posConnHTML():''}
+        ${posDriftCardHTML()}
         ${body}
       </div>
     </div></div>`;
