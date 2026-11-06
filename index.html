@@ -9800,6 +9800,20 @@ const posDemoOffer=()=>`<button onclick="posDemoOn()" style="${posBtn('#3f3f46')
 // ⚠️ A class is permission, not a credential. Somebody classed `server` with no
 // sign-in number still cannot get in — the PIN is the other half, and the mini
 // is the only thing that checks it.
+// ⚠️ `active` ON THE MINI MEANS EMPLOYED, NOT ALLOWED-TO-SIGN-IN. I briefly
+// derived it from staffCanSignIn and that was wrong in a way that defeats the
+// whole point of the clock-only class: a clock-only person is precisely
+// somebody who DOES clock in, and the mini's loginByPin skips anyone with
+// active=0 — so it would have stopped them doing the one thing their class
+// exists to permit. It would also have dropped them out of anything else
+// reading `active` as "works here": listings, counts, hours.
+// Two meanings, one field — the same shape as `pending` meaning two things
+// earlier tonight. So: active = employed here; the CLASS is the sign-in gate,
+// enforced on the mini by Jarvis's verify_signin role check. Caught by the
+// mini session before it reached a till.
+function staffEmployed(p){
+  return !!p && !p.removed && p.active!==false && !p.gone;
+}
 function staffCanSignIn(p){
   const role=p&&p.register&&p.register.role;
   return !!role && role!=='clockonly';
@@ -12386,16 +12400,20 @@ function staffRegisterDrift(){
   Object.values(staffS.people).forEach(p=>{
     if(p.removed)return;
     const want=p.register||{}, got=want.mini;
-    // Compares the CLASS against the register, not the retired `access` flag —
-    // otherwise every row would read as drift the moment the class became the
-    // gate, and a real disagreement would be lost in 225 false ones.
-    const may=staffCanSignIn(p);
-    if(!may&&!got)return;
+    // ⚠️ COMPARE LIKE WITH LIKE. `got.active` is the mini's EMPLOYED flag, so
+    // it is checked against staffEmployed — not against who may sign in. Who
+    // may sign in is the CLASS, and the mini enforces that on `role`, so the
+    // role comparison below is what catches a sign-in disagreement.
+    const may=staffCanSignIn(p), employed=staffEmployed(p);
+    if(!employed&&!got)return;
     if(may&&!got)return out.push({p,what:'not on the register yet — set a sign-in code'});
-    if(!may&&got&&got.active)return out.push({p,what:'can still sign in to the register'});
+    if(!employed&&got&&got.active)return out.push({p,what:'is still switched on at the register'});
     if(!got)return;
-    if(may&&!got.active)return out.push({p,what:'is switched off on the register'});
-    if(may&&!got.has_pin)return out.push({p,what:'has no sign-in code on the register'});
+    if(employed&&!got.active)return out.push({p,what:'is switched off on the register'});
+    if(may&&!got.has_pin)return out.push({p,what:'can sign in but has no code on the register'});
+    // The sign-in gate itself: the mini refuses clock-only and blank on `role`.
+    if(!may&&got.role&&got.role!=='clockonly')
+      return out.push({p,what:'is a '+got.role+' on the register and so can still sign in'});
     if(want.role&&got.role&&want.role!==got.role)
       return out.push({p,what:'is a '+got.role+' on the register, a '+want.role+' here'});
   });
@@ -12413,7 +12431,7 @@ async function staffPushRegister(p,what){
       ? await posSrv('/api/employees/role',{method:'POST',body:JSON.stringify({id,role:p.register.role})})
       : what==='drawer'
       ? await posSrv('/api/employees/drawer',{method:'POST',body:JSON.stringify({id,drawer:p.register.drawer===null||p.register.drawer===undefined?null:!!p.register.drawer})})
-      : await posSrv('/api/employees/active',{method:'POST',body:JSON.stringify({id,active:staffCanSignIn(p)})});
+      : await posSrv('/api/employees/active',{method:'POST',body:JSON.stringify({id,active:staffEmployed(p)})});
     // ⚠️ 404 IS NOT A REFUSAL. The mini does not have a drawer endpoint yet. Saying "the
     // register would not take that change" would read as "it said no" when what it said
     // was "I have never heard of this", and a manager would go looking for a permission
