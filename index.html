@@ -12233,6 +12233,11 @@ function staffRows(){
   let rows=Object.values(staffS.people).filter(p=>!p.removed);
   if(staffS.filter==='noschedule')rows=rows.filter(staffPayrollOnly);
   if(staffS.filter==='noid')rows=rows.filter(p=>!p.paychex_id);
+  // "130 people with register access is definitely not correct" — so show him
+  // exactly who they are. The tick is the only thing that decides it, and
+  // until now there was no way to see the set, only to open people one at a
+  // time and hope you noticed.
+  if(staffS.filter==='cansignin')rows=rows.filter(p=>p.register&&p.register.access);
   if(q)rows=rows.filter(p=>(p.name||'').toLowerCase().includes(q)
     ||(p.positions||[]).join(' ').toLowerCase().includes(q)
     ||String(p.paychex_id||'').includes(q));
@@ -12245,6 +12250,7 @@ function staffBodyHTML(){
   if(!rows.length)return `<div style="color:var(--text-dim);font-size:13px;padding:12px 0">${
     staffS.filter==='noschedule'?'Everybody has a scheduler account.'
     :staffS.filter==='noid'?'Everybody has a Paychex ID.'
+    :staffS.filter==='cansignin'?'Nobody can sign in to a register.'
     :staffS.q?'Nobody matches that.'
     :'Nobody yet — pull from the scheduler to start the list.'}</div>`;
   const line=(p)=>{
@@ -13633,6 +13639,11 @@ function posStaffHTML(){
     ${posStat('No Paychex ID',String(noId),
       staffS.filter==='noid'?'showing them':(noId?'press to see them — they cannot be exported':'every one can be exported'),
       noId?"staffFilter('noid')":'',staffS.filter==='noid')}
+    ${(()=>{const n=all.filter(p=>p.register&&p.register.access).length;
+      return posStat('Can sign in',String(n),
+        staffS.filter==='cansignin'?'showing them — untick anyone who should not'
+                                   :'press to see exactly who can use a register',
+        n?"staffFilter('cansignin')":'',staffS.filter==='cansignin');})()}
   </div>
   ${privCardHTML()}
   <div style="${posCardCss};margin-bottom:14px">
