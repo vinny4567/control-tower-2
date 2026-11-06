@@ -11888,6 +11888,34 @@ async function staffLoad(){
   // Saved only if something was actually minted, so an ordinary load does not write.
   if(staffBackfillPids())staffSave();
   if(activeTab===POS&&(posS.sec==='staff'||posS.sec==='jobrates'))renderViewport();
+  staffReconcileJobNums();
+}
+
+// Republish ct_job_rates if what the mini holds no longer matches what we'd publish now.
+//
+// WHY THIS EXISTS: changing STAFF_JOB_NUMS in this file changes NOTHING on the floor.
+// ct_job_rates is only written by staffSave → staffPublishJobRates, and staffPushMerged
+// returns early when nothing changed — so after the Nov 2026 renumber the mini would have
+// kept serving rates keyed to the OLD numbers (and, per the warning on STAFF_JOB_NUMS,
+// number-first matching turns that into three wrong rates, not a lookup miss) until Vinny
+// happened to edit a rate by hand. A code fix nobody ever pushes is not a fix.
+//
+// Self-heals any drift, not just this renumber: constant edited, a stale device winning a
+// merge, a half-finished publish.
+async function staffReconcileJobNums(){
+  const want=staffJobRatesForMini();
+  // ⚠️ NEVER PUBLISH AN EMPTY MAP. staffLoad can reach here with no rates yet (cold device,
+  // cloud read failed, jobs still merging) and `want` is then {} — publishing that would
+  // REPLACE every rate on the mini with nothing. kvSet is whole-value (`v = excluded.v`),
+  // not a merge, so this is a wipe, not a no-op: the exact shape that nearly ate the payroll
+  // tips in Oct. An absent rate must stay absent-because-unknown, never absent-because-erased.
+  if(!Object.keys(want).length)return;
+  let have=null;
+  try{const r=await kvGet('ct_job_rates');have=(r&&r.v&&typeof r.v==='object')?r.v:null}catch(e){return}
+  if(!have)return;                        // nothing published yet — a real edit will do it
+  const norm=o=>JSON.stringify(Object.keys(o).sort().map(k=>[k,o[k]]));
+  if(norm(have)===norm(want))return;
+  staffPublishJobRates();
 }
 
 let staffPushTimer=null;
@@ -13291,8 +13319,28 @@ function staffDetail(p){
 // this only answers "and everyone else on that job".
 // The register's own job numbers, so a rate can be published against the NUMBER as well
 // as the name. The number is what survives a job being renamed, and the mini matches on
-// it first. Kept in step with pos/src/employees.js JOBS.
-const STAFF_JOB_NUMS={Manager:101,Cook:104,Server:201,Bartender:202,Host:203,Busser:204};
+// it first.
+//
+// ⛔ THIS TABLE DECIDES PAY, AND BEING STALE DOES NOT FAIL SAFE — IT COLLIDES.
+//
+// The mini's rateOf is number-FIRST (server/labor.js: `rates[String(num)] ?? rates[job]`),
+// so a number that has been reassigned under us does not miss and fall back to the name —
+// it HITS, and returns the rate of whoever used to hold that number. During the Nov 2026
+// renumber (server 201→200, bartender 202→201, host 203→202, busser 204→203) leaving this
+// table alone would have paid:
+//     new bartender 201 → old 201 = SERVER's rate
+//     new host      202 → old 202 = BARTENDER's rate
+//     new busser    203 → old 203 = HOST's rate
+// Four jobs, silently, at a plausible-looking number — no error anywhere. Numbers verified
+// against pos/src/employees.js JOBS and confirmed by Vinny (Nov 6 2026).
+//
+// So: when the register's JOBS change, this changes IN THE SAME BREATH. Do not assume a
+// mismatch merely means "no rate found". (staffReconcileJobNums below republishes on load
+// if the two have drifted, so a fixed constant actually reaches the mini.)
+//
+// 'Setup' is deliberately absent — event hours, never a register punch, name-only by design.
+const STAFF_JOB_NUMS={Manager:101,Cook:104,Server:200,Bartender:201,Host:202,Busser:203,
+                      Salads:204,Dishwasher:205,'Food Runner':206};
 
 function staffJobs(){return staffS.jobs||(staffS.jobs={})}
 
