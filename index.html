@@ -2407,7 +2407,19 @@ function kvSend(k,p,keepalive){
   try{fetch(KV_URL+encodeURIComponent(k),{method:'POST',headers:{'Content-Type':'application/json','x-sync-token':KV_TOKEN()},body:JSON.stringify({v:p.v,at:p.at}),keepalive:!!keepalive}).catch(()=>{})}catch(e){}
   kvSendMini(k,p,keepalive);   // after the cloud write, and it can't affect it
 }
-function kvPush(k,v,at){kvPending[k]={v,at};clearTimeout(kvPushTimers[k]);kvPushTimers[k]=setTimeout(()=>{const p=kvPending[k];delete kvPending[k];if(p)kvSend(k,p,false)},1200)}
+function kvPush(k,v,at){
+  // ⚠️ ONE HOOK FOR THE WHOLE BACK OFFICE. Every POS store — prices, routing,
+  // groups, mods, discounts, deletions — persists through here under a
+  // `ct_pos_*` key. Hooking the writer rather than the ~22 call sites means a
+  // store added later is instant by default instead of quietly needing the
+  // Publish button again.
+  // ct_pos_live is the blob we are sending; hooking it would loop.
+  // Whole thing guarded: POS_LIVE_KEY and posLiveSoon are declared thousands of
+  // lines below this, so a kvPush during script evaluation would hit the
+  // temporal dead zone — and a throw here would lose the save itself, which is
+  // far worse than missing one write-through.
+  try{ if(/^ct_pos_/.test(k) && k!=='ct_pos_live') posLiveSoon(); }catch(e){}
+  kvPending[k]={v,at};clearTimeout(kvPushTimers[k]);kvPushTimers[k]=setTimeout(()=>{const p=kvPending[k];delete kvPending[k];if(p)kvSend(k,p,false)},1200)}
 // Closing/backgrounding the app used to kill pending pushes (the 1.2s debounce) — edits made right
 // before putting the iPad down stayed device-only. Flush everything the moment we lose the foreground.
 function kvFlushNow(keepalive){for(const k in kvPending){const p=kvPending[k];delete kvPending[k];clearTimeout(kvPushTimers[k]);kvSend(k,p,keepalive)}}
@@ -7624,7 +7636,13 @@ function posBuildLive(){
     if(Object.keys(o).length)items[r.key]=o;
   }
   return {
-    v:1, at:Date.now(),
+    // ⚠️ `at` MUST ALWAYS GO UP, same as the privileges grid. The mini's write
+    // is newest-wins, so a blob whose `at` did not advance is dropped — the
+    // edit looks saved here and the register keeps the old menu, with every
+    // layer reporting success. Two writes inside one millisecond would tie,
+    // and now that this publishes on a 1400ms debounce rather than a button,
+    // that is no longer hypothetical.
+    v:1, at:(posLiveAt=Math.max(Date.now(),(posLiveAt||0)+1)),
     base:(posS.cat&&posS.cat.generated_at)||null,   // which catalog snapshot these sit on
     items,
     deleted:(posDeletedItems||[]).slice(),
@@ -7675,6 +7693,61 @@ function posBuildLive(){
 }
 // kvPush is debounced and fire-and-forget, which is right for an edit and wrong for a
 // deliberate Publish — the operator needs to know it landed. This awaits the response.
+// ── INSTANT BACK OFFICE ─────────────────────────────────────────────────────
+//
+// Vinny: "as soon as i add an id or make any changes to employee class or
+// anything in the back office for that matter i need the mini to pick it up
+// and for it to reflect those changes at the register."
+//
+// The privileges grid has worked this way for a while — it writes through on
+// its own debounce and the register picks it up in well under a second. This
+// is the same thing for the rest of the back office: prices, print routing,
+// new and deleted items, mod groups and their choices, discounts. Every one of
+// those already rides the SAME blob (posBuildLive) that the Publish button
+// sends; the button was only ever the thing deciding WHEN.
+//
+// 1400ms, deliberately, matching privSave. "Instantly applied" and "don't
+// broadcast nine intermediate states while somebody holds a key down" are not
+// in conflict — nine ticks through a dropdown should be one settled write.
+let posLiveAt=0, posLiveTimer=null;
+function posLiveSoon(){
+  clearTimeout(posLiveTimer);
+  posS.liveState='pending';
+  if(activeTab===POS)posRefreshLiveBadge();
+  posLiveTimer=setTimeout(async()=>{
+    if(!KV_TOKEN()){
+      // No key means this device changes nothing anywhere, and the header
+      // badge already says so — but don't leave the card claiming "sent".
+      posS.liveState='nokey';
+      if(activeTab===POS)posRefreshLiveBadge();
+      return;
+    }
+    try{
+      await posPublishSend(posBuildLive());
+      posS.liveState='sent';posS.liveAt=Date.now();posS.liveErr='';
+      miniPoke();   // transitional: stop the mini waiting to notice. Dies with the Publish button.
+    }catch(e){
+      // A failed write-through must not look like a successful one. This is the
+      // only signal he gets now that there is no button to press.
+      posS.liveState='failed';posS.liveErr=(e&&e.message)||String(e);
+    }
+    if(activeTab===POS)posRefreshLiveBadge();
+  },1400);
+}
+function posRefreshLiveBadge(){
+  const el=document.getElementById('pos-live-badge');
+  if(el)el.outerHTML=posLiveBadgeHTML();
+}
+function posLiveBadgeHTML(){
+  const st=posS.liveState;
+  const base='id="pos-live-badge" style="font-size:12px;padding:2px 8px;border-radius:999px;white-space:nowrap;';
+  if(st==='pending')return `<span ${base}background:rgba(251,191,36,.12);color:#fbbf24">saving…</span>`;
+  if(st==='failed') return `<span ${base}background:rgba(248,113,113,.12);color:#f87171" title="${esc(posS.liveErr||'')}">⚠ not sent to the registers — ${esc(posS.liveErr||'unknown')}</span>`;
+  if(st==='nokey')  return `<span ${base}background:rgba(248,113,113,.12);color:#f87171">⚠ no sync key — nothing leaves this device</span>`;
+  if(st==='sent')   return `<span ${base}background:rgba(52,211,153,.12);color:#34d399">✓ on the registers</span>`;
+  return `<span ${base}color:var(--text-muted)"></span>`;
+}
+
 async function posPublishSend(blob){
   const r=await fetch(KV_URL+encodeURIComponent(POS_LIVE_KEY),
     {method:'POST',headers:{'Content-Type':'application/json','x-sync-token':KV_TOKEN()},
@@ -8453,7 +8526,8 @@ function posItemsHTML(){
       <button onclick="posPublish()" ${posS.publishing?'disabled':''}
         style="border:0;background:#f59e0b;color:#111;font-weight:800;border-radius:9px;padding:8px 16px;
           font-family:inherit;font-size:14px;cursor:pointer;${posS.publishing?'opacity:.6':''}">
-        ${posS.publishing?'Publishing…':'📤 Publish to registers'}</button>
+        ${posS.publishing?'Sending…':'📤 Send again'}</button>
+      ${posLiveBadgeHTML()}
       <span style="font-size:12px;color:var(--text-muted)">${
         posS.publishErr?`<span style="color:#f87171">Failed — ${esc(posS.publishErr)}</span>`
         :posS.published?`Published ${posS.publishedCount} change${posS.publishedCount===1?'':'s'} — registers pick it up straight away.`
