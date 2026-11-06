@@ -12331,7 +12331,24 @@ async function staffPushPaychex(p){
   const body=id?{id,paychex_id:p.paychex_id||null}:{name:p.name,paychex_id:p.paychex_id||null};
   try{
     const r=await posSrv('/api/employees/paychex',{method:'POST',body:JSON.stringify(body)});
-    if(r.status===404){staffS.regNote='Paychex id saved here — this register build cannot take it yet.';staffRefreshNotes();return false}
+    // ⚠️ A 404 HERE IS USUALLY NORMAL, AND THE OLD MESSAGE SAID THE OPPOSITE.
+    // It used to read "this register build cannot take it yet", which told
+    // Vinny his entry was stuck waiting on a release. It is not: the route
+    // exists (an unauthenticated POST returns 401, and a route that really is
+    // missing returns 404 on any verb — probed, not assumed). The mini's
+    // `employees` table only holds people who can SIGN IN, roughly 129 of 232.
+    // For a payroll-only person there is simply no row to attach the id to,
+    // and "not found" is the right answer rather than a capability gap.
+    if(r.status===404){
+      if(id){
+        // This one IS wrong: we believe they have a sign-in row and the mini
+        // cannot find it. The two have drifted and somebody should know.
+        staffS.regNote='⚠ '+p.name+' has a register sign-in on file (#'+id+') but the register has no such record — the Paychex id is saved here only.';
+      }else{
+        staffS.regNote='Paychex id saved. '+p.name+' has no register sign-in, so there is nothing to link it to there.';
+      }
+      staffRefreshNotes();return false;
+    }
     // ⚠️ TWO PEOPLE ON ONE PAYROLL ID IS A WRONG PAYCHEQUE, and it is a typo that looks
     // perfectly fine on screen. The mini refuses it and names who already holds it; that
     // has to reach Vinny as an alert, not a note he might scroll past.
