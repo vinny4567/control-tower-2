@@ -9774,6 +9774,24 @@ const posDemoOffer=()=>`<button onclick="posDemoOn()" style="${posBtn('#3f3f46')
 // the register does not recognise grants nothing — which is exactly what clockonly is.
 // Busser is in that same position (its only privilege is the one everybody has); it stays
 // listed because people are assigned to it today and dropping it would orphan them.
+// ── WHO MAY SIGN IN TO A REGISTER ───────────────────────────────────────────
+// Vinny, Nov 6: "clock in only class means they can do just that. Any other
+// class means they can sign in. So lets just get rid of the can sign in
+// checkmark."
+//
+// So the EMPLOYEE CLASS is the gate, and there is no second switch to disagree
+// with it. Fails CLOSED: no class set means no sign-in, because an unclassified
+// person is one nobody has decided about yet — and 97 of 225 are currently
+// unset, so defaulting those open would hand out register access to nearly half
+// the list in one go.
+//
+// ⚠️ A class is permission, not a credential. Somebody classed `server` with no
+// sign-in number still cannot get in — the PIN is the other half, and the mini
+// is the only thing that checks it.
+function staffCanSignIn(p){
+  const role=p&&p.register&&p.register.role;
+  return !!role && role!=='clockonly';
+}
 const POS_ROLES={
   owner:    {label:'Owner',        can:['Everything','Add and remove staff','Change permissions']},
   manager:  {label:'Manager',      can:['Void a sent item','Adjust points and balances','Load a card with no check','Open the back office','Comp a check']},
@@ -12244,7 +12262,7 @@ function staffRows(){
   // exactly who they are. The tick is the only thing that decides it, and
   // until now there was no way to see the set, only to open people one at a
   // time and hope you noticed.
-  if(staffS.filter==='cansignin')rows=rows.filter(p=>p.register&&p.register.access);
+  if(staffS.filter==='cansignin')rows=rows.filter(staffCanSignIn);
   if(q)rows=rows.filter(p=>(p.name||'').toLowerCase().includes(q)
     ||(p.positions||[]).join(' ').toLowerCase().includes(q)
     ||String(p.paychex_id||'').includes(q));
@@ -12356,12 +12374,16 @@ function staffRegisterDrift(){
   Object.values(staffS.people).forEach(p=>{
     if(p.removed)return;
     const want=p.register||{}, got=want.mini;
-    if(!want.access&&!got)return;
-    if(want.access&&!got)return out.push({p,what:'not on the register yet — set a sign-in code'});
-    if(!want.access&&got&&got.active)return out.push({p,what:'can still sign in to the register'});
+    // Compares the CLASS against the register, not the retired `access` flag —
+    // otherwise every row would read as drift the moment the class became the
+    // gate, and a real disagreement would be lost in 225 false ones.
+    const may=staffCanSignIn(p);
+    if(!may&&!got)return;
+    if(may&&!got)return out.push({p,what:'not on the register yet — set a sign-in code'});
+    if(!may&&got&&got.active)return out.push({p,what:'can still sign in to the register'});
     if(!got)return;
-    if(want.access&&!got.active)return out.push({p,what:'is switched off on the register'});
-    if(want.access&&!got.has_pin)return out.push({p,what:'has no sign-in code on the register'});
+    if(may&&!got.active)return out.push({p,what:'is switched off on the register'});
+    if(may&&!got.has_pin)return out.push({p,what:'has no sign-in code on the register'});
     if(want.role&&got.role&&want.role!==got.role)
       return out.push({p,what:'is a '+got.role+' on the register, a '+want.role+' here'});
   });
@@ -12379,7 +12401,7 @@ async function staffPushRegister(p,what){
       ? await posSrv('/api/employees/role',{method:'POST',body:JSON.stringify({id,role:p.register.role})})
       : what==='drawer'
       ? await posSrv('/api/employees/drawer',{method:'POST',body:JSON.stringify({id,drawer:p.register.drawer===null||p.register.drawer===undefined?null:!!p.register.drawer})})
-      : await posSrv('/api/employees/active',{method:'POST',body:JSON.stringify({id,active:!!p.register.access})});
+      : await posSrv('/api/employees/active',{method:'POST',body:JSON.stringify({id,active:staffCanSignIn(p)})});
     // ⚠️ 404 IS NOT A REFUSAL. The mini does not have a drawer endpoint yet. Saying "the
     // register would not take that change" would read as "it said no" when what it said
     // was "I have never heard of this", and a manager would go looking for a permission
@@ -12392,7 +12414,7 @@ async function staffPushRegister(p,what){
     p.register.mini=p.register.mini||{};
     if(what==='role')p.register.mini.role=p.register.role;
     else if(what==='drawer')p.register.mini.drawer=!!p.register.drawer;
-    else p.register.mini.active=!!p.register.access;
+    else p.register.mini.active=staffCanSignIn(p);
     staffTouch(p);staffSave();
     return true;
   }catch(e){
@@ -12531,7 +12553,9 @@ function staffEdit(k,f,v){
     p.rates[job]=(isFinite(n)&&n>0)?n:0;
   }
   else if(f==='paychex')p.paychex_id=String(v||'').trim()||null;
-  else if(f==='register'){p.register=p.register||{};p.register.access=!!v;if(!v)p.register.role=null;}
+  // 'register' (the old Can-sign-in tick) is retired — nothing calls it. Left
+  // as a no-op rather than deleted so an old cached page cannot grant access.
+  else if(f==='register'){ /* the Employee class is the gate now */ }
   // ⚠️ SETTING A CLASS MUST NOT GRANT SIGN-IN. This used to also set access=true, which
   // was harmless only because the dropdown was rendered INSIDE the `reg.access` branch —
   // it could never fire on somebody who could not sign in. Vinny moved it under the
@@ -13028,8 +13052,8 @@ function staffRestore(k){
   // were removed, and quietly restoring it would be a door reopening because a name
   // reappeared on a list. A manager grants it again deliberately.
   if(p.register&&p.register.emp_id&&!(p.register.mini&&p.register.mini.active)){
-    p.register.access=false;
-    staffS.regNote='Put back — register access stays OFF until somebody grants it again.';
+    p.register.role=null;   // put back WITHOUT a class, so they cannot sign in until somebody classifies them again
+    staffS.regNote='Put back — no employee class, so they cannot sign in until you give them one.';
   }
   staffTouch(p);staffSave();staffRedraw();
 }
@@ -13060,7 +13084,10 @@ async function staffSetPin(k,given){
     }
     if(r.status===401)return alert(posAuthNote().replace(/^⚠ /,'')+'\n\nNothing was stored.');
     if(!r.ok)return alert('The register would not take that code:\n\n'+((r.body&&r.body.error)||('HTTP '+r.status)));
-    p.register=p.register||{};p.register.access=true;p.register.pin_set=true;p.register.signin=pin;delete p.register.pin_pending;
+    // No `access=true` here any more — the class decides, and writing a flag
+    // nothing reads would leave a second opinion lying around for somebody to
+    // find later and believe.
+    p.register=p.register||{};p.register.pin_set=true;p.register.signin=pin;delete p.register.pin_pending;
     // The mini's own id for this person, so a later role change can target the row
     // rather than re-resolving a name. paychex_id alone would do; this is cheaper.
     if(r.body&&r.body.id!=null)p.register.emp_id=r.body.id;
@@ -13146,10 +13173,15 @@ function staffDetail(p){
 
     <div style="${col}">
       <div style="${hd}">REGISTER</div>
-      <label style="display:flex;gap:7px;align-items:center;font-size:13px;cursor:pointer">
-        <input type="checkbox" ${reg.access?'checked':''} onchange="staffEdit('${esc(k)}','register',this.checked)">
-        Can sign in
-      </label>
+      <!-- The "Can sign in" tick is gone: the Employee class decides it, and a
+           second switch could only ever disagree with the class. This line
+           reports what the class means rather than offering a choice. -->
+      <div style="font-size:12.5px;${staffCanSignIn(p)?'color:#34d399':'color:var(--text-muted)'}">
+        ${staffCanSignIn(p)
+          ? 'Can sign in — set by their class'
+          : (reg.role==='clockonly' ? 'Clock in only — no register sign-in'
+                                    : 'No class set — cannot sign in')}
+      </div>
       <div style="display:flex;gap:5px;align-items:center;margin-top:10px">
         <input id="staff-num-${kid}" inputmode="numeric" autocomplete="off" maxlength="8"
           placeholder="${(mini&&mini.has_pin)?'new number':'number'}"
@@ -13196,7 +13228,7 @@ function staffDetail(p){
           ${Object.entries(POS_ROLES).map(([rk,r])=>`<option value="${rk}" ${reg.role===rk?'selected':''}>${esc(r.label)}</option>`).join('')}
           ${(reg.role&&!POS_ROLES[reg.role])?`<option value="${esc(reg.role)}" selected>${esc(reg.role)} — set on the register</option>`:''}
         </select>
-        ${(reg.role&&!reg.access)?`<div style="font-size:11.5px;color:var(--text-muted);margin-top:3px;max-width:220px">They cannot sign in to a register, so this does nothing yet — tick “Can sign in”.</div>`:''}
+        ${reg.role==='clockonly'?`<div style="font-size:11.5px;color:var(--text-muted);margin-top:3px;max-width:220px">Clock in and out only. Any other class lets them sign in to a register.</div>`:''}
       </div>
       ${(p.micros_num||p.micros_id)?`<div style="display:flex;gap:6px;align-items:center;margin-top:6px">
         <span style="font-size:13px">MICROS</span>
@@ -13651,7 +13683,7 @@ function posStaffHTML(){
     ${posStat('No Paychex ID',String(noId),
       staffS.filter==='noid'?'showing them':(noId?'press to see them — they cannot be exported':'every one can be exported'),
       noId?"staffFilter('noid')":'',staffS.filter==='noid')}
-    ${(()=>{const n=all.filter(p=>p.register&&p.register.access).length;
+    ${(()=>{const n=all.filter(staffCanSignIn).length;
       return posStat('Can sign in',String(n),
         staffS.filter==='cansignin'?'showing them — untick anyone who should not'
                                    :'press to see exactly who can use a register',
