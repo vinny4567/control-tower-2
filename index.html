@@ -12637,6 +12637,150 @@ async function staffRemove(k){
   staffTouch(p);
   staffSave();staffRedraw();
 }
+// ── FINDING THE DUPLICATES ──────────────────────────────────────────────────
+//
+// "i cant see them" — which is the whole problem. 232 names, and the two halves
+// of a duplicate are rarely next to each other: Sophia and Sophie Evans are
+// adjacent, but "Vinny Angeli" and "Vincent Notarangeli" are nowhere near.
+// So the list comes to him rather than him scrolling for it.
+//
+// ⚠️ THIS SUGGESTS, IT NEVER ACTS. Every pair here is a question. Kamrin and
+// Kristina Mastrino match the surname-and-initial rule perfectly and are two
+// real people with two Paychex IDs and two sign-ins — a scan cannot tell the
+// difference and must not try.
+function staffFirstLast(n){
+  const t=String(n||'').trim().split(/\s+/).filter(Boolean);
+  return {first:(t[0]||'').toLowerCase(), last:(t[t.length-1]||'').toLowerCase(), n:t.length};
+}
+// One edit apart — catches Guadalope/Guadalupe and Terrence/Terence.
+function staffClose(a,b){
+  if(a===b)return true;
+  if(Math.abs(a.length-b.length)>1)return false;
+  let i=0,j=0,edits=0;
+  while(i<a.length&&j<b.length){
+    if(a[i]===b[j]){i++;j++;continue}
+    if(++edits>1)return false;
+    if(a.length>b.length)i++; else if(b.length>a.length)j++; else {i++;j++}
+  }
+  return edits+(a.length-i)+(b.length-j)<=1;
+}
+// ⚠️ SCANS THE RAW SCHEDULER FEED WHEN WE HAVE IT, not this screen's list.
+// The back office keys by staffKeyOf, which DROPS single-letter tokens — so
+// "Andrea S Brickner" and "Andrea Brickner" arrive as two scheduler rows and
+// land on one row here. The back office looks clean while the schedule app
+// still has two. Vinny: "the staff list in the back office is clean they exist
+// somewhere else." This is the somewhere else.
+let staffRawRows=null;      // last /api/roster/all payload, unmerged
+async function staffScanSource(){
+  if(!staffRosterKey())return staffSetKey();
+  staffS.scanning=true;staffS.showDupes=true;staffRedraw();
+  try{
+    const r=await fetch(staffUrl()+'/api/roster/all',{headers:{'x-api-key':staffRosterKey()}});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    const b=await r.json();
+    staffRawRows=(b&&(b.people||b.rows||b))||null;
+    if(!Array.isArray(staffRawRows))staffRawRows=null;
+  }catch(e){staffS.scanErr='Could not read the schedule app: '+(e&&e.message||e)}
+  staffS.scanning=false;staffRedraw();
+}
+function staffDupePairs(){
+  // Raw scheduler rows if we pulled them, else what is on this screen.
+  const all=staffRawRows
+    ? staffRawRows.map(r=>({key:(r.key||staffKeyOf(r.name)||r.name),name:r.name,
+        paychex_id:r.paychex_id||'',phone:r.phone||'',positions:r.positions||[],
+        register:{},source:r.source,raw:true}))
+        .filter(p=>p.name)
+    : Object.values(staffS.people).filter(p=>!p.removed);
+  const out=[],seen=new Set();
+  const add=(a,b,why,strength)=>{
+    const id=[a.key,b.key].sort().join('|');
+    if(seen.has(id))return;
+    // He has already said these two are different people.
+    const da=(staffS.people[a.key]||a).distinct||{}, db=(staffS.people[b.key]||b).distinct||{};
+    if(da[b.key]||db[a.key])return;
+    seen.add(id);out.push({a,b,why,strength});
+  };
+  for(let i=0;i<all.length;i++)for(let j=i+1;j<all.length;j++){
+    const a=all[i],b=all[j];
+    const fa=staffFirstLast(a.name),fb=staffFirstLast(b.name);
+    const pa=(a.paychex_id||'').trim(),pb=(b.paychex_id||'').trim();
+    // Strongest first — a shared payroll number or sign-in is not a guess.
+    if(pa&&pa===pb){add(a,b,'Same Paychex ID — '+pa,3);continue}
+    const ra=a.register&&a.register.emp_id,rb=b.register&&b.register.emp_id;
+    if(ra&&rb&&String(ra)===String(rb)){add(a,b,'Same register sign-in',3);continue}
+    const ph=(x)=>String(x||'').replace(/\D/g,'').slice(-10);
+    if(ph(a.phone)&&ph(a.phone)===ph(b.phone)){add(a,b,'Same phone number',3);continue}
+    if(!fa.last||!fb.last)continue;
+    if(fa.last===fb.last){
+      if(fa.first===fb.first){add(a,b,'Same name',3);continue}
+      if(staffClose(fa.first,fb.first)){add(a,b,'Same surname, first names one letter apart',2);continue}
+      // "Vinny A" / "Vinny Angeli" — one is the start of the other.
+      if(fa.first&&fb.first&&(fa.first.startsWith(fb.first)||fb.first.startsWith(fa.first))){add(a,b,'Same surname, one first name is short for the other',2);continue}
+      if(fa.first[0]===fb.first[0]){add(a,b,'Same surname and first initial',1);continue}
+    }
+    // Same first name, surnames one letter apart.
+    if(fa.first===fb.first&&staffClose(fa.last,fb.last)){add(a,b,'Same first name, surnames one letter apart',2);continue}
+    // Same first name and one surname is an initial or a short form of the
+    // other — "Vinny A" / "Vinny Angeli", which is Vinny's own duplicate and
+    // the surname rules above all miss it.
+    if(fa.first===fb.first&&fa.last&&fb.last&&fa.last!==fb.last&&
+       (fa.last.startsWith(fb.last)||fb.last.startsWith(fa.last))){
+      add(a,b,'Same first name, one surname is short for the other',2)
+    }
+  }
+  return out.sort((x,y)=>y.strength-x.strength||x.a.name.localeCompare(y.a.name));
+}
+function staffDupesHTML(){
+  if(!staffS.showDupes)return '';
+  const pairs=staffDupePairs();
+  const side=(p,other)=>{
+    const pid=(p.paychex_id||'').trim(), opid=(other.paychex_id||'').trim();
+    const onlyId=pid&&!opid;                    // deleting this one loses the only ID
+    const signin=!!(p.register&&p.register.emp_id);
+    return `<div style="flex:1;min-width:230px;border:1px solid ${onlyId?'rgba(251,191,36,.45)':'var(--border)'};border-radius:9px;padding:8px 10px">
+      <div style="font-weight:700;font-size:13.5px">${esc(p.name)}</div>
+      <div style="font-size:12px;color:var(--text-dim);margin-top:2px">
+        ${pid?('Paychex '+esc(pid)):'<span style="color:#f87171">no Paychex ID</span>'}
+        ${signin?' · can sign in':''}
+        ${(p.positions&&p.positions.length)?' · '+esc(p.positions.slice(0,3).join(', ')):''}
+      </div>
+      ${onlyId?`<div style="font-size:11.5px;color:#fbbf24;margin-top:4px">This is the only one with a Paychex ID — keep this one.</div>`:''}
+      <button onclick="staffRemove('${esc(p.key)}')" style="margin-top:7px;background:none;border:1px solid #7f1d1d;color:#f87171;border-radius:6px;padding:3px 10px;font-size:12px;cursor:pointer;font-family:inherit">Delete this one</button>
+    </div>`;};
+  const row=(pr)=>`<div style="border-top:1px solid var(--border);padding:10px 0">
+      <div style="font-size:12px;color:${pr.strength>=3?'#fbbf24':'var(--text-muted)'};margin-bottom:6px">${pr.strength>=3?'⚠ ':''}${esc(pr.why)}</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start">
+        ${side(pr.a,pr.b)}${side(pr.b,pr.a)}
+        <button onclick="staffNotDupe('${esc(pr.a.key)}','${esc(pr.b.key)}')" title="Two different people — stop showing this pair"
+          style="align-self:center;background:none;border:1px solid var(--border);color:var(--text-dim);border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap">Not a dupe</button>
+      </div>
+    </div>`;
+  return `<div style="${posCardCss};margin-bottom:14px">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <b style="font-size:14px">Possible duplicates</b>
+      <span style="font-size:12.5px;color:var(--text-dim)">${pairs.length?pairs.length+' pair'+(pairs.length===1?'':'s')+' to look at — delete the one you don’t want, or say they’re different':'none left'}</span>
+      <button onclick="staffS.showDupes=false;staffRedraw()" style="margin-left:auto;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:13px">✕</button>
+    </div>
+    <div style="font-size:12px;color:var(--text-muted);margin-top:3px">
+      ${staffRawRows
+        ? 'Scanned the schedule app directly — '+staffRawRows.length+' records, before this screen merges them. That is where a duplicate hides when the back office looks clean.'
+        : 'Scanned this screen’s list. <b>The back office merges two names into one row when they differ only by a middle initial</b>, so a duplicate can be invisible here and real in the schedule app — press “Scan the schedule app” for the unmerged list.'}
+      Suggestions only; two people really can share a surname and a first initial. Nothing changes until you press something.
+    </div>
+    <div style="margin-top:7px">
+      <button onclick="staffScanSource()" ${staffS.scanning?'disabled':''} style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:5px 11px;font-size:12.5px;cursor:pointer;font-family:inherit">${staffS.scanning?'Reading…':'Scan the schedule app'}</button>
+      ${staffS.scanErr?`<span style="color:#f87171;font-size:12px;margin-left:8px">${esc(staffS.scanErr)}</span>`:''}
+    </div>
+    ${pairs.map(row).join('')||'<div style="padding:10px 0;color:var(--text-dim);font-size:13px">Nothing looks duplicated.</div>'}
+  </div>`;
+}
+function staffNotDupe(ka,kb){
+  const a=staffS.people[ka],b=staffS.people[kb];if(!a||!b)return;
+  if(!a.distinct)a.distinct={};a.distinct[kb]=Date.now();
+  if(!b.distinct)b.distinct={};b.distinct[ka]=Date.now();
+  staffTouch(a);staffTouch(b);staffSave();staffRedraw();
+}
+
 // ── MERGE TWO RECORDS INTO ONE PERSON ───────────────────────────────────────
 //
 // Vinny's bar is "they all need to be one in the same" — one record per person,
@@ -13416,9 +13560,12 @@ function posStaffHTML(){
         style="${posBtn('#3f3f46')};padding:7px 13px;font-size:13px">Assign a job</button>
       <button onclick="staffAddPerson()" title="Add somebody who is not in the schedule app yet"
         style="${posBtn('#22c55e')};padding:7px 13px;font-size:13px">+ Add person</button>
+    <button onclick="staffS.showDupes=!staffS.showDupes;staffRedraw()" title="Show names that might be the same person twice"
+      style="background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:6px 12px;font-size:12.5px;cursor:pointer;font-family:inherit;white-space:nowrap">Find duplicates</button>
     </div>
     ${staffMicrosHTML()}
     <div id="staff-notes">${staffNotesHTML()}</div>
+    ${staffDupesHTML()}
     <div style="display:flex;gap:10px;padding:4px 0;font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px">
       <span style="flex:1;min-width:150px">Name</span><span style="width:78px">Paychex</span></div>
     <div id="staff-body">${staffBodyHTML()}</div>
