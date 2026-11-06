@@ -7771,6 +7771,18 @@ async function posPublishSend(blob){
     {method:'POST',headers:{'Content-Type':'application/json','x-sync-token':KV_TOKEN()},
      body:JSON.stringify({v:blob,at:blob.at})});
   if(!r.ok)throw new Error('server said '+r.status);
+  // ⚠️ MIRROR IT TO THE MINI TOO. Every other ct_* key reaches the mini's own
+  // KV because it goes through kvPush → kvSend → kvSendMini. This one does
+  // not: it is POSTed to the cloud directly, for the awaited success/failure
+  // the status line needs. So ct_pos_live was the ONE key with no local copy —
+  // Jarvis measured the mini's as ~50 days stale — which left /api/menu
+  // entirely cloud-dependent behind a 60s cache, while privs and roster were
+  // already being read locally and were genuinely instant.
+  // Fire and forget, after the cloud write and unable to affect it: the cloud
+  // is the source of truth and a mini that cannot be reached must never fail
+  // an edit. miniPoke() still covers the latency today; this is what lets the
+  // mini serve the menu from its own copy and drop the round-trip entirely.
+  try{ kvSendMini(POS_LIVE_KEY,{v:blob,at:blob.at}); }catch(e){}
   return true;
 }
 async function posPublish(){
