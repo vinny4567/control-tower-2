@@ -12399,6 +12399,11 @@ function staffRedraw(){staffRefresh();staffRefreshNotes();}
 function staffRefresh(){
   const el=document.getElementById('staff-body');
   if(!el){renderViewport();return;}
+  // The duplicates panel lives OUTSIDE #staff-body, so a redraw that only
+  // replaced the body left "Find duplicates" doing nothing visible — state
+  // flipped, redraw ran, screen unchanged. Refresh it here too.
+  const dup=document.getElementById('staff-dupes');
+  if(dup)dup.innerHTML=staffDupesHTML();
   const sc=el.closest('[style*="overflow-y"]')||document.getElementById('viewport');
   const top=sc?sc.scrollTop:0;
   el.innerHTML=staffBodyHTML();
@@ -13565,7 +13570,7 @@ function posStaffHTML(){
     </div>
     ${staffMicrosHTML()}
     <div id="staff-notes">${staffNotesHTML()}</div>
-    ${staffDupesHTML()}
+    <div id="staff-dupes">${staffDupesHTML()}</div>
     <div style="display:flex;gap:10px;padding:4px 0;font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px">
       <span style="flex:1;min-width:150px">Name</span><span style="width:78px">Paychex</span></div>
     <div id="staff-body">${staffBodyHTML()}</div>
