@@ -14050,8 +14050,17 @@ async function posApproveStation(){
   posStationsS.busy=true;posStationsS.note='';renderViewport();
   try{
     const r=await posSrv('/api/stations/claim/approve',{method:'POST',body:JSON.stringify({code,name})});
+    // Quote the SERVER's answer, not the text he typed. approve returns {id, name}
+    // and that is what the station actually became — echoing the input back would
+    // confirm what he can already see, and would agree with the server right up to
+    // the day it stopped agreeing (a trim, a normalisation, a name resolved from
+    // the claim instead). Same rule POS-UI's pairing screen follows: the only
+    // station name either screen shows is one that came back in a response.
+    const gotName=(r.body&&r.body.name)||name, gotId=(r.body&&r.body.id)||'';
     posStationsS.note=r.ok
-      ? `✓ Approved as “${name}”. The iPad will pick up its token within a couple of seconds.`
+      // No esc() here — the note is rendered through esc(S.note), and escaping
+      // twice would show him &amp; in his own station name.
+      ? `✓ Approved as “${gotName}”${gotId?` (${gotId})`:''}. The iPad will pick up its token within a couple of seconds.`
       : '⚠ '+((r.body&&r.body.error)||('the register said '+r.status))
         +(r.status===404?' — a code expires after ten minutes, and each one can only be used once.':'')
         // 409 is the REPLACED-IPAD case — the normal end of a device's life, not a
