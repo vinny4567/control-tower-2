@@ -7633,7 +7633,33 @@ function posBuildLive(){
     // across two names in every report and orphaning wherever it was placed.
     const nn=posModNames[r.key];
     if(nn&&nn!==r.name)o.name=nn;
-    if(Object.keys(o).length)items[r.key]=o;
+    // ⚠️ THE STABLE HANDLE, published at last. The key above is built from the
+    // item's NAME, so it answers "what is this called" and not "which item is
+    // this" — and a catalogue rebuild that renames or recategorises something
+    // silently detaches every edit filed against it. Worse, a name REUSED for a
+    // different dish re-attaches an old price to new food, which no key check can
+    // ever see, because the key matches; it just means something else now.
+    //
+    // The catalogue has carried the answer the whole time: `no` is assigned once
+    // per category and never changes or is reused (pos/src/backoffice.js, menuRows
+    // — "THE STABLE HANDLE"). Its own comment says "the back office shows it". The
+    // back office used it ZERO times, and published it never. So the thing built to
+    // survive a rename has been sitting one property away from the code that needed
+    // it. Same shape as `base`, and as the rename that saved to ct_pos_mod_names
+    // and was read by nothing.
+    //
+    // Additive and safe: it rides ALONGSIDE the name key, never replacing it, so
+    // the register can match on (category, no) and fall back to the name while both
+    // sides migrate. Guarded on presence — an older catalogue without `no` publishes
+    // exactly what it does today.
+    // ⚠️ AFTER the "did anything actually change" test, never before. `no` exists on
+    // every catalogue row, so setting it first makes `o` non-empty for EVERY item and
+    // publishes the whole menu as overrides — a 361-byte delta becomes the entire
+    // catalogue, and "items" stops meaning "items Vinny changed". Caught on the way in.
+    if(Object.keys(o).length){
+      if(r.no!=null)o.no=r.no;
+      items[r.key]=o;
+    }
   }
   return {
     // ⚠️ `at` MUST ALWAYS GO UP, same as the privileges grid. The mini's write
