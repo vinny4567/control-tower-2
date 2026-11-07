@@ -13988,6 +13988,45 @@ async function posLoadStations(){
   }catch(e){posStationsS.err='Could not reach the register — '+(e&&e.message||e)}
   renderViewport();
 }
+// Which existing station a typed name would collide with. Matched on the station's
+// NAME and its id, case-insensitively — not on a client-side copy of the mini's
+// slug(), because two implementations of one rule drift and the wrong answer here
+// is a confident sentence about what a button is going to do.
+function posStationNamed(name){
+  const k=String(name||'').trim().toLowerCase();
+  if(!k)return null;
+  return (posStationsS.list||[]).find(s=>
+    String(s.name||'').trim().toLowerCase()===k||String(s.id||'').trim().toLowerCase()===k)||null;
+}
+// Say what approving is about to DO, before he presses it — while he can still
+// say no. Approve is the privileged step and the only moment a person is deciding;
+// the iPad's own screen only ever reports what already happened.
+//
+// ⚠️ The revoked case is the one that needs a human: under the agreed `adopt`
+// contract, approving a claim whose name matches a REVOKED station rebinds that
+// row and `rotateStation` sets `active = 1` — so a station Vinny deliberately
+// killed on Tuesday quietly returns to service on Thursday. That is correct
+// behaviour ("the Bar iPad was stolen, here is the replacement") and it is exactly
+// why it has to be SAID. Found by POS-UI, from my own note that revoke leaves the
+// row behind.
+//
+// 📌 Today every one of these collisions simply 409s — `adopt` is agreed but NOT
+// BUILT — so the sentences below promise nothing that does not work yet. When
+// adopt ships, the two collision branches gain "…and the current Bar iPad stops
+// working immediately" / "…brings the station back into service", and only then.
+function posNameHint(){
+  const el=document.getElementById('station-name-hint');
+  if(!el)return;
+  const nameEl=document.getElementById('station-name');
+  const hit=posStationNamed(nameEl&&nameEl.value);
+  if(!hit){el.innerHTML='';return}
+  const revoked=hit.active===false;
+  el.innerHTML=`<span style="color:${revoked?'#fbbf24':'#f87171'}">`
+    +(revoked
+      ? `⚠ “${esc(hit.name||hit.id)}” already exists and is <b>revoked</b>. Taking a spot over with a replacement iPad is not wired up yet, so approving will be refused — use a different name for now.`
+      : `⚠ “${esc(hit.name||hit.id)}” is already in service. Moving a replacement iPad into an existing spot is not wired up yet, so approving will be refused — use a different name for now.`)
+    +`</span>`;
+}
 // ⚠️ THE NAME MUST COME FROM VINNY, NOT FROM THE IPAD — and until now this sent
 // only the code, which got it exactly backwards.
 //
@@ -14110,13 +14149,14 @@ function posStationsHTML(){
         onkeydown="if(event.key==='Enter')posApproveStation()"
         style="${posInput};width:130px;letter-spacing:5px;font-size:20px;text-align:center">
       <input id="station-name" maxlength="40" placeholder="call it — Bar, Host stand…"
-        onkeydown="if(event.key==='Enter')posApproveStation()"
+        onkeydown="if(event.key==='Enter')posApproveStation()" oninput="posNameHint()"
         list="station-name-ideas" style="${posInput};flex:1;min-width:190px">
       <datalist id="station-name-ideas">
         <option>Bar</option><option>Host stand</option><option>Server 1</option>
         <option>Server 2</option><option>Kitchen</option><option>Office</option>
       </datalist>
       <button onclick="posApproveStation()" ${S.busy?'disabled':''} style="${posBtn(S.busy?'#3f3f46':'#0ea5e9')}">${S.busy?'Approving…':'Approve'}</button>
+      <div id="station-name-hint" style="flex-basis:100%;font-size:12.5px;line-height:1.5"></div>
       <button onclick="posLoadStations()" style="${posBtn('#3f3f46')};padding:8px 12px;font-size:13px">Refresh</button>
     </div>
     ${S.note?`<div style="margin-top:9px;font-size:13px;color:${S.note[0]==='✓'?'#34d399':'#fbbf24'}">${esc(S.note)}</div>`:''}
