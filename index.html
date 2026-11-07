@@ -13966,13 +13966,22 @@ function posStaffHTML(){
 // cannot approve a different device, because the code IS the binding. So there is a box
 // to type into and deliberately NO approve button on the rows — the list below is
 // awareness, not a control.
-let posStationsS={list:[],pending:[],err:'',busy:false,note:''};
+// `srvNow` + `gotAt`: the mini's clock at the moment it answered, and the local
+// clock at that same moment. Ages are then (srvNow + how long ago we asked) — the
+// browser is trusted only for a short ELAPSED delta, never for absolute time.
+// A laptop twenty minutes off otherwise makes every register look stale, or every
+// dead one look alive, which is the direction that gets somebody hurt.
+let posStationsS={list:[],pending:[],err:'',busy:false,note:'',srvNow:0,gotAt:0};
 async function posLoadStations(){
   if(!posS.srv){posStationsS.err='No register server set — POS tab → Connections.';return renderViewport()}
   posStationsS.err='';
   try{
     const a=await posSrv('/api/stations');
     posStationsS.list=(a.ok&&a.body&&a.body.stations)||[];
+    // Older mini without `now` → 0, and posStationNow falls back to this browser's
+    // clock plus the existing skew warning. Never silently pretend we have it.
+    posStationsS.srvNow=(a.ok&&a.body&&Number(a.body.now))||0;
+    posStationsS.gotAt=posStationsS.srvNow?Date.now():0;
     const b=await posSrv('/api/stations/pending');
     posStationsS.pending=(b.ok&&b.body&&(b.body.pending||b.body.claims))||[];
     if(!a.ok)posStationsS.err=(a.body&&a.body.error)||('the register said '+a.status);
@@ -14044,14 +14053,21 @@ function posStationAge(x,now){
   if(ms<STATION_SILENT_MS)return {kind:'quiet',label:'last heard '+posDriftAgo(ms)+' ago',color:'#fbbf24'};
   return {kind:'silent',label:'SILENT FOR '+posDriftAgo(ms),color:'#f87171'};
 }
+// The mini's clock, carried forward by however long ago it answered. The browser
+// contributes only an elapsed delta (seconds, and skew-free), never absolute time.
+function posStationNow(S){
+  return (S.srvNow&&S.gotAt) ? S.srvNow+(Date.now()-S.gotAt) : Date.now();
+}
 function posStationsHTML(){
   const S=posStationsS;
-  const now=Date.now();
+  const now=posStationNow(S);
   const ages=S.list.map(x=>posStationAge(x,now));
   const silent=ages.filter(a=>a.kind==='silent').length;
   const never=ages.filter(a=>a.kind==='never').length;
   const live=ages.filter(a=>a.kind==='live'||a.kind==='skew').length;
-  const skewed=ages.some(a=>a.skew>120000);
+  // Only worth warning about when we are actually ON the browser's clock — with the
+  // mini's `now` there is no browser clock in the arithmetic to be wrong.
+  const skewed=!S.srvNow&&ages.some(a=>a.skew>120000);
   const row=(x,i)=>{const a=ages[i];
     return `<div style="display:flex;gap:10px;align-items:baseline;padding:7px 0;border-top:1px solid var(--border);font-size:14px">
     <span style="flex:1;font-weight:600">${esc(x.name||'(unnamed)')}</span>
