@@ -14015,11 +14015,19 @@ async function posApproveStation(){
       ? `✓ Approved as “${name}”. The iPad will pick up its token within a couple of seconds.`
       : '⚠ '+((r.body&&r.body.error)||('the register said '+r.status))
         +(r.status===404?' — a code expires after ten minutes, and each one can only be used once.':'')
-        // 409 is the REPLACED-IPAD case, and the raw message ("revoke or rotate it
-        // instead") reads like a scolding rather than an instruction. A new iPad
-        // standing where the old one stood is the normal end of a device's life,
-        // not a mistake, so say which of the two he actually wants.
-        +(r.status===409?` — there is already a register called “${name}”. If this iPad REPLACES that one, rotate the old entry instead so its history carries over; if it is a new spot, give it a different name.`:'');
+        // 409 is the REPLACED-IPAD case — the normal end of a device's life, not a
+        // mistake. ⚠️ I first wrote "rotate the old entry instead so its history
+        // carries over", which is the right MODEL and currently a DEAD END: `rotate`
+        // returns the raw token to THIS screen, not to the iPad, and `revoke` only
+        // sets active=0 so the row (and the 409) survives. The only way to finish
+        // that path today is Vinny hand-typing 32 characters of base64url into an
+        // iPad — the exact thing enrolment exists to avoid, and a known-broken
+        // interaction besides (iPad Safari silently drops pastes into prompt(),
+        // which cost four rounds of false "wrong key" in the October rotation).
+        // So: say the true thing and offer the move that actually works. POS-UI has
+        // asked Jarvis for "approve this claim AS an existing station, rotating its
+        // token"; when that lands this becomes a one-button "approve as Bar?".
+        +(r.status===409?` — there is already a register called “${name}”. Moving a replacement iPad into an existing spot is not wired up yet, so for now give this one a different name and it will start its own history. Don't try to re-use the old register's token by hand.`:'');
     if(r.ok&&nameEl)nameEl.value='';
   }catch(e){posStationsS.note='⚠ could not reach the register — nothing was approved.'}
   posStationsS.busy=false;
