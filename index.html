@@ -7726,6 +7726,13 @@ function posLiveSoon(){
       await posPublishSend(posBuildLive());
       posS.liveState='sent';posS.liveAt=Date.now();posS.liveErr='';
       miniPoke();   // transitional: stop the mini waiting to notice. Dies with the Publish button.
+      // Re-check the drift NOW rather than whenever the 45s throttle next expires.
+      // Otherwise a warning he has just fixed keeps accusing him for most of a
+      // minute and then vanishes at an unrelated moment — which both reads as the
+      // card being broken and moves the page under him a second time. 2.5s gives
+      // the fire-and-forget mirror time to land before we judge it.
+      clearTimeout(posDriftSoonTimer);
+      posDriftSoonTimer=setTimeout(()=>{posDriftCheck(true)},2500);
     }catch(e){
       // A failed write-through must not look like a successful one. This is the
       // only signal he gets now that there is no button to press.
@@ -7792,6 +7799,7 @@ const POS_SYNC_KEYS=[
   ['ct_calcs','Calculations'],
 ];
 const posDrift={state:'idle',rows:[],at:0,err:'',checking:false};
+let posDriftSoonTimer=null;   // re-check shortly after a write-through, see posLiveSoon
 // Writes are debounced 1400ms and the mirror is fire-and-forget, so a key can be
 // legitimately in flight. Anything under this is "just sent", not "stale".
 const POS_DRIFT_GRACE_MS=10000;
@@ -7866,9 +7874,30 @@ async function posDriftCheck(force){
   posDrift.checking=false;posDrift.at=Date.now();
   posDriftRefresh();
 }
+// ⚠️ THIS CARD CHANGES HEIGHT ASYNCHRONOUSLY, AND THAT MADE THE SCREEN SNAP.
+//
+// Editing a price goes through posKeepScroll(), which restores scrollTop around a
+// re-render. But the drift check is a NETWORK round-trip: it lands a second or two
+// later, long after that restore, and when its card appears or disappears it adds
+// or removes ~80px ABOVE the item list. Scroll position unchanged, content moved —
+// so Vinny's row jumps out from under him just as he finishes typing a price.
+// posKeepScroll can't help: it had already finished.
+//
+// So this compensates for its own height change. Only while he is actually scrolled
+// down: at the top, a warning appearing SHOULD push the list down, because the whole
+// point is that he sees it.
 function posDriftRefresh(){
   const el=document.getElementById('pos-drift-card');
-  if(el)el.outerHTML=posDriftCardHTML();
+  if(!el)return;
+  const sc=el.closest('[style*="overflow-y"]')||document.getElementById('viewport');
+  const top=sc?sc.scrollTop:0;
+  const before=el.getBoundingClientRect().height;
+  el.outerHTML=posDriftCardHTML();
+  if(!sc||top<=0)return;                       // at the top: let it push, he needs to see it
+  const now=document.getElementById('pos-drift-card');
+  const after=now?now.getBoundingClientRect().height:0;
+  const delta=after-before;
+  if(delta)sc.scrollTop=Math.max(0,top+delta);
 }
 // Speaks only when there is something to say — same rule as posLiveCardHTML. 'ok'
 // renders an empty shell deliberately: the element must still exist so
