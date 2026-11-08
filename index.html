@@ -9238,6 +9238,9 @@ function posItemGroupPanelHTML(r){
     </div>
     ${posGroupModsHTML(g)}
     ${posGroupAttachHTML(g)}
+    ${/* Same list here, for the same reason — and it doubles as the answer to "what
+          else does this reach", right under the attach box that just widened it. */''}
+    ${posUsedByHTML(g)}
   </div>`;
 }
 
@@ -9254,27 +9257,33 @@ function posItemGroupPanelHTML(r){
 // tinguishable from not having set it — and clearing it again, to make it take, put
 // the old price straight back.
 //
-// Now: a typed price is GREEN (the same language the routing cell and the group chips
-// already use for a pending edit), and a typed ZERO renders 0.00 rather than blank.
-// Plain and showing a number = the register's own price. The two states can be told
-// apart at a glance, and reverting is visible because the green goes away.
+// The fix is that a typed ZERO renders 0.00 rather than blank, so "take the price
+// off" visibly takes. A blank box now means only one thing: no price anywhere.
+//
+// ⚠️ IT IS NOT HIGHLIGHTED, and a first attempt that highlighted it green was wrong.
+// Green everywhere else on this tab reads as "changed, not on the registers yet" —
+// but posLiveSoon() sends the whole blob 1400ms after any edit and there is no
+// Publish button any more, so a typed price IS the register's price about a second
+// later. Worse, the override is a permanent record, so the green had no moment it
+// was ever going to clear: it marked every price Vinny had ever touched as
+// outstanding work, forever. Vinny: "im still seeing the green highlight after price
+// edits." A badge that never goes out is not a status, it is decoration.
 function posPriceCell(r){
   const enc=posEnc(r.key);
-  const mine=posEntered(r);          // an override typed here, 0 included
+  const mine=posEntered(r);          // set here rather than read off the register; 0 included
   const v=posPriceOf(r);
   const shown=mine?(v/100).toFixed(2):(v?(v/100).toFixed(2):'');
   return `<input value="${shown}" placeholder="—" inputmode="decimal" data-pf="p:${enc}"
     onchange="posSetPrice('${enc}',this.value)"
     onkeydown="if(event.key==='Enter')this.blur()"
     title="${mine
-      ? 'You set this price. Empty the box to drop it and go back to the register&#39;s price.'
+      ? 'Set here, and live on the registers. Empty the box to drop it and go back to the register&#39;s own price.'
       : 'The register&#39;s price. Type a new one, or 0 to make the item cost nothing.'}"
     style="width:100%;text-align:right;font-variant-numeric:tabular-nums;font-size:16px;
       padding:4px 7px;border-radius:6px;font-family:inherit;
-      border:1px solid ${mine?'#22c55e':'var(--border)'};
-      background:${mine?'rgba(34,197,94,0.10)':'var(--surface2)'};
-      color:${mine?'#22c55e':(v?'var(--text)':'var(--text-muted)')};
-      font-weight:${mine?'700':'400'}">`;
+      border:1px solid var(--border);
+      background:var(--surface2);
+      color:${v||mine?'var(--text)':'var(--text-muted)'}">`;
 }
 
 // Adding a food mod to a group. The <datalist> is the whole Food Mods vocabulary, so
@@ -9594,6 +9603,13 @@ function posGroupsHTML(){
     </div>
     ${posGroupModsHTML(g)}
     ${posGroupAttachHTML(g)}
+    ${/* ⚠️ A NEW GROUP'S CARD WAS THE ONE CARD WITHOUT THIS. Vinny: "after attatching
+          a group to an item i need it to show here." The attach box saved the item
+          and then nothing on the card changed, so the only way to find out whether it
+          had worked was to publish and go look at a register. Existing groups have
+          listed their items all along; the new-group card was built from the same
+          parts and this one was left out. */''}
+    ${posUsedByHTML(g)}
   </div>`).join('');
 
   const newBtn=`<button onclick="posNewGroup()" style="${posBtn('#22c55e')};margin-bottom:14px">+ New group</button>`;
