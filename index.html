@@ -7411,6 +7411,18 @@ function posDetachItem(enc,encItem){
   kvPush('ct_pos_group_detach',posGroupDetach,Date.now());
   posRedraw();
 }
+function posToggleCuts(enc){
+  posS.openCuts=posS.openCuts||{};
+  const k=decodeURIComponent(enc);
+  posS.openCuts[k]=!posS.openCuts[k];
+  posKeepScroll(()=>{posRerenderList()});
+}
+function posToggleRemovedItems(enc){
+  posS.openRemovedItems=posS.openRemovedItems||{};
+  const k=decodeURIComponent(enc);
+  posS.openRemovedItems[k]=!posS.openRemovedItems[k];
+  posKeepScroll(()=>{posRerenderList()});
+}
 function posToggleUsedBy(enc){
   posS.openUsedBy=posS.openUsedBy||{};
   const k=decodeURIComponent(enc);
@@ -8606,7 +8618,7 @@ function posItemsBodyHTML(){
       <span style="width:330px;${(posModDeleted(r)||posItemDeleted(r))?'text-decoration:line-through;color:#ef4444':''}">${
         `<span onclick="posRenameMod('${posEnc(r.key)}','${posEnc(r.name)}')"
             title="Rename — this is the button a server reads and what prints on the ticket"
-            style="cursor:pointer;border-bottom:1px dotted var(--text-muted);${posModNames[r.key]?'color:#22c55e;font-weight:700':''}">${esc(posRowLabel(r))}</span>${
+            style="cursor:pointer;border-bottom:1px dotted var(--text-muted)">${esc(posRowLabel(r))}</span>${
             posModNames[r.key]?`<span style="font-size:12px;color:var(--text-muted)"> was ${esc(r.name)}</span>`:''}`
         }${r.special?` <span style="font-size:11px;font-weight:800;color:#b45309;background:rgba(245,158,11,0.14);border-radius:5px;padding:1px 6px">${esc(r.special)}</span>`:''}${r.isNew?' <span style="color:#22c55e;font-size:11px;font-weight:700">new</span>':''}${r.hidden?' <span style="color:var(--text-muted);font-size:11px">(hidden)</span>':''}${posGapTags(posRowGaps(r))}
         ${r.source==='choice'
@@ -8985,9 +8997,9 @@ function posRouteCell(r){
   const custom=sel?'':`<option value="" selected>${esc(on.join(', ')||'—')}</option>`;
   return `<select onchange="posSetRoute('${enc}',this.value)"
     style="width:100%;font-family:inherit;font-size:12.5px;padding:3px 5px;border-radius:6px;
-      border:1px solid ${changed?'#22c55e':'var(--border)'};
-      background:${changed?'rgba(34,197,94,0.10)':'var(--surface2)'};
-      color:${on.length?(changed?'#22c55e':'var(--text)'):'#ef4444'}">${custom}${opts}</select>
+      border:1px solid var(--border);
+      background:var(--surface2);
+      color:${on.length?'var(--text)':'#ef4444'}">${custom}${opts}</select>
     ${on.length?'':'<div style="font-size:11px;color:#ef4444;margin-top:2px">prints nowhere</div>'}`;
 }
 
@@ -9015,7 +9027,9 @@ function posItemGroupsHTML(r){
       ||((posS.cat&&posS.cat.mod_groups)||[]).find(x=>String(x.num)===k);
     if(g&&!live.includes(g.name))pending.push(g.name);
   }
-  if(!live.length&&!pending.length)
+  // Counted AFTER the detached ones are discounted: an item whose only group has been
+  // taken off has no mod groups, and should say so rather than render an empty strip.
+  if(!live.filter(n=>!offNames.includes(n)).length&&!pending.filter(n=>!offNames.includes(n)).length)
     // Quieter than a real group, but not so quiet you have to hunt for it — the
     // near-invisible version made scanning for the gaps harder than scanning for
     // the groups, which is backwards.
@@ -9024,19 +9038,20 @@ function posItemGroupsHTML(r){
   // it waits for SEND. Listing it plainly made an entrée look like it had a broken
   // attachment when the delay was deliberate.
   const defer=r.deferredGroups||[];
-  const label=(n)=>{
-    const body=defer.includes(n)?`${esc(n)} <span style="opacity:.75">(at send)</span>`:esc(n);
-    return offNames.includes(n)
-      ? `<span style="text-decoration:line-through;color:#ef4444">${body}</span>`
-      : body;
-  };
+  // A group taken off this item is OFF it — the detach reached the registers with
+  // everything else, so it is not listed here at all any more. It used to sit in the
+  // row struck through in red, permanently, describing a finished removal as one
+  // still happening. "(at send)" stays: that is not a change, it is how the group
+  // behaves when the item is rung.
+  const label=(n)=>defer.includes(n)?`${esc(n)} <span style="opacity:.75">(at send)</span>`:esc(n);
   // A group an item actually asks is worth reading, so it takes the body colour
   // rather than the muted grey every other sub-line uses.
   // Drag to reorder. Live and pending groups are one list, because a group being
   // added has to be placeable among the ones already there — attaching Sauce and
   // then finding it asked last is not a useful halfway state.
   const enc=posEnc(r.key);
-  let all=[...live.map(n=>({n,pend:false})),...pending.map(n=>({n,pend:true}))];
+  let all=[...live.map(n=>({n,pend:false})),...pending.map(n=>({n,pend:true}))]
+    .filter(x=>!offNames.includes(x.n));   // taken off = not on it
   const ord=posItemGroupOrder[r.key];
   if(ord){
     const at=(x)=>{const i=ord.indexOf(x.n);return i<0?9999:i};
@@ -9054,8 +9069,8 @@ function posItemGroupsHTML(r){
         style="cursor:pointer;touch-action:none;border-bottom:1px dotted var(--text-muted);${
           (posS.openItemGroup&&posS.openItemGroup.item===r.key&&posS.openItemGroup.name===x.n)
             ?'color:var(--accent);border-bottom-color:var(--accent);font-weight:800;':''
-        }${x.pend?'color:#22c55e;font-weight:700':''}"
-        >${x.pend?esc(x.n):label(x.n)}</span>`).join('')
+        }"
+        >${label(x.n)}</span>`).join('')
     +`</div>`;
 }
 
@@ -9092,8 +9107,12 @@ function posGroupOnItems(g){
   const k=String(posGroupKey(g));
   const live=g.used_by||[];
   const pend=posAttachOf(k).items.filter(n=>!live.includes(n));
+  // Detached items are not on the group — the detach is already on the registers, so
+  // an edit made here does NOT reach them. Counting them would overstate the blast
+  // radius, and listing them "coming off" forever is the red stuff Vinny asked to be
+  // rid of.
   const off=posGroupDetach[k]||[];
-  return [...live,...pend].map(n=>({name:n,pending:pend.includes(n),leaving:off.includes(n)}));
+  return [...live,...pend].filter(n=>!off.includes(n)).map(n=>({name:n,pending:pend.includes(n)}));
 }
 
 // One at a time. Two open panels would put two elements with the same id on the page
@@ -9154,9 +9173,7 @@ function posSharedTip(ev,encKey,encItem,pinned){
   const el=posTipEl();
   el.innerHTML='<div style="font-size:11px;font-weight:800;color:#f59e0b;text-transform:uppercase;'+
       'letter-spacing:.5px;margin-bottom:5px">Also asked on</div>'
-    +shown.map(x=>`<div style="${x.leaving?'text-decoration:line-through;color:var(--text-muted)':''}">${esc(x.name)}${
-        x.pending?'<span style="color:#22c55e;font-size:11px;font-weight:700"> · being added</span>':''}${
-        x.leaving?'<span style="font-size:11px"> · coming off</span>':''}</div>`).join('')
+    +shown.map(x=>`<div>${esc(x.name)}</div>`).join('')
     +(rest?`<div style="color:var(--text-muted);margin-top:4px">+${rest} more</div>`:'')
     +(posTipPinned?'<div style="color:var(--text-muted);font-size:11px;margin-top:6px">tap anywhere to close</div>':'');
   el.style.display='block';
@@ -9214,7 +9231,7 @@ function posItemGroupPanelHTML(r){
       border-color:var(--accent);background:var(--surface2)">
     <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
       <span style="font-size:12px;font-weight:800;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px">Mod group</span>
-      <span style="font-size:17px;font-weight:700;color:${posGroupNames[k]?'#22c55e':'var(--text)'}">${esc(posGroupLabel(g))}</span>
+      <span style="font-size:17px;font-weight:700;color:var(--text)">${esc(posGroupLabel(g))}</span>
       ${posGroupNames[k]?`<span style="font-size:12px;color:var(--text-muted)">was ${esc(g.name)}</span>`:''}
       <button onclick="posRenameGroup('${posEnc(k)}','${posEnc(g.name)}')"
         style="border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-size:12px;font-family:inherit">rename</button>
@@ -9449,41 +9466,73 @@ function posGroupModsHTML(g){
     items=items.map((x,i)=>[x,i]).sort((a,b)=>at(a[0])-at(b[0])||a[1]-b[1]).map(([x])=>x);
   }
 
+  // ⚠️ NO "PENDING" COLOURS. Everything in this tab is sent 1400ms after it is typed
+  // (posLiveSoon), so a choice edited or added here is simply one of the group's
+  // choices — it is not waiting for anything. The old green said otherwise, and since
+  // the edit record is permanent it was never going to clear: every choice Vinny had
+  // ever priced stayed lit up as outstanding work. Vinny, twice: "this is still
+  // green." A group he had finished was a wall of green with "was Minestrone" beside
+  // Minestrone.
+  //
+  // "was X" is kept only when the NAME actually changed, which is the one case it
+  // tells you something. Re-pricing writes a record carrying the unchanged name, so
+  // it used to print "Minestrone was Minestrone" on every repriced choice.
   const chip=(x)=>{
     if(x.own){
       const {orig,e}=x;
       const ch=e?{name:e.name,cents:e.cents}:orig;
-      const gone=cuts.includes(orig.name);
+      const renamed=!!e&&e.name!==orig.name;
       return `<span data-ch="${posEnc(orig.name)}"
         style="display:inline-flex;align-items:center;gap:5px;font-size:13px;
         padding:3px 5px 3px 9px;border-radius:7px;touch-action:none;
-        background:${gone?'rgba(239,68,68,0.10)':e?'rgba(34,197,94,0.10)':'var(--surface2)'};
-        border:1px solid ${gone?'#ef4444':e?'#22c55e':'var(--border)'};
-        color:${gone?'#ef4444':e?'#22c55e':'var(--text)'};${gone?'text-decoration:line-through':''};${ring(orig.name)}">
+        background:var(--surface2);border:1px solid var(--border);color:var(--text);${ring(orig.name)}">
         <span onpointerdown="posDragChoice(event,'${enc}')"
           onclick="posEditChoice('${enc}','${posEnc(orig.name)}',${ch.cents||0})"
           title="drag to reorder · click to edit" style="cursor:grab">${esc(ch.name)}${money(ch.cents)}${
-          e?`<span style="opacity:.7;font-size:11px"> was ${esc(orig.name)}</span>`:''}</span>
+          renamed?`<span style="opacity:.7;font-size:11px"> was ${esc(orig.name)}</span>`:''}</span>
         <button onclick="posCutChoice('${enc}','${posEnc(orig.name)}')"
-          title="${gone?'put it back':'take this choice out of the group'}"
-          style="border:none;background:transparent;color:${gone?'#ef4444':'var(--text-muted)'};
-            cursor:pointer;font-size:14px;line-height:1;padding:0 2px;text-decoration:none">${gone?'↺':'×'}</button></span>`;
+          title="take this choice out of the group"
+          style="border:none;background:transparent;color:var(--text-muted);
+            cursor:pointer;font-size:14px;line-height:1;padding:0 2px;text-decoration:none">×</button></span>`;
     }
     const m=x.m;
     return `<span data-ch="${posEnc(m.name)}"
       style="display:inline-flex;align-items:center;gap:6px;font-size:13px;padding:3px 6px 3px 9px;
-      border-radius:7px;touch-action:none;background:rgba(34,197,94,0.10);border:1px solid #22c55e;color:#22c55e;${ring(m.name)}">
+      border-radius:7px;touch-action:none;background:var(--surface2);border:1px solid var(--border);color:var(--text);${ring(m.name)}">
       <span onpointerdown="posDragChoice(event,'${enc}')"
         onclick="posEditChoice('${enc}','${posEnc(m.name)}',${m.cents||0})"
         title="drag to reorder · click to edit" style="cursor:grab">${esc(m.name)}${money(m.cents)}</span>
       <button onclick="posRemoveGroupMod('${enc}','${posEnc(m.name)}')" title="remove"
-        style="border:none;background:transparent;color:#22c55e;cursor:pointer;font-size:15px;line-height:1;padding:0 2px">×</button></span>`;
+        style="border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-size:15px;line-height:1;padding:0 2px">×</button></span>`;
   };
-  const chips=items.map(chip).join('');
+  // A choice taken out is OUT — it is off the registers already, so it does not belong
+  // among the ones that are still there, struck through in red forever.
+  //
+  // ⚠️ But it is NOT deleted from the page either. Putting one back has to stay a
+  // single tap: re-adding it through the box below would write a NEW choice
+  // (posAddedTo) while the original stayed cut, which is two records for one choice
+  // and not the same thing at all. So they move to one muted line, folded away.
+  const liveItems=items.filter(x=>!(x.own&&cuts.includes(x.orig.name)));
+  const cutItems=items.filter(x=>x.own&&cuts.includes(x.orig.name));
+  const chips=liveItems.map(chip).join('');
+  const cutOpen=!!(posS.openCuts&&posS.openCuts[String(k)]);
+  const cutLine=cutItems.length?`<div style="margin-top:8px;font-size:12px;color:var(--text-muted)">
+      ${cutItems.length} taken out
+      <button onclick="posToggleCuts('${enc}')" style="border:none;background:transparent;
+        color:var(--text-dim);cursor:pointer;font-family:inherit;font-size:12px;text-decoration:underline;padding:0 2px"
+        >${cutOpen?'hide':'show'}</button>
+      ${cutOpen?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${
+        cutItems.map(x=>`<span style="display:inline-flex;align-items:center;gap:5px;font-size:13px;
+          padding:3px 5px 3px 9px;border-radius:7px;background:var(--surface2);
+          border:1px dashed var(--border);color:var(--text-muted)">${esc(x.orig.name)}
+          <button onclick="posCutChoice('${enc}','${posEnc(x.orig.name)}')" title="put it back"
+            style="border:none;background:transparent;color:var(--text-dim);cursor:pointer;
+              font-size:14px;line-height:1;padding:0 2px">↺</button></span>`).join('')}</div>`:''}
+    </div>`:'';
 
   if(g.screen)return `<div style="margin-top:8px;font-size:13px;color:var(--text-dim)">Opens the FOOD MODS screen — the whole condiment table, not a fixed list.</div>`;
 
-  return `<div id="gc-${enc}" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">${chips}</div>
+  return `<div id="gc-${enc}" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">${chips}</div>${cutLine}
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px">
       <input id="gm-${enc}" placeholder="a choice for this group…" autocomplete="off"
         value="${ed?esc(ed.shown||ed.name):''}"
@@ -9512,35 +9561,59 @@ function posUsedByHTML(g){
   // the end, looking like every other one. They used to sit in a highlighted row of
   // their own above the input, which asked Vinny to hold two lists in his head to
   // answer one question: what is this group on?
-  const pend=posAttachOf(k).items.filter(n=>!live.includes(n));
-  const items=[...live,...pend];
-  if(!items.length)return '';
+  const pendAll=posAttachOf(k).items.filter(n=>!live.includes(n));
+  const off=posDetachedFrom(k);
+  // ⚠️ AN ITEM THE GROUP HAS BEEN TAKEN OFF IS NOT ON THE GROUP. The detach went to
+  // the registers with everything else (posLiveSoon), so listing it here struck
+  // through in red, under a heading counting "2 being removed", described a removal
+  // that had already happened as one still in progress — and since the record is
+  // permanent, it said so for good. Vinny: "get rid of this red removed stuff."
+  //
+  // Folded into one muted line instead of dropped, because putting one back has to
+  // stay a single tap: re-attaching through the box below writes a NEW attachment
+  // while the detach record stays, which is two records disagreeing about one item.
+  const liveOn=live.filter(n=>!off.includes(n));
+  const pend=pendAll.filter(n=>!off.includes(n));
+  const items=[...liveOn,...pend];
+  if(!items.length&&!off.length)return '';
   posS.openUsedBy=posS.openUsedBy||{};
   const open=!!posS.openUsedBy[k];
   const CAP=12;
   // A newly added item is never the one hidden behind "show all".
-  const shown=open?items:[...live.slice(0,CAP),...pend];
-  const off=posDetachedFrom(k);
+  const shown=open?items:[...liveOn.slice(0,CAP),...pend];
   const chip=(n)=>{
-    const gone=off.includes(n);
     const isPend=pend.includes(n);
     return `<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;
-      padding:2px 5px 2px 8px;border-radius:6px;border:1px solid ${gone?'#ef4444':'var(--border)'};
-      background:${gone?'rgba(239,68,68,0.10)':'transparent'};
-      color:${gone?'#ef4444':'var(--text-muted)'};${gone?'text-decoration:line-through':''}">
+      padding:2px 5px 2px 8px;border-radius:6px;border:1px solid var(--border);
+      background:transparent;color:var(--text-muted)">
       ${esc(n)}
       <button onclick="${isPend?`posAttachRemove('${enc}','item','${posEnc(n)}')`:`posDetachItem('${enc}','${posEnc(n)}')`}"
-        title="${gone?'put it back':'take this group off '+esc(n)}"
-        style="border:none;background:transparent;color:${gone?'#ef4444':'var(--text-muted)'};
-          cursor:pointer;font-size:14px;line-height:1;padding:0 2px;text-decoration:none">${gone?'↺':'×'}</button></span>`;
+        title="take this group off ${esc(n)}"
+        style="border:none;background:transparent;color:var(--text-muted);
+          cursor:pointer;font-size:14px;line-height:1;padding:0 2px;text-decoration:none">×</button></span>`;
   };
+  posS.openRemovedItems=posS.openRemovedItems||{};
+  const offOpen=!!posS.openRemovedItems[k];
+  const offLine=off.length?`<div style="margin-top:8px;font-size:12px;color:var(--text-muted)">
+      ${off.length} taken off
+      <button onclick="posToggleRemovedItems('${enc}')" style="border:none;background:transparent;
+        color:var(--text-dim);cursor:pointer;font-family:inherit;font-size:12px;text-decoration:underline;padding:0 2px"
+        >${offOpen?'hide':'show'}</button>
+      ${offOpen?`<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:6px">${
+        off.map(n=>`<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;
+          padding:2px 5px 2px 8px;border-radius:6px;border:1px dashed var(--border);color:var(--text-muted)">
+          ${esc(n)}<button onclick="posDetachItem('${enc}','${posEnc(n)}')" title="put it back"
+            style="border:none;background:transparent;color:var(--text-dim);cursor:pointer;
+              font-size:14px;line-height:1;padding:0 2px">↺</button></span>`).join('')}</div>`:''}
+    </div>`:'';
   return `<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)">
     <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">
-      On these items${off.length?` <span style="color:#ef4444">· ${off.length} being removed</span>`:''}</div>
+      On these items</div>
     <div style="display:flex;flex-wrap:wrap;gap:5px">${shown.map(chip).join('')}</div>
-    ${live.length>CAP?`<button onclick="posToggleUsedBy('${enc}')"
+    ${liveOn.length>CAP?`<button onclick="posToggleUsedBy('${enc}')"
       style="border:none;background:transparent;color:var(--text-dim);cursor:pointer;
         font-family:inherit;font-size:12px;padding:6px 0">${open?'show fewer':`show all ${items.length}`}</button>`:''}
+    ${offLine}
   </div>`;
 }
 
@@ -9590,7 +9663,7 @@ function posGroupsHTML(){
   const newCards=mine.map(g=>`<div data-gk="${posEnc(posGroupKey(g))}" style="${posCardCss};border-color:#22c55e">
     <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
       <span style="font-size:11px;font-weight:800;color:#22c55e;text-transform:uppercase;letter-spacing:.5px">new</span>
-      <span style="font-size:17px;font-weight:700;color:${posGroupNames[posGroupKey(g)]?'#22c55e':'var(--text)'}">${esc(posGroupLabel(g))}</span>
+      <span style="font-size:17px;font-weight:700;color:var(--text)">${esc(posGroupLabel(g))}</span>
       ${posGroupNames[posGroupKey(g)]?`<span style="font-size:12px;color:var(--text-muted)">was ${esc(g.name)}</span>`:''}
       <button onclick="posRenameGroup('${posEnc(posGroupKey(g))}','${posEnc(g.name)}')"
         style="border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-size:12px;font-family:inherit">rename</button>
@@ -9628,7 +9701,7 @@ function posGroupsHTML(){
     posDeletedGroups.includes(posGroupKey(g))?';border-color:#ef4444;background:rgba(239,68,68,0.06)':''}">
     <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
       <span style="font-size:13px;font-weight:800;color:var(--text-dim);font-variant-numeric:tabular-nums">${g.num!=null?g.num:'—'}</span>
-      <span style="font-size:17px;font-weight:700;color:${posGroupNames[posGroupKey(g)]?'#22c55e':'var(--text)'}">${esc(posGroupLabel(g))}</span>
+      <span style="font-size:17px;font-weight:700;color:var(--text)">${esc(posGroupLabel(g))}</span>
       ${posGroupNames[posGroupKey(g)]?`<span style="font-size:12px;color:var(--text-muted)">was ${esc(g.name)}</span>`:''}
       <button onclick="posRenameGroup('${posEnc(posGroupKey(g))}','${posEnc(g.name)}')"
         style="border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-size:12px;font-family:inherit">rename</button>
