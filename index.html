@@ -14349,9 +14349,31 @@ function staffStoredCodes(){
     .sort((a,b)=>String(a.name||'').localeCompare(String(b.name||'')));
 }
 
+// ⚠️ NOT EVERY STORED CODE IS A SPARE COPY. Vinny: "I thought we imported everyones
+// sign in number." If a number was imported into this list but never set on the mini,
+// the plaintext here is the ONLY record of it — and clearing it would be the one thing
+// I told him clearing could not be: destructive.
+//
+// The mini is the authority, not this page. `register.mini.has_pin` is read off
+// /api/employees by staffPullRegister; `pin_set` only means a code was set THROUGH the
+// box on this screen, which an import never touched. Anyone the mini has not confirmed
+// a code for is left alone, including anyone it simply has not been asked about yet —
+// unknown is treated as keep, never as safe.
+function staffCodeGroups(){
+  const all=staffStoredCodes();
+  const safe=[],keep=[];
+  let everAsked=false;
+  for(const p of all){
+    const m=p.register&&p.register.mini;
+    if(m&&m.at)everAsked=true;
+    (m&&m.has_pin?safe:keep).push(p);
+  }
+  return {all,safe,keep,everAsked};
+}
+
 let staffClearArmed=false, staffClearTimer=null;
 function staffClearCodes(ev){
-  const who=staffStoredCodes();
+  const who=staffCodeGroups().safe;     // ONLY the ones the register has confirmed
   if(!who.length)return;
   const btn=(ev&&ev.target)||null;
   if(!staffClearArmed){
@@ -14369,26 +14391,36 @@ function staffClearCodes(ev){
   for(const p of who){ delete p.register.signin; staffTouch(p); n++; }
   staffSave();
   staffRefresh();
-  alert(n+' stored code'+(n===1?'':'s')+' cleared.\n\nNobody has to do anything on the floor — the registers keep their own copy and sign-in is unchanged. There is now no way to look an existing code up; a forgotten one is set fresh from this page.');
+  const left=staffCodeGroups().keep.length;
+  alert(n+' stored code'+(n===1?'':'s')+' cleared.\n\nNobody has to do anything on the floor — the registers hold their own copy of every one of these and sign-in is unchanged.'
+    +(left?'\n\n'+left+' left alone: the register has not confirmed a code for '+(left===1?'that person':'those people')+', so this list may be the only record of their number. Clearing those would lose it.':''));
 }
 
 function staffCodesPanelHTML(){
-  const who=staffStoredCodes();
-  if(!who.length)return '';
+  const g=staffCodeGroups();
+  if(!g.all.length)return '';
   const CAP=40;
-  const names=who.slice(0,CAP).map(p=>esc(p.name||p.key)).join(' · ');
+  const list=(a)=>a.slice(0,CAP).map(p=>esc(p.name||p.key)).join(' · ')
+    +(a.length>CAP?` <span style="color:var(--text-muted)">+${a.length-CAP} more</span>`:'');
+  const hd='font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin:10px 0 4px';
   return `<div style="${posCardCss};margin-bottom:14px;border-color:#f59e0b;background:rgba(245,158,11,0.06);max-width:760px">
-    <div style="font-weight:800;font-size:14px;color:#f59e0b;margin-bottom:5px">${who.length} ${who.length===1?'person is':'people are'} still storing an old sign-in code here</div>
-    <div style="font-size:12.5px;color:var(--text-dim);line-height:1.65;margin-bottom:9px">
-      Kept in plain from 21/10 so a code could be looked up in the app. That display is gone and new codes
-      are no longer saved, but these are still here — and still readable to anyone holding an office token.
-      Nothing uses them: the registers authenticate against their own hashed copy on the mini.
-      <b>Clearing changes nothing on the floor.</b> It is one-way — afterwards a forgotten code is set fresh
-      rather than looked up.
+    <div style="font-weight:800;font-size:14px;color:#f59e0b;margin-bottom:5px">${g.all.length} ${g.all.length===1?'person is':'people are'} storing a sign-in number in plain here</div>
+    <div style="font-size:12.5px;color:var(--text-dim);line-height:1.65">
+      Kept in plain from 21/10 so a code could be looked up in the app. That display is gone and new ones
+      are no longer saved, but these remain — and are still readable to anyone holding an office token.
     </div>
-    <div style="font-size:12.5px;color:var(--text);line-height:1.7;margin-bottom:11px">${names}${
-      who.length>CAP?` <span style="color:var(--text-muted)">+${who.length-CAP} more</span>`:''}</div>
-    <button onclick="staffClearCodes(event)" style="${posBtn('#f59e0b')};font-size:13px;padding:8px 15px">Clear ${who.length} stored code${who.length===1?'':'s'}</button>
+    ${!g.everAsked?`<div style="margin-top:10px;padding:9px 11px;border-radius:8px;background:rgba(239,68,68,0.10);border:1px solid #ef4444;font-size:12.5px;color:#ef4444;line-height:1.6">
+      <b>The registers have not been asked yet</b>, so nothing here can be called a spare copy.
+      Press <b>Check the register</b> on this page first — until then nothing will be cleared.</div>`:''}
+    ${g.safe.length?`<div style="${hd};color:var(--text-muted)">The register has these — safe to clear (${g.safe.length})</div>
+      <div style="font-size:12.5px;color:var(--text);line-height:1.7">${list(g.safe)}</div>`:''}
+    ${g.keep.length?`<div style="${hd};color:#ef4444">The register has NO code for these — keeping them (${g.keep.length})</div>
+      <div style="font-size:12.5px;color:var(--text);line-height:1.7">${list(g.keep)}</div>
+      <div style="font-size:12px;color:var(--text-dim);line-height:1.6;margin-top:5px">
+        A number that reached this list but never reached the register exists <b>only here</b> — so this is
+        the only record of it, and it will not be touched. It also means ${g.keep.length===1?'that person':'those people'}
+        cannot sign in with it today.</div>`:''}
+    ${g.safe.length?`<div style="margin-top:12px"><button onclick="staffClearCodes(event)" style="${posBtn('#f59e0b')};font-size:13px;padding:8px 15px">Clear ${g.safe.length} stored code${g.safe.length===1?'':'s'}</button></div>`:''}
   </div>`;
 }
 
