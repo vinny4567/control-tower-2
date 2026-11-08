@@ -14399,18 +14399,31 @@ function staffClearCodes(ev){
     +(left?'\n\n'+left+' left alone: the register has not confirmed a code for '+(left===1?'that person':'those people')+', so this list may be the only record of their number. Clearing those would lose it.':''));
 }
 
+// READ-ONLY. This was a "clear them" panel this morning; it is a COUNT now, because
+// the question changed from "how do I get rid of these" to "are they still there".
+// It writes nothing and offers no button — during a suspected data loss the one thing
+// a page must not do is give anybody a way to make it worse.
 function staffCodesPanelHTML(){
   const g=staffCodeGroups();
-  if(!g.all.length)return '';
+  const total=Object.values(staffS.people||{}).filter(p=>p&&!p.removed).length;
+  if(!g.all.length)return `<div style="${posCardCss};margin-bottom:14px;border-color:#ef4444;background:rgba(239,68,68,0.07);max-width:760px">
+    <div style="font-weight:800;font-size:14px;color:#ef4444;margin-bottom:4px">No sign-in numbers are stored here</div>
+    <div style="font-size:12.5px;color:var(--text-dim);line-height:1.65">
+      ${total} ${total===1?'person'/*unlikely*/:'people'} on the list, none carrying a number.
+      <b>Nobody is locked out</b> — the registers authenticate against their own hashed copy, which this
+      page has never held. What is missing is the office's readable copy.
+      Use <b>Put the MICROS sign-in numbers back</b> below to restore it from the export.
+    </div></div>`;
+  return (()=>{
   const CAP=40;
   const list=(a)=>a.slice(0,CAP).map(p=>esc(p.name||p.key)).join(' · ')
     +(a.length>CAP?` <span style="color:var(--text-muted)">+${a.length-CAP} more</span>`:'');
   const hd='font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin:10px 0 4px';
   return `<div style="${posCardCss};margin-bottom:14px;border-color:#f59e0b;background:rgba(245,158,11,0.06);max-width:760px">
-    <div style="font-weight:800;font-size:14px;color:#f59e0b;margin-bottom:5px">${g.all.length} ${g.all.length===1?'person is':'people are'} storing a sign-in number in plain here</div>
+    <div style="font-weight:800;font-size:14px;color:#22c55e;margin-bottom:5px">${g.all.length} of ${total} ${g.all.length===1?'person has':'people have'} a sign-in number stored here</div>
     <div style="font-size:12.5px;color:var(--text-dim);line-height:1.65">
-      Kept in plain from 21/10 so a code could be looked up in the app. That display is gone and new ones
-      are no longer saved, but these remain — and are still readable to anyone holding an office token.
+      The office's readable copy of the MICROS Empl ID#. The registers keep their own hashed copy and
+      sign-in does not depend on this, so a gap here is a lookup problem, not a locked-out person.
     </div>
     ${!g.everAsked?`<div style="margin-top:10px;padding:9px 11px;border-radius:8px;background:rgba(239,68,68,0.10);border:1px solid #ef4444;font-size:12.5px;color:#ef4444;line-height:1.6">
       <b>The registers have not been asked yet</b>, so nothing here can be called a spare copy.
@@ -14423,8 +14436,7 @@ function staffCodesPanelHTML(){
         A number that reached this list but never reached the register exists <b>only here</b> — so this is
         the only record of it, and it will not be touched. It also means ${g.keep.length===1?'that person':'those people'}
         cannot sign in with it today.</div>`:''}
-    ${g.safe.length?`<div style="margin-top:12px"><button onclick="staffClearCodes(event)" style="${posBtn('#f59e0b')};font-size:13px;padding:8px 15px">Clear ${g.safe.length} stored code${g.safe.length===1?'':'s'}</button></div>`:''}
-  </div>`;
+  </div>`;})();
 }
 
 // ─── PUTTING THE MICROS SIGN-IN NUMBERS BACK ─────────────────────────────────
@@ -14572,6 +14584,7 @@ function posStaffHTML(){
   const inactive=all.filter(p=>p.active===false||p.gone).length;
   const when=staffS.at?new Date(staffS.at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'never';
   return `
+  ${staffCodesPanelHTML()}
   ${staffImportPanelHTML()}
   <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
     ${posStat('People',String(all.length),
