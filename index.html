@@ -9079,6 +9079,23 @@ const posGroupByName=(name)=>
   ||(((posS.cat&&posS.cat.mod_groups)||[]).find(g=>g.name===name))
   ||null;
 
+// EVERY ITEM THIS GROUP IS ASKED ON — one source, used by both the "shared with N"
+// count and the list that opens off it. Two separate counts of the same thing is how
+// a badge ends up saying 3 above a list of four.
+//
+// Pending attachments count. They are not on the register yet, but they are on the
+// page, and a choice edited now will reach them when the change is applied — so a
+// blast radius that leaves them out is too small, which is the wrong way to be wrong.
+// Items being taken off still count, and say so: until the change lands, the register
+// is still asking this group there.
+function posGroupOnItems(g){
+  const k=String(posGroupKey(g));
+  const live=g.used_by||[];
+  const pend=posAttachOf(k).items.filter(n=>!live.includes(n));
+  const off=posGroupDetach[k]||[];
+  return [...live,...pend].map(n=>({name:n,pending:pend.includes(n),leaving:off.includes(n)}));
+}
+
 // One at a time. Two open panels would put two elements with the same id on the page
 // (the attach box is id'd by group key), and the second one silently stops working.
 function posToggleItemGroup(encItem,encName){
@@ -9086,6 +9103,94 @@ function posToggleItemGroup(encItem,encName){
   const open=posS.openItemGroup;
   posS.openItemGroup=(open&&open.item===item&&open.name===name)?null:{item,name};
   posKeepScroll(()=>{posRerenderList()});
+}
+
+// ─── WHICH OTHER ITEMS ───────────────────────────────────────────────────────
+//
+// Vinny: "when i hover over 'shared with 3 other items' i want it to show me which
+// ones." A count tells you an edit reaches further than this row; it does not tell
+// you whether that matters. "3 other items" is fine if they are the three soups and
+// alarming if one of them is a wedding entrée.
+//
+// ⚠️ position:fixed, on <body>. The panel lives inside the list's overflow-y:auto
+// scroller, and a popover positioned inside that gets clipped at the container edge —
+// on the bottom row, which is exactly where a long list is read, it would be cut off
+// or add a scrollbar. Fixed to the viewport, it cannot be clipped by an ancestor.
+//
+// ⚠️ NOT a title= tooltip. The iPads have no hover at all, so a title attribute shows
+// the names on the Mac and silently shows nothing in the restaurant. Tapping pins it.
+let posTipPinned=false;
+function posTipEl(){
+  let el=document.getElementById('pos-shared-tip');
+  if(!el){
+    el=document.createElement('div');
+    el.id='pos-shared-tip';
+    el.style.cssText='position:fixed;z-index:9999;display:none;max-width:320px;'+
+      'background:var(--surface);border:1px solid #f59e0b;border-radius:10px;padding:9px 11px;'+
+      'box-shadow:0 10px 30px rgba(0,0,0,0.45);font-size:13px;line-height:1.5;color:var(--text);'+
+      'pointer-events:none';
+    document.body.appendChild(el);
+  }
+  return el;
+}
+function posSharedTip(ev,encKey,encItem,pinned){
+  if(posTipPinned&&!pinned)return;
+  const k=decodeURIComponent(encKey), me=decodeURIComponent(encItem);
+  const g=posNewGroups.find(x=>String(posGroupKey(x))===k)
+    ||(((posS.cat&&posS.cat.mod_groups)||[]).find(x=>String(posGroupKey(x))===k));
+  if(!g)return;
+  const others=posGroupOnItems(g).filter(x=>x.name!==me);
+  if(!others.length)return;
+  // Capped, because a group on two hundred items would otherwise paint a list taller
+  // than the screen. The count is on the badge; the names are the useful part.
+  //
+  // ⚠️ The cap is taken from the VIEWPORT, not a fixed 18. It cannot be scrolled
+  // (pointer-events:none, so hovering it never steals the pointer), so anything that
+  // does not fit cannot be reached — on a short window a fixed cap put names below the
+  // bottom edge where they were silently unreadable. Fewer names and an honest
+  // "+N more" beats names that are rendered and cannot be seen.
+  const fits=Math.max(4,Math.floor((window.innerHeight-150)/21));
+  const CAP=Math.min(18,fits), shown=others.slice(0,CAP), rest=others.length-shown.length;
+  const el=posTipEl();
+  el.innerHTML='<div style="font-size:11px;font-weight:800;color:#f59e0b;text-transform:uppercase;'+
+      'letter-spacing:.5px;margin-bottom:5px">Also asked on</div>'
+    +shown.map(x=>`<div style="${x.leaving?'text-decoration:line-through;color:var(--text-muted)':''}">${esc(x.name)}${
+        x.pending?'<span style="color:#22c55e;font-size:11px;font-weight:700"> · being added</span>':''}${
+        x.leaving?'<span style="font-size:11px"> · coming off</span>':''}</div>`).join('')
+    +(rest?`<div style="color:var(--text-muted);margin-top:4px">+${rest} more</div>`:'')
+    +(posTipPinned?'<div style="color:var(--text-muted);font-size:11px;margin-top:6px">tap anywhere to close</div>':'');
+  el.style.display='block';
+  // Measured after it is rendered, then flipped or clamped so it is never off-screen.
+  const b=ev.currentTarget.getBoundingClientRect();
+  const w=el.offsetWidth, h=el.offsetHeight;
+  // Below the badge by default, flipped above when it would overhang the bottom —
+  // then CLAMPED regardless. The flip alone is not enough: the badge itself can sit
+  // below the fold (the panel it lives in is inside a scroller), and flipping off an
+  // anchor that is already off-screen just moves the overhang somewhere else.
+  let top=b.bottom+6;
+  if(top+h>window.innerHeight-8)top=b.top-h-6;
+  top=Math.min(top,window.innerHeight-h-8);
+  top=Math.max(8,top);
+  let left=b.left;
+  if(left+w>window.innerWidth-8)left=Math.max(8,window.innerWidth-w-8);
+  el.style.top=top+'px';
+  el.style.left=left+'px';
+}
+function posSharedTipHide(){ if(posTipPinned)return; const el=document.getElementById('pos-shared-tip'); if(el)el.style.display='none'; }
+// Touch has no hover, so a tap pins it open; the next tap anywhere puts it away.
+function posSharedTipPin(ev,encKey,encItem){
+  ev.stopPropagation();
+  posTipPinned=false;
+  posSharedTip(ev,encKey,encItem,true);
+  posTipPinned=true;
+  posSharedTip(ev,encKey,encItem,true);   // redraw with the "tap anywhere to close" line
+  setTimeout(()=>{
+    document.addEventListener('click',function off(){
+      posTipPinned=false;
+      const el=document.getElementById('pos-shared-tip'); if(el)el.style.display='none';
+      document.removeEventListener('click',off);
+    },{once:true});
+  },0);
 }
 
 function posItemGroupPanelHTML(r){
@@ -9114,8 +9219,19 @@ function posItemGroupPanelHTML(r){
       <button onclick="posRenameGroup('${posEnc(k)}','${posEnc(g.name)}')"
         style="border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-size:12px;font-family:inherit">rename</button>
       <span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;border:1px solid currentColor;color:${g.required?'#ef4444':'var(--text-muted)'}">${g.required?'required':'optional'}</span>
-      ${(g.used_by||[]).length>1?`<span style="font-size:12px;color:#f59e0b;font-weight:700"
-        title="Editing a choice here changes it everywhere this group is asked">shared with ${(g.used_by||[]).length-1} other item${(g.used_by||[]).length===2?'':'s'}</span>`:''}
+      ${(()=>{
+        // Counted by NAME, not by length-1. The item can be absent from used_by
+        // entirely when the attachment is still pending, and subtracting a one that
+        // isn't there would under-report the blast radius by exactly one item.
+        const others=posGroupOnItems(g).filter(x=>x.name!==r.name);
+        if(!others.length)return '';
+        return `<span onmouseenter="posSharedTip(event,'${posEnc(posGroupKey(g))}','${posEnc(r.name)}')"
+          onmouseleave="posSharedTipHide()"
+          onclick="posSharedTipPin(event,'${posEnc(posGroupKey(g))}','${posEnc(r.name)}')"
+          style="font-size:12px;color:#f59e0b;font-weight:700;cursor:help;
+            border-bottom:1px dotted currentColor"
+          >shared with ${others.length} other item${others.length===1?'':'s'}</span>`;
+      })()}
       <button onclick="posToggleItemGroup('${posEnc(r.key)}','${posEnc(open.name)}')" title="close"
         style="margin-left:auto;border:none;background:transparent;color:var(--text-muted);cursor:pointer;
           font-family:inherit;font-size:20px;line-height:1;padding:0 4px">×</button>
