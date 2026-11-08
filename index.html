@@ -13848,15 +13848,26 @@ function staffDetail(p){
         // terminal leaves has_pin true and this number wrong, which is the exact case
         // that caused today. So the date does the work, and the register line only
         // reports the one thing it genuinely knows.
-        // ⚠️ AMBER IS FOR THE ONE THING THAT IS ACTUALLY WRONG. signin_at only started
-        // being stamped tonight, so EVERY number set before then has no date — and
-        // colouring that amber lit up all 128 of them as suspect on the evening the
-        // stamp shipped. A warning that fires on every record is not a warning, and it
-        // buries the line next to it, which is a real one: the office has a number and
-        // the register does not. Undated is stated plainly; only the mismatch is amber.
-        const reg2=(mini&&mini.has_pin)?'the register has a code'
-                 :(mini?'<b style="color:#f59e0b">the register has NO code — this number will not work at a terminal</b>'
-                       :'the register has not been asked');
+        // ⚠️ PAST TENSE, WITH A DATE. `mini.has_pin` is a CACHE — whatever the register
+        // answered the last time staffPullRegister ran, which may have been days ago.
+        // Written in the present tense it told Vinny "the register has NO code, this
+        // number will not work at a terminal" about a pin that was verified working
+        // minutes earlier; the field was simply stale. That is the same fault I spent
+        // the evening taking out of the POS tab — a cached value asserted as a current
+        // fact — and I wrote a fresh one here while doing it.
+        //
+        // So the claim is now tied to WHEN it was made. "had no code when last asked,
+        // 6 Nov" is something a reader can judge; "has NO code" is a statement this
+        // page is not entitled to make. Amber only when the check is from today, since
+        // a same-day disagreement is worth acting on and a week-old one is worth
+        // re-checking first.
+        const asked=mini&&mini.at?new Date(mini.at):null;
+        const askedTxt=asked?asked.toLocaleDateString([], {day:'numeric',month:'short'}):null;
+        const fresh=asked&&(Date.now()-mini.at)<12*3600*1000;
+        const reg2=!mini?'the register has not been asked'
+          :mini.has_pin?('the register had a code'+(askedTxt?' when last asked, '+esc(askedTxt):''))
+          :fresh?'<b style="color:#f59e0b">the register has NO code for them — this number will not work at a terminal</b>'
+                :'the register had no code when last asked'+(askedTxt?', '+esc(askedTxt):'')+' — press <b>Check the register</b> to see if that still holds';
         return `<div style="margin-top:6px;font-size:13px;color:var(--text-dim)">Sign-in #:
           <b style="color:var(--text);letter-spacing:2px">${esc(reg.signin)}</b>
           <div style="font-size:11px;color:var(--text-muted);line-height:1.5;margin-top:1px">
