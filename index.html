@@ -13695,12 +13695,10 @@ async function staffSetPin(k,given){
     // No `access=true` here any more — the class decides, and writing a flag
     // nothing reads would leave a second opinion lying around for somebody to
     // find later and believe.
-    // ⚠️ THE PLAIN NUMBER IS NOT KEPT. It was (Vinny's call 10/21, to look codes up in
-    // the app), and that display is gone now — so storing it would leave a register
-    // credential sitting in plaintext in cloud KV with nothing reading it, which is all
-    // of the exposure and none of the reason. Only the fact that a code is set is kept.
-    // The mini holds the real one, hashed.
-    p.register=p.register||{};p.register.pin_set=true;delete p.register.pin_pending;
+    // The plain number is kept here again (Vinny's call 10/21, reaffirmed 8/11 — he
+    // imported everyone's from MICROS and reads them off this page). It is a register
+    // credential in plaintext in cloud KV; that tradeoff was put to him and is his.
+    p.register=p.register||{};p.register.pin_set=true;p.register.signin=pin;delete p.register.pin_pending;
     // The mini's own id for this person, so a later role change can target the row
     // rather than re-resolving a name. paychex_id alone would do; this is cheaper.
     if(r.body&&r.body.id!=null)p.register.emp_id=r.body.id;
@@ -13831,12 +13829,17 @@ function staffDetail(p){
         <button onclick="staffSaveNumber('${esc(k)}',document.getElementById('staff-num-${kid}'))"
           style="${posBtn('#0ea5e9')};padding:3px 9px;font-size:12px">Save</button>
       </div>
-      ${/* The plain sign-in number used to be printed here. Vinny: "why is my old number
-             still showing get rid of that number under the type box." It was STALE and
-             could only ever be stale — the mini is where a pin actually lives, and a pin
-             changed anywhere but this box (Jarvis set one mini-side tonight) left this
-             copy behind, still displayed as fact. A credential read off the wrong source
-             is worse than no credential shown: it is the number you would type. */''}
+      ${/* RESTORED 8/11. Taken out earlier the same day when the number showing was a
+             STALE one, then put back when the reason became clear: the problem was never
+             that the number was shown, it was that this copy and the register's could
+             disagree in silence. Vinny imported everyone's from MICROS and needs to read
+             them here. So it is shown AND labelled with where it comes from — the office
+             copy, which is what an import writes, not proof of what the register holds.
+             `pin_set` next to it is the register's own answer. */''}
+      ${reg.signin?`<div style="margin-top:6px;font-size:13px;color:var(--text-dim)">Sign-in #:
+        <b style="color:var(--text);letter-spacing:2px">${esc(reg.signin)}</b>
+        <span style="font-size:11px;color:var(--text-muted)">· office copy${
+          (mini&&mini.has_pin)?', register has a code':(mini?', <b style="color:#f59e0b">register has NO code</b>':'')}</span></div>`:''}
       ${reg.access?`
         <!-- The employee class used to sit HERE. Vinny moved it under the payroll id on
              10/28 ("Label it employee class here on the employee screen and move it over
@@ -14424,6 +14427,142 @@ function staffCodesPanelHTML(){
   </div>`;
 }
 
+// ─── PUTTING THE MICROS SIGN-IN NUMBERS BACK ─────────────────────────────────
+//
+// Vinny: "can we get everyones ids back in?" — the Empl ID# column from the MICROS
+// employee list, set as each person's register sign-in code. 146 people.
+//
+// ⚠️ IT ONLY EVER FILLS GAPS. Anyone the register already has a code for is SKIPPED,
+// never overwritten. Jarvis set Vinny a new number on the mini tonight; a blanket
+// import that "just sets everybody" would have silently undone it, and the owner
+// discovering he cannot sign in during service is the worst possible way to find out.
+// Skipped is listed, not hidden, so a wrong skip is visible too.
+//
+// ⚠️ AND IT NEVER CREATES ANYBODY. The mini's pin endpoint will happily create an
+// employee it has not heard of, defaulting the role to 'server' — which would hand
+// register access to people whose MICROS class is "clock in only". Whether somebody may
+// sign in is decided by their class, so anyone not already on the register is listed
+// and left alone rather than invented with a guessed role.
+//
+// ⚠️ NOTHING IS WRITTEN TO ct_staff IN PLAIN. The code goes to the mini, which stores a
+// hash; this page records only that one exists. The plaintext column removed today
+// stays removed — an import is exactly the moment that would quietly come back.
+let staffImp = { rows:null, parsed:null, running:false, done:null, log:[] };
+
+function staffImpParse(text){
+  const out=[], bad=[];
+  String(text||'').split(/\r?\n/).forEach((line,i)=>{
+    const t=line.trim(); if(!t)return;
+    if(/^name\s*,/i.test(t))return;                       // header
+    const m=t.match(/^\s*"?([^",]+?)"?\s*,\s*"?(\d{3,8})"?\s*(?:,.*)?$/);
+    if(!m){ if(!/,\s*,/.test(t))bad.push(t.slice(0,60)); return; }
+    out.push({name:m[1].trim(), code:m[2]});
+  });
+  return {rows:out, bad};
+}
+
+function staffImpMatch(rows){
+  const people=Object.values(staffS.people||{}).filter(p=>!p.removed);
+  const byKey=new Map();
+  people.forEach(p=>{ const k=staffKeyOf(p.name); if(k&&!byKey.has(k))byKey.set(k,p); });
+  const aliases=staffS.aliases||{};
+  const res={set:[],hasCode:[],notOnRegister:[],noMatch:[]};
+  rows.forEach(r=>{
+    let k=staffKeyOf(r.name);
+    if(aliases[k]&&staffS.people[aliases[k]])k=staffKeyOf(staffS.people[aliases[k]].name);
+    const p=byKey.get(k);
+    if(!p){res.noMatch.push(r);return}
+    const mini=p.register&&p.register.mini;
+    if(!mini){res.notOnRegister.push({...r,p});return}
+    if(mini.has_pin){res.hasCode.push({...r,p});return}
+    res.set.push({...r,p});
+  });
+  return res;
+}
+
+function staffImpPreview(){
+  const el=document.getElementById('staff-imp-text'); if(!el)return;
+  const {rows,bad}=staffImpParse(el.value);
+  if(!rows.length){alert('Nothing to read.\n\nPaste the list as one person per line: a name, a comma, then their number.');return}
+  staffImp={...staffImp, rows, parsed:staffImpMatch(rows), bad, done:null, log:[]};
+  staffRedraw();
+}
+
+async function staffImpRun(){
+  const P=staffImp.parsed; if(!P||!P.set.length)return;
+  if(!posS.srv)return alert('No register server set — POS tab → Connections.');
+  if(!confirm('Set a sign-in number for '+P.set.length+' '+(P.set.length===1?'person':'people')+'?\n\n'
+    +'Anyone who already has a code keeps it — '+P.hasCode.length+' '+(P.hasCode.length===1?'person is':'people are')+' being skipped for that reason.\n\n'
+    +'They take effect on the registers as each one is set.'))return;
+  staffImp={...staffImp, running:true, log:[], done:null}; staffRedraw();
+  let ok=0, fail=0, consecutive=0;
+  for(const r of P.set){
+    try{
+      const res=await posSrv('/api/employees/pin',{method:'POST',body:JSON.stringify({
+        name:r.p.name, paychex_id:r.p.paychex_id||null,
+        role:(r.p.register&&r.p.register.role)||'server', pin:r.code})});
+      if(res.ok){
+        // Mirrors staffSetPin, plaintext included — an import that left the office
+        // copy blank would put the page straight back where this started.
+        r.p.register=r.p.register||{}; r.p.register.pin_set=true; r.p.register.signin=r.code;
+        delete r.p.register.pin_pending;
+        if(res.body&&res.body.id!=null)r.p.register.emp_id=res.body.id;
+        if(res.body&&res.body.role)r.p.register.role=res.body.role;
+        r.p.register.mini=Object.assign({},r.p.register.mini,{has_pin:true,at:Date.now()});
+        staffTouch(r.p); ok++; consecutive=0;
+        staffImp.log.push({name:r.p.name, ok:true});
+      }else{
+        fail++; consecutive++;
+        staffImp.log.push({name:r.p.name, ok:false, why:(res.body&&res.body.error)||('HTTP '+res.status)});
+      }
+    }catch(e){ fail++; consecutive++; staffImp.log.push({name:r.p.name, ok:false, why:(e&&e.message)||String(e)}); }
+    // Stop rather than hammer. Ten in a row is the mini refusing or gone, not ten
+    // unlucky people, and carrying on would turn one problem into a hundred.
+    if(consecutive>=10){ staffImp.log.push({name:'—', ok:false, why:'stopped after 10 failures in a row'}); break; }
+    staffImp={...staffImp}; staffRedraw();
+  }
+  staffSave();
+  staffImp={...staffImp, running:false, done:{ok,fail}};
+  staffRedraw();
+  alert(ok+' sign-in number'+(ok===1?'':'s')+' set.'+(fail?'\n\n'+fail+' failed — listed on the page.':'')
+    +'\n\nNobody who already had a code was touched.');
+}
+
+function staffImportPanelHTML(){
+  const P=staffImp.parsed;
+  const row=(label,items,colour,why)=>items.length?`<div style="margin-top:9px">
+      <div style="font-size:12px;font-weight:800;color:${colour};text-transform:uppercase;letter-spacing:.5px">${label} (${items.length})</div>
+      ${why?`<div style="font-size:11.5px;color:var(--text-muted);line-height:1.5;margin:2px 0 3px">${why}</div>`:''}
+      <div style="font-size:12.5px;color:var(--text);line-height:1.7">${items.slice(0,60).map(x=>esc((x.p&&x.p.name)||x.name)).join(' · ')}${items.length>60?` <span style="color:var(--text-muted)">+${items.length-60} more</span>`:''}</div>
+    </div>`:'';
+  return `<div style="${posCardCss};margin-bottom:14px;max-width:820px">
+    <div style="font-weight:800;font-size:15px;margin-bottom:4px">Put the MICROS sign-in numbers back</div>
+    <div style="color:var(--text-dim);font-size:12px;line-height:1.55;margin-bottom:9px">
+      Paste the Empl ID# list — one person per line, <b>name, number</b>. It is on this Mac at
+      <code style="font-size:11.5px">~/Desktop/Payroll/micros-signin-ids.csv</code>.
+      Numbers go to the registers only; nothing is stored in plain here.</div>
+    <textarea id="staff-imp-text" placeholder="Jane Smith, 4821" spellcheck="false"
+      style="${posInput};width:100%;height:92px;font-family:ui-monospace,monospace;font-size:12.5px"></textarea>
+    <div style="display:flex;gap:8px;margin-top:9px;flex-wrap:wrap;align-items:center">
+      <button onclick="staffImpPreview()" style="${posBtn('#3f3f46')};font-size:13px;padding:8px 15px">Check it first</button>
+      ${P&&P.set.length?`<button onclick="staffImpRun()" ${staffImp.running?'disabled':''}
+        style="${posBtn('#0ea5e9')};font-size:13px;padding:8px 15px;${staffImp.running?'opacity:.5':''}">${
+        staffImp.running?('Setting… '+staffImp.log.length+'/'+P.set.length):('Set '+P.set.length+' number'+(P.set.length===1?'':'s'))}</button>`:''}
+    </div>
+    ${staffImp.bad&&staffImp.bad.length?`<div style="margin-top:8px;font-size:12px;color:#f59e0b">${staffImp.bad.length} line${staffImp.bad.length===1?'':'s'} could not be read and ${staffImp.bad.length===1?'was':'were'} ignored: ${esc(staffImp.bad.slice(0,3).join(' | '))}</div>`:''}
+    ${P?`<div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--border)">
+      ${row('Will be set',P.set,'#22c55e','')}
+      ${row('Keeping the code they already have',P.hasCode,'#f59e0b','Skipped on purpose — setting these would replace a working number, including any set directly on a register.')}
+      ${row('Not on the registers yet',P.notOnRegister,'#f59e0b','Skipped. Whether somebody may sign in is decided by their employee class, so these need adding with the right class first rather than being created here as servers.')}
+      ${row('No match on the staff list',P.noMatch,'#ef4444','The name in the list does not match anybody here. Fix the spelling or merge the duplicate, then check again.')}
+    </div>`:''}
+    ${staffImp.done?`<div style="margin-top:10px;font-size:13px;color:${staffImp.done.fail?'#f59e0b':'#22c55e'}">
+      Done — ${staffImp.done.ok} set${staffImp.done.fail?', '+staffImp.done.fail+' failed':''}.</div>`:''}
+    ${staffImp.log.filter(l=>!l.ok).length?`<div style="margin-top:7px;font-size:12px;color:#ef4444;line-height:1.6">${
+      staffImp.log.filter(l=>!l.ok).slice(0,12).map(l=>esc(l.name)+' — '+esc(l.why)).join('<br>')}</div>`:''}
+  </div>`;
+}
+
 function posStaffHTML(){
   staffLoad();
   privLoad();
@@ -14433,7 +14572,7 @@ function posStaffHTML(){
   const inactive=all.filter(p=>p.active===false||p.gone).length;
   const when=staffS.at?new Date(staffS.at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'never';
   return `
-  ${staffCodesPanelHTML()}
+  ${staffImportPanelHTML()}
   <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
     ${posStat('People',String(all.length),
       staffS.filter?'press to show everybody again':'in the database',
