@@ -14761,59 +14761,79 @@ function posStationsHTML(){
 // re-READS, and shows what came back. If the mini does not serve the endpoint yet, it
 // says exactly that and stores nothing — the same shape staffSetPin uses for a missing
 // /api/employees/pin, which is the only honest answer when the other half is not built.
-let posTaxS = { loading:false, rate:null, at:null, err:null, unsupported:false, saving:false };
+let posTaxS = { loading:false, rates:null, at:null, err:null, unsupported:false, saving:null };
+
+// The register sells more than food. Naperville's extra 1% is a FOOD AND BEVERAGE tax
+// sitting on top of the 7.00 + 0.75 general sales tax — so on one check a plate can be
+// taxed at one rate and something that is not food at another, and a single number
+// cannot say that. The register already models per-category tax treatment (menu.js
+// flags the GOLF category exempt), so the split is not hypothetical for this menu.
+//
+// ⚠️ SO THIS READS A MAP, NOT A NUMBER, even while only one key comes back. Growing a
+// one-key payload to two costs nothing today; discovering it after checks have been
+// priced and filed means a migration on live money. Whatever keys the mini returns are
+// shown and editable, labelled where we know the name and by their raw key where we do
+// not — this page does not decide what rates exist.
+const POS_TAX_LABELS={ food:'Food & beverage', general:'General — everything else',
+  liquor:'Liquor', alcohol:'Alcohol', takeout:'Carry-out', retail:'Retail' };
+const posTaxLabel=(k)=>POS_TAX_LABELS[k]||k;
+
+// Both shapes accepted: {rates:{...}} and a legacy single {rate}. A mini that only ever
+// learns one rate still works, and nothing here has to change when it learns a second.
+function posTaxNormalize(b){
+  if(!b)return null;
+  if(b.rates&&typeof b.rates==='object'&&Object.keys(b.rates).length)return {...b.rates};
+  if(b.rate!=null)return {general:Number(b.rate)};
+  return {};
+}
 
 async function posTaxLoad(){
   if(!posS.srv){ posTaxS={...posTaxS, err:'nosrv', loading:false}; return posTaxRender(); }
   posTaxS={...posTaxS, loading:true, err:null}; posTaxRender();
   try{
     const r = await posSrv('/api/tax');
-    if(r.status===404){ posTaxS={...posTaxS, loading:false, unsupported:true, rate:null}; return posTaxRender(); }
+    if(r.status===404){ posTaxS={...posTaxS, loading:false, unsupported:true, rates:null}; return posTaxRender(); }
     if(r.status===401){ posTaxS={...posTaxS, loading:false, err:'auth'}; return posTaxRender(); }
     if(!r.ok){ posTaxS={...posTaxS, loading:false, err:'HTTP '+r.status}; return posTaxRender(); }
-    const b=r.body||{};
     posTaxS={...posTaxS, loading:false, unsupported:false,
-             rate:(b.rate!=null?Number(b.rate):null), at:b.at||null, err:null};
+             rates:posTaxNormalize(r.body||{}), at:(r.body&&r.body.at)||null, err:null};
   }catch(e){ posTaxS={...posTaxS, loading:false, err:(e&&e.message)||String(e)}; }
   posTaxRender();
 }
 
-async function posTaxSave(){
-  const el=document.getElementById('pos-tax-input'); if(!el)return;
+async function posTaxSave(key){
+  const el=document.getElementById('pos-tax-'+key); if(!el)return;
   const raw=String(el.value||'').trim().replace('%','');
   if(!raw)return;
   const pct=Number(raw);
-  // A rate is typed as a PERCENT because that is how everyone says it and how the city
-  // publishes it. Rejecting the fraction form outright rather than guessing: 0.0875
-  // could be "8.75%" fumbled or could be somebody genuinely meaning 0.0875%, and a tax
-  // rate is not a number to be clever about.
+  // Typed as a PERCENT because that is how it is spoken and published; sent as a
+  // FRACTION because that is what the register multiplies by. One conversion, here.
   if(!isFinite(pct)||pct<0||pct>25){
-    alert('Type the rate as a percent, e.g. 8.75 for 8.75%.\n\nAnything from 0 to 25 is accepted; "'+raw+'" is not.');
+    alert('Type the rate as a percent — the number you would say out loud.\n\nAnything from 0 to 25 is accepted; "'+raw+'" is not.');
     el.focus(); el.select(); return;
   }
-  const rate=Math.round(pct*1e6)/1e8;   // 8.75 -> 0.0875, without float dust
-  // ⚠️ THE FRACTION-FORM SLIP. Typing 0.0875 meaning "8.75%" is the one fat-finger here
-  // that loses money quietly: it is a VALID number, so nothing rejects it, and it would
-  // price every check at effectively no tax until somebody noticed on a filing. Not
-  // banned — a genuine sub-1% rate is possible — but named, with both readings, so the
-  // dialog cannot be waved through on muscle memory.
-  if(pct>0&&pct<1&&!confirm('You typed '+pct+'%, which is less than one percent — nearly no tax at all.\n\nIf you meant '+(pct*100)+'%, type '+(pct*100)+' instead.\n\nSet the rate to '+pct+'% anyway?'))return;
-  if(!confirm('Charge '+pct+'% tax on every check from now on?\n\nThis is the rate the registers price with, and it takes effect within a second. It does not change the catering form.'))return;
-  posTaxS={...posTaxS, saving:true}; posTaxRender();
+  const rate=Math.round(pct*1e6)/1e8;
+  // ⚠️ THE FRACTION-FORM SLIP. Typing the fraction when the box wants a percent is the
+  // one fat-finger here that loses money quietly: it is a VALID number, so nothing
+  // rejects it, and it prices every check at effectively no tax until a filing notices.
+  // Not banned — a genuine sub-1% rate is possible — but named, with both readings.
+  if(pct>0&&pct<1&&!confirm('You typed '+pct+'%, which is less than one percent — nearly no tax at all.\n\nIf you meant '+(pct*100)+'%, type '+(pct*100)+' instead.\n\nSet '+posTaxLabel(key)+' to '+pct+'% anyway?'))return;
+  if(!confirm('Charge '+pct+'% on '+posTaxLabel(key).toLowerCase()+' from now on?\n\nThis is what the registers price with, and it takes effect within a second. It does not change the catering form.'))return;
+  posTaxS={...posTaxS, saving:key}; posTaxRender();
   try{
-    const r = await posSrv('/api/tax',{method:'POST',body:JSON.stringify({rate})});
-    if(r.status===404){ posTaxS={...posTaxS, saving:false, unsupported:true}; posTaxRender();
-      return alert('The registers do not accept a tax rate yet.\n\nNOTHING WAS STORED — not here and not there. The rate is still compiled into the register software, so changing it is a release, not a setting. This page will start working the moment that ships.'); }
-    if(r.status===401){ posTaxS={...posTaxS, saving:false}; posTaxRender(); return alert(posAuthNote().replace(/^⚠ /,'')+'\n\nNothing was stored.'); }
-    if(!r.ok){ posTaxS={...posTaxS, saving:false}; posTaxRender();
+    const r = await posSrv('/api/tax',{method:'POST',body:JSON.stringify({rates:{[key]:rate}})});
+    if(r.status===404){ posTaxS={...posTaxS, saving:null, unsupported:true}; posTaxRender();
+      return alert('The registers do not accept a tax rate yet.\n\nNOTHING WAS STORED — not here and not there. The rate is still compiled into the register software, so changing it is a release, not a setting. This page starts working the moment that ships.'); }
+    if(r.status===401){ posTaxS={...posTaxS, saving:null}; posTaxRender(); return alert(posAuthNote().replace(/^⚠ /,'')+'\n\nNothing was stored.'); }
+    if(!r.ok){ posTaxS={...posTaxS, saving:null}; posTaxRender();
       return alert('The register would not take that rate:\n\n'+((r.body&&r.body.error)||('HTTP '+r.status))); }
     el.value='';
-  }catch(e){ posTaxS={...posTaxS, saving:false}; posTaxRender(); return alert('Could not reach the register: '+((e&&e.message)||e)); }
-  // ⚠️ READ IT BACK. Echoing what was typed would look identical to a real check on
-  // every normal day and differ only on the day it mattered — a POST that returned 200
-  // and stored nothing, or stored something else. What is shown below is what the mini
-  // answers when asked, not what this page just sent.
-  posTaxS={...posTaxS, saving:false};
+  }catch(e){ posTaxS={...posTaxS, saving:null}; posTaxRender(); return alert('Could not reach the register: '+((e&&e.message)||e)); }
+  // ⚠️ READ IT BACK. Echoing the typed number would look identical to a real check on
+  // every normal day and differ only on the day it mattered — a POST that returns 200
+  // and stores nothing, or stores something else. What is shown is what the mini
+  // answers when asked again, not what this page just sent.
+  posTaxS={...posTaxS, saving:null};
   await posTaxLoad();
 }
 
@@ -14821,50 +14841,60 @@ function posTaxRender(){ if(activeTab===POS&&posS.sec==='tax')renderViewport(); 
 
 function posTaxHTML(){
   const S=posTaxS;
-  const pct=(S.rate!=null)?(Math.round(S.rate*1e6)/1e4):null;
   const note=(t,c)=>`<div style="font-size:13px;color:${c};line-height:1.6">${t}</div>`;
-  let state;
-  if(!posS.srv) state=note('No register server set — <b>POS tab → Connections</b>. This page reads the rate off the mini, so it cannot show you anything until it knows where that is.','#f59e0b');
+  let state='';
+  const keys=S.rates?Object.keys(S.rates):[];
+
+  if(!posS.srv) state=note('No register server set — <b>POS tab → Connections</b>. This page reads the rates off the mini, so it cannot show you anything until it knows where that is.','#f59e0b');
   else if(S.loading) state=note('Asking the registers…','var(--text-dim)');
-  else if(S.unsupported) state=note('<b>The registers do not serve a tax rate yet.</b> The rate is still compiled into the register software, so changing it is a release rather than a setting — this page will start working the moment that ships, with nothing to do here. Until then it will not show you a number, because the only number it could show would be one it made up.','#f59e0b');
+  else if(S.unsupported) state=note('<b>The registers do not serve tax rates yet.</b> The rate is still compiled into the register software, so changing it is a release rather than a setting — this page starts working the moment that ships, with nothing to do here. Until then it shows no number, because the only number it could show would be one it made up.','#f59e0b');
   else if(S.err==='auth') state=note(esc(posAuthNote().replace(/^⚠ /,'')),'#ef4444');
   else if(S.err) state=note('Could not ask the registers: '+esc(S.err)+'. <b>No rate is shown rather than a stale one</b> — what this page remembers is not what the floor is charging.','#ef4444');
-  else if(S.rate==null) state=note('The registers answered, but with no rate set.','#f59e0b');
-  else state=`<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
-      <span style="font-size:34px;font-weight:800;letter-spacing:-0.5px">${pct}%</span>
-      <span style="font-size:13px;color:var(--text-dim)">is what the registers are charging right now</span>
+  else if(!keys.length) state=note('The registers answered, but no rates are set.','#f59e0b');
+
+  const rows=keys.map(k=>{
+    const pct=Math.round(Number(S.rates[k])*1e6)/1e4;
+    return `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:11px 0;border-bottom:1px solid var(--border)">
+      <div style="min-width:190px">
+        <div style="font-size:13.5px;font-weight:700">${esc(posTaxLabel(k))}</div>
+        <div style="font-size:11px;color:var(--text-muted);font-family:ui-monospace,monospace">${esc(k)}</div>
+      </div>
+      <div style="font-size:26px;font-weight:800;min-width:92px;letter-spacing:-0.5px">${pct}%</div>
+      <input id="pos-tax-${esc(k)}" inputmode="decimal" placeholder="new %" ${staffNoFill()}
+        onkeydown="if(event.key==='Enter'){posTaxSave('${esc(k)}');event.preventDefault()}"
+        style="${posInput};width:92px;text-align:right;font-size:15px">
+      <button onclick="posTaxSave('${esc(k)}')" ${S.saving===k?'disabled':''}
+        style="${posBtn('#0ea5e9')};font-size:13px;padding:7px 14px;${S.saving===k?'opacity:.5':''}">${S.saving===k?'Saving…':'Save'}</button>
     </div>`;
+  }).join('');
 
-  return `<div style="${posCardCss};margin-bottom:14px;max-width:620px">
-    <div style="font-weight:800;font-size:15px;margin-bottom:4px">Sales tax</div>
+  return `<div style="${posCardCss};margin-bottom:14px;max-width:700px">
+    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px">
+      <div style="font-weight:800;font-size:15px">Sales tax</div>
+      <button onclick="posTaxLoad()" style="margin-left:auto;border:none;background:transparent;color:var(--text-dim);cursor:pointer;font-family:inherit;font-size:12px;text-decoration:underline">re-check</button>
+    </div>
     <div style="color:var(--text-dim);font-size:12px;line-height:1.5;margin-bottom:12px">
-      The rate the registers price every check with. Read from the mini each time this page opens —
-      never from a copy kept here, so what you see is what the floor is doing.</div>
-    <div style="padding:12px 14px;background:var(--surface2);border-radius:10px;margin-bottom:14px">${state}</div>
-
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <input id="pos-tax-input" inputmode="decimal" placeholder="8.75" ${staffNoFill()}
-        onkeydown="if(event.key==='Enter'){posTaxSave();event.preventDefault()}"
-        style="${posInput};width:110px;text-align:right;font-size:17px;letter-spacing:1px">
-      <span style="font-size:17px;font-weight:700;color:var(--text-dim)">%</span>
-      <button onclick="posTaxSave()" ${S.saving?'disabled':''}
-        style="${posBtn('#0ea5e9')};font-size:14px;padding:9px 18px;${S.saving?'opacity:.5':''}">${S.saving?'Saving…':'Save'}</button>
-      <button onclick="posTaxLoad()" style="border:none;background:transparent;color:var(--text-dim);cursor:pointer;font-family:inherit;font-size:13px;text-decoration:underline">re-check</button>
-    </div>
-    <div style="font-size:12px;color:var(--text-muted);margin-top:10px;line-height:1.6">
-      Typed as a percent — <b>8.75</b> means 8.75%. Takes effect on the floor within a second.
-      <b>Dine-in and carry-out only</b>; the catering form carries its own rate and is not touched from here.
-    </div>
+      What the registers price every check with. Read from the mini each time this page opens —
+      never from a copy kept here, so what you see is what the floor is doing.
+      <b>Dine-in and carry-out only</b>; the catering form carries its own rate and is not touched from here.</div>
+    ${state?`<div style="padding:12px 14px;background:var(--surface2);border-radius:10px">${state}</div>`:''}
+    ${rows?`<div>${rows}</div>
+      <div style="font-size:12px;color:var(--text-muted);margin-top:10px;line-height:1.6">
+        Type the rate as a percent — the number you would say out loud. Takes effect on the floor within a second.
+      </div>`:''}
   </div>
 
-  <div style="${posCardCss};max-width:620px">
+  <div style="${posCardCss};max-width:700px">
     <div style="font-weight:800;font-size:14px;margin-bottom:6px">Worth knowing</div>
     <div style="color:var(--text-dim);font-size:12.5px;line-height:1.7">
-      Catering was moved to <b>8%</b> on 21/10/2026 and the registers were never told — they
-      have been on <b>7.75%</b> since. Naperville publishes <b>8.75%</b> for food for immediate
-      consumption outside downtown (7.00 state + 0.75 home rule + 1.00 food &amp; beverage).
-      Three numbers, and which is right for dine-in is a question for your accountant, not for
-      this page — it will charge whatever you set.
+      Catering was moved to 8% on 21/10/2026 and the registers were never told — they have been on
+      7.75% since, so two of your own systems are charging differently today.
+      Naperville publishes 7.00% state + 0.75% home rule, plus a <b>1.00% food and beverage</b> tax
+      on food for immediate consumption (and, since 1/1/2026, on drive-thru and carry-out).
+      ⚠️ Because that last 1% is specifically a <b>food</b> tax, one blended number may not be the
+      right shape — a plate and a non-food item on the same check can differ.
+      <b>None of this is a decision.</b> Which rates apply to what is a question for your accountant;
+      this page charges whatever you set and nothing more.
     </div>
   </div>`;
 }
