@@ -14329,6 +14329,69 @@ function privRefresh(){
   if(fresh)el.replaceWith(fresh);
 }
 
+// ─── THE OLD PLAINTEXT SIGN-IN CODES, AND GETTING RID OF THEM ────────────────
+//
+// Between 21/10 and 8/11 a person's sign-in code was ALSO kept here in plain, to be
+// looked up in the app. That display is gone and new codes are no longer stored — but
+// removing the reader and leaving the data is the half-migration that keeps biting:
+// a credential nothing uses is still a credential, and this exact store was found on
+// 5/11 serving 128 codes to any caller on the wifi. /api/roster strips them from the
+// public payload now; the PRIVILEGED view still returns them in full.
+//
+// So they have to be drained, not just hidden. Vinny asked "which ones?" first, which
+// is the right question — this names the people, with a count, before anything goes.
+//
+// ⚠️ NAMES ONLY, NEVER THE CODES. Printing them to answer "which ones" would re-create
+// the exposure being cleaned up, on a screen, to settle a question that only needs who.
+function staffStoredCodes(){
+  return Object.values(staffS.people||{})
+    .filter(p=>p&&p.register&&p.register.signin)
+    .sort((a,b)=>String(a.name||'').localeCompare(String(b.name||'')));
+}
+
+let staffClearArmed=false, staffClearTimer=null;
+function staffClearCodes(ev){
+  const who=staffStoredCodes();
+  if(!who.length)return;
+  const btn=(ev&&ev.target)||null;
+  if(!staffClearArmed){
+    staffClearArmed=true;
+    if(btn){btn.dataset.label=btn.textContent;btn.textContent='Tap again to clear '+who.length;btn.style.background='#ef4444'}
+    clearTimeout(staffClearTimer);
+    staffClearTimer=setTimeout(()=>{staffClearArmed=false;
+      if(btn&&btn.dataset.label){btn.textContent=btn.dataset.label;btn.style.background=''}},4000);
+    return;
+  }
+  clearTimeout(staffClearTimer); staffClearArmed=false;
+  // The register is untouched: the mini holds its own hash and is the only thing that
+  // ever authenticated anybody. Everyone signs in afterwards exactly as they do now.
+  let n=0;
+  for(const p of who){ delete p.register.signin; staffTouch(p); n++; }
+  staffSave();
+  staffRefresh();
+  alert(n+' stored code'+(n===1?'':'s')+' cleared.\n\nNobody has to do anything on the floor — the registers keep their own copy and sign-in is unchanged. There is now no way to look an existing code up; a forgotten one is set fresh from this page.');
+}
+
+function staffCodesPanelHTML(){
+  const who=staffStoredCodes();
+  if(!who.length)return '';
+  const CAP=40;
+  const names=who.slice(0,CAP).map(p=>esc(p.name||p.key)).join(' · ');
+  return `<div style="${posCardCss};margin-bottom:14px;border-color:#f59e0b;background:rgba(245,158,11,0.06);max-width:760px">
+    <div style="font-weight:800;font-size:14px;color:#f59e0b;margin-bottom:5px">${who.length} ${who.length===1?'person is':'people are'} still storing an old sign-in code here</div>
+    <div style="font-size:12.5px;color:var(--text-dim);line-height:1.65;margin-bottom:9px">
+      Kept in plain from 21/10 so a code could be looked up in the app. That display is gone and new codes
+      are no longer saved, but these are still here — and still readable to anyone holding an office token.
+      Nothing uses them: the registers authenticate against their own hashed copy on the mini.
+      <b>Clearing changes nothing on the floor.</b> It is one-way — afterwards a forgotten code is set fresh
+      rather than looked up.
+    </div>
+    <div style="font-size:12.5px;color:var(--text);line-height:1.7;margin-bottom:11px">${names}${
+      who.length>CAP?` <span style="color:var(--text-muted)">+${who.length-CAP} more</span>`:''}</div>
+    <button onclick="staffClearCodes(event)" style="${posBtn('#f59e0b')};font-size:13px;padding:8px 15px">Clear ${who.length} stored code${who.length===1?'':'s'}</button>
+  </div>`;
+}
+
 function posStaffHTML(){
   staffLoad();
   privLoad();
@@ -14338,6 +14401,7 @@ function posStaffHTML(){
   const inactive=all.filter(p=>p.active===false||p.gone).length;
   const when=staffS.at?new Date(staffS.at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'never';
   return `
+  ${staffCodesPanelHTML()}
   <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
     ${posStat('People',String(all.length),
       staffS.filter?'press to show everybody again':'in the database',
