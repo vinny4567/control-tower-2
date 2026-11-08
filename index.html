@@ -13694,7 +13694,12 @@ async function staffSetPin(k,given){
     // No `access=true` here any more — the class decides, and writing a flag
     // nothing reads would leave a second opinion lying around for somebody to
     // find later and believe.
-    p.register=p.register||{};p.register.pin_set=true;p.register.signin=pin;delete p.register.pin_pending;
+    // ⚠️ THE PLAIN NUMBER IS NOT KEPT. It was (Vinny's call 10/21, to look codes up in
+    // the app), and that display is gone now — so storing it would leave a register
+    // credential sitting in plaintext in cloud KV with nothing reading it, which is all
+    // of the exposure and none of the reason. Only the fact that a code is set is kept.
+    // The mini holds the real one, hashed.
+    p.register=p.register||{};p.register.pin_set=true;delete p.register.pin_pending;
     // The mini's own id for this person, so a later role change can target the row
     // rather than re-resolving a name. paychex_id alone would do; this is cheaper.
     if(r.body&&r.body.id!=null)p.register.emp_id=r.body.id;
@@ -13710,12 +13715,40 @@ async function staffSetPin(k,given){
 //
 // The number box: type a sign-in number and Save. It POSTs to the mini, which stores it
 // HASHED for actual sign-in (register auth unchanged).
-// ⚠️ CHANGED 10/21 at Vinny's explicit call, after being shown the tradeoff: the plain
-// number is now ALSO kept in ct_staff (`register.signin`) and shown as text on the person's
-// row, so he can look anyone's code up in the app. This re-exposes what the original design
-// deliberately never stored — a register credential now lives in plaintext in the cloud KV
-// store, so a leak of ct_staff hands over everyone's sign-in. His decision, his business.
+// 10/21–11/8, and back again: for a few weeks the plain number was ALSO kept in
+// ct_staff (`register.signin`) and printed on the row, at Vinny's explicit call, so he
+// could look anyone's code up here. REMOVED 11/8 — his call too, and the reason is the
+// better argument: the copy could only ever be as good as the last time somebody set a
+// code THROUGH THIS BOX, and a pin set anywhere else (the mini, directly) left it
+// behind still displaying as fact. A credential read off a stale source is worse than
+// none shown, because it is the number you would go and type. Back to the original
+// design: hashed on the mini, and this page knows only THAT a code is set.
 // The box still clears after save; the saved number shows as text just below it.
+// ─── KEEP THE PASSWORD MANAGER OUT OF THESE BOXES ────────────────────────────
+//
+// Vinny: "stop this from trying to autofill." Safari was offering his saved
+// vinny4567.github.io login, with Touch ID, on the sign-in NUMBER box.
+//
+// ⚠️ NOT COSMETIC. Accepting that fill would type a website password into the field
+// that sets somebody's register sign-in code, and Save posts it straight to the mini.
+// A wrong number on the floor is a person who cannot sign in mid-service.
+//
+// autocomplete="off" was already on the box and Safari ignored it — it does, once it
+// has a saved login for the origin and sees a lone text field next to a Save button.
+// So this does not rely on any single lever:
+//   · a name the managers cannot match, different on every render
+//   · the vendor opt-outs 1Password / LastPass / Bitwarden / Dashlane each honour
+//   · readonly until focus, which is what actually stops Safari — it decides whether
+//     to offer the panel when the field is focused, and a readonly field is not a
+//     fill target. Cleared on focus, before any keystroke, so typing is unaffected.
+let staffNoFillN=0;
+function staffNoFill(){
+  return `name="nf-${++staffNoFillN}-${Math.random().toString(36).slice(2,8)}" `+
+    `autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" `+
+    `data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" `+
+    `readonly onfocus="this.removeAttribute('readonly')"`;
+}
+
 async function staffSaveNumber(k,el){
   const v=String(el.value||'').trim();
   if(!v)return;
@@ -13790,14 +13823,19 @@ function staffDetail(p){
                                     : 'No class set — cannot sign in')}
       </div>
       <div style="display:flex;gap:5px;align-items:center;margin-top:10px">
-        <input id="staff-num-${kid}" inputmode="numeric" autocomplete="off" maxlength="8"
+        <input id="staff-num-${kid}" inputmode="numeric" maxlength="8" ${staffNoFill()}
           placeholder="${(mini&&mini.has_pin)?'new number':'number'}"
           onkeydown="if(event.key==='Enter')staffSaveNumber('${esc(k)}',document.getElementById('staff-num-${kid}'))"
           style="${inp};width:104px;letter-spacing:2px">
         <button onclick="staffSaveNumber('${esc(k)}',document.getElementById('staff-num-${kid}'))"
           style="${posBtn('#0ea5e9')};padding:3px 9px;font-size:12px">Save</button>
       </div>
-      ${reg.signin?`<div style="margin-top:6px;font-size:13px;color:var(--text-dim)">Sign-in #: <b style="color:var(--text);letter-spacing:2px">${esc(reg.signin)}</b></div>`:''}
+      ${/* The plain sign-in number used to be printed here. Vinny: "why is my old number
+             still showing get rid of that number under the type box." It was STALE and
+             could only ever be stale — the mini is where a pin actually lives, and a pin
+             changed anywhere but this box (Jarvis set one mini-side tonight) left this
+             copy behind, still displayed as fact. A credential read off the wrong source
+             is worse than no credential shown: it is the number you would type. */''}
       ${reg.access?`
         <!-- The employee class used to sit HERE. Vinny moved it under the payroll id on
              10/28 ("Label it employee class here on the employee screen and move it over
@@ -13823,7 +13861,7 @@ function staffDetail(p){
       <div style="${hd}">PAYROLL</div>
       <div style="display:flex;gap:6px;align-items:center">
         <span style="font-size:13px">Paychex</span>
-        <input value="${esc(p.paychex_id||'')}" onchange="staffEdit('${esc(k)}','paychex',this.value)" style="${inp}">
+        <input value="${esc(p.paychex_id||'')}" ${staffNoFill()} onchange="staffEdit('${esc(k)}','paychex',this.value)" style="${inp}">
       </div>
       <!-- EMPLOYEE CLASS. Vinny's name for it, 10/28, and his placement: under the
            payroll id rather than in REGISTER. It decides what this person may DO
