@@ -7102,12 +7102,12 @@ async function posLoadPrices(){
   // Fetch everything, compare it to what is already on screen, and only redraw when
   // something actually differs. A reload that changes nothing now changes nothing.
   const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
-  const [r,g,ng,at,rt,pc,nm,gn,gd,ml,dm,cc,mn,dg,ce,co,io,di,ni,sa,dr,nd,dd]=await Promise.all([
+  const [r,g,ng,at,rt,pc,nm,gn,gd,ml,dm,cc,mn,dg,ce,co,io,ito,di,ni,sa,dr,nd,dd]=await Promise.all([
     kvGet('ct_pos_prices'),kvGet('ct_pos_group_mods'),kvGet('ct_pos_new_groups'),
     kvGet('ct_pos_group_attach'),kvGet('ct_pos_routing'),kvGet('ct_pos_print_classes'),
     kvGet('ct_pos_new_mods'),kvGet('ct_pos_group_names'),kvGet('ct_pos_group_detach'),
     kvGet('ct_pos_mod_letters'),kvGet('ct_pos_deleted_mods'),kvGet('ct_pos_choice_cuts'),
-    kvGet('ct_pos_mod_names'),kvGet('ct_pos_deleted_groups'),kvGet('ct_pos_choice_edits'),kvGet('ct_pos_choice_order'),kvGet('ct_pos_item_group_order'),kvGet('ct_pos_deleted_items'),kvGet('ct_pos_new_items'),kvGet('ct_pos_section_adds'),kvGet('ct_pos_disc_rates'),kvGet('ct_pos_new_discounts'),kvGet('ct_pos_deleted_discounts')]);
+    kvGet('ct_pos_mod_names'),kvGet('ct_pos_deleted_groups'),kvGet('ct_pos_choice_edits'),kvGet('ct_pos_choice_order'),kvGet('ct_pos_item_group_order'),kvGet('ct_pos_item_order'),kvGet('ct_pos_deleted_items'),kvGet('ct_pos_new_items'),kvGet('ct_pos_section_adds'),kvGet('ct_pos_disc_rates'),kvGet('ct_pos_new_discounts'),kvGet('ct_pos_deleted_discounts')]);
   // ⛔ A FAILED FETCH IS NOT AN EMPTY VALUE. `kvGet` returns null for ANY non-200 — a dropped
   // connection, a rejected key, a restart — and this block used to read `(x&&x.v)||[]`, which turns
   // that null into an EMPTY LIST and then assigns it over the live one below. The pending edits are
@@ -7123,7 +7123,7 @@ async function posLoadPrices(){
     routing:take(rt,posRouting,{}), classes:take(pc,posNewClasses,[]), newMods:take(nm,posNewMods,[]),
     names:take(gn,posGroupNames,{}), detach:take(gd,posGroupDetach,{}), letters:take(ml,posModLetters,{}),
     deleted:take(dm,posDeletedMods,[]), cuts:take(cc,posChoiceCuts,{}), modNames:take(mn,posModNames,{}),
-    delGroups:take(dg,posDeletedGroups,[]), choiceEdits:take(ce,posChoiceEdits,{}), choiceOrder:take(co,posChoiceOrder,{}), itemGroupOrder:take(io,posItemGroupOrder,{}), delItems:take(di,posDeletedItems,[]), newItems:take(ni,posNewItems,[]), sectionAdds:take(sa,posSectionAdds,{}),
+    delGroups:take(dg,posDeletedGroups,[]), choiceEdits:take(ce,posChoiceEdits,{}), choiceOrder:take(co,posChoiceOrder,{}), itemGroupOrder:take(io,posItemGroupOrder,{}), itemOrder:take(ito,posItemOrder,{}), delItems:take(di,posDeletedItems,[]), newItems:take(ni,posNewItems,[]), sectionAdds:take(sa,posSectionAdds,{}),
     discRates:take(dr,posDiscRates,{}), newDiscounts:take(nd,posNewDiscounts,[]), delDiscounts:take(dd,posDeletedDiscounts,[]),
   };
   const changed=!same(next.prices,posPrices)||!same(next.mods,posGroupMods)
@@ -7134,14 +7134,14 @@ async function posLoadPrices(){
     ||!same(next.deleted,posDeletedMods)||!same(next.cuts,posChoiceCuts)
     ||!same(next.modNames,posModNames)||!same(next.delGroups,posDeletedGroups)
     ||!same(next.choiceEdits,posChoiceEdits)||!same(next.choiceOrder,posChoiceOrder)
-    ||!same(next.itemGroupOrder,posItemGroupOrder)||!same(next.delItems,posDeletedItems)||!same(next.newItems,posNewItems)||!same(next.sectionAdds,posSectionAdds)
+    ||!same(next.itemGroupOrder,posItemGroupOrder)||!same(next.itemOrder,posItemOrder)||!same(next.delItems,posDeletedItems)||!same(next.newItems,posNewItems)||!same(next.sectionAdds,posSectionAdds)
     ||!same(next.discRates,posDiscRates)||!same(next.newDiscounts,posNewDiscounts)||!same(next.delDiscounts,posDeletedDiscounts);
   posPrices=next.prices; posGroupMods=next.mods; posNewGroups=next.groups;
   posGroupAttach=next.attach; posRouting=next.routing; posNewClasses=next.classes;
   posNewMods=next.newMods; posGroupNames=next.names; posGroupDetach=next.detach;
   posModLetters=next.letters; posDeletedMods=next.deleted; posChoiceCuts=next.cuts;
   posModNames=next.modNames; posDeletedGroups=next.delGroups;
-  posChoiceEdits=next.choiceEdits; posChoiceOrder=next.choiceOrder; posItemGroupOrder=next.itemGroupOrder; posDeletedItems=next.delItems; posNewItems=next.newItems; posSectionAdds=next.sectionAdds;
+  posChoiceEdits=next.choiceEdits; posChoiceOrder=next.choiceOrder; posItemGroupOrder=next.itemGroupOrder; posItemOrder=next.itemOrder||{}; posDeletedItems=next.delItems; posNewItems=next.newItems; posSectionAdds=next.sectionAdds;
   posDiscRates=next.discRates; posNewDiscounts=next.newDiscounts; posDeletedDiscounts=next.delDiscounts;
   posPruneOrphans();   // redraws itself only if it actually drops something
   if(changed)posRedraw();
@@ -7157,6 +7157,22 @@ let posChoiceEdits={};
 let posChoiceOrder={};
 // itemKey -> [group names, in the order the register should ask them]
 let posItemGroupOrder={};
+// ─── WHAT ORDER THE BUTTONS SIT IN, per category ─────────────────────────────
+//
+// Vinny: "give me an item slider that adjust the order of everything not only here in
+// the back office but on the register also."
+//
+// ⚠️ THE REGISTER HALF WAS ALREADY BUILT AND HAD NOTHING FEEDING IT. menulive.js has
+// `orderItems(cat, items)` reading `overlay.itemOrder[cat]`, and its own comment says
+// "Vinny reorders by dragging rows in the back office" — a consumer written for a
+// producer that was never wired up. Only the publish was missing.
+//
+// ⚠️ KEYED BY `r.cat`, NOT by the heading it is shown under. This tab groups rows by
+// posCatOf(), which prefers `r.group` so a $10 pour and a $39 bottle file separately —
+// but the register asks by `cat`. Keyed on the display group, every list would be
+// written under a name the register never looks up, and the order would silently do
+// nothing on the floor. Same trap as prices publishing under the wrong key.
+let posItemOrder={};
 let posNewGroups=[];      // [{key,name,required}]
 let posGroupAttach={};    // key -> {cats:[], items:[]}
 // Where an item prints. Most rows say "(inferred)" — the station was read off the
@@ -7733,6 +7749,16 @@ function posBuildLive(){
       name:m.name, cents:m.cents||0,
       letter:posModLetters[m.name]||posModLetter(m.name),
     })),
+    // ⚠️ THE MISSING WIRE. menulive.js has read `blob.itemOrder` all along —
+    // `orderItems(cat, items)` applies it, and its own comment says "Vinny reorders by
+    // dragging rows in the back office". The reader was built; nothing ever sent it
+    // anything, so dragging was only ever possible in edit mode on one iPad at a time.
+    //
+    // Shape is the register's, exactly: { cat: [itemKey, ...] }, keys as `r.key`
+    // ('m:<cat>:<name>'), which is the same key prices and renames already publish
+    // under. Unlisted items sort after the listed ones on both sides, so a stale order
+    // moves what it knows about and leaves the rest alone.
+    itemOrder:{...posItemOrder},
   };
 }
 // kvPush is debounced and fire-and-forget, which is right for an edit and wrong for a
@@ -8169,6 +8195,68 @@ function posDragChoice(e,enc){ posDragSort(e,'gc-'+enc,(names)=>{
 // The same gesture on a menu item's group list. The order there is the order the
 // register ASKS them in — sauce before pasta shape before protein — so this is
 // arranging the questions a server answers, one after another, at the table.
+
+// Dragging a ROW, vertically, inside its own category. posDragSort does the chips —
+// horizontal, and scoped to one flex line — so this is its sibling rather than a
+// parameterised version of it: the geometry is different enough that sharing one
+// function would mean a flag deciding which axis to read on every line.
+//
+// ⚠️ SAVED BY `cat`, NOT by the heading. The rows under one heading can carry more than
+// one `cat` (the wine screens), so the order is rebuilt per-cat from the rendered
+// sequence rather than written as one list for the group — every cat gets its own list,
+// holding only its own items, which is the shape the register reads.
+function posDragItem(e){
+  const row=e.target.closest('[data-row]');
+  const box=row&&row.closest('.pos-rows');
+  if(!row||!box)return;
+  e.preventDefault();
+  const startY=e.clientY;
+  let moved=false;
+  const rows=()=>[...box.querySelectorAll('[data-row]')];
+  const marks=rows();
+  const unmark=()=>marks.forEach(el=>{el.style.outline='';el.style.outlineOffset=''});
+  marks.forEach(el=>{el.style.outline='1px dashed var(--border)';el.style.outlineOffset='-1px'});
+
+  const onMove=(ev)=>{
+    if(!moved){
+      if(Math.abs(ev.clientY-startY)<4)return;   // a tap that wobbles is not a drag
+      moved=true; row.style.opacity='0.55'; row.style.cursor='grabbing';
+    }
+    const over=document.elementFromPoint(ev.clientX,ev.clientY);
+    const t=over&&over.closest?over.closest('[data-row]'):null;
+    if(!t||t===row||t.parentElement!==box)return;
+    // Above or below, decided by which half of the target the pointer is in, so a row
+    // can be dropped at either end of the one it is over.
+    const b=t.getBoundingClientRect();
+    box.insertBefore(row,ev.clientY<b.top+b.height/2?t:t.nextSibling);
+  };
+  const onUp=()=>{
+    document.removeEventListener('pointermove',onMove);
+    document.removeEventListener('pointerup',onUp);
+    document.removeEventListener('pointercancel',onUp);
+    row.style.opacity=''; row.style.cursor='grab';
+    unmark();
+    if(!moved)return;
+    // Swallow the click this drag ends in, or letting go on a row would open whatever
+    // is under the pointer.
+    document.addEventListener('click',(ev)=>{ev.stopPropagation();ev.preventDefault()},{capture:true,once:true});
+    const byCat={};
+    rows().forEach(el=>{
+      const cat=decodeURIComponent(el.dataset.cat||'');
+      (byCat[cat]=byCat[cat]||[]).push(decodeURIComponent(el.dataset.row||''));
+    });
+    // Only the cats that actually appear here are touched; every other cat's order is
+    // left exactly as it was.
+    Object.keys(byCat).forEach(c=>{ if(c)posItemOrder[c]=byCat[c]; });
+    kvPush('ct_pos_item_order',posItemOrder,Date.now());
+    posLiveSoon();                       // the registers pick it up in about a second
+    posKeepScroll(()=>{posRerenderList()});
+  };
+  document.addEventListener('pointermove',onMove);
+  document.addEventListener('pointerup',onUp);
+  document.addEventListener('pointercancel',onUp);
+}
+
 function posDragItemGroup(e,enc){ posDragSort(e,'ig-'+enc,(names)=>{
   posItemGroupOrder[decodeURIComponent(enc)]=names;
   kvPush('ct_pos_item_group_order',posItemGroupOrder,Date.now());
@@ -8619,7 +8707,7 @@ function posItemsBodyHTML(){
   // Header columns must line up with the row columns below — the widths are the same
   // three numbers in both places.
   const head=`<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;max-width:730px">
-    <span style="width:330px">Item</span><span style="width:92px;text-align:right">Price</span>
+    <span style="width:14px;flex:none"></span><span style="width:316px">Item</span><span style="width:92px;text-align:right">Price</span>
     <span style="width:210px;padding-left:14px">Prints at</span></div>`;
   // Grouped under category headings rather than run together as one long list. The
   // menu HAS a shape — appetizers, then pasta, then the bar — and a flat list of 776
@@ -8627,10 +8715,24 @@ function posItemsBodyHTML(){
   // data, so a category with gaps is visible without opening it.
   const groups=[],byCat=new Map();
   for(const r of shown){const k=posCatOf(r);if(!byCat.has(k)){byCat.set(k,[]);groups.push(k)}byCat.get(k).push(r)}
+  // The saved order, applied the SAME WAY the register applies it (menulive.orderItems):
+  // listed items first in their listed order, anything unlisted keeps its place after
+  // them. So a dish added since the order was saved appears at the end rather than
+  // vanishing or jumping to the front — and the office shows what the floor will show.
+  for(const [k,list] of byCat){
+    const want=posItemOrder[(list[0]&&list[0].cat)||k];
+    if(!Array.isArray(want)||!want.length||list.length<2)continue;
+    const rank=new Map(); want.forEach((key,i)=>{if(!rank.has(key))rank.set(key,i)});
+    const BACK=want.length;
+    byCat.set(k,list.map((r,i)=>({r,i,o:rank.has(r.key)?rank.get(r.key):BACK}))
+      .sort((a,b)=>a.o-b.o||a.i-b.i).map(x=>x.r));
+  }
   // "on 5 items" is a question, not a fact — WHICH five? So it opens. One item is
   // named outright, since a list of one is just the name with extra steps.
-  const rowHTML=r=>`<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:16px;align-items:baseline;max-width:${r.cat==='Food Mods'?'800px':'730px'}">
-      <span style="width:330px">${
+  const rowHTML=r=>`<div data-row="${posEnc(r.key)}" data-cat="${posEnc(r.cat||'')}" style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:16px;align-items:baseline;max-width:${r.cat==='Food Mods'?'800px':'730px'}">
+      <span onpointerdown="posDragItem(event)" title="drag to move this item — the registers follow"
+        style="width:14px;flex:none;cursor:grab;touch-action:none;color:var(--text-muted);font-size:13px;line-height:1;user-select:none;align-self:center">⠿</span>
+      <span style="width:316px">${
         `<span onclick="posRenameMod('${posEnc(r.key)}','${posEnc(r.name)}')"
             title="Rename — this is the button a server reads and what prints on the ticket"
             style="cursor:pointer;border-bottom:1px dotted var(--text-muted)">${esc(posRowLabel(r))}</span>${
@@ -8733,7 +8835,8 @@ function posItemsBodyHTML(){
     // one somebody had in mind when they typed "butter". Clear the search and the box
     // comes back, under the whole category, where the choice is an informed one.
     const searching=!!(posS.q||'').trim();
-    body=groups.map(k=>catHeader(k,byCat.get(k))+byCat.get(k).map(rowHTML).join('')
+    body=groups.map(k=>catHeader(k,byCat.get(k))
+      +`<div class="pos-rows" data-group="${posEnc(k)}">`+byCat.get(k).map(rowHTML).join('')+`</div>`
       +(searching?'':addRow(k))).join('');
   }
   // Never let a cap look like the whole answer.
@@ -8853,7 +8956,7 @@ function posPendingCount(){
     +posNewClasses.length+posNewMods.length+Object.keys(posGroupNames).length
     +Object.keys(posGroupDetach).length+Object.keys(posModLetters).length+posDeletedMods.length
     +Object.values(posChoiceEdits).reduce((n,v)=>n+Object.keys(v).length,0)
-    +Object.keys(posChoiceOrder).length+Object.keys(posItemGroupOrder).length+posDeletedItems.length+posNewItems.length
+    +Object.keys(posChoiceOrder).length+Object.keys(posItemGroupOrder).length+Object.keys(posItemOrder).length+posDeletedItems.length+posNewItems.length
     +Object.values(posSectionAdds).reduce((n,v)=>n+v.length,0)
     +Object.keys(posChoiceCuts).length+Object.keys(posModNames).length
     +posDeletedGroups.length
@@ -8964,12 +9067,12 @@ function posClearChanges(){
   posPrices={};posRouting={};posGroupMods={};posNewGroups=[];posGroupAttach={};
   posNewClasses=[];posNewMods=[];posGroupNames={};posGroupDetach={};
   posChoiceCuts={};posModLetters={};posDeletedMods=[];posModNames={};posDeletedGroups=[];
-  posChoiceEdits={};posChoiceOrder={};posItemGroupOrder={};posDeletedItems=[];posNewItems=[];posSectionAdds={};posNewDiscounts=[];posDeletedDiscounts=[];
+  posChoiceEdits={};posChoiceOrder={};posItemGroupOrder={};posItemOrder={};posDeletedItems=[];posNewItems=[];posSectionAdds={};posNewDiscounts=[];posDeletedDiscounts=[];
   for(const k of ['ct_pos_prices','ct_pos_routing','ct_pos_group_mods','ct_pos_new_groups',
                   'ct_pos_group_attach','ct_pos_print_classes','ct_pos_new_mods',
                   'ct_pos_group_names','ct_pos_group_detach','ct_pos_choice_cuts',
                   'ct_pos_mod_letters','ct_pos_deleted_mods','ct_pos_mod_names',
-                  'ct_pos_deleted_groups','ct_pos_choice_edits','ct_pos_choice_order','ct_pos_item_group_order','ct_pos_deleted_items','ct_pos_new_items','ct_pos_section_adds','ct_pos_new_discounts','ct_pos_deleted_discounts'])
+                  'ct_pos_deleted_groups','ct_pos_choice_edits','ct_pos_choice_order','ct_pos_item_group_order','ct_pos_item_order','ct_pos_deleted_items','ct_pos_new_items','ct_pos_section_adds','ct_pos_new_discounts','ct_pos_deleted_discounts'])
     kvPush(k,(k==='ct_pos_new_groups'||k==='ct_pos_print_classes'||k==='ct_pos_new_mods'
               ||k==='ct_pos_deleted_mods'||k==='ct_pos_deleted_groups'||k==='ct_pos_deleted_items'||k==='ct_pos_new_items'||k==='ct_pos_new_discounts'||k==='ct_pos_deleted_discounts')?[]:{},Date.now());
   posRedraw();
