@@ -7303,7 +7303,7 @@ function posDeleteGroup(encKey,encName,used){
   }else{
     const n=Number(used)||0;
     const warn=n?`\n\nIt is on ${n} item${n===1?'':'s'} — they will stop asking it.`:'';
-    if(!confirm(`Delete the \u201c${name}\u201d group?${warn}\n\nIt stays on the iPads until you Publish.`))return;
+    if(!confirm(`Delete the \u201c${name}\u201d group?${warn}\n\nIt comes off the registers within a second \u2014 there is no Publish step any more. You can put it back from \u201cdeleted \u00b7 show\u201d at the foot of the list.`))return;
     posDeletedGroups=[...posDeletedGroups,k];
   }
   kvPush('ct_pos_deleted_groups',posDeletedGroups,Date.now());
@@ -7361,7 +7361,7 @@ function posDeleteMod(encKey,encName){
   if(posDeletedMods.includes(key)){
     posDeletedMods=posDeletedMods.filter(k=>k!==key);
   }else{
-    if(!confirm(`Mark “${name}” for deletion?\n\nIt stays on the iPads until you Publish.`))return;
+    if(!confirm(`Mark “${name}” for deletion?\n\nIt comes off the registers within a second \u2014 there is no Publish step any more. You can put it back from \u201cdeleted \u00b7 show\u201d at the foot of the list.`))return;
     posDeletedMods=[...posDeletedMods,key];
   }
   kvPush('ct_pos_deleted_mods',posDeletedMods,Date.now());
@@ -7395,7 +7395,7 @@ function posDeleteItem(encKey,encName){
     // Show the current label, and the original underneath so the row is still identifiable.
     const shown=posModNames[key]||name;
     const also=(posModNames[key]&&name&&posModNames[key]!==name)?`\n(originally “${name}”)`:'';
-    if(!confirm(`Delete “${shown}” from the menu?${also}\n\nIt stays on the iPads until you Publish.`))return;
+    if(!confirm(`Delete “${shown}” from the menu?${also}\n\nIt comes off the registers within a second \u2014 there is no Publish step any more. You can put it back from \u201cdeleted \u00b7 show\u201d at the foot of the list.`))return;
     posDeletedItems=[...posDeletedItems,key];
   }
   kvPush('ct_pos_deleted_items',posDeletedItems,Date.now());
@@ -7410,6 +7410,10 @@ function posDetachItem(enc,encItem){
   if(!posGroupDetach[k].length)delete posGroupDetach[k];
   kvPush('ct_pos_group_detach',posGroupDetach,Date.now());
   posRedraw();
+}
+function posToggleDeleted(){
+  posS.openDeleted=!posS.openDeleted;
+  posKeepScroll(()=>{posRerenderList()});
 }
 function posToggleCuts(enc){
   posS.openCuts=posS.openCuts||{};
@@ -7715,8 +7719,9 @@ function posBuildLive(){
     //
     // The letter rides too, so one filed under G by hand does not land under whatever
     // its first letter happens to be.
-    // ⚠️ AND DELETIONS. The confirm says "It stays on the iPads until you Publish" —
-    // a promise the publish never kept, because this store did not travel either.
+    // ⚠️ AND DELETIONS. The confirm used to say "It stays on the iPads until you
+    // Publish" — a promise the publish never kept, because this store did not travel
+    // either. The wording is gone now too; there is no Publish step to wait for.
     // Keys, as the back office holds them ('c:600707'), so the register can match the
     // condiment they name.
     deletedMods:(posDeletedMods||[]).slice(),
@@ -8358,7 +8363,7 @@ function posAddDiscount(){
 }
 function posRemoveNewDiscount(id){
   const d=(posNewDiscounts||[]).find(x=>x.id===id); if(!d)return;
-  if(!confirm('Remove “'+d.name+'”?\n\nIf it has already been published, the registers keep it until you publish again.'))return;
+  if(!confirm('Remove “'+d.name+'”?\n\nIt comes off the registers within a second — there is no Publish step any more.'))return;
   posNewDiscounts=posNewDiscounts.filter(x=>x.id!==id);
   delete posDiscRates[id];
   kvPush('ct_pos_new_discounts',posNewDiscounts,Date.now());
@@ -8381,7 +8386,7 @@ function posDeleteDiscount(encId,encName){
   if(posDeletedDiscounts.includes(id)){
     posDeletedDiscounts=posDeletedDiscounts.filter(x=>x!==id);
   }else{
-    if(!confirm(`Take “${name}” off the DISC key?\n\nIt stays on the iPads until you Publish.`))return;
+    if(!confirm(`Take “${name}” off the DISC key?\n\nIt comes off the registers within a second \u2014 there is no Publish step any more. You can put it back from \u201cdeleted \u00b7 show\u201d at the foot of the list.`))return;
     posDeletedDiscounts=[...posDeletedDiscounts,id];
   }
   kvPush('ct_pos_deleted_discounts',posDeletedDiscounts,Date.now());
@@ -8599,7 +8604,16 @@ function posAddStandaloneMod(){
 
 function posItemsBodyHTML(){
   if(posS.catFilter===POS_GROUPS_CAT)return posGroupsHTML();
-  const rows=posItemRows();
+  // ⚠️ A DELETED ROW IS GONE. Vinny: "when i delete something just make it dissapear."
+  // The delete rode the blob to the registers like everything else, so leaving the row
+  // in the list struck through in red, with a price gap tag still accusing it of
+  // missing data, described a finished removal as an argument still in progress — and
+  // the record is permanent, so it said so for good. Same treatment as cut choices and
+  // detached items: out of the list, folded into one muted line that still undoes.
+  const allRows=posItemRows();
+  const isGone=(r)=>posModDeleted(r)||posItemDeleted(r);
+  const deletedRows=allRows.filter(isGone);
+  const rows=allRows.filter(r=>!isGone(r));
   const shown=rows.slice(0,POS_ITEM_CAP);
   // Header columns must line up with the row columns below — the widths are the same
   // three numbers in both places.
@@ -8615,7 +8629,7 @@ function posItemsBodyHTML(){
   // "on 5 items" is a question, not a fact — WHICH five? So it opens. One item is
   // named outright, since a list of one is just the name with extra steps.
   const rowHTML=r=>`<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:16px;align-items:baseline;max-width:${r.cat==='Food Mods'?'800px':'730px'}">
-      <span style="width:330px;${(posModDeleted(r)||posItemDeleted(r))?'text-decoration:line-through;color:#ef4444':''}">${
+      <span style="width:330px">${
         `<span onclick="posRenameMod('${posEnc(r.key)}','${posEnc(r.name)}')"
             title="Rename — this is the button a server reads and what prints on the ticket"
             style="cursor:pointer;border-bottom:1px dotted var(--text-muted)">${esc(posRowLabel(r))}</span>${
@@ -8628,15 +8642,15 @@ function posItemsBodyHTML(){
       <span style="width:210px;padding-left:14px">${posRouteCell(r)}</span>
       ${r.cat!=='Food Mods'?`<span style="width:34px;text-align:right">
         <button onclick="posDeleteItem('${posEnc(r.key)}','${posEnc(r.name)}')"
-          title="${posItemDeleted(r)?'keep it after all':'delete this menu item'}"
+          title="delete this menu item"
           style="border:none;background:transparent;color:#ef4444;cursor:pointer;font-family:inherit;
-            line-height:1;padding:0 4px;font-weight:700;font-size:${posItemDeleted(r)?'13px':'22px'}"
-          >${posItemDeleted(r)?'undo':'×'}</button></span>`:''}
+            line-height:1;padding:0 4px;font-weight:700;font-size:22px"
+          >×</button></span>`:''}
       ${r.cat==='Food Mods'?`<span style="width:96px;text-align:right;white-space:nowrap">
         <button onclick="posSetModLetter('${posEnc(r.name)}')" title="File it under a different letter"
           style="border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-family:inherit;font-size:12px;padding:2px 5px">move</button>
-        <button onclick="posDeleteMod('${posEnc(r.key)}','${posEnc(r.name)}')" title="${posModDeleted(r)?'keep it after all':'delete this mod'}"
-          style="border:none;background:transparent;color:${posModDeleted(r)?'#ef4444':'var(--text-muted)'};cursor:pointer;font-family:inherit;font-size:12px;padding:2px 5px">${posModDeleted(r)?'undo':'delete'}</button>
+        <button onclick="posDeleteMod('${posEnc(r.key)}','${posEnc(r.name)}')" title="delete this mod"
+          style="border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-family:inherit;font-size:12px;padding:2px 5px">delete</button>
       </span>`:''}
     </div>${posItemGroupPanelHTML(r)}`;
   const catHeader=(k,list)=>{
@@ -8739,7 +8753,26 @@ function posItemsBodyHTML(){
     return `<div style="padding:14px 0;color:var(--text-dim)">Nothing in <b>${esc(posS.catFilter)}</b> is called “${esc(posS.q)}”
       — but ${elsewhere.length} item${elsewhere.length===1?' is':'s are'}, in ${cats.map(c=>`<button onclick="posSetCat('${posEnc(c)}'.replace(/%../g,m=>decodeURIComponent(m)))" style="background:none;border:none;color:var(--accent,#f59e0b);cursor:pointer;font:inherit;padding:0;text-decoration:underline">${esc(c)}</button>`).join(', ')}.</div>`;
   })();
-  return head+(shown.length?body:empty)+more;
+  // Folded away rather than dropped: these are the only one-tap way back. Re-creating
+  // a deleted item through "+ add" would make a NEW item beside the deleted one, which
+  // is two records for one thing and not the same item at all.
+  const delOpen=!!posS.openDeleted;
+  const delLine=deletedRows.length?`<div style="padding:10px 0;font-size:12px;color:var(--text-muted);border-top:1px solid var(--border)">
+      ${deletedRows.length} deleted
+      <button onclick="posToggleDeleted()" style="border:none;background:transparent;color:var(--text-dim);
+        cursor:pointer;font-family:inherit;font-size:12px;text-decoration:underline;padding:0 2px"
+        >${delOpen?'hide':'show'}</button>
+      ${delOpen?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:7px">${
+        deletedRows.map(r=>`<span style="display:inline-flex;align-items:center;gap:5px;font-size:13px;
+          padding:3px 5px 3px 9px;border-radius:7px;border:1px dashed var(--border);color:var(--text-muted)">
+          ${esc(posRowLabel(r))}
+          <button onclick="${r.cat==='Food Mods'
+              ?`posDeleteMod('${posEnc(r.key)}','${posEnc(r.name)}')`
+              :`posDeleteItem('${posEnc(r.key)}','${posEnc(r.name)}')`}" title="put it back"
+            style="border:none;background:transparent;color:var(--text-dim);cursor:pointer;
+              font-size:14px;line-height:1;padding:0 2px">↺</button></span>`).join('')}</div>`:''}
+    </div>`:'';
+  return head+(shown.length?body:empty)+more+delLine;
 }
 function posItemsHTML(){
   if(posS.catErr)return `<div style="${posCardCss}">
@@ -15787,6 +15820,28 @@ setInterval(()=>{
 setInterval(()=>{if(activeTab===DASH)loadCateringOrders()},60000);
 // Keep live online orders fresh (faster cadence) while the dashboard is open
 setInterval(()=>{if(activeTab===DASH)loadLiveOrders()},10000);
+
+// ─── ALWAYS LOAD THE CURRENT BUILD ───────────────────────────────────────────
+//
+// ⚠️ sw.js HAS BEEN SHIPPING IN THIS REPO WITH NOTHING REGISTERING IT. A worker
+// written specifically to beat the cache, that was never installed — the file sat
+// there looking like the problem was solved.
+//
+// It matters because GitHub Pages serves index.html with `cache-control: max-age=600`,
+// so for ten minutes after a deploy a reload can quietly hand back the PREVIOUS build.
+// That is not theoretical: Vinny reported red "being removed" chips that had already
+// been deleted from the source and were absent from the file Pages was serving — he
+// was reading a build that no longer existed, and the same thing cost a round trip on
+// the tip-out calculator before sw.js there was fixed the same way.
+//
+// The worker is network-first and fetches navigations with `cache: 'reload'`, which is
+// what actually forces past the HTTP cache; the cached copy is only ever used when
+// there is no network. Registered after load so it never competes with the first paint.
+if('serviceWorker'in navigator){
+  addEventListener('load',()=>{
+    navigator.serviceWorker.register('./sw.js').catch(e=>console.warn('[sw]',e&&e.message));
+  });
+}
 </script>
 </body>
 </html>

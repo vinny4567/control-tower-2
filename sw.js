@@ -1,6 +1,8 @@
 // Bumped whenever the caching behaviour changes — a new name makes `activate` bin
 // every older cache, which is the only reliable way to shake off a stale shell.
-const CACHE = 'watchtower-v2';
+// v3: the first version that is actually REGISTERED (index.html never called
+// register() until now), so bump it to bin anything an older build left behind.
+const CACHE = 'watchtower-v3';
 
 self.addEventListener('install', e => {
   e.waitUntil(
