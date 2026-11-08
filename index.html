@@ -8430,6 +8430,26 @@ function posKeepScroll(fn){
   const before=find();
   const top=before?before.scrollTop:0;
   const win=window.scrollY||0;
+
+  // ⚠️ AND KEEP THE CARET. The scroll was only half of it.
+  //
+  // posRerenderList() replaces the list's innerHTML, which DESTROYS every price box
+  // in it — including the one the cursor is sitting in. Typing a price and clicking
+  // the next box fires onchange on the first, the rebuild wipes the second out from
+  // under the click, and focus falls back to <body>. On the Mac the cursor vanishes
+  // mid-edit; on an iPad the keyboard drops and the page re-lays out under your
+  // thumb, which is the "snapping" — it happened on EVERY item, and the whole job is
+  // working down a list of them.
+  //
+  // So note who had the caret and put it back on the row that replaced it. Matched by
+  // data-pf, a stable per-item handle, NOT by index — the list re-sorts and re-groups
+  // as gaps close, so position N after a rebuild is not position N before it, and
+  // restoring by index would silently drop the cursor into a different item's price.
+  const act=document.activeElement;
+  const pf=(act&&act.getAttribute)?act.getAttribute('data-pf'):null;
+  let selA=null,selB=null;
+  if(pf){try{selA=act.selectionStart;selB=act.selectionEnd}catch(e){}}
+
   const put=()=>{
     const sc=find();
     if(sc&&sc.scrollTop!==top)sc.scrollTop=top;
@@ -8437,6 +8457,20 @@ function posKeepScroll(fn){
   };
   fn();
   put();
+
+  // ⚠️ SYNCHRONOUSLY, in the same task as the click that caused this. iOS only
+  // re-opens the on-screen keyboard for a focus() it can still attribute to the
+  // user's gesture; defer it to a timer or an animation frame and the caret comes
+  // back with no keyboard under it, which is worse than leaving it alone.
+  // preventScroll, or focusing a row that sits off-screen would scroll it into view
+  // and undo the position we just restored.
+  if(pf){
+    const el=document.querySelector('[data-pf="'+pf.replace(/["\\]/g,'\\$&')+'"]');
+    if(el&&el!==document.activeElement){
+      try{el.focus({preventScroll:true})}catch(e){el.focus()}
+      if(selA!=null){try{el.setSelectionRange(selA,selB)}catch(e){}}
+    }
+  }
   // Again after layout. Height is restored a frame later, and until it is, the browser
   // clamps anything set above the (briefly shorter) maximum straight back down.
   requestAnimationFrame(put);
@@ -9022,7 +9056,7 @@ function posPriceCell(r){
   const enc=posEnc(r.key);
   const v=posPriceOf(r);
   const shown=v?(v/100).toFixed(2):'';
-  return `<input value="${shown}" placeholder="—" inputmode="decimal"
+  return `<input value="${shown}" placeholder="—" inputmode="decimal" data-pf="p:${enc}"
     onchange="posSetPrice('${enc}',this.value)"
     onkeydown="if(event.key==='Enter')this.blur()"
     style="width:100%;text-align:right;font-variant-numeric:tabular-nums;font-size:16px;
