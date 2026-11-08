@@ -6959,6 +6959,7 @@ function posSaveConn(){
 }
 function posSec(s){posS.sec=s;renderViewport();
   if(s==='items'||s==='printers')posLoadCatalog();
+  if(s==='tax')posTaxLoad();
   if(s==='reports'){posS.repShow=null;posS.rep=null;posS.repErr=''}
   if(s==='staff'||s==='jobrates')staffLoad();
   if(s==='stations')posLoadStations();
@@ -14646,7 +14647,133 @@ function posStationsHTML(){
   </div>`;
 }
 
-const POS_SECTIONS=[['items','Menu items'],['discounts','Discounts'],['printers','Printers'],['reports','Reports'],['grazie','CRM'],['staff','Staff'],['jobrates','Job rates'],['calcs','Calculations'],['stations','Registers']];
+// ─── TAX ─────────────────────────────────────────────────────────────────────
+//
+// Vinny: "i want to be able to set it in the back office in case it changes",
+// "for the pos itself not the catering form".
+//
+// ⚠️ THIS PAGE NEVER SHOWS A RATE OF ITS OWN. Everything here is read back from the
+// mini, because the mini is what actually prices a check — it computes tax server-side
+// for the authoritative copy of every one. A number stored and displayed here would be
+// this screen agreeing with itself while the floor charged something else, which is the
+// exact failure already sitting in this business: Vinny moved catering to 8% on
+// 21/10/26 and the registers never heard, so two of his own systems have been charging
+// different tax for three weeks. A back office that cannot tell you what the register
+// is really using is how that happens and nobody notices.
+//
+// So: no local copy, no optimistic display, no "saved!" without proof. Save POSTs, then
+// re-READS, and shows what came back. If the mini does not serve the endpoint yet, it
+// says exactly that and stores nothing — the same shape staffSetPin uses for a missing
+// /api/employees/pin, which is the only honest answer when the other half is not built.
+let posTaxS = { loading:false, rate:null, at:null, err:null, unsupported:false, saving:false };
+
+async function posTaxLoad(){
+  if(!posS.srv){ posTaxS={...posTaxS, err:'nosrv', loading:false}; return posTaxRender(); }
+  posTaxS={...posTaxS, loading:true, err:null}; posTaxRender();
+  try{
+    const r = await posSrv('/api/tax');
+    if(r.status===404){ posTaxS={...posTaxS, loading:false, unsupported:true, rate:null}; return posTaxRender(); }
+    if(r.status===401){ posTaxS={...posTaxS, loading:false, err:'auth'}; return posTaxRender(); }
+    if(!r.ok){ posTaxS={...posTaxS, loading:false, err:'HTTP '+r.status}; return posTaxRender(); }
+    const b=r.body||{};
+    posTaxS={...posTaxS, loading:false, unsupported:false,
+             rate:(b.rate!=null?Number(b.rate):null), at:b.at||null, err:null};
+  }catch(e){ posTaxS={...posTaxS, loading:false, err:(e&&e.message)||String(e)}; }
+  posTaxRender();
+}
+
+async function posTaxSave(){
+  const el=document.getElementById('pos-tax-input'); if(!el)return;
+  const raw=String(el.value||'').trim().replace('%','');
+  if(!raw)return;
+  const pct=Number(raw);
+  // A rate is typed as a PERCENT because that is how everyone says it and how the city
+  // publishes it. Rejecting the fraction form outright rather than guessing: 0.0875
+  // could be "8.75%" fumbled or could be somebody genuinely meaning 0.0875%, and a tax
+  // rate is not a number to be clever about.
+  if(!isFinite(pct)||pct<0||pct>25){
+    alert('Type the rate as a percent, e.g. 8.75 for 8.75%.\n\nAnything from 0 to 25 is accepted; "'+raw+'" is not.');
+    el.focus(); el.select(); return;
+  }
+  const rate=Math.round(pct*1e6)/1e8;   // 8.75 -> 0.0875, without float dust
+  // ⚠️ THE FRACTION-FORM SLIP. Typing 0.0875 meaning "8.75%" is the one fat-finger here
+  // that loses money quietly: it is a VALID number, so nothing rejects it, and it would
+  // price every check at effectively no tax until somebody noticed on a filing. Not
+  // banned — a genuine sub-1% rate is possible — but named, with both readings, so the
+  // dialog cannot be waved through on muscle memory.
+  if(pct>0&&pct<1&&!confirm('You typed '+pct+'%, which is less than one percent — nearly no tax at all.\n\nIf you meant '+(pct*100)+'%, type '+(pct*100)+' instead.\n\nSet the rate to '+pct+'% anyway?'))return;
+  if(!confirm('Charge '+pct+'% tax on every check from now on?\n\nThis is the rate the registers price with, and it takes effect within a second. It does not change the catering form.'))return;
+  posTaxS={...posTaxS, saving:true}; posTaxRender();
+  try{
+    const r = await posSrv('/api/tax',{method:'POST',body:JSON.stringify({rate})});
+    if(r.status===404){ posTaxS={...posTaxS, saving:false, unsupported:true}; posTaxRender();
+      return alert('The registers do not accept a tax rate yet.\n\nNOTHING WAS STORED — not here and not there. The rate is still compiled into the register software, so changing it is a release, not a setting. This page will start working the moment that ships.'); }
+    if(r.status===401){ posTaxS={...posTaxS, saving:false}; posTaxRender(); return alert(posAuthNote().replace(/^⚠ /,'')+'\n\nNothing was stored.'); }
+    if(!r.ok){ posTaxS={...posTaxS, saving:false}; posTaxRender();
+      return alert('The register would not take that rate:\n\n'+((r.body&&r.body.error)||('HTTP '+r.status))); }
+    el.value='';
+  }catch(e){ posTaxS={...posTaxS, saving:false}; posTaxRender(); return alert('Could not reach the register: '+((e&&e.message)||e)); }
+  // ⚠️ READ IT BACK. Echoing what was typed would look identical to a real check on
+  // every normal day and differ only on the day it mattered — a POST that returned 200
+  // and stored nothing, or stored something else. What is shown below is what the mini
+  // answers when asked, not what this page just sent.
+  posTaxS={...posTaxS, saving:false};
+  await posTaxLoad();
+}
+
+function posTaxRender(){ if(activeTab===POS&&posS.sec==='tax')renderViewport(); }
+
+function posTaxHTML(){
+  const S=posTaxS;
+  const pct=(S.rate!=null)?(Math.round(S.rate*1e6)/1e4):null;
+  const note=(t,c)=>`<div style="font-size:13px;color:${c};line-height:1.6">${t}</div>`;
+  let state;
+  if(!posS.srv) state=note('No register server set — <b>POS tab → Connections</b>. This page reads the rate off the mini, so it cannot show you anything until it knows where that is.','#f59e0b');
+  else if(S.loading) state=note('Asking the registers…','var(--text-dim)');
+  else if(S.unsupported) state=note('<b>The registers do not serve a tax rate yet.</b> The rate is still compiled into the register software, so changing it is a release rather than a setting — this page will start working the moment that ships, with nothing to do here. Until then it will not show you a number, because the only number it could show would be one it made up.','#f59e0b');
+  else if(S.err==='auth') state=note(esc(posAuthNote().replace(/^⚠ /,'')),'#ef4444');
+  else if(S.err) state=note('Could not ask the registers: '+esc(S.err)+'. <b>No rate is shown rather than a stale one</b> — what this page remembers is not what the floor is charging.','#ef4444');
+  else if(S.rate==null) state=note('The registers answered, but with no rate set.','#f59e0b');
+  else state=`<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+      <span style="font-size:34px;font-weight:800;letter-spacing:-0.5px">${pct}%</span>
+      <span style="font-size:13px;color:var(--text-dim)">is what the registers are charging right now</span>
+    </div>`;
+
+  return `<div style="${posCardCss};margin-bottom:14px;max-width:620px">
+    <div style="font-weight:800;font-size:15px;margin-bottom:4px">Sales tax</div>
+    <div style="color:var(--text-dim);font-size:12px;line-height:1.5;margin-bottom:12px">
+      The rate the registers price every check with. Read from the mini each time this page opens —
+      never from a copy kept here, so what you see is what the floor is doing.</div>
+    <div style="padding:12px 14px;background:var(--surface2);border-radius:10px;margin-bottom:14px">${state}</div>
+
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <input id="pos-tax-input" inputmode="decimal" placeholder="8.75" ${staffNoFill()}
+        onkeydown="if(event.key==='Enter'){posTaxSave();event.preventDefault()}"
+        style="${posInput};width:110px;text-align:right;font-size:17px;letter-spacing:1px">
+      <span style="font-size:17px;font-weight:700;color:var(--text-dim)">%</span>
+      <button onclick="posTaxSave()" ${S.saving?'disabled':''}
+        style="${posBtn('#0ea5e9')};font-size:14px;padding:9px 18px;${S.saving?'opacity:.5':''}">${S.saving?'Saving…':'Save'}</button>
+      <button onclick="posTaxLoad()" style="border:none;background:transparent;color:var(--text-dim);cursor:pointer;font-family:inherit;font-size:13px;text-decoration:underline">re-check</button>
+    </div>
+    <div style="font-size:12px;color:var(--text-muted);margin-top:10px;line-height:1.6">
+      Typed as a percent — <b>8.75</b> means 8.75%. Takes effect on the floor within a second.
+      <b>Dine-in and carry-out only</b>; the catering form carries its own rate and is not touched from here.
+    </div>
+  </div>
+
+  <div style="${posCardCss};max-width:620px">
+    <div style="font-weight:800;font-size:14px;margin-bottom:6px">Worth knowing</div>
+    <div style="color:var(--text-dim);font-size:12.5px;line-height:1.7">
+      Catering was moved to <b>8%</b> on 21/10/2026 and the registers were never told — they
+      have been on <b>7.75%</b> since. Naperville publishes <b>8.75%</b> for food for immediate
+      consumption outside downtown (7.00 state + 0.75 home rule + 1.00 food &amp; beverage).
+      Three numbers, and which is right for dine-in is a question for your accountant, not for
+      this page — it will charge whatever you set.
+    </div>
+  </div>`;
+}
+
+const POS_SECTIONS=[['items','Menu items'],['discounts','Discounts'],['printers','Printers'],['reports','Reports'],['grazie','CRM'],['staff','Staff'],['jobrates','Job rates'],['tax','Tax'],['calcs','Calculations'],['stations','Registers']];
 function posConnHTML(){
   return `<div style="${posCardCss};margin-bottom:14px">
     <div style="font-weight:800;font-size:15px;margin-bottom:6px">Connections</div>
@@ -14684,7 +14811,7 @@ function posHTML(){
       <span style="white-space:nowrap">${l}</span></button>`;
   }).join('');
   const who=(posS.me&&posS.health==='ok'&&posS.sec==='grazie')?`<span style="font-size:13px;color:var(--text-dim)">${esc(posS.me.username)}</span><button onclick="posLogout()" style="${posBtn('#3f3f46')};padding:7px 12px;font-size:13px">Sign out</button>`:'';
-  const body=posS.sec==='items'?posItemsHTML():posS.sec==='discounts'?posDiscountsHTML():posS.sec==='printers'?posPrintersHTML():posS.sec==='reports'?posReportsHTML():posS.sec==='staff'?posStaffHTML():posS.sec==='jobrates'?posJobRatesHTML():posS.sec==='calcs'?calcHTML():posS.sec==='stations'?posStationsHTML():posGrazieHTML();
+  const body=posS.sec==='items'?posItemsHTML():posS.sec==='discounts'?posDiscountsHTML():posS.sec==='printers'?posPrintersHTML():posS.sec==='reports'?posReportsHTML():posS.sec==='staff'?posStaffHTML():posS.sec==='jobrates'?posJobRatesHTML():posS.sec==='tax'?posTaxHTML():posS.sec==='calcs'?calcHTML():posS.sec==='stations'?posStationsHTML():posGrazieHTML();
   // #viewport is fixed and overflow:hidden, so every tab brings its own scroller —
   // without one, anything past the fold is simply clipped.
   const here=(POS_SECTIONS.find(([k])=>k===posS.sec)||[])[1]||'';
