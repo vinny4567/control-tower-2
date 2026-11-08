@@ -12867,6 +12867,10 @@ function staffRows(){
   // until now there was no way to see the set, only to open people one at a
   // time and hope you noticed.
   if(staffS.filter==='cansignin')rows=rows.filter(staffCanSignIn);
+  // Who still needs a number typed in — the people whose class says they sign in and
+  // who have none stored. The answer to "is that everyone yet", as a list rather than
+  // a belief.
+  if(staffS.filter==='nosignin')rows=rows.filter(p=>staffCanSignIn(p)&&!(p.register&&p.register.signin));
   if(q)rows=rows.filter(p=>(p.name||'').toLowerCase().includes(q)
     ||(p.positions||[]).join(' ').toLowerCase().includes(q)
     ||String(p.paychex_id||'').includes(q));
@@ -14353,6 +14357,18 @@ function posStaffHTML(){
         staffS.filter==='cansignin'?'showing them — untick anyone who should not'
                                    :'press to see exactly who can use a register',
         n?"staffFilter('cansignin')":'',staffS.filter==='cansignin');})()}
+    ${(()=>{
+      // "i believe everyone has a sign in number now?" — a belief about 225 records is
+      // worth one number. Counted against the people who are SUPPOSED to have one (the
+      // class decides that), not against the whole database, or it would read as short
+      // forever because of cooks and the inactive.
+      const want=all.filter(p=>!p.removed&&staffCanSignIn(p));
+      const got=want.filter(p=>p.register&&p.register.signin).length;
+      const missing=want.length-got;
+      return posStat('Sign-in set',got+' of '+want.length,
+        staffS.filter==='nosignin'?'showing the '+missing+' without one'
+          :(missing?'press to see the '+missing+' without one':'everyone who can sign in has a number'),
+        missing?"staffFilter('nosignin')":'',staffS.filter==='nosignin');})()}
   </div>
   ${privCardHTML()}
   <div style="${posCardCss};margin-bottom:14px">
