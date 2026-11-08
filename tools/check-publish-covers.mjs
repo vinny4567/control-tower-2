@@ -48,6 +48,14 @@ const VAR = {
   ct_pos_deleted_groups: 'posDeletedGroups', ct_pos_deleted_mods: 'posDeletedMods',
   ct_pos_mod_letters: 'posModLetters',
   ct_pos_deleted_mods: 'posDeletedMods',
+  // The order the register shows the buttons in. menulive.orderItems has read
+  // blob.itemOrder all along; until 11/8/26 nothing published it.
+  ct_pos_item_order: 'posItemOrder',
+  // Pre-existing gap, filled while the suite was green anyway: both ride posBuildLive
+  // (newDiscounts / deletedDiscounts) and neither was mapped, so this check had been
+  // reporting two unknowns rather than confirming they land.
+  ct_pos_new_discounts: 'posNewDiscounts',
+  ct_pos_deleted_discounts: 'posDeletedDiscounts',
 };
 
 // Deliberately NOT published — each with the reason, because "we meant to" is the only

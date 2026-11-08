@@ -38,6 +38,7 @@ const state = {
   // publish kept working and its shape simply stopped being checked at all.
   deletedMods: [], choiceCuts: {},
   groups: { groups: {}, attach: {}, detach: {}, gone: [] },
+  itemOrder: {},
 };
 const ctx = {
   posAllRows: () => state.rows,
@@ -51,6 +52,13 @@ const ctx = {
   get posModLetters() { return state.modLetters; },
   get posDeletedMods() { return state.deletedMods; },
   get posChoiceCuts() { return state.choiceCuts; },
+  // Joined the payload after this sandbox was written, each one crashing the whole
+  // check until it was added — which is the failure mode the comment above warns about,
+  // twice over. posLiveAt is the write-through clock; posItemOrder is the button order
+  // the register reads (added 11/8/26).
+  get posItemOrder() { return state.itemOrder; },
+  posLiveAt: 0,
+  posNewDiscounts: [], posDeletedDiscounts: [],
   posModLetter: (n) => (String(n).match(/[A-Za-z]/) || ['#'])[0].toUpperCase(),
   posS: { cat: { generated_at: '2026-09-17' } },
   Object, Date, Array, String, JSON, console,
@@ -132,3 +140,16 @@ b = build();
 ok('a letter set by hand beats the first letter of the name',
    b.newMods.find((m) => m.name === '$GF ROTINI').letter === 'R');
 state.newMods = []; state.modLetters = {};
+
+// ── the order the register shows the buttons in ──────────────────────────────
+// Added 11/8/26. menulive.orderItems has read blob.itemOrder all along and nothing
+// published it; this is what keeps the field from quietly going missing again.
+state.itemOrder = { Chicken: ['m:Chicken:HALF:1/2 Chx Armenta', 'm:Chicken:CHK PARM'] };
+b = build();
+ok('the item order rides the publish', !!b.itemOrder);
+ok('keyed by category', Array.isArray(b.itemOrder.Chicken));
+ok('⚠️ carrying the keys verbatim, prefix included — a HALF item that loses its prefix matches nothing',
+   b.itemOrder.Chicken[0] === 'm:Chicken:HALF:1/2 Chx Armenta');
+ok('and it is a copy, so a later edit here cannot mutate what was sent',
+   b.itemOrder !== state.itemOrder);
+state.itemOrder = {};
