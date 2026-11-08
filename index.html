@@ -13887,14 +13887,8 @@ function staffDetail(p){
       </div>`:''}
     </div>
 
-    <button onclick="staffMergeInto('${esc(k)}')" title="This is the same person as somebody else on the list — fold them together"
-      style="margin-left:auto;background:none;border:1px solid var(--border);color:var(--text-dim);border-radius:6px;
-             padding:3px 9px;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap">Merge</button>
-    <button onclick="staffMarkDistinct('${esc(k)}')" title="Record that this is NOT the same person as a similar name, so nobody merges them later"
-      style="background:none;border:1px solid var(--border);color:var(--text-dim);border-radius:6px;
-             padding:3px 9px;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap">Not a dupe</button>
     <button onclick="staffRename('${esc(k)}')" title="Fix or change this person's name"
-      style="background:none;border:1px solid var(--border);color:var(--text-dim);border-radius:6px;
+      style="margin-left:auto;background:none;border:1px solid var(--border);color:var(--text-dim);border-radius:6px;
              padding:3px 9px;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap">Rename</button>
     <button onclick="staffRemove('${esc(k)}')" title="Take them off the list, and off the register"
       style="background:none;border:1px solid #7f1d1d;color:#f87171;border-radius:6px;
