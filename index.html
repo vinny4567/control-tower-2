@@ -8626,7 +8626,7 @@ function posItemsBodyHTML(){
         <button onclick="posDeleteMod('${posEnc(r.key)}','${posEnc(r.name)}')" title="${posModDeleted(r)?'keep it after all':'delete this mod'}"
           style="border:none;background:transparent;color:${posModDeleted(r)?'#ef4444':'var(--text-muted)'};cursor:pointer;font-family:inherit;font-size:12px;padding:2px 5px">${posModDeleted(r)?'undo':'delete'}</button>
       </span>`:''}
-    </div>`;
+    </div>${posItemGroupPanelHTML(r)}`;
   const catHeader=(k,list)=>{
     const gaps=list.filter(r=>posRowGaps(r).length).length;
     return `<div style="display:flex;align-items:baseline;gap:8px;margin:14px 0 2px;padding-bottom:5px;border-bottom:2px solid var(--border);max-width:630px">
@@ -9044,12 +9044,85 @@ function posItemGroupsHTML(r){
   }
   return `<div id="ig-${enc}" style="font-size:13px;color:var(--text);font-weight:600;
       display:flex;flex-wrap:wrap;gap:4px;align-items:baseline">`
+    // Click opens the group right here; drag still reorders. posDragSort only counts
+    // a drag past four pixels of slop and eats the click it would otherwise end in,
+    // so a tap reaches onclick and a real drag never does.
     +all.map((x,i)=>`${i?'<span class="ig-dot" style="opacity:.5">·</span>':''}<span data-ch="${posEnc(x.n)}"
         onpointerdown="posDragItemGroup(event,'${enc}')"
-        title="drag to change the order the register asks these in"
-        style="cursor:grab;touch-action:none;${x.pend?'color:#22c55e;font-weight:700':''}"
+        onclick="posToggleItemGroup('${enc}','${posEnc(x.n)}')"
+        title="click to see and edit this group's choices · drag to change the order the register asks them in"
+        style="cursor:pointer;touch-action:none;border-bottom:1px dotted var(--text-muted);${
+          (posS.openItemGroup&&posS.openItemGroup.item===r.key&&posS.openItemGroup.name===x.n)
+            ?'color:var(--accent);border-bottom-color:var(--accent);font-weight:800;':''
+        }${x.pend?'color:#22c55e;font-weight:700':''}"
         >${x.pend?esc(x.n):label(x.n)}</span>`).join('')
     +`</div>`;
+}
+
+// ─── OPEN A MOD GROUP WITHOUT LEAVING THE ITEM ───────────────────────────────
+//
+// Vinny: "when going through these items i want to be able to click on the mod group
+// attatched to it, see whats there, and adjust the mods right from here."
+//
+// Working down the list, the question a group raises is always about the item you are
+// looking at — "this soup asks Type, what are the choices?" Answering it meant going
+// to Groups, finding the group among all of them, reading it, and coming back to a
+// list scrolled to the top. So the group opens where it is asked about instead.
+//
+// ⚠️ THE SAME EDITORS THE GROUPS PAGE USES, not a second copy. posGroupModsHTML and
+// posGroupAttachHTML carry rename, re-price, reorder, remove, add, and the pending /
+// deleted colouring with them. A simplified inline version would be a second
+// implementation of the same rules, and the day they disagreed the office would be
+// reading one answer while the register had the other.
+const posGroupByName=(name)=>
+  posNewGroups.find(g=>g.name===name)
+  ||(((posS.cat&&posS.cat.mod_groups)||[]).find(g=>g.name===name))
+  ||null;
+
+// One at a time. Two open panels would put two elements with the same id on the page
+// (the attach box is id'd by group key), and the second one silently stops working.
+function posToggleItemGroup(encItem,encName){
+  const item=decodeURIComponent(encItem), name=decodeURIComponent(encName);
+  const open=posS.openItemGroup;
+  posS.openItemGroup=(open&&open.item===item&&open.name===name)?null:{item,name};
+  posKeepScroll(()=>{posRerenderList()});
+}
+
+function posItemGroupPanelHTML(r){
+  const open=posS.openItemGroup;
+  if(!open||open.item!==r.key)return '';
+  const g=posGroupByName(open.name);
+  // A name on an item with no group behind it is a real state — the register's menu
+  // can reference a group that was never defined — so say that rather than rendering
+  // an empty box that reads like a group with no choices.
+  if(!g)return `<div style="margin:0 0 10px;padding:12px 14px;border:1px solid #f59e0b;border-radius:12px;
+      background:rgba(245,158,11,0.07);max-width:730px;font-size:13.5px;color:#b45309">
+      <b>${esc(open.name)}</b> is attached to this item, but there is no group by that name in the
+      menu — nothing to show or edit.
+      <button onclick="posToggleItemGroup('${posEnc(r.key)}','${posEnc(open.name)}')"
+        style="border:none;background:transparent;color:inherit;text-decoration:underline;cursor:pointer;font-family:inherit;font-size:13px">close</button></div>`;
+  const k=posGroupKey(g);
+  // data-gk, because the click-away that closes an open choice editor looks for it.
+  // Without it, editing a price in here and clicking elsewhere would leave the editor
+  // stuck open.
+  return `<div data-gk="${posEnc(k)}" style="${posCardCss};margin:2px 0 12px;max-width:730px;
+      border-color:var(--accent);background:var(--surface2)">
+    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+      <span style="font-size:12px;font-weight:800;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px">Mod group</span>
+      <span style="font-size:17px;font-weight:700;color:${posGroupNames[k]?'#22c55e':'var(--text)'}">${esc(posGroupLabel(g))}</span>
+      ${posGroupNames[k]?`<span style="font-size:12px;color:var(--text-muted)">was ${esc(g.name)}</span>`:''}
+      <button onclick="posRenameGroup('${posEnc(k)}','${posEnc(g.name)}')"
+        style="border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-size:12px;font-family:inherit">rename</button>
+      <span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;border:1px solid currentColor;color:${g.required?'#ef4444':'var(--text-muted)'}">${g.required?'required':'optional'}</span>
+      ${(g.used_by||[]).length>1?`<span style="font-size:12px;color:#f59e0b;font-weight:700"
+        title="Editing a choice here changes it everywhere this group is asked">shared with ${(g.used_by||[]).length-1} other item${(g.used_by||[]).length===2?'':'s'}</span>`:''}
+      <button onclick="posToggleItemGroup('${posEnc(r.key)}','${posEnc(open.name)}')" title="close"
+        style="margin-left:auto;border:none;background:transparent;color:var(--text-muted);cursor:pointer;
+          font-family:inherit;font-size:20px;line-height:1;padding:0 4px">×</button>
+    </div>
+    ${posGroupModsHTML(g)}
+    ${posGroupAttachHTML(g)}
+  </div>`;
 }
 
 function posPriceCell(r){
