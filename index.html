@@ -13848,12 +13848,19 @@ function staffDetail(p){
         // terminal leaves has_pin true and this number wrong, which is the exact case
         // that caused today. So the date does the work, and the register line only
         // reports the one thing it genuinely knows.
+        // ⚠️ AMBER IS FOR THE ONE THING THAT IS ACTUALLY WRONG. signin_at only started
+        // being stamped tonight, so EVERY number set before then has no date — and
+        // colouring that amber lit up all 128 of them as suspect on the evening the
+        // stamp shipped. A warning that fires on every record is not a warning, and it
+        // buries the line next to it, which is a real one: the office has a number and
+        // the register does not. Undated is stated plainly; only the mismatch is amber.
         const reg2=(mini&&mini.has_pin)?'the register has a code'
-                 :(mini?'<b style="color:#f59e0b">the register has NO code</b>':'the register has not been asked');
+                 :(mini?'<b style="color:#f59e0b">the register has NO code — this number will not work at a terminal</b>'
+                       :'the register has not been asked');
         return `<div style="margin-top:6px;font-size:13px;color:var(--text-dim)">Sign-in #:
           <b style="color:var(--text);letter-spacing:2px">${esc(reg.signin)}</b>
           <div style="font-size:11px;color:var(--text-muted);line-height:1.5;margin-top:1px">
-            ${when?'set here '+esc(when):'<span style="color:#f59e0b">set before this was recorded</span>'} · ${reg2}<br>
+            ${when?'set here '+esc(when):'set before 8 Nov, when the date started being kept'} · ${reg2}<br>
             This is the office copy. If somebody changed it at a terminal, this number is the old one.
           </div></div>`;
       })():''}
