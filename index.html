@@ -13761,8 +13761,14 @@ async function staffSaveNumber(k,el){
     alert('A sign-in number is 3 to 8 digits.\n\nThe register\'s keypad has no letters on it.');
     el.focus();el.select();return;
   }
+  // ⚠️ DO NOT CLEAR, and do not re-save an unchanged number. The box IS the field
+  // now, so emptying it after a save would look exactly like the number being lost —
+  // the complaint this whole evening came from. And re-sending a number that has not
+  // changed makes the mini scrypt-hash it again for nothing.
+  const cur=String((staffS.people[k]&&staffS.people[k].register&&staffS.people[k].register.signin)||'');
+  if(v===cur)return;
   el.disabled=true;
-  try{ await staffSetPin(k,v); } finally { el.value='';el.disabled=false; }
+  try{ await staffSetPin(k,v); } finally { el.disabled=false; }
 }
 
 function staffDetail(p){
@@ -13828,53 +13834,14 @@ function staffDetail(p){
                                     : 'No class set — cannot sign in')}
       </div>
       <div style="display:flex;gap:5px;align-items:center;margin-top:10px">
+        <label for="staff-num-${kid}" style="font-size:12.5px;color:var(--text-dim)">Sign in</label>
         <input id="staff-num-${kid}" inputmode="numeric" maxlength="8" ${staffNoFill()}
-          placeholder="${(mini&&mini.has_pin)?'new number':'number'}"
+          value="${esc(reg.signin||'')}" placeholder="—"
           onkeydown="if(event.key==='Enter')staffSaveNumber('${esc(k)}',document.getElementById('staff-num-${kid}'))"
           style="${inp};width:104px;letter-spacing:2px">
         <button onclick="staffSaveNumber('${esc(k)}',document.getElementById('staff-num-${kid}'))"
           style="${posBtn('#0ea5e9')};padding:3px 9px;font-size:12px">Save</button>
       </div>
-      ${/* RESTORED 8/11. Taken out earlier the same day when the number showing was a
-             STALE one, then put back when the reason became clear: the problem was never
-             that the number was shown, it was that this copy and the register's could
-             disagree in silence. Vinny imported everyone's from MICROS and needs to read
-             them here. So it is shown AND labelled with where it comes from — the office
-             copy, which is what an import writes, not proof of what the register holds.
-             `pin_set` next to it is the register's own answer. */''}
-      ${reg.signin?(()=>{
-        const when=reg.signin_at?new Date(reg.signin_at).toLocaleDateString([], {day:'numeric',month:'short'}):null;
-        // "register has a code" is NOT "register has THIS code" — a pin changed at a
-        // terminal leaves has_pin true and this number wrong, which is the exact case
-        // that caused today. So the date does the work, and the register line only
-        // reports the one thing it genuinely knows.
-        // ⚠️ PAST TENSE, WITH A DATE. `mini.has_pin` is a CACHE — whatever the register
-        // answered the last time staffPullRegister ran, which may have been days ago.
-        // Written in the present tense it told Vinny "the register has NO code, this
-        // number will not work at a terminal" about a pin that was verified working
-        // minutes earlier; the field was simply stale. That is the same fault I spent
-        // the evening taking out of the POS tab — a cached value asserted as a current
-        // fact — and I wrote a fresh one here while doing it.
-        //
-        // So the claim is now tied to WHEN it was made. "had no code when last asked,
-        // 6 Nov" is something a reader can judge; "has NO code" is a statement this
-        // page is not entitled to make. Amber only when the check is from today, since
-        // a same-day disagreement is worth acting on and a week-old one is worth
-        // re-checking first.
-        const asked=mini&&mini.at?new Date(mini.at):null;
-        const askedTxt=asked?asked.toLocaleDateString([], {day:'numeric',month:'short'}):null;
-        const fresh=asked&&(Date.now()-mini.at)<12*3600*1000;
-        const reg2=!mini?'the register has not been asked'
-          :mini.has_pin?('the register had a code'+(askedTxt?' when last asked, '+esc(askedTxt):''))
-          :fresh?'<b style="color:#f59e0b">the register has NO code for them — this number will not work at a terminal</b>'
-                :'the register had no code when last asked'+(askedTxt?', '+esc(askedTxt):'')+' — press <b>Check the register</b> to see if that still holds';
-        return `<div style="margin-top:6px;font-size:13px;color:var(--text-dim)">Sign-in #:
-          <b style="color:var(--text);letter-spacing:2px">${esc(reg.signin)}</b>
-          <div style="font-size:11px;color:var(--text-muted);line-height:1.5;margin-top:1px">
-            ${when?'set here '+esc(when):'set before 8 Nov, when the date started being kept'} · ${reg2}<br>
-            This is the office copy. If somebody changed it at a terminal, this number is the old one.
-          </div></div>`;
-      })():''}
       ${reg.access?`
         <!-- The employee class used to sit HERE. Vinny moved it under the payroll id on
              10/28 ("Label it employee class here on the employee screen and move it over
