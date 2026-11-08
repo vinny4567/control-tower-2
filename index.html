@@ -9241,18 +9241,40 @@ function posItemGroupPanelHTML(r){
   </div>`;
 }
 
+// ⚠️ EMPTYING THIS BOX DOES NOT MEAN "NO PRICE". It deletes the override, so the row
+// falls back to the price the register already has — the number reappears on its own
+// and it reads as the edit having failed. Vinny: "im trying to take the price off this
+// its not working." It was working; it was doing the other thing.
+//
+// Two different intentions were sharing one empty box:
+//   · clear it  → forget what I typed, use the register's price   (revert)
+//   · 0         → this item costs nothing                         (a real price)
+// and a deliberate 0 then ALSO rendered as an empty box, identical to the state that
+// means "no override". So after setting it, the only visible evidence was indis-
+// tinguishable from not having set it — and clearing it again, to make it take, put
+// the old price straight back.
+//
+// Now: a typed price is GREEN (the same language the routing cell and the group chips
+// already use for a pending edit), and a typed ZERO renders 0.00 rather than blank.
+// Plain and showing a number = the register's own price. The two states can be told
+// apart at a glance, and reverting is visible because the green goes away.
 function posPriceCell(r){
   const enc=posEnc(r.key);
+  const mine=posEntered(r);          // an override typed here, 0 included
   const v=posPriceOf(r);
-  const shown=v?(v/100).toFixed(2):'';
+  const shown=mine?(v/100).toFixed(2):(v?(v/100).toFixed(2):'');
   return `<input value="${shown}" placeholder="—" inputmode="decimal" data-pf="p:${enc}"
     onchange="posSetPrice('${enc}',this.value)"
     onkeydown="if(event.key==='Enter')this.blur()"
+    title="${mine
+      ? 'You set this price. Empty the box to drop it and go back to the register&#39;s price.'
+      : 'The register&#39;s price. Type a new one, or 0 to make the item cost nothing.'}"
     style="width:100%;text-align:right;font-variant-numeric:tabular-nums;font-size:16px;
       padding:4px 7px;border-radius:6px;font-family:inherit;
-      border:1px solid var(--border);
-      background:var(--surface2);
-      color:${v?'var(--text)':'var(--text-muted)'}">`;
+      border:1px solid ${mine?'#22c55e':'var(--border)'};
+      background:${mine?'rgba(34,197,94,0.10)':'var(--surface2)'};
+      color:${mine?'#22c55e':(v?'var(--text)':'var(--text-muted)')};
+      font-weight:${mine?'700':'400'}">`;
 }
 
 // Adding a food mod to a group. The <datalist> is the whole Food Mods vocabulary, so
