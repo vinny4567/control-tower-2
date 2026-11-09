@@ -7188,7 +7188,24 @@ let posGroupAttach={};    // key -> {cats:[], items:[]}
 // menu build, not a real Micros print class — so this is where that gets corrected.
 // An item CAN print in more than one place: 108 Main / Pizza is one class hitting two
 // printers, which is how a shared prep item reaches both lines.
-const POS_PRINTERS=['Bar','Expo','Salad','Main','Pizza'];
+// ⚠️ TWO LISTS OF PRINTERS ON ONE SCREEN IS HOW THEY DRIFT. The "items route here"
+// stats above the classes read the CATALOGUE's printers, while the class chips read
+// this constant — and they had already drifted: this one still carried Expo, which
+// Angeli's stopped printing to on 8/28/26 (the register says so in its own
+// printclasses.js: "Micros still lists it as device 402; we do not print to it") and
+// which the catalogue has never listed. Nothing routes to Expo — 0 of 919 items — so
+// it was an option that could only ever be ticked by mistake.
+// The catalogue is the source now; this is only the fallback for before it loads, and
+// the two are kept identical so a fallback can never quietly offer a printer the real
+// list does not have.
+const POS_PRINTERS=['Bar','Salad','Main','Pizza'];
+const posPrinters=()=>((posS.cat&&posS.cat.printers)||POS_PRINTERS);
+// The chips one class shows: every printer that exists, PLUS any this class already
+// carries that no longer does. Dropping Expo from the list would otherwise hide it on
+// a class already routed there — the class would keep sending to a dead printer with
+// no chip left to untick. A route you cannot see is worse than one you disagree with.
+const posClassChips=(pc)=>{const live=posPrinters();
+  return [...live,...(pc.printers||[]).filter(p=>!live.includes(p))];};
 let posRouting={};        // itemKey -> ['Main','Pizza']
 // Print classes created here. Same deal as everything else on this page: saved and
 // synced, offered in the routing dropdown, but not live on the iPads until applied.
@@ -9093,20 +9110,23 @@ function posNoPriceNow(){
   return c.items.filter(r=>(r.gaps||[]).includes('price')&&!posEntered(r)).length;
 }
 
-// One dropdown, because a print CLASS is the real unit — 108 Main / Pizza is a single
-// class that hits two printers, not two separate decisions. The list is the classes
-// the Configurator actually has, plus the single-printer routes for the many items
-// whose station was inferred from the menu build rather than read off a class.
+// One dropdown, because a print CLASS is the real unit — a class that hits Main and
+// Pizza together is a single decision, not two. The list is the classes built in this
+// back office, plus the single-printer routes for the many items whose station came
+// from the menu build rather than a class.
+//
+// ⚠️ THE CATALOGUE'S OWN print_classes ARE NOT READ HERE, deliberately (Vinny,
+// 11/8/26: "old micros print classes were pulled and setup already, i want to wipe
+// those and go off of the back office only"). Two came across with the Micros import —
+// 103 All Kitchen Printer and 108 Main / Pizza — and they were offered here as though
+// they were set up, when no printer is actually installed yet. They are emptied out of
+// pos-catalog.json as well; this branch is gone so that a later hand-edit of that file
+// cannot quietly put them back in the dropdown.
 function posRouteOptions(){
-  const c=posS.cat||{};
-  const out=(c.print_classes||[]).map(pc=>({
-    id:'c'+pc.num,
-    label:pc.num+' '+pc.name+(pc.red?' · red':''),
-    printers:pc.printers||[],
-  }));
+  const out=[];
   for(const c of posNewClasses)
-    if(c.printers.length)out.push({id:c.key,label:c.name+' (new)',printers:c.printers});
-  for(const p of POS_PRINTERS)out.push({id:'s'+p,label:p+' only',printers:[p]});
+    if(c.printers.length)out.push({id:c.key,label:c.name,printers:c.printers});
+  for(const p of posPrinters())out.push({id:'s'+p,label:p+' only',printers:[p]});
   out.push({id:'none',label:'— prints nowhere —',printers:[]});
   return out;
 }
@@ -9560,31 +9580,28 @@ function posClassesHTML(){
       margin-right:5px;font-size:13px;font-weight:700;font-family:inherit;
       cursor:${onClick?'pointer':'default'};opacity:${onClick?1:0.75}">${p}</button>`;
 
-  const built=(c.print_classes||[]).map(pc=>`<div style="${posCardCss};margin-bottom:10px">
-    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
-      <span style="font-size:13px;font-weight:800;color:var(--text-dim);font-variant-numeric:tabular-nums">${pc.num}</span>
-      <span style="font-size:16px;font-weight:700">${esc(pc.name)}</span>
-      <span style="margin-left:auto;font-size:12px;color:var(--text-muted)">in the register</span>
-    </div>
-    <div style="margin-top:8px">${POS_PRINTERS.map(p=>chip(p,(pc.printers||[]).includes(p),null)).join('')}</div>
-  </div>`).join('');
-
+  // The two Micros classes that came across with the import used to be listed here,
+  // read-only, badged "in the register" — which was the part that was not true. No
+  // printer is installed yet, so nothing was routing anywhere; they only looked set up.
+  // Wiped at Vinny's call 11/8/26, here and in pos-catalog.json, so every class in this
+  // list is one he built. Nothing is inherited.
   const mine=posNewClasses.map(pc=>{
     const enc=posEnc(pc.key);
     return `<div style="${posCardCss};margin-bottom:10px;border-color:#22c55e">
       <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
-        <span style="font-size:11px;font-weight:800;color:#22c55e;text-transform:uppercase;letter-spacing:.5px">new</span>
         <span style="font-size:16px;font-weight:700">${esc(pc.name)}</span>
         <button onclick="posDeleteClass('${enc}')" style="margin-left:auto;border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-size:13px">delete</button>
       </div>
-      <div style="margin-top:8px">${POS_PRINTERS.map(p=>chip(p,pc.printers.includes(p),`posClassTogglePrinter('${enc}','${p}')`)).join('')}</div>
+      <div style="margin-top:8px">${posClassChips(pc).map(p=>chip(p,pc.printers.includes(p),`posClassTogglePrinter('${enc}','${p}')`)).join('')}</div>
       <div style="margin-top:6px;font-size:12px;color:${pc.printers.length?'var(--text-muted)':'#f59e0b'}">
         ${pc.printers.length?esc(pc.printers.join(', ')):'pick at least one printer — until then it will not be offered on an item'}</div>
     </div>`;
   }).join('');
 
+  // An empty section with one button in it reads as broken rather than as empty, and
+  // right after a wipe that is exactly the wrong impression to give.
   return `<button onclick="posNewClass()" style="${posBtn('#22c55e')};margin-bottom:14px">+ New print class</button>`
-    + mine + built;
+    + (mine||`<div style="color:var(--text-muted);font-size:13px">No print classes yet. Add one, then tick the printers it hits — an item routed to that class goes to all of them.</div>`);
 }
 
 const posGroupKey=(g)=>g.key!==undefined?g.key:(g.num!=null?String(g.num):'n:'+g.name);
@@ -9880,7 +9897,7 @@ function posPrintersHTML(){
 
   <div style="${posCardCss};margin-bottom:14px">
     <div style="font-weight:800;font-size:15px;margin-bottom:4px">Print classes</div>
-    <div style="color:var(--text-dim);font-size:12px;margin-bottom:12px">Micros routes on a print class, not a station — one class can send the same item to two printers. Guessing a station from an item would print entrées at the pizza oven.</div>
+    <div style="color:var(--text-dim);font-size:12px;margin-bottom:12px">A class is a name and the set of printers it hits — one class can send the same item to two printers at once, which a single station cannot. These are yours: the two that came across with the Micros import have been wiped, so nothing here is inherited.</div>
     ${posClassesHTML()}
   </div>
   <div style="${posCardCss};margin-bottom:14px">
