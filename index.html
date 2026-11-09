@@ -8784,10 +8784,28 @@ function posItemsBodyHTML(){
     </div>${posItemGroupPanelHTML(r)}`;
   const catHeader=(k,list)=>{
     const gaps=list.filter(r=>posRowGaps(r).length).length;
-    return `<div style="display:flex;align-items:baseline;gap:8px;margin:14px 0 2px;padding-bottom:5px;border-bottom:2px solid var(--border);max-width:630px">
+    // Route the whole category at once. Setting forty pastas to the same class one
+    // dropdown at a time is forty chances to miss one, and a single item left on the
+    // wrong printer is invisible until a ticket does not come out.
+    // The control shows what the category IS before it offers to change it: the shared
+    // route when they agree, "mixed" when they do not — never a value that is only true
+    // of the first row.
+    const routable=posCatRows(k);
+    const shared=posCatRoute(k);
+    const sel=shared?posRouteIdFor(shared):'';
+    const bulk=!routable.length?'':`<span style="margin-left:auto;display:flex;align-items:baseline;gap:6px">
+      <span style="font-size:11px;color:var(--text-muted);text-transform:none;letter-spacing:0">all ${routable.length} print at</span>
+      <select onchange="posSetRouteCat('${posEnc(k)}',this.value)" title="Set every item in this category at once"
+        style="font-family:inherit;font-size:12px;padding:2px 5px;border-radius:6px;border:1px solid var(--border);
+          background:var(--surface2);color:${shared?'var(--text)':'var(--text-muted)'};max-width:190px">
+        ${shared?'':'<option value="" selected>mixed</option>'}
+        ${posRouteOptions().map(o=>`<option value="${o.id}" ${o.id===sel?'selected':''}>${esc(o.label)}</option>`).join('')}
+      </select></span>`;
+    return `<div style="display:flex;align-items:baseline;gap:8px;margin:14px 0 2px;padding-bottom:5px;border-bottom:2px solid var(--border);max-width:730px">
       <span style="font-size:20px;font-weight:800;letter-spacing:.4px;text-transform:uppercase">${esc(k)}</span>
       <span style="font-size:14px;color:var(--text-dim)">${list.length} item${list.length===1?'':'s'}</span>
-      ${gaps?`<span style="font-size:11px;font-weight:700;color:#f59e0b;margin-left:auto">${gaps} need data</span>`:''}</div>`;
+      ${gaps?`<span style="font-size:11px;font-weight:700;color:#f59e0b">${gaps} need data</span>`:''}
+      ${bulk}</div>`;
   };
   let body;
   if(posS.catFilter==='Food Mods'&&!posS.q){
@@ -9135,13 +9153,49 @@ function posRouteIdFor(printers){
   const hit=posRouteOptions().find(o=>posSameSet(o.printers,printers));
   return hit?hit.id:'';
 }
+// What a route choice MEANS for one row, in one place. Setting a row back to the
+// printers it already ships with removes the override rather than storing a copy of the
+// default — otherwise the published blob grows a redundant entry for every row that was
+// clicked and clicked back, and "has this been changed?" stops being answerable.
+// One item and a whole category both come through here, so the two cannot drift.
+function posApplyRoute(row,opt){
+  const orig=row.printers||[];
+  if(posSameSet(opt.printers,orig))delete posRouting[row.key];
+  else posRouting[row.key]=opt.printers;
+}
 function posSetRoute(enc,id){
   const key=decodeURIComponent(enc);
   const row=((posS.cat&&posS.cat.items)||[]).find(i=>i.key===key); if(!row)return;
   const opt=posRouteOptions().find(o=>o.id===id); if(!opt)return;
-  const orig=row.printers||[];
-  if(posSameSet(opt.printers,orig))delete posRouting[key];
-  else posRouting[key]=opt.printers;
+  posApplyRoute(row,opt);
+  kvPush('ct_pos_routing',posRouting,Date.now());
+  posKeepScroll(()=>{posRerenderList();renderViewport();});
+}
+// The rows sitting under one category heading, chosen the same way the heading chose
+// them — posCatOf, the DISPLAY group. Routing by `r.cat` instead would quietly act on
+// items filed under a different heading from the one being clicked, which is the exact
+// cat-vs-group seam that nearly mis-keyed the item order.
+// Food Mods are excluded: a modifier prints on the ticket of the item it modifies and
+// has no routing of its own, which is why posRouteCell gives them no dropdown either.
+const posCatRows=(k)=>((posS.cat&&posS.cat.items)||[]).filter(r=>r.cat!=='Food Mods'&&posCatOf(r)===k);
+// The route every row in a category shares, or null when they differ. Shown rather than
+// assumed: a header that displays one value while the rows below it hold three is an
+// echo of nothing, and the whole point of the control is to make the category legible.
+function posCatRoute(k){
+  const rows=posCatRows(k); if(!rows.length)return null;
+  const first=posRoutedTo(rows[0])||[];
+  return rows.every(r=>posSameSet(posRoutedTo(r)||[],first))?first:null;
+}
+function posSetRouteCat(encK,id){
+  const k=decodeURIComponent(encK);
+  const opt=posRouteOptions().find(o=>o.id===id); if(!opt)return;
+  const rows=posCatRows(k); if(!rows.length)return;
+  // A bulk write nobody can eyeball afterwards. Say the count and the destination in
+  // words before doing it — "47 items" is the number that makes somebody stop and read.
+  const where=opt.printers.length?opt.printers.join(' + '):'nowhere';
+  if(!confirm(`Route all ${rows.length} item${rows.length===1?'':'s'} in ${k} to ${where}?\n\n`
+    +`Each one can still be changed on its own afterwards.`))return;
+  rows.forEach(r=>posApplyRoute(r,opt));
   kvPush('ct_pos_routing',posRouting,Date.now());
   posKeepScroll(()=>{posRerenderList();renderViewport();});
 }
