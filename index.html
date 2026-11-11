@@ -10002,7 +10002,7 @@ function posRangeHonored(){
   if(!rep)return true;
   // Whichever payload this report actually loaded — only sales used to be checked, so
   // a menu-item report run for August against an old mini said nothing at all.
-  const b=['sales','items','voids','labor','payouts','nights'].map(k=>rep[k]).find(x=>x&&(x.window||x.from!=null));
+  const b=['sales','items','voids','labor','payouts','nights','closed'].map(k=>rep[k]).find(x=>x&&(x.window||x.from!=null));
   if(!b)return true;
   // The mini echoes the business days it actually used (`window`, or a string `from` on
   // the labor report). Comparing those is exact — no timezone guesswork, and no 36-hour
@@ -10036,7 +10036,8 @@ async function posLoadReports(){
     posS.rep={sales:got.sales||null,items:got.items||null,voids:got.voids||null,
               payouts:got.payouts!==undefined?got.payouts:null,nights:got.nights!==undefined?got.nights:null,
               labor:got.labor!==undefined?got.labor:null,
-              discounts:got.discounts!==undefined?got.discounts:null};
+              discounts:got.discounts!==undefined?got.discounts:null,
+              closed:got.closed!==undefined?got.closed:null};
   }catch(e){posS.rep=null;posS.repErr=String(e&&e.message||e)}
   posS.repBusy=false;renderViewport();
 }
@@ -10054,6 +10055,7 @@ const POS_REPORTS = [
   { k:'menu',    name:'Menu item sales' },
   { k:'labor',   name:'Labor' },
   { k:'voids',   name:'Voids' },
+  { k:'closed',  name:'Closed by hand' },
   { k:'payouts', name:'Pay outs' },
   { k:'nights',  name:'Nightly cash count' },
   { k:'checks',  name:'Every check' },
@@ -10064,11 +10066,12 @@ const POS_REPORTS = [
 const POS_REPORT_NEEDS = {
   sales:['sales'], menu:['items'], labor:['labor','sales'], voids:['voids'],
   payouts:['payouts'], nights:['nights'], checks:['nights'], discounts:['discounts'],
+  closed:['closed'],
 };
 const POS_REPORT_PATHS = {
   sales:'/api/reports/sales', items:'/api/reports/items', voids:'/api/reports/voids',
   payouts:'/api/reports/payouts', nights:'/api/reports/nights', labor:'/api/reports/labor',
-  discounts:'/api/reports/discounts',
+  discounts:'/api/reports/discounts', closed:'/api/reports/closed-by-hand',
 };
 function posRepOpen(k){posS.repShow=k;posLoadReports()}
 function posRepBack(){posS.repShow=null;posS.rep=null;posS.repErr='';renderViewport()}
@@ -10357,9 +10360,55 @@ function posRepChecks(r){
   </div>`).join('');
 }
 
+// Checks an owner or manager closed out by hand — with a reason instead of a payment.
+// The top-level `from`/`to` the mini sends are epoch ms and `to` is EXCLUSIVE (4am the
+// day after), so nothing here formats them as dates; the range picker above already
+// says what window this is. The written-off total is the mini's own figure, never
+// re-added from the rows.
+function posRepClosedByHand(r){
+  const cb=r.closed;
+  if(cb===null)return posRepMissing('checks closed by hand',
+    'The registers are recording the reason on every one, so nothing is being lost \u2014 they appear here the day the endpoint ships.');
+  const list=cb.checks||[];
+  if(!list.length)return posRepEmpty('Nobody closed a check by hand in this range \u2014 everything here was settled by a payment.');
+  const NOT_SAVED='(reason not saved)';
+  // Counts by reason, straight from the mini. Its own bucket for the pre-fix rows is
+  // already called "(reason not saved)", so it needs no special case here.
+  const tally=Object.keys(cb.by_reason||{}).sort((a,b)=>(cb.by_reason[b]-cb.by_reason[a])||a.localeCompare(b))
+    .map(k=>esc(String(cb.by_reason[k]))+'\u00d7 '+esc(k)).join('  \u00b7  ');
+  const row=(x)=>{
+    const when=x.at?new Date(x.at).toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'';
+    const why=x.reason_saved===false||x.reason==null
+      ?`<span style="color:var(--text-muted);font-style:italic">${esc(NOT_SAVED)}</span>`
+      :esc(String(x.reason));
+    return `<div style="display:flex;gap:10px;align-items:baseline;padding:5px 0;border-top:1px solid var(--border);font-size:13px">
+      <span style="width:58px;text-align:right;font-weight:800;font-variant-numeric:tabular-nums">${esc(String(x.check_id==null?'\u2014':x.check_id))}</span>
+      <span style="width:58px;color:var(--text-dim)">${esc(String(x.table==null?'\u2014':x.table))}</span>
+      <span style="width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(String(x.server||'\u2014'))}</span>
+      <span style="width:118px;color:var(--text-muted);font-variant-numeric:tabular-nums">${esc(when)}</span>
+      <span style="width:104px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(String(x.by||'\u2014'))}</span>
+      <span style="flex:1;min-width:130px">${why}</span>
+      <span style="width:82px;text-align:right;font-variant-numeric:tabular-nums${x.written_off_cents?';font-weight:800;color:var(--accent)':';color:var(--text-muted)'}">${x.written_off_cents?posRepMoney(x.written_off_cents):'\u2014'}</span>
+    </div>`;
+  };
+  return `<div style="${posCardCss}">
+    <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:6px">
+      <div style="color:var(--text-dim);font-size:13px">${esc(String(cb.count==null?list.length:cb.count))} closed by hand</div>
+      <div style="margin-left:auto;font-size:20px;font-weight:800;font-variant-numeric:tabular-nums">${posRepMoney(cb.written_off_cents||0)}</div>
+    </div>
+    <div style="color:var(--text-muted);font-size:12px;margin-bottom:8px">${tally?tally+' \u00b7 ':''}written off is what a check still owed when it was closed.</div>
+    <div style="display:flex;gap:10px;font-size:11px;color:var(--text-muted);letter-spacing:.5px;padding-bottom:2px">
+      <span style="width:58px;text-align:right">CHECK</span><span style="width:58px">TABLE</span>
+      <span style="width:120px">SERVER</span><span style="width:118px">CLOSED</span>
+      <span style="width:104px">BY</span><span style="flex:1;min-width:130px">REASON</span>
+      <span style="width:82px;text-align:right">WRITTEN OFF</span></div>
+    ${list.map(row).join('')}
+  </div>`;
+}
+
 const POS_REPORT_RENDER={sales:posRepSales,menu:posRepMenuItems,labor:posRepLabor,
   voids:posRepVoids,payouts:posRepPayouts,nights:posRepNights,checks:posRepChecks,
-  discounts:posRepDiscounts};
+  discounts:posRepDiscounts,closed:posRepClosedByHand};
 
 const posRepEmpty=(msg)=>`<div style="${posCardCss};max-width:620px;color:var(--text-dim);font-size:13px;line-height:1.6">${esc(msg)}</div>`;
 // An endpoint the mini has not learned yet is NOT an empty report, and must never look
