@@ -9979,7 +9979,7 @@ function posPrintersHTML(){
 // those keep working against a mini that has not learned from/to yet. An arbitrary
 // range cannot be expressed that way, and rather than quietly showing the wrong
 // fortnight, the report says the mini is still answering by days (posRangeHonored).
-function posRangeDefault(){const t=new Date();return{from:posYmd(t),to:posYmd(t),days:1,label:'Tonight'}}
+function posRangeDefault(){return posRangeLastDays(1,'Tonight')}
 function posYmd(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
 function posDaysAgo(n){const d=new Date();d.setHours(d.getHours()-4);d.setDate(d.getDate()-n);return d}
 function posRangeLastDays(n,label){const t=new Date();t.setHours(t.getHours()-4);return{from:posYmd(posDaysAgo(n-1)),to:posYmd(t),days:n,label:label||(n+' days')}}
