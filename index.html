@@ -10350,7 +10350,7 @@ function posRepChecks(r){
       <span style="width:54px">${esc(String(c.id))}</span>
       <span style="width:88px">${esc(c.where||'—')}</span>
       <span style="width:92px">${esc(c.server||'')}</span>
-      <span style="width:40px;text-align:right">${c.guests||'—'}</span>
+      <span style="width:40px;text-align:right">${esc(String(c.guests||'—'))}</span>
       <span style="width:84px;text-align:right">${posRepMoney(c.net)}</span>
       <span style="width:84px;text-align:right;font-weight:700">${posRepMoney(c.total)}</span>
       <span style="width:74px;text-align:center;color:${c.closed?'var(--text-dim)':'#f59e0b'}">${esc(c.closed?(c.how||'comp').replace('gift_card','gift'):'OPEN')}</span>
