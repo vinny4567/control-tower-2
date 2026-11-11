@@ -7214,14 +7214,6 @@ let posNewClasses=[];     // [{key:'pc:1', name, printers:[]}]
 // the vocabulary immediately — autocomplete offers them, groups can hold them — and
 // travel to the register in the same paste as everything else.
 let posNewMods=[];        // [{name, cents}]
-// Which "on N items" lines are open. Rows are rebuilt on every redraw, so this has to
-// live outside them or an open list would snap shut on the next click anywhere.
-let posUsedByOpen=new Set();
-function posToggleUsedBy(enc){
-  const k=decodeURIComponent(enc);
-  posUsedByOpen.has(k)?posUsedByOpen.delete(k):posUsedByOpen.add(k);
-  posRedraw();
-}
 // The group a choice belongs to, as the Mod groups page names it — including a
 // rename made here but not yet applied. Matched on the group NUMBER when there is
 // one; only a group with no number falls back to its title, because two different
@@ -7238,7 +7230,13 @@ function posRowUsedByHTML(r){
   const u=r.usedBy||[];
   if(!u.length)return '';
   if(u.length===1)return ` · on ${esc(u[0])}`;
-  const k=String(r.key||r.name), enc=encodeURIComponent(k), open=posUsedByOpen.has(k);
+  // Open state lives in posS.openUsedBy, the same store the toggle writes and the Mod
+  // groups list reads — a second Set here was shadowed by the later posToggleUsedBy, so
+  // this button could never open. Row keys are prefixed so they cannot collide with the
+  // group keys sharing that store. posEnc, not encodeURIComponent: a choice named
+  // "Angeli's" would otherwise close the onclick attribute early.
+  const k='row:'+String(r.key||r.name), enc=posEnc(k);
+  const open=!!(posS.openUsedBy&&posS.openUsedBy[k]);
   return ` · <button onclick="posToggleUsedBy('${enc}')"
       title="${open?'hide':'show'} the items this is on"
       style="border:none;background:transparent;padding:0;font:inherit;color:var(--accent);
