@@ -105,11 +105,17 @@ ok('both values are read off the two boxes he typed into, and nothing is appende
    /const code=String\(\(\w+&&\w+\.value\)\|\|''\)\.replace\(\/\\D\/g,''\);/.test(approve)
    && /const name=String\(\(\w+&&\w+\.value\)\|\|''\)\.trim\(\);/.test(approve));
 
-// ⚠️ THE GUARD IS LOAD-BEARING. Delete this one line and an approve with the name box
-// left blank sends name:'' — the mini falls back to `claim.name`, the device's own
-// word for itself, and names the station (and slugs its id) from it. That is the whole
-// vulnerability, restored, with every other assertion in this file still green.
-ok('⚠️ and an empty name is refused here, or the device gets to name itself after all',
+// THE SECOND LOCK, and until 11/14/26 it was the only one. An approve with the name box
+// left blank used to send name:'' and the mini resolved `b.name || claim.name` — the
+// device's own word for itself — naming the station and slugging its id from it. Deleting
+// this one line restored the whole vulnerability with every other assertion still green,
+// which is why it is asserted rather than trusted. Jarvis closed it at the source the same
+// day (mini e33a1f0): /api/stations/claim/approve now REQUIRES a name and answers 400
+// name_required instead of falling back, so this is belt-and-braces. Keep both — the back
+// office refusing early is what gives him a sentence to read instead of an error code, and
+// a client that stopped sending a name would otherwise fail at the server for a reason
+// nobody on this screen would understand.
+ok('and an empty name is refused here too, so he is told rather than bounced by the mini',
    /if\(!name\)\{posStationsS\.note=/.test(approve));
 
 // The other half: a claim must not reach the wire by being typed FOR him. Counted over
