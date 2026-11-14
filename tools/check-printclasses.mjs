@@ -90,7 +90,24 @@ ok('an empty list says so instead of showing a lone button', /No print classes y
 
 // ── the invariant the wipe rested on ─────────────────────────────────────────
 ok('⚠️ routing is still stored as printer names, not class ids', /itemKey -> \['Main','Pizza'\]/.test(src));
-ok('…and posSetRoute writes the option\'s PRINTERS onto the item', /posRouting\[key\]=opt\.printers/.test(src));
+// ⚠️ ASKED OF THE WHOLE FILE, NOT OF ONE FUNCTION. This line used to read
+// /posRouting\[key\]=opt\.printers/ and went red when 00ab591 lifted the write out of
+// posSetRoute into a shared posApplyRoute, so the local became `row.key` — nothing about
+// what gets STORED changed. Pinning the old spelling meant the check was guarding a
+// variable name; what it is for is that a stored route is a list of printer names, so
+// that renaming a print class can never strand an item with nowhere to print. So: find
+// every assignment into posRouting anywhere in the page and require all of them to
+// assign the option's printers. A second write added elsewhere tomorrow is caught; a
+// rename is not a failure.
+const routeWrites = [...src.matchAll(/posRouting\[[^\]]+\]\s*=\s*([A-Za-z_$][\w$.]*)/g)].map((m) => m[1]);
+ok('…and every write into the routing map stores the option\'s PRINTERS, never a class id',
+   routeWrites.length > 0 && routeWrites.every((w) => w === 'opt.printers'));
+// Both controls — one item, and a whole category at once — go through the same helper,
+// which is why routing forty rows cannot drift from routing one.
+ok('and routing one item and routing a whole category share the one helper that does it',
+   /function posApplyRoute\(row,opt\)\{/.test(src)
+   && /function posSetRoute\([^)]*\)\{[\s\S]{0,400}?posApplyRoute\(/.test(src)
+   && /function posSetRouteCat\([^)]*\)\{[\s\S]{0,600}?posApplyRoute\(/.test(src));
 
 console.log(bad ? `\n${bad} FAILED` : '\nall good');
 process.exit(bad ? 1 : 0);
