@@ -10090,14 +10090,24 @@ const posRepMoney=(c)=>'$'+((c||0)/100).toFixed(2);
 
 function posRepSales(r){
   const s=r.sales||{};
-  if(!s.checks)return posRepEmpty('Nothing closed in this range. An open check is a table mid-meal, not revenue, so it stays out until it closes.');
+  // A party deposit and a gift card sold are MONEY IN but they are not SALES — the
+  // register leaves both out of gross, checks and guests, and hands them back on their
+  // own. So a slow Tuesday that took a deposit and sold a card has no closed checks and
+  // still had real money cross the counter: gate the empty state on all four, or the day
+  // reads as "nothing happened" while the drawer says otherwise.
+  const dep=s.deposits_taken_cents||0, gc=s.gift_cards_sold_cents||0;
+  if(!s.checks&&!s.collected_cents&&!dep&&!gc)return posRepEmpty('Nothing closed in this range. An open check is a table mid-meal, not revenue, so it stays out until it closes.');
   return `
   <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
-    ${posStat('Gross',posMoney(s.gross_cents),`${s.checks} checks · ${s.guests} guests`)}
+    ${posStat('Gross',posMoney(s.gross_cents),`${s.checks||0} checks · ${s.guests||0} guests`)}
     ${posStat('Tax',posMoney(s.tax_cents),'')}
     ${posStat('Tips',posMoney(s.tips_cents),'')}
     ${posStat('Average check',posMoney(s.avg_check_cents),posMoney(s.avg_guest_cents)+' per guest')}
   </div>
+  ${(dep||gc)?`<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+    ${dep?posStat('Deposits taken',posMoney(dep),'held against a party bill — not a sale yet'):''}
+    ${gc?posStat('Gift cards sold',posMoney(gc),'money in; it becomes a sale when it is spent'):''}
+  </div>`:''}
   <div style="display:flex;gap:12px;flex-wrap:wrap">
     <div style="${posCardCss};flex:1;min-width:260px">
       <div style="font-weight:800;font-size:15px;margin-bottom:8px">How they paid</div>
