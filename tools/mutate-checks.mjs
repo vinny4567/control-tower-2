@@ -28,7 +28,7 @@ const run=(which,html)=>{
   rmSync(TMP,{recursive:true,force:true}); mkdirSync(join(TMP,'tools'),{recursive:true});
   writeFileSync(join(TMP,'index.html'),html);
   cpSync(join(REPO,'tools',which),join(TMP,'tools',which));
-  if(which==='check-printclasses.mjs'||which==='check-categories.mjs') cpSync(join(REPO,'pos-catalog.json'),join(TMP,'pos-catalog.json'));
+  if(/^check-(printclasses|categories|specials)\.mjs$/.test(which)) cpSync(join(REPO,'pos-catalog.json'),join(TMP,'pos-catalog.json'));
   try{ execFileSync('node',[join(TMP,'tools',which)],{encoding:'utf8'}); return {red:false,out:''} }
   catch(e){ return {red:true,out:String(e.stdout||'')} }
 };
@@ -118,6 +118,23 @@ const M=[
   ['WINE · the × translates forward again, so a pre-00365d2 entry is unremovable','check-categories.mjs',
     sub("  posNewItems=posNewItems.filter(i=>!(i.name===name&&posSectionOf(i)===section));",
         "  posNewItems=posNewItems.filter(i=>!(i.name===name&&i.cat===posPublishAs(section,'').cat));"),true],
+  // ── specials: the category the register has and the catalogue does not ─────────
+  ['SPECIALS BASELINE','check-specials.mjs', SRC, false],
+  ['SPECIALS · spelled in a case the register will never match','check-specials.mjs',
+    sub("const POS_EMPTY_CATS=['Specials'];","const POS_EMPTY_CATS=['SPECIALS'];"),true],
+  ['SPECIALS · no section at all, so there is nowhere to type one','check-specials.mjs',
+    sub("const POS_EMPTY_CATS=['Specials'];","const POS_EMPTY_CATS=[];"),true],
+  ['SPECIALS · the empty-state branch eats the body, add box and all','check-specials.mjs',
+    sub("  return head+((shown.length||extrasDrawn)?body:empty)+more+delLine;",
+        "  return head+(shown.length?body:empty)+more+delLine;"),true],
+  ['SPECIALS · a pending item under an undrawn category goes invisible again','check-specials.mjs',
+    sub("  for(const i of (posNewItems||[])){const k=posSectionOf(i); if(k&&!have.has(k))want.add(k);}",""),true],
+  ['SPECIALS · Add borrows instead of making one, so it reaches no iPad','check-specials.mjs',
+    sub("  if(exists&&exists.cat!==pub.cat&&!addOnly){posSectionAdd(encCat,exists.name);return;}",
+        "  if(exists&&exists.cat!==pub.cat){posSectionAdd(encCat,exists.name);return;}"),true],
+  ['SPECIALS · the dropdown stops offering it, so he cannot get there','check-specials.mjs',
+    sub("  const cats=[...new Set([...c.items.map(posCatOf),...posAddOnlyCats()])].sort();",
+        "  const cats=[...new Set(c.items.map(posCatOf))].sort();"),true],
   ['BENIGN · rename the local inside the wine translation','check-categories.mjs',
     sub("  const w=POS_WINE_SECTIONS[section];\n  if(!w)return {cat:section,name};",
         "  const rule=POS_WINE_SECTIONS[section];\n  if(!rule)return {cat:section,name};")

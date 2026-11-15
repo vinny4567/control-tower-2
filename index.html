@@ -7320,6 +7320,30 @@ const POS_WINE_SECTIONS={
   'WHITE WINE GLASS' :{cat:'WHITE WINE',suffix:' — GL'},
   'WHITE WINE BOTTLE':{cat:'WHITE WINE',suffix:' — BTL'},
 };
+// ⚠️ A CATEGORY THE REGISTER HAS AND THE CATALOGUE DOES NOT.
+// 'Specials' is a real tab on the register's FOOD page — menu.js has
+// `{cat:'Specials', items:[]}` and FOOD_PAGE lists it — sitting empty, waiting. It is
+// where a special belongs, and it is the whole reason Vinny asked for "a new category":
+// he wants to run specials, not to invent taxonomy.
+//
+// Every section on this page is drawn from CATALOGUE rows, so a category with none gets
+// no heading and no add box. An item filed under one would have rendered NOWHERE while
+// still publishing on the 1400ms debounce — unseeable, and unremovable, because the only
+// × lives inside the add box that never drew. So those sections are drawn anyway.
+//
+// ⚠️ SPELLED EXACTLY AS THE REGISTER SPELLS IT. addedFor filters `a.cat === cat`, with
+// no case folding — 'specials' or 'SPECIALS' would publish, look right here, and draw on
+// no iPad.
+const POS_EMPTY_CATS=['Specials'];
+// Sections to draw that no catalogue row would draw: the empty register categories, plus
+// anywhere an item has already been added that would otherwise have nowhere to appear.
+// The second half is the safety net — whatever is pending can always be seen and removed.
+const posAddOnlyCats=()=>{
+  const have=new Set(((posS.cat&&posS.cat.items)||[]).map(posCatOf));
+  const want=new Set(POS_EMPTY_CATS.filter(c=>!have.has(c)));
+  for(const i of (posNewItems||[])){const k=posSectionOf(i); if(k&&!have.has(k))want.add(k);}
+  return [...want];
+};
 // What the register will actually be told, for an item added to `section`.
 const posPublishAs=(section,name)=>{
   const w=POS_WINE_SECTIONS[section];
@@ -7354,8 +7378,16 @@ function posAddItem(encCat){
   const lower=(x)=>String(x||'').toLowerCase();
   const here=all.find(i=>i.cat===pub.cat&&lower(i.name)===lower(pub.name));
   if(here)return;                                     // already on the menu, in this very section
+  // ⚠️ …EXCEPT IN A CATEGORY THAT HAS NOTHING OF ITS OWN. "Put THAT here" is a
+  // posSectionAdd, which is a BACK-OFFICE VIEW and is deliberately never published
+  // (check-publish-covers LOCAL_ONLY). Harmless where the register already has the
+  // category — nothing was supposed to travel. Fatal in Specials: a special named after
+  // a dish that exists, say 'Veal Saltimbocca', would sit in the list looking added and
+  // reach no iPad, ever. Tonight's special is a NEW item that happens to share a name;
+  // the register keys it 'm:Specials:Veal Saltimbocca', its own line at its own price.
+  const addOnly=posAddOnlyCats().includes(cat);
   const exists=all.find(i=>lower(i.name)===lower(typed)||lower(i.name)===lower(pub.name));
-  if(exists&&exists.cat!==pub.cat){posSectionAdd(encCat,exists.name);return;}
+  if(exists&&exists.cat!==pub.cat&&!addOnly){posSectionAdd(encCat,exists.name);return;}
   const raw=pEl?String(pEl.value).replace(/[^0-9.]/g,''):'';
   const n=raw?Math.round(parseFloat(raw)*100):0;
   if(posNewItems.some(i=>i.cat===pub.cat&&lower(i.name)===lower(pub.name)))return;
@@ -8794,6 +8826,9 @@ function posItemsBodyHTML(){
   // data, so a category with gaps is visible without opening it.
   const groups=[],byCat=new Map();
   for(const r of shown){const k=posCatOf(r);if(!byCat.has(k)){byCat.set(k,[]);groups.push(k)}byCat.get(k).push(r)}
+  // Sections nothing in the catalogue would draw — see posAddOnlyCats. Honours the
+  // filter, so picking 'Specials' shows Specials and picking Pasta does not.
+  let extrasDrawn=false;
   // The saved order, applied the SAME WAY the register applies it (menulive.orderItems):
   // listed items first in their listed order, anything unlisted keeps its place after
   // them. So a dish added since the order was saved appears at the end rather than
@@ -8909,7 +8944,8 @@ function posItemsBodyHTML(){
         <span style="width:330px;font-weight:700">${esc(i.name)}
           <span style="font-size:11px;font-weight:800;letter-spacing:.4px"> NEW</span></span>
         <span style="width:92px;text-align:right;font-variant-numeric:tabular-nums">${i.cents?'$'+(i.cents/100).toFixed(2):'—'}</span>
-        <span style="width:210px;padding-left:14px;font-size:12px;color:var(--text-muted)">set once it is in</span>
+        <span style="width:210px;padding-left:14px;font-size:12px;color:var(--text-muted)"
+          title="Routing travels under the item's key, and an item the catalogue has never seen has no key here yet. The register gives an added item Main so that food cannot reach no kitchen at all.">prints at Main for now</span>
         <span style="width:34px;text-align:right"><button onclick="posRemoveNewItem('${e}','${posEnc(i.name)}')"
           title="drop it" style="border:none;background:transparent;color:#ef4444;cursor:pointer;
           font-size:22px;font-weight:700;line-height:1;padding:0 4px">×</button></span></div>`).join('');
@@ -8932,11 +8968,22 @@ function posItemsBodyHTML(){
     // one somebody had in mind when they typed "butter". Clear the search and the box
     // comes back, under the whole category, where the choice is an informed one.
     const searching=!!(posS.q||'').trim();
+    const extras=searching?[]:posAddOnlyCats()
+      .filter(k=>!groups.includes(k)&&(posS.catFilter==='all'||posS.catFilter===k));
+    extrasDrawn=extras.length>0;
     body=groups.map(k=>catHeader(k,byCat.get(k))
       +`<div class="pos-rows" data-group="${posEnc(k)}">`+byCat.get(k).map(rowHTML).join('')+`</div>`
-      +(searching?'':addRow(k))).join('');
+      +(searching?'':addRow(k))).join('')
+      // catHeader takes a list and counts gaps in it; these have none yet. The empty
+      // rows div keeps posKeepScroll and posRerenderList finding the same shape here as
+      // anywhere else.
+      +extras.map(k=>catHeader(k,[])
+        +`<div class="pos-rows" data-group="${posEnc(k)}"></div>`+addRow(k)).join('');
   }
   // Never let a cap look like the whole answer.
+  // ⚠️ …and `empty` must not swallow a section that has no rows BY DESIGN. Filtering to
+  // Specials means shown.length===0, and returning the empty line instead of the body
+  // would take the add box with it — the one place a special can be typed.
   const capped=posS.catFilter==='Food Mods'&&!posS.q?false:rows.length>shown.length;
   const more=capped?`<div style="padding:10px 0;color:var(--text-dim);font-size:13px">Showing ${shown.length} of ${rows.length} matches — narrow the search to see the rest.</div>`:
     `<div style="padding:10px 0;color:var(--text-muted);font-size:12px">${rows.length} item${rows.length===1?'':'s'}</div>`;
@@ -8973,7 +9020,7 @@ function posItemsBodyHTML(){
             style="border:none;background:transparent;color:var(--text-dim);cursor:pointer;
               font-size:14px;line-height:1;padding:0 2px">↺</button></span>`).join('')}</div>`:''}
     </div>`:'';
-  return head+(shown.length?body:empty)+more+delLine;
+  return head+((shown.length||extrasDrawn)?body:empty)+more+delLine;
 }
 function posItemsHTML(){
   if(posS.catErr)return `<div style="${posCardCss}">
@@ -8988,7 +9035,9 @@ function posItemsHTML(){
   // The SAME grouping the list and the filter use. Building this from the raw `cat`
   // while the rows were filed under the finer one is why picking RED WINE answered
   // "Nothing matches" — the dropdown was offering a category no row claimed.
-  const cats=[...new Set(c.items.map(posCatOf))].sort();
+  // Plus the sections no catalogue row would put here — Specials is empty until he
+  // fills it, and a category you cannot select is a category you cannot use.
+  const cats=[...new Set([...c.items.map(posCatOf),...posAddOnlyCats()])].sort();
   return `
   <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
     ${posStat('Items',String((s.total||0)+posNewMods.length),'menu + food mods')}
