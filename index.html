@@ -7296,22 +7296,70 @@ function posSectionRemove(encCat,encName){
   kvPush('ct_pos_section_adds',posSectionAdds,Date.now());
   posRedraw();
 }
+// ⚠️ A WINE SECTION ON THIS PAGE IS NOT A CATEGORY ON THE REGISTER.
+// The register files every red under one category, RED WINE, and says whether a line is
+// a pour or a bottle in the END OF THE NAME — 'Querceto Chianti — GL',
+// 'Querceto Chianti — BTL'. This page splits those into four sections on purpose, because
+// a $10 pour and a $39 bottle are different things to price, and posCatOf prefers the
+// finer `group` so they sort apart. Those four section names are this page's own
+// invention: 117 catalogue rows carry them as `group`, and NOT ONE register category is
+// called 'RED WINE GLASS'.
+//
+// So an item added to a wine section used to publish with cat:'RED WINE GLASS' — a
+// category the register has never heard of, which it drops without a word. Nobody would
+// ever have seen an error; the wine would simply not be on the iPad. (POS-UI will not
+// alias it on their side, and they are right not to: the NAME is the key that deletes
+// and edits match on, so an alias would make two names for one line.)
+//
+// Translated on the way out, and translated back on the way in. Both directions matter:
+// store the register's category and this page would stop drawing the item under the
+// section he added it to — rescuing the parent and dropping the child.
+const POS_WINE_SECTIONS={
+  'RED WINE GLASS'   :{cat:'RED WINE',  suffix:' — GL'},
+  'RED WINE BOTTLE'  :{cat:'RED WINE',  suffix:' — BTL'},
+  'WHITE WINE GLASS' :{cat:'WHITE WINE',suffix:' — GL'},
+  'WHITE WINE BOTTLE':{cat:'WHITE WINE',suffix:' — BTL'},
+};
+// What the register will actually be told, for an item added to `section`.
+const posPublishAs=(section,name)=>{
+  const w=POS_WINE_SECTIONS[section];
+  if(!w)return {cat:section,name};
+  // endsWith, so typing the suffix yourself does not earn you two of them.
+  return {cat:w.cat,name:String(name).endsWith(w.suffix)?String(name):String(name)+w.suffix};
+};
+// And back: which section of THIS page a stored new item belongs under. A pour and a
+// bottle share a category and are told apart only by the suffix.
+const posSectionOf=(i)=>{
+  for(const sec of Object.keys(POS_WINE_SECTIONS)){
+    const w=POS_WINE_SECTIONS[sec];
+    if(i&&i.cat===w.cat&&String(i.name||'').endsWith(w.suffix))return sec;
+  }
+  return i&&i.cat;
+};
 function posAddItem(encCat){
   const cat=decodeURIComponent(encCat);
   const nEl=document.getElementById('ni-n-'+encCat);
   const pEl=document.getElementById('ni-p-'+encCat);
   if(!nEl)return;
-  const name=String(nEl.value).trim(); if(!name)return;
+  const typed=String(nEl.value).trim(); if(!typed)return;
+  // What the register will be told. For every section but the four wine ones this is
+  // exactly what he typed, filed under the section he typed it in.
+  const pub=posPublishAs(cat,typed);
   // Typing the name of something that already exists means "put THAT here", not
   // "make a second one called the same thing" — which is how a menu ends up with two
-  // GNOCCHI ANGELOs at different prices.
-  const exists=((posS.cat&&posS.cat.items)||[]).find(i=>i.cat!=='Food Mods'
-    &&i.name.toLowerCase()===name.toLowerCase());
-  if(exists&&exists.cat!==cat){posSectionAdd(encCat,exists.name);return;}
+  // GNOCCHI ANGELOs at different prices. Matched on the PUBLISHED name, so typing
+  // "Querceto Chianti" into the glass section recognises the 'Querceto Chianti — GL'
+  // the register already has, instead of quietly minting a second one.
+  const all=((posS.cat&&posS.cat.items)||[]).filter(i=>i.cat!=='Food Mods');
+  const lower=(x)=>String(x||'').toLowerCase();
+  const here=all.find(i=>i.cat===pub.cat&&lower(i.name)===lower(pub.name));
+  if(here)return;                                     // already on the menu, in this very section
+  const exists=all.find(i=>lower(i.name)===lower(typed)||lower(i.name)===lower(pub.name));
+  if(exists&&exists.cat!==pub.cat){posSectionAdd(encCat,exists.name);return;}
   const raw=pEl?String(pEl.value).replace(/[^0-9.]/g,''):'';
   const n=raw?Math.round(parseFloat(raw)*100):0;
-  if(posNewItems.some(i=>i.cat===cat&&i.name.toLowerCase()===name.toLowerCase()))return;
-  posNewItems.push({cat,name,cents:isFinite(n)&&n>0?n:0});
+  if(posNewItems.some(i=>i.cat===pub.cat&&lower(i.name)===lower(pub.name)))return;
+  posNewItems.push({cat:pub.cat,name:pub.name,cents:isFinite(n)&&n>0?n:0});
   kvPush('ct_pos_new_items',posNewItems,Date.now());
   posRedraw();
   const back=document.getElementById('ni-n-'+encCat);
@@ -7319,7 +7367,8 @@ function posAddItem(encCat){
   const bp=document.getElementById('ni-p-'+encCat); if(bp)bp.value='';
 }
 function posRemoveNewItem(encCat,encName){
-  const cat=decodeURIComponent(encCat), name=decodeURIComponent(encName);
+  // encCat is the SECTION the × was drawn in; what is stored is the register's category.
+  const cat=posPublishAs(decodeURIComponent(encCat),'').cat, name=decodeURIComponent(encName);
   posNewItems=posNewItems.filter(i=>!(i.cat===cat&&i.name===name));
   kvPush('ct_pos_new_items',posNewItems,Date.now());
   posRedraw();
@@ -8849,7 +8898,7 @@ function posItemsBodyHTML(){
             title="take it back out of this section" style="border:none;background:transparent;color:#ef4444;
             cursor:pointer;font-size:22px;font-weight:700;line-height:1;padding:0 4px">×</button></span></div>`;
       }).join('');
-      const mine=posNewItems.filter(i=>i.cat===k).map(i=>`<div style="display:flex;gap:8px;padding:5px 0;
+      const mine=posNewItems.filter(i=>posSectionOf(i)===k).map(i=>`<div style="display:flex;gap:8px;padding:5px 0;
         border-bottom:1px solid var(--border);font-size:16px;align-items:baseline;max-width:730px;color:#22c55e">
         <span style="width:330px;font-weight:700">${esc(i.name)}
           <span style="font-size:11px;font-weight:800;letter-spacing:.4px"> NEW</span></span>

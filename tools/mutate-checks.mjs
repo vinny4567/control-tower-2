@@ -28,7 +28,7 @@ const run=(which,html)=>{
   rmSync(TMP,{recursive:true,force:true}); mkdirSync(join(TMP,'tools'),{recursive:true});
   writeFileSync(join(TMP,'index.html'),html);
   cpSync(join(REPO,'tools',which),join(TMP,'tools',which));
-  if(which==='check-printclasses.mjs') cpSync(join(REPO,'pos-catalog.json'),join(TMP,'pos-catalog.json'));
+  if(which==='check-printclasses.mjs'||which==='check-categories.mjs') cpSync(join(REPO,'pos-catalog.json'),join(TMP,'pos-catalog.json'));
   try{ execFileSync('node',[join(TMP,'tools',which)],{encoding:'utf8'}); return {red:false,out:''} }
   catch(e){ return {red:true,out:String(e.stdout||'')} }
 };
@@ -100,6 +100,26 @@ const M=[
   ['ROUTE3 · the category control stops going through the shared helper','check-printclasses.mjs',
     sub('function posApplyRoute(row,opt){','function posApplyRouteV2(row,opt){'),true],
   ['ROUTE BASELINE','check-printclasses.mjs', SRC, false],
+
+  // ── the wine buckets: a section on this page is not a category on the register ──
+  ['WINE BASELINE','check-categories.mjs', SRC, false],
+  ['WINE · publish the bucket as the category again (the original bug)','check-categories.mjs',
+    sub("  if(!w)return {cat:section,name};","  return {cat:section,name};\n  if(!w)return {cat:section,name};"),true],
+  ['WINE · keep the right category but drop the GL/BTL suffix','check-categories.mjs',
+    sub("  return {cat:w.cat,name:String(name).endsWith(w.suffix)?String(name):String(name)+w.suffix};",
+        "  return {cat:w.cat,name:String(name)};"),true],
+  ['WINE · the way back is broken, so the item leaves his screen','check-categories.mjs',
+    sub("const posSectionOf=(i)=>{","const posSectionOf=(i)=>{\n  return i&&i.cat;"),true],
+  ['WINE · a bucket this page does not know about','check-categories.mjs',
+    sub("  'WHITE WINE BOTTLE':{cat:'WHITE WINE',suffix:' \u2014 BTL'},","")
+      .replace("  'WHITE WINE GLASS' :{cat:'WHITE WINE',suffix:' \u2014 GL'},\n","  'WHITE WINE GLASS' :{cat:'WHITE WINE',suffix:' \u2014 GL'},\n  'WHITE WINE BOTTLE':{cat:'WHITE WINE',suffix:' \u2014 BTL'},\n  'ROSE':{cat:'ROSE',suffix:' \u2014 GL'},\n"),true],
+  ['WINE · a glass and a bottle become the same line','check-categories.mjs',
+    sub("  'RED WINE BOTTLE'  :{cat:'RED WINE',  suffix:' \u2014 BTL'},","  'RED WINE BOTTLE'  :{cat:'RED WINE',  suffix:' \u2014 GL'},"),true],
+  ['BENIGN · rename the local inside the wine translation','check-categories.mjs',
+    sub("  const w=POS_WINE_SECTIONS[section];\n  if(!w)return {cat:section,name};",
+        "  const rule=POS_WINE_SECTIONS[section];\n  if(!rule)return {cat:section,name};")
+      .replace("  return {cat:w.cat,name:String(name).endsWith(w.suffix)?String(name):String(name)+w.suffix};",
+               "  return {cat:rule.cat,name:String(name).endsWith(rule.suffix)?String(name):String(name)+rule.suffix};"),false],
 ];
 
 let wrong=0;
