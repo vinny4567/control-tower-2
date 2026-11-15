@@ -34,6 +34,10 @@ const cut = (a, b, what) => {
 };
 const HELPERS = cut('const POS_WINE_SECTIONS=', 'function posAddItem(', 'category helpers');
 const BODY = cut('function posItemsBodyHTML(){', '\nfunction posItemsHTML(', 'item list');
+// The pending-item route cell lives below posAddItem, so it is not in HELPERS — without
+// it the catch-all stub answers '' and the two assertions about it would fail for the
+// wrong reason, which is exactly the trap this file is built to avoid.
+const ROUTECELL = cut('function posNewRouteCell(', 'function posRemoveNewItem(', 'route cell');
 
 // ---- the name, which is the whole contract with the register ----------------------
 ok('the page knows about a category the catalogue does not have', /const POS_EMPTY_CATS=/.test(HELPERS));
@@ -75,7 +79,7 @@ const draw = (pending, filter) => {
     get: (t, k) => (k === Symbol.unscopables ? undefined : (k in t ? t[k] : () => '')),
     set: (t, k, v) => { t[k] = v; return true; },
   });
-  try { return new Function('scope', `with(scope){${HELPERS}\n${BODY}\nreturn posItemsBodyHTML();}`)(scope); }
+  try { return new Function('scope', `with(scope){${HELPERS}\n${ROUTECELL}\n${BODY}\nreturn posItemsBodyHTML();}`)(scope); }
   catch (e) { return 'THREW: ' + e.message; }
 };
 const all = draw([], 'all');
@@ -98,8 +102,14 @@ for (const [f, label] of [['Specials', 'under its own filter'], ['all', 'and in 
   ok(`a special that has been added is listed ${label}`, h.includes('TEST SPECIAL'));
   ok(`…with an × to take it back out, ${label}`, h.includes('posRemoveNewItem'));
 }
-ok('…and says where it will print, since nobody chose it',
-   draw(sp, 'Specials').includes('prints at Main'));
+// Routing for a pending item: the same options as any other row, but a different
+// DEFAULT. An unrouted catalogue row prints nowhere and is shouted at in red; an
+// unrouted added item gets station 'Main' from the register deliberately, because food
+// reaching no kitchen is worse than food at the wrong one.
+const spRow = draw(sp, 'Specials');
+ok('…and a dropdown to say where it prints', spRow.includes('posSetNewRoute'));
+ok('…which says Main until somebody chooses, rather than accusing it of printing nowhere',
+   /Main — nobody chose/.test(spRow) && !/>prints nowhere</.test(spRow));
 
 // The safety net. Nothing can type this today, but the moment add-a-category exists a
 // typo would otherwise publish an item that appears nowhere and cannot be removed.
@@ -157,6 +167,59 @@ ok(`⚠️ a special named after a dish that exists ("${dish ? dish.name : '?'}"
 const borrow = tryAdd('Pasta', dish ? dish.name : 'Veal Marsala');
 ok('…while in a category the register already has, it is still borrowed as before',
    !!dish && (dish.cat === 'Pasta' ? borrow.added.length === 0 : borrow.borrowed.length === 1));
+
+// ---- and that route has to REACH the register ------------------------------------
+// It can only ride as items[key].printers, and the key has to be the one the register
+// computes for itself from the `added` entry — menulive.keyOf, 'm:' + cat + ':' + name.
+// Two sides minting a key separately is two keys, so this asserts the string, not the
+// intention. Run over the real posBuildLive rather than grepped.
+// Ends at the NEXT top-level declaration, not at a function several hundred lines
+// later — a slice that runs past its function drags unrelated code in and the whole
+// thing throws, which would have made every assertion below fail for the wrong reason.
+const LIVE = cut('function posBuildLive(', '\nlet posLiveAt=', 'publish builder');
+const publish = (pending, routing) => {
+  // Every name posBuildLive actually reads, supplied for real rather than left to the
+  // catch-all stub — a stub that answers a function to `(posDeletedMods||[]).slice()`
+  // throws, and a check that throws is a check that proves nothing.
+  const base = {
+    posNewItems: pending.slice(), posRouting: { ...routing },
+    posNewMods: [], posDeletedMods: [], posModLetters: {}, posItemOrder: {},
+    posDeletedItems: [], posModNames: {}, posDiscRates: {},
+    posNewDiscounts: [], posDeletedDiscounts: [], posLiveAt: 0,
+    posS: { cat: { items: [], generated_at: '2026-11-15' } },
+    posAllRows: () => [], posEntered: () => false, posPriceOf: (r) => r.cents,
+    posRerouted: () => false, posRoutedTo: () => [], posBuildGroups: () => ({}),
+    posModLetter: () => 'A',
+    Object, Set, Map, Array, String, Number, JSON, Math, Date, isFinite,
+    encodeURIComponent, decodeURIComponent,
+  };
+  const scope = new Proxy(base, {
+    has: () => true,
+    get: (t, k) => (k === Symbol.unscopables ? undefined : (k in t ? t[k] : () => '')),
+    set: (t, k, v) => { t[k] = v; return true; },
+  });
+  try { return new Function('scope', `with(scope){${HELPERS}\n${LIVE}\nreturn posBuildLive();}`)(scope); }
+  catch (e) { return { threw: e.message }; }
+};
+const KEY = 'm:Specials:TEST SPECIAL';
+const unrouted = publish(sp, {});
+ok('the publish still builds', !unrouted.threw && !!unrouted.items);
+ok('⚠️ an added item with no route chosen publishes NO printers — absence is what gets it Main',
+   !!unrouted.items && !(KEY in unrouted.items));
+const routed = publish(sp, { [KEY]: ['Salad'] });
+ok('⚠️ …and once a printer is chosen it rides under the register\'s own key',
+   !!routed.items && !!routed.items[KEY]
+   && JSON.stringify(routed.items[KEY].printers) === JSON.stringify(['Salad']));
+ok('…so a salad special reaches the salad station instead of the hot line',
+   !!routed.items && (routed.items[KEY] || {}).printers.includes('Salad'));
+const nowhere = publish(sp, { [KEY]: [] });
+ok('and an explicit "prints nowhere" travels as the empty list the register honours',
+   !!nowhere.items && !!nowhere.items[KEY]
+   && Array.isArray(nowhere.items[KEY].printers) && nowhere.items[KEY].printers.length === 0);
+// The key is built here and computed there; if they ever disagree the route lands on
+// nothing, silently, and the special prints at Main while this screen says Salad.
+ok('the key is spelled the way menulive.keyOf spells it',
+   /const posNewItemKey=\(i\)=>'m:'\+i\.cat\+':'\+i\.name;/.test(HELPERS));
 
 console.log(bad ? `\n${bad} FAILED` : '\nall good');
 process.exit(bad ? 1 : 0);

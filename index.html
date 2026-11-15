@@ -7344,6 +7344,14 @@ const posAddOnlyCats=()=>{
   for(const i of (posNewItems||[])){const k=posSectionOf(i); if(k&&!have.has(k))want.add(k);}
   return [...want];
 };
+// ⚠️ THE REGISTER'S OWN KEY, BUILT THE REGISTER'S OWN WAY. menulive.keyOf is
+// 'm:' + cat + ':' + name for a plain item (the HP:/HALF: prefixes are for half
+// portions, which an added item never is). Routing reaches the register ONLY as
+// items[key].printers, so a special can be routed only if this string matches what
+// the register will compute from the `added` entry — same cat, same name, same case.
+// Two sides minting a key separately is two keys ([[feedback_one_hold_one_name]]), so
+// this is written to mirror theirs rather than to look tidy here.
+const posNewItemKey=(i)=>'m:'+i.cat+':'+i.name;
 // What the register will actually be told, for an item added to `section`.
 const posPublishAs=(section,name)=>{
   const w=POS_WINE_SECTIONS[section];
@@ -7397,6 +7405,36 @@ function posAddItem(encCat){
   const back=document.getElementById('ni-n-'+encCat);
   if(back){back.value='';back.focus();}
   const bp=document.getElementById('ni-p-'+encCat); if(bp)bp.value='';
+}
+// Routing for an item the catalogue has never seen. Same options as any other row,
+// but a DIFFERENT default: an unrouted catalogue row prints nowhere and is shouted at in
+// red, while an unrouted added item gets station 'Main' from the register on purpose —
+// food reaching no kitchen is worse than food at the wrong one. So the empty state here
+// says Main, truthfully, instead of accusing it of printing nowhere.
+function posNewRouteCell(i){
+  const key=posNewItemKey(i), has=Object.prototype.hasOwnProperty.call(posRouting,key);
+  const on=has?(posRouting[key]||[]):null;
+  const sel=on?posRouteIdFor(on):'';
+  const opts=posRouteOptions().map(o=>
+    `<option value="${o.id}" ${o.id===sel?'selected':''}>${esc(o.label)}</option>`).join('');
+  const dflt=has?'':'<option value="" selected>Main — nobody chose</option>';
+  const custom=(has&&!sel)?`<option value="" selected>${esc(on.join(', ')||'—')}</option>`:'';
+  return `<select onchange="posSetNewRoute('${posEnc(i.cat)}','${posEnc(i.name)}',this.value)"
+    style="width:100%;font-family:inherit;font-size:12.5px;padding:3px 5px;border-radius:6px;
+      border:1px solid var(--border);background:var(--surface2);
+      color:${has?(on.length?'var(--text)':'#ef4444'):'var(--text-muted)'}">${dflt}${custom}${opts}</select>
+    ${has&&!on.length?'<div style="font-size:11px;color:#ef4444;margin-top:2px">prints nowhere</div>':''}`;
+}
+function posSetNewRoute(encCat,encName,id){
+  const cat=decodeURIComponent(encCat), name=decodeURIComponent(encName);
+  const i=(posNewItems||[]).find(x=>x.cat===cat&&x.name===name); if(!i)return;
+  const opt=posRouteOptions().find(o=>o.id===id); if(!opt)return;
+  // An explicit "prints nowhere" is stored as [] and HONOURED as one by the register
+  // (printclasses.printersFor: an array wins outright, empty or not). Deleting the entry
+  // instead would mean choosing nowhere and still printing at Main.
+  posRouting[posNewItemKey(i)]=opt.printers;
+  kvPush('ct_pos_routing',posRouting,Date.now());
+  posKeepScroll(()=>{posRerenderList();renderViewport();});
 }
 function posRemoveNewItem(encCat,encName){
   // ⚠️ MATCHED THE WAY THE ROW WAS DRAWN — posSectionOf — not by translating the section
@@ -7804,6 +7842,21 @@ function posBuildLive(){
       if(r.no!=null)o.no=r.no;
       items[r.key]=o;
     }
+  }
+  // ⚠️ AND THE ROUTING FOR ITEMS THE CATALOGUE HAS NEVER SEEN. The loop above walks
+  // posAllRows — catalogue rows plus new mods — so a special has no row there and its
+  // "prints at" had nowhere to ride. The mini carries the items map unexamined except for
+  // shape and never resolves a key against anything (server/menu.js valid(), confirmed
+  // 11/15), and on the register withLiveEdits looks the key up directly, so an entry for
+  // a key nothing else knows about arrives and is used.
+  //
+  // Only for an item whose route was actually CHOSEN. Absence means the register's own
+  // default, which for an added item is station 'Main'; publishing an empty list instead
+  // would mean "prints nowhere" — a different answer, and a much worse one.
+  for(const ni of (posNewItems||[])){
+    const k=posNewItemKey(ni);
+    if(!Object.prototype.hasOwnProperty.call(posRouting,k))continue;
+    items[k]={...(items[k]||{}),printers:posRouting[k]||[]};
   }
   return {
     // ⚠️ `at` MUST ALWAYS GO UP, same as the privileges grid. The mini's write
@@ -8944,8 +8997,7 @@ function posItemsBodyHTML(){
         <span style="width:330px;font-weight:700">${esc(i.name)}
           <span style="font-size:11px;font-weight:800;letter-spacing:.4px"> NEW</span></span>
         <span style="width:92px;text-align:right;font-variant-numeric:tabular-nums">${i.cents?'$'+(i.cents/100).toFixed(2):'—'}</span>
-        <span style="width:210px;padding-left:14px;font-size:12px;color:var(--text-muted)"
-          title="Routing travels under the item's key, and an item the catalogue has never seen has no key here yet. The register gives an added item Main so that food cannot reach no kitchen at all.">prints at Main for now</span>
+        <span style="width:210px;padding-left:14px">${posNewRouteCell(i)}</span>
         <span style="width:34px;text-align:right"><button onclick="posRemoveNewItem('${e}','${posEnc(i.name)}')"
           title="drop it" style="border:none;background:transparent;color:#ef4444;cursor:pointer;
           font-size:22px;font-weight:700;line-height:1;padding:0 4px">×</button></span></div>`).join('');
