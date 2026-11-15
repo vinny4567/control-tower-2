@@ -87,5 +87,31 @@ const sample = cat.items.find((i) => i.group && / — (GL|BTL)$/.test(i.name));
 ok(`a wine already on the menu round-trips (${sample ? sample.name : 'none found'})`,
    !!sample && W.posSectionOf({ cat: sample.cat, name: sample.name }) === sample.group);
 
+// ⚠️ THE × TAKES OUT THE ROW IT SITS ON, whatever spelling that row was saved under.
+// posRemoveNewItem is handed the SECTION the × was drawn in; the entry is stored under the
+// register's category. Translating the section FORWARD to find it works for anything saved
+// after 00365d2 and silently misses anything saved before it — which still draws, and would
+// keep publishing with a × that does nothing. Asked of the real function, both spellings.
+const rsrc = html.slice(html.indexOf('function posRemoveNewItem('), html.indexOf('// Choices taken OUT of a group'));
+ok('the × can be read out of the page and run', wsrc.length > 0 && rsrc.length > 0);
+const bucket = buckets.find((b) => / GLASS$/.test(b)) || buckets[0];
+const tryRemove = (stored) => {
+  const R = new Function(`let posNewItems=[${JSON.stringify(stored)}];const kvPush=()=>{};const posRedraw=()=>{};
+    ${wsrc}${rsrc}\nreturn {posRemoveNewItem,get items(){return posNewItems}};`)();
+  R.posRemoveNewItem(encodeURIComponent(bucket), encodeURIComponent(stored.name));
+  return R.items.length === 0;
+};
+ok('…and it removes an item saved the way this page saves them now',
+   !!bucket && tryRemove(pub(bucket, 'Test Wine')));
+ok('⚠️ …and one saved under the old bucket spelling, which still draws and still publishes',
+   !!bucket && tryRemove({ cat: bucket, name: 'Test Wine' }));
+ok('and a plain dish, where the two spellings are the same thing',
+   tryRemove({ cat: 'Pasta', name: 'Test Dish' }) || (() => {
+     const R = new Function(`let posNewItems=[{cat:'Pasta',name:'Test Dish'}];const kvPush=()=>{};const posRedraw=()=>{};
+       ${wsrc}${rsrc}\nreturn {posRemoveNewItem,get items(){return posNewItems}};`)();
+     R.posRemoveNewItem(encodeURIComponent('Pasta'), encodeURIComponent('Test Dish'));
+     return R.items.length === 0;
+   })());
+
 console.log(bad ? `\n${bad} FAILED` : '\nall good');
 process.exit(bad ? 1 : 0);

@@ -115,6 +115,9 @@ const M=[
       .replace("  'WHITE WINE GLASS' :{cat:'WHITE WINE',suffix:' \u2014 GL'},\n","  'WHITE WINE GLASS' :{cat:'WHITE WINE',suffix:' \u2014 GL'},\n  'WHITE WINE BOTTLE':{cat:'WHITE WINE',suffix:' \u2014 BTL'},\n  'ROSE':{cat:'ROSE',suffix:' \u2014 GL'},\n"),true],
   ['WINE · a glass and a bottle become the same line','check-categories.mjs',
     sub("  'RED WINE BOTTLE'  :{cat:'RED WINE',  suffix:' \u2014 BTL'},","  'RED WINE BOTTLE'  :{cat:'RED WINE',  suffix:' \u2014 GL'},"),true],
+  ['WINE · the × translates forward again, so a pre-00365d2 entry is unremovable','check-categories.mjs',
+    sub("  posNewItems=posNewItems.filter(i=>!(i.name===name&&posSectionOf(i)===section));",
+        "  posNewItems=posNewItems.filter(i=>!(i.name===name&&i.cat===posPublishAs(section,'').cat));"),true],
   ['BENIGN · rename the local inside the wine translation','check-categories.mjs',
     sub("  const w=POS_WINE_SECTIONS[section];\n  if(!w)return {cat:section,name};",
         "  const rule=POS_WINE_SECTIONS[section];\n  if(!rule)return {cat:section,name};")

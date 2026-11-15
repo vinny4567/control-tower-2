@@ -7367,9 +7367,15 @@ function posAddItem(encCat){
   const bp=document.getElementById('ni-p-'+encCat); if(bp)bp.value='';
 }
 function posRemoveNewItem(encCat,encName){
-  // encCat is the SECTION the × was drawn in; what is stored is the register's category.
-  const cat=posPublishAs(decodeURIComponent(encCat),'').cat, name=decodeURIComponent(encName);
-  posNewItems=posNewItems.filter(i=>!(i.cat===cat&&i.name===name));
+  // ⚠️ MATCHED THE WAY THE ROW WAS DRAWN — posSectionOf — not by translating the section
+  // forward. The × must take out exactly the row it sits on, and those are two different
+  // questions the moment anything was stored under the old spelling: an entry saved before
+  // 00365d2 carries the BUCKET as its category, still draws (posSectionOf falls through to
+  // i.cat), and a forward translation looks for 'RED WINE' and never finds it — so the ×
+  // would do nothing, silently, while the entry kept publishing. Same question in, same
+  // question out.
+  const section=decodeURIComponent(encCat), name=decodeURIComponent(encName);
+  posNewItems=posNewItems.filter(i=>!(i.name===name&&posSectionOf(i)===section));
   kvPush('ct_pos_new_items',posNewItems,Date.now());
   posRedraw();
 }
