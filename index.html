@@ -5740,6 +5740,157 @@ const TIP_NAME_ALIASES={'priscilla lagace':'Priscilla La Gace','priscill lagace'
 function tipNormKey(n){return String(n||'').trim().toLowerCase().replace(/[-'’]/g,' ').replace(/\s+/g,' ').trim();}
 const TIP_ROSTER_CANON=(function(){const m={};Object.keys(TIP_ROSTER_DATA).forEach(sec=>TIP_ROSTER_DATA[sec].forEach(n=>{m[tipNormKey(n)]=n;}));return m;})();
 function tipCanon(name){const k=tipNormKey(name);if(!k)return String(name||'').trim();return TIP_NAME_ALIASES[k]||TIP_ROSTER_CANON[k]||String(name||'').trim().replace(/\s+/g,' ');}
+// ── MOVING THE ROSTER OUT OF THIS PAGE — STEP 1 OF 2 ─────────────────────────────────────
+// The 108 names above are real staff, first and last, and this page is served publicly from
+// GitHub Pages: the sync keys gate the DATA, never the SOURCE, so anybody with the URL can
+// read them. They are going to live in the key-gated store instead, under ct_tips_roster, as
+//   {sections:{Server:[…],Bartender:[…],Busser:[…],"Food Runner":[…],Weddings:[…]},
+//    aliases:{<misspelling> : <canonical name>}}
+// The aliases travel in the SAME value on purpose: they are real names too, and a canon map
+// loaded against a roster that did not load (or the reverse) is a half-loaded canon — and a
+// half-loaded canon spends money, because tipCanon falls through to the raw feed spelling.
+//
+// ⚠️ NOTHING IN THIS STEP CHANGES WHAT THE SHEET READS. tipsFetchRoster still builds the roster
+// from the literal above, exactly as before. This step adds only the key name, the one rule that
+// decides whether a stored value may ever be believed, and a hand-pressed seeder and verifier —
+// so the store can be populated and PROVEN to match before a second commit deletes the literal.
+// It is in two commits because nobody can check the store from a machine without the sync key,
+// and because the cloud replaces a whole value with no `at` compare while kvSend never reads its
+// response: a seed that silently did not land would become a tip sheet with no rows on the next
+// page load, on payroll Monday, with nothing anywhere having said so.
+const TIPS_ROSTER_KEY='ct_tips_roster';
+// ⚠️ PER-SECTION COUNTS, NOT ONE TOTAL. Run against a total floor, a stored value of 104 Servers
+// and one of everything else is accepted — the whole Weddings section gone, no warning — and so
+// is 100 of the 108, which renders a confident sheet whose footer is short by the hidden people
+// and whose grand total nobody can reconcile against the deposit. A count is not personal data:
+// these five numbers leak nothing about anybody, and they are the only thing that makes "short"
+// expressible at all. ⛔ RAISE ONE WHEN SOMEBODY IS HIRED. NEVER LOWER ONE TO MAKE A LOAD GO
+// GREEN — that is the helpful edit this comment exists to refuse.
+const TIP_ROSTER_COUNTS={'Server':22,'Bartender':10,'Busser':34,'Food Runner':9,'Weddings':33};
+// The ONLY thing allowed to become the roster. Everything else returns null, which step 2 turns
+// into the existing "⚠ Could not reach the store — this screen is NOT your data" red card rather
+// than an empty sheet.
+// ⛔ ABSENT IS NOT NONE. A key that was never written answers 200 {v:null,at:0}, byte-identical
+// to one a whole-value overwrite has just emptied, and there is no such thing as a restaurant
+// with no tipped staff — so both have to refuse.
+// ⛔ AND NO (v[s]||[]) FALLBACK ANYWHERE IN HERE. That idiom turns a missing section into an
+// empty one in silence, which is exactly how a partial value renders as a finished sheet.
+function tipRosterValidate(v){
+  if(!v||typeof v!=='object'||Array.isArray(v))return null;
+  const g=v.sections;
+  if(!g||typeof g!=='object'||Array.isArray(g))return null;
+  if(Object.keys(g).length!==TIP_SECTIONS.length)return null;         // a missing OR an extra section refuses
+  const groups={},seen={};let n=0;
+  for(const s of TIP_SECTIONS){
+    const a=g[s];
+    if(!Array.isArray(a))return null;
+    const list=[];
+    for(const x of a){
+      if(typeof x!=='string')return null;
+      // FOLDED, not merely trimmed. "Emma  Dawson" with two spaces passes every count, renders
+      // pixel-identically (HTML collapses a run of whitespace in a text node) and orphans her
+      // money on a key no row reads — and then the canon map points the feeds at the bad key,
+      // so nothing ever heals it. Fold it back to the spelling the cells are keyed by.
+      const nm=x.trim().replace(/\s+/g,' ');
+      if(!nm)return null;
+      const k=tipNormKey(nm);
+      if(!k||seen[k])return null;                                     // each person exactly once, in exactly one section
+      seen[k]=1;list.push(nm);n++;
+    }
+    if(list.length<(TIP_ROSTER_COUNTS[s]||1))return null;             // no section is legitimately empty, and none is legitimately SHORT
+    groups[s]=list;
+  }
+  const al=v.aliases;
+  if(al!=null&&(typeof al!=='object'||Array.isArray(al)))return null;
+  const aliases={};
+  for(const k of Object.keys(al||{})){
+    const t=al[k];
+    // An alias whose target is not on the roster has quietly stopped correcting anything, which
+    // is how a feed misspelling becomes a second person. Refuse it rather than carry it.
+    if(typeof t!=='string'||!seen[tipNormKey(t)])return null;
+    // ⛔ AND AN ALIAS KEY THAT IS ITSELF A ROSTER PERSON, POINTING AT SOMEBODY ELSE, IS THE
+    // QUIETEST FAILURE THERE IS: both people keep a row, both rows sit in the right section, the
+    // grand total reconciles to the penny — and one of them is paid the other's fortnight. The
+    // live map deliberately holds an identity entry ('priscilla la gace' → 'Priscilla La Gace'),
+    // so pointing at YOURSELF is allowed and pointing at anybody else is not.
+    if(seen[k]&&tipNormKey(t)!==k)return null;
+    // Stored verbatim, and a key that is not already in normalised form is refused rather than
+    // quietly normalised here: the Staff tab's MICROS import reads this same map through
+    // staffKeyOf, which is a DIFFERENT normalisation (it strips full stops and drops one-letter
+    // tokens). Today's three keys satisfy both. Rewriting one here would make the two consumers
+    // disagree in silence.
+    if(k!==tipNormKey(k))return null;
+    aliases[k]=t;
+  }
+  return {groups,aliases,count:n};
+}
+// What the seeder sends: built from this page's own two literals and nothing else, so the value
+// that lands in the store is byte-for-byte the list the sheet renders today. Deriving it instead
+// was tried and measured, and both sources lose people: ct_staff's `positions` cannot express
+// "Weddings", which is a CLASSIFICATION rather than a job, so all 33 event-only people lose
+// their row; and the scheduler's own roster endpoint filters those same people out on purpose.
+function tipRosterSeedPayload(){
+  const sections={};TIP_SECTIONS.forEach(s=>{sections[s]=(TIP_ROSTER_DATA[s]||[]).slice();});
+  return {sections,aliases:Object.assign({},TIP_NAME_ALIASES)};
+}
+// Read the key back and DIFF it against this page, name by name and alias by alias. An echo of
+// what was sent is not a confirmation, so this is a fresh GET every time. It WRITES NOTHING, so
+// it is safe to press on any keyed device — and it is meant to be pressed on a SECOND device,
+// because the only thing that proves the store holds the roster is somebody else reading it.
+async function tipRosterVerify(){
+  const st=(s,c)=>tipsSetStatus(s,c||'var(--text-dim)');
+  if(!KV_TOKEN()){st('⚠ No sync key on this device — paste it in Settings first.','#f87171');return false;}
+  st('Reading the roster back out of the store…');
+  const r=await kvGet(TIPS_ROSTER_KEY);
+  // "I could not ask" and "there is nothing there" need different answers, and the difference is
+  // what to DO about it — wait, versus write it.
+  if(kvFailed(r)){st('⚠ could not reach the store — nothing was checked.','#f87171');return false;}
+  if(r&&r.v==null){st('⚠ the store answered, and the roster key is EMPTY — it has never been written.','#f87171');return false;}
+  const val=tipRosterValidate(r&&r.v);
+  if(!val){st('⚠ the store holds something that is NOT a usable roster — wrong shape, a short section, or a bad name correction. Nothing was changed.','#f87171');return false;}
+  const want=tipRosterSeedPayload(),diff=[];
+  TIP_SECTIONS.forEach(s=>{
+    const a=want.sections[s]||[],b=val.groups[s]||[];
+    a.forEach(nm=>{if(b.indexOf(nm)<0)diff.push('missing from '+s+': '+nm);});
+    b.forEach(nm=>{if(a.indexOf(nm)<0)diff.push('extra in '+s+': '+nm);});
+  });
+  Object.keys(want.aliases).forEach(k=>{if(val.aliases[k]!==want.aliases[k])diff.push('name correction missing: '+k);});
+  Object.keys(val.aliases).forEach(k=>{if(want.aliases[k]!==val.aliases[k])diff.push('name correction extra: '+k);});
+  if(diff.length){st('⚠ the store does NOT match this page — '+diff.slice(0,6).join('; ')+(diff.length>6?(' …and '+(diff.length-6)+' more'):''),'#f87171');return false;}
+  st('Store: '+TIP_SECTIONS.map(s=>s+' '+val.groups[s].length).join(' · ')+' — '+val.count+' names, '+Object.keys(val.aliases).length+' name corrections — matches this page exactly ✓','#34d399');
+  return true;
+}
+// Write the roster to the store, ONCE, by hand, on a device that has the sync key.
+// ⛔ DELIBERATELY NOT kvPush. kvPush debounces for 1.2s and kvSend never reads its response, so
+// a rejected write reports nothing at all and kvFlushNow would happily ship a half-built value
+// on pagehide. This POST is awaited and its status is READ — the same way posPublishSend is the
+// only write in this file whose success is actually checked — and then the key is read back and
+// diffed, because the cloud accepts a whole-value overwrite without comparing anything to it.
+// Going around kvPush also means no mini copy is made (kvSendMini's gate is /^ct_/), so there is
+// no second copy of the roster to drift, and the register overlay is untouched either way
+// (kvPush's republish test is /^ct_pos_/).
+async function tipRosterSeed(){
+  const st=(s,c)=>tipsSetStatus(s,c||'var(--text-dim)');
+  if(!KV_TOKEN()){st('⚠ No sync key on this device — paste it in Settings first.','#f87171');return;}
+  const v=tipRosterSeedPayload(),chk=tipRosterValidate(v);
+  if(!chk){st('⚠ this page\'s own roster does not validate — NOTHING was written.','#f87171');return;}
+  if(!confirm('Write the staff roster to the store?\n\n'+TIP_SECTIONS.map(s=>s+': '+v.sections[s].length).join('\n')+'\n\nTotal: '+chk.count+' names, '+Object.keys(chk.aliases).length+' name corrections.\n\nThis replaces whatever is under the roster key. Nothing on the tip sheet changes either way.'))return;
+  st('Writing the roster…');
+  try{
+    const r=await fetch(KV_URL+encodeURIComponent(TIPS_ROSTER_KEY),{method:'POST',
+      headers:{'Content-Type':'application/json','x-sync-token':KV_TOKEN()},
+      body:JSON.stringify({v,at:Date.now()})});
+    if(!r.ok)throw new Error('HTTP '+r.status);
+  }catch(e){st('⚠ NOT written: '+((e&&e.message)||e),'#f87171');return;}
+  await tipRosterVerify();
+}
+// Two small buttons, and they live only as long as the literal does — step 2 deletes them with
+// it. Seeding is a hand action on a keyed device and NEVER anything this page does on load: one
+// whole-value overwrite from a device that had not loaded a roster would replace all 108 names
+// with nothing, for everybody, permanently, with no copy left in the page to restore from.
+function tipRosterSeedHTML(){const b='background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:12px;white-space:nowrap';
+  return `<button onclick="tipRosterVerify()" title="Read the roster key back out of the store and compare it with this page, name by name. Writes nothing." style="${b}">Check roster</button>`
+    +`<button onclick="tipRosterSeed()" title="Write this page's roster to the store, then read it back and compare. Needs the sync key." style="${b}">Seed roster →</button>`;}
 let tipsState={start:null,end:null,cells:{},adds:{},moves:{},expanded:{},roster:null,hours:{},hoursOut:{},empIds:{},busserSplit:{},busserSplitByDay:{},view:'tips',loaded:false,loading:false};
 let tipsGen=0;   // bumped on every (re)load; guards against two period-loads racing and crossing data
 function tipsSetView(v){tipsState.view=v;document.getElementById('viewport').innerHTML=tipsHTML();}
@@ -6767,6 +6918,7 @@ function tipsHTML(){
         <button onclick="tipsThisPeriod()" title="Jump to the current pay period" style="background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:12px">This period</button>
       </div>
       ${tipsImportBtnHTML()}
+      ${tipRosterSeedHTML()}
       <span id="tips-status" style="font-size:12px;color:var(--text-dim)"></span>
       <span style="margin-left:auto;font-size:12px;color:var(--text-dim)">picking dates pulls the tip-out log + weddings automatically · click a cell to edit</span>
     </div>

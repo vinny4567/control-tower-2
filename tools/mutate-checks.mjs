@@ -60,6 +60,17 @@ const run=(which,text,file)=>{
 };
 
 const sub=(a,b)=>{ if(!SRC.includes(a)) throw new Error('anchor missing: '+a.slice(0,60)); return SRC.replace(a,b) };
+// Same, but asserting the anchor is UNIQUE as well as present. `sub` only replaces the
+// first match, so an anchor that occurs four times (every awaited POST in this file writes
+// `if(!r.ok)throw`) mutates a different function than the mutant's name claims — and then
+// scores whatever that one happens to do. New mutants use this.
+const tsub=(a,b)=>{ const n=SRC.split(a).length-1;
+  if(n!==1) throw new Error('page anchor '+(n?'not unique':'missing')+': '+a.slice(0,60)); return SRC.replace(a,b) };
+const tsubs=(...pairs)=>pairs.reduce((h,[a,b])=>{
+  const n=h.split(a).length-1;
+  if(n!==1) throw new Error('page anchor '+(n?'not unique':'missing')+': '+a.slice(0,60));
+  return h.replace(a,b);
+},SRC);
 // Same, against screens-core.js. Anchors are asserted PRESENT and UNIQUE: a mutant whose
 // anchor has drifted is a mutant that silently tests nothing, which reads as a pass.
 const csub=(a,b)=>{ const n=CORE.split(a).length-1;
@@ -510,6 +521,64 @@ const M=[
   ['SCR B5 \u00b7 BENIGN \u2014 the overlap test is written the other way round','check-screens.mjs',
     csub("const overlaps = (a, b) => a[0] < b[0] + b[2] && b[0] < a[0] + a[2] && a[1] < b[1] + b[3] && b[1] < a[1] + a[3];",
          "const overlaps = (a, b) => !(a[0] + a[2] <= b[0] || b[0] + b[2] <= a[0] || a[1] + a[3] <= b[1] || b[1] + b[3] <= a[1]);"),false,'screens-core.js'],
+
+
+  // ── THE STAFF ROSTER'S ONE RULE — what may ever become 108 real people ──────────────
+  // Step 1 of taking the names out of this public page writes nothing on load and changes
+  // nothing the sheet reads, so the only thing standing between the store and payroll is
+  // tipRosterValidate. Every mutant here is a world somebody would propose as a tidy-up.
+  ['ROST 1 · ⛔ a ||[] fallback, so a missing section becomes an empty one in silence','check-tipsroster.mjs',
+    tsub('    const a=g[s];','    const a=g[s]||[];'),true],
+  ['ROST 2 · ⛔ lower a floor to make a short load go green','check-tipsroster.mjs',
+    tsub("'Weddings':33","'Weddings':1"),true],
+  ['ROST 3 · ⛔ a floor of one per section — any section down to a single person passes','check-tipsroster.mjs',
+    tsub('    if(list.length<(TIP_ROSTER_COUNTS[s]||1))return null;','    if(list.length<1)return null;'),true],
+  ['ROST 4 · ⛔ absent treated as none — an empty roster is a usable roster','check-tipsroster.mjs',
+    tsub("  if(!v||typeof v!=='object'||Array.isArray(v))return null;",
+         "  if(v==null)return {groups:{},aliases:{},count:0};\n  if(typeof v!=='object'||Array.isArray(v))return null;"),true],
+  ['ROST 5 · ⛔ drop the one-person-once guard','check-tipsroster.mjs',
+    tsub('      if(!k||seen[k])return null;','      if(!k)return null;seen[k]=1;'),true],
+  ['ROST 6 · ⛔ trim but do not FOLD, so "Emma  Dawson" keeps her orphan key',"check-tipsroster.mjs",
+    tsub("      const nm=x.trim().replace(/\\s+/g,' ');",'      const nm=x.trim();'),true],
+  ['ROST 7 · ⛔ allow a correction that redirects one roster person to another','check-tipsroster.mjs',
+    tsub('    if(seen[k]&&tipNormKey(t)!==k)return null;',''),true],
+  ['ROST 8 · ⛔ allow a correction aimed at somebody not on the roster','check-tipsroster.mjs',
+    tsub("    if(typeof t!=='string'||!seen[tipNormKey(t)])return null;","    if(typeof t!=='string')return null;"),true],
+  ['ROST 9 · ⛔ stop counting the sections, so an extra one rides along','check-tipsroster.mjs',
+    tsub('  if(Object.keys(g).length!==TIP_SECTIONS.length)return null;',''),true],
+  ['ROST 10 · ⛔ seed through the fire-and-forget push — a rejected write reports nothing','check-tipsroster.mjs',
+    tsub("    const r=await fetch(KV_URL+encodeURIComponent(TIPS_ROSTER_KEY),{method:'POST',\n"
+       + "      headers:{'Content-Type':'application/json','x-sync-token':KV_TOKEN()},\n"
+       + "      body:JSON.stringify({v,at:Date.now()})});",
+         "    kvPush(TIPS_ROSTER_KEY,v,Date.now());const r={ok:true};"),true],
+  ['ROST 11 · ⛔ stop reading the POST status','check-tipsroster.mjs',
+    tsub("    if(!r.ok)throw new Error('HTTP '+r.status);\n  }catch(e){st('⚠ NOT written: ",
+         "  }catch(e){st('⚠ NOT written: "),true],
+  ['ROST 12 · ⛔ seed on load — one overwrite from an unloaded device empties it for everybody','check-tipsroster.mjs',
+    tsub("async function tipsFetchRoster(){","async function tipsFetchRoster(){\n  tipRosterSeed();"),true],
+  ['ROST 13 · ⛔ confirm by echoing the payload instead of reading the key back','check-tipsroster.mjs',
+    tsub('  const r=await kvGet(TIPS_ROSTER_KEY);','  const r={v:tipRosterSeedPayload(),at:0};'),true],
+  ['ROST 14 · ⛔ step 2 done early — the sheet reads the store while the names are still here','check-tipsroster.mjs',
+    tsub("  const g={};TIP_SECTIONS.forEach(s=>g[s]=(TIP_ROSTER_DATA[s]||[]).slice());",
+         "  const r=await kvGet(TIPS_ROSTER_KEY);const g=(tipRosterValidate(r&&r.v)||{}).groups||{};"),true],
+  ['ROST 15 · ⛔ the sync key moved into the URL, where the proxy logs it','check-tipsroster.mjs',
+    tsub("    const r=await fetch(KV_URL+encodeURIComponent(TIPS_ROSTER_KEY),{method:'POST',",
+         "    const r=await fetch(KV_URL+encodeURIComponent(TIPS_ROSTER_KEY)+'?token='+KV_TOKEN(),{method:'POST',"),true],
+  ['ROST 16 · ⛔ somebody hired and the floor left behind — the floor stops tracking the roster','check-tipsroster.mjs',
+    tsub('"Michael Zilm"','"Michael Zilm","New Busser Person"'),true],
+
+  ['ROST B1 · BENIGN — somebody hired AND the floor raised with them','check-tipsroster.mjs',
+    tsubs(['"Michael Zilm"','"Michael Zilm","New Busser Person"'],["'Busser':34","'Busser':35"]),false],
+  ['ROST B2 · BENIGN — the rule’s local list renamed','check-tipsroster.mjs',
+    tsubs(['  const groups={},seen={};let n=0;','  const out={},seen={};let n=0;'],
+          ['    groups[s]=list;','    out[s]=list;'],
+          ['  return {groups,aliases,count:n};','  return {groups:out,aliases,count:n};']),false],
+  ['ROST B3 · BENIGN — the "could not reach the store" wording rewritten','check-tipsroster.mjs',
+    tsub("st('⚠ could not reach the store — nothing was checked.','#f87171');",
+         "st('⚠ the store did not answer, so nothing at all was compared.','#f87171');"),false],
+  ['ROST B4 · BENIGN — the two buttons swapped round','check-tipsroster.mjs',
+    tsubs(['return `<button onclick="tipRosterVerify()"','return `<button onclick="tipRosterSeed()"'],
+          ['+`<button onclick="tipRosterSeed()"','+`<button onclick="tipRosterVerify()"']),false],
 
   // ── A PAGE THAT NO LONGER PARSES MUST FAIL BY NAME, NOT THROW ────────────────────────
   // These two are not about the page's behaviour; they are about the CHECK. Half of
