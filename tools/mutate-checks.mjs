@@ -28,12 +28,16 @@ const SRC=readFileSync(join(REPO,'index.html'),'utf8');
 // else is copied through unchanged, so a mutant aimed at one subject cannot accidentally
 // exercise the other.
 const CORE=readFileSync(join(REPO,'screens-core.js'),'utf8');
+const SW=readFileSync(join(REPO,'sw.js'),'utf8');
 
 const run=(which,text,file)=>{
   const target=file||'index.html';
   rmSync(TMP,{recursive:true,force:true}); mkdirSync(join(TMP,'tools'),{recursive:true});
   writeFileSync(join(TMP,'index.html'),target==='index.html'?text:SRC);
-  if(/^check-screens\.mjs$/.test(which)) writeFileSync(join(TMP,'screens-core.js'),target==='screens-core.js'?text:CORE);
+  if(/^check-screens\.mjs$/.test(which)){
+    writeFileSync(join(TMP,'screens-core.js'),target==='screens-core.js'?text:CORE);
+    writeFileSync(join(TMP,'sw.js'),target==='sw.js'?text:SW);
+  }
   cpSync(join(REPO,'tools',which),join(TMP,'tools',which));
   // ⚠️ A CHECK THAT READS A DATA FILE GOES RED IN THE SANDBOX WITHOUT IT, and a baseline
   // that is red for a missing fixture teaches nothing. Every check reading one must be listed.
@@ -60,6 +64,8 @@ const sub=(a,b)=>{ if(!SRC.includes(a)) throw new Error('anchor missing: '+a.sli
 // anchor has drifted is a mutant that silently tests nothing, which reads as a pass.
 const csub=(a,b)=>{ const n=CORE.split(a).length-1;
   if(n!==1) throw new Error('core anchor '+(n?'not unique':'missing')+': '+a.slice(0,60)); return CORE.replace(a,b) };
+const wsub=(a,b)=>{ const n=SW.split(a).length-1;
+  if(n!==1) throw new Error('sw anchor '+(n?'not unique':'missing')+': '+a.slice(0,60)); return SW.replace(a,b) };
 // Two edits in one mutant, for the cases where one plausible change touches two places.
 const subs=(...pairs)=>pairs.reduce((h,[a,b])=>{
   if(!h.includes(a)) throw new Error('anchor missing: '+a.slice(0,60));
@@ -492,6 +498,15 @@ const M=[
   ['SCR B4 \u00b7 BENIGN \u2014 the permanent-id note is reworded','check-screens.mjs',
     csub("warnings.push('This capture was taken before the register gave its buttons permanent names, so they are being '",
          "warnings.push('This capture predates permanent button names on the register, so they are being '"),false,'screens-core.js'],
+  ['SCR 17 \u00b7 \u26d4 the service worker caches every page as the Watch Tower again','check-screens.mjs',
+    wsub("caches.open(CACHE).then(c => c.put(shell, copy));","caches.open(CACHE).then(c => c.put('./index.html', copy));"),true,'sw.js'],
+  ['SCR 18 \u00b7 \u26d4 offline, every page falls back to the Watch Tower again','check-screens.mjs',
+    wsub(".catch(() => caches.match(shell))",".catch(() => caches.match('./index.html'))"),true,'sw.js'],
+  ['SCR 19 \u00b7 \u26d4 the shell lookup answers with the first page whatever was asked for','check-screens.mjs',
+    wsub("  for (const s of SHELLS) { const name = s.replace('./', ''); if (pathname.endsWith('/' + name)) return s; }",
+         "  if (SHELLS.length) return SHELLS[0];"),true,'sw.js'],
+  ['SCR B6 \u00b7 BENIGN \u2014 the two pages are listed in the other order','check-screens.mjs',
+    wsub("const SHELLS = ['./index.html', './screens.html'];","const SHELLS = ['./screens.html', './index.html'];"),false,'sw.js'],
   ['SCR B5 \u00b7 BENIGN \u2014 the overlap test is written the other way round','check-screens.mjs',
     csub("const overlaps = (a, b) => a[0] < b[0] + b[2] && b[0] < a[0] + a[2] && a[1] < b[1] + b[3] && b[1] < a[1] + a[3];",
          "const overlaps = (a, b) => !(a[0] + a[2] <= b[0] || b[0] + b[2] <= a[0] || a[1] + a[3] <= b[1] || b[1] + b[3] <= a[1]);"),false,'screens-core.js'],

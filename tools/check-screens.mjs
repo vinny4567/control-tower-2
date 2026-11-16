@@ -312,5 +312,54 @@ ok('the closed action list is the documented one', SCR.ACTION_KINDS.length >= 9
 ok('this check actually exercised the import (count guard, so an empty fixture cannot pass it)',
    IM.counts.els >= 5 && IM.counts.screens >= 2 && IM.counts.sheets >= 1);
 
+// ═══ 8. THE SERVICE WORKER, NOW THAT THERE IS MORE THAN ONE PAGE ═════════════
+//
+// sw.js assumed one page. It cached every navigation under './index.html' and, offline,
+// answered every navigation with './index.html' — so opening the builder wrote the BUILDER
+// into the shell slot, and the next offline open of the Watch Tower showed the builder.
+// Online it behaves perfectly, which is exactly why this is run rather than eyeballed: the
+// real handler is executed with stubs and asked WHICH cache key it touched.
+const SW = readFileSync(new URL('../sw.js', import.meta.url), 'utf8');
+async function runSW(pathname, opts) {
+  const o = opts || {};
+  const puts = [], matches = [];
+  const handlers = {};
+  const selfStub = { addEventListener: (n, f) => { handlers[n] = f; }, skipWaiting() {} };
+  const cachesStub = {
+    open: async () => ({ put: (k) => { puts.push(String(k && k.url ? k.url : k)); }, addAll: async () => {} }),
+    match: async (k) => { matches.push(String(k && k.url ? k.url : k)); return 'CACHED'; },
+    keys: async () => [], delete: async () => {},
+  };
+  const fetchStub = async () => { if (o.offline) throw new Error('offline'); return { clone: () => ({}) }; };
+  new Function('self', 'caches', 'clients', 'fetch', SW)(selfStub, cachesStub, { claim() {} }, fetchStub);
+  if (!handlers.fetch) return { puts, matches, ran: false };
+  let answered;
+  handlers.fetch({ request: { url: 'https://vinny4567.github.io' + pathname, mode: o.mode || 'navigate' },
+                   respondWith: (pr) => { answered = pr; } });
+  try { await answered; } catch (e) { /* the offline path resolves through match */ }
+  await new Promise((r) => setTimeout(r, 0));   // let the cache writes inside .then run
+  return { puts, matches, ran: true, answered: answered !== undefined };
+}
+
+const navShell = await runSW('/control-tower-2/');
+ok('the service worker still answers a plain navigation', navShell.ran && navShell.answered);
+ok('…and caches the Watch Tower under its own name', navShell.puts.join() === './index.html');
+const navBuilder = await runSW('/control-tower-2/screens.html');
+ok('⛔ opening the builder does NOT overwrite the Watch Tower in the cache', navBuilder.puts.indexOf('./index.html') < 0);
+ok('…it is cached as itself', navBuilder.puts.join() === './screens.html');
+const offBuilder = await runSW('/control-tower-2/screens.html', { offline: true });
+ok('⛔ with no network the builder falls back to the BUILDER, not to the Watch Tower',
+   offBuilder.matches.join() === './screens.html');
+const offShell = await runSW('/control-tower-2/', { offline: true });
+ok('…and the Watch Tower falls back to the Watch Tower', offShell.matches.join() === './index.html');
+const navUnknown = await runSW('/control-tower-2/somethingelse.html');
+ok('a page nobody listed falls back to the Watch Tower, which is the safe end of the mistake',
+   navUnknown.puts.join() === './index.html');
+const core = await runSW('/control-tower-2/screens-core.js', { mode: 'no-cors' });
+ok('the builder\'s core is fetched network-first, so a fresh page cannot run a ten-minute-old core',
+   core.answered === true);
+ok('…and is cached under its own URL, not the shell slot', core.puts.join().indexOf('index.html') < 0);
+ok('the cache name was bumped, so every older cache is binned on activate', /watchtower-v[4-9]/.test(SW));
+
 console.log(bad ? `\n${bad} FAILED` : '\nall good');
 process.exit(bad ? 1 : 0);
