@@ -97,7 +97,10 @@ ok('a present empty object is trusted', run({ v: {} }, { a: 1 }, {}) === '{}');
 // ── EVERY STORE MUST GO THROUGH IT. A 25th ct_pos_* store folded in by hand would be
 // unguarded, and would look exactly like the 24 that are guarded.
 const reload = (() => {
-  const a = src.indexOf('const [r,g,ng,at,rt,pc,nm,gn,gd,ml,dm,cc,mn,dg,ce,co,io,ito,di,ni,sa,dr,nd,dd]');
+  // Anchored on the PREFIX, because the one edit this check exists to police is ADDING a
+  // store — which lengthens this very line. Pinning the full destructure made the anchor
+  // fail the moment ct_pos_buttons was added, taking three real assertions down with it.
+  const a = src.indexOf('const [r,g,ng,');
   const b = src.indexOf('const changed=', a);
   return a >= 0 && b > a ? src.slice(a, b) : '';
 })();

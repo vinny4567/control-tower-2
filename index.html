@@ -7114,12 +7114,12 @@ async function posLoadPrices(){
   // Fetch everything, compare it to what is already on screen, and only redraw when
   // something actually differs. A reload that changes nothing now changes nothing.
   const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
-  const [r,g,ng,at,rt,pc,nm,gn,gd,ml,dm,cc,mn,dg,ce,co,io,ito,di,ni,sa,dr,nd,dd]=await Promise.all([
+  const [r,g,ng,at,rt,pc,nm,gn,gd,ml,dm,cc,mn,dg,ce,co,io,ito,di,ni,sa,dr,nd,dd,bt]=await Promise.all([
     kvGet('ct_pos_prices'),kvGet('ct_pos_group_mods'),kvGet('ct_pos_new_groups'),
     kvGet('ct_pos_group_attach'),kvGet('ct_pos_routing'),kvGet('ct_pos_print_classes'),
     kvGet('ct_pos_new_mods'),kvGet('ct_pos_group_names'),kvGet('ct_pos_group_detach'),
     kvGet('ct_pos_mod_letters'),kvGet('ct_pos_deleted_mods'),kvGet('ct_pos_choice_cuts'),
-    kvGet('ct_pos_mod_names'),kvGet('ct_pos_deleted_groups'),kvGet('ct_pos_choice_edits'),kvGet('ct_pos_choice_order'),kvGet('ct_pos_item_group_order'),kvGet('ct_pos_item_order'),kvGet('ct_pos_deleted_items'),kvGet('ct_pos_new_items'),kvGet('ct_pos_section_adds'),kvGet('ct_pos_disc_rates'),kvGet('ct_pos_new_discounts'),kvGet('ct_pos_deleted_discounts')]);
+    kvGet('ct_pos_mod_names'),kvGet('ct_pos_deleted_groups'),kvGet('ct_pos_choice_edits'),kvGet('ct_pos_choice_order'),kvGet('ct_pos_item_group_order'),kvGet('ct_pos_item_order'),kvGet('ct_pos_deleted_items'),kvGet('ct_pos_new_items'),kvGet('ct_pos_section_adds'),kvGet('ct_pos_disc_rates'),kvGet('ct_pos_new_discounts'),kvGet('ct_pos_deleted_discounts'),kvGet('ct_pos_buttons')]);
   // ⛔ A FAILED FETCH IS NOT AN EMPTY VALUE. `kvGet` returns null for ANY non-200 — a dropped
   // connection, a rejected key, a restart — and this block used to read `(x&&x.v)||[]`, which turns
   // that null into an EMPTY LIST and then assigns it over the live one below. The pending edits are
@@ -7155,6 +7155,9 @@ async function posLoadPrices(){
     deleted:take(dm,posDeletedMods,[]), cuts:take(cc,posChoiceCuts,{}), modNames:take(mn,posModNames,{}),
     delGroups:take(dg,posDeletedGroups,[]), choiceEdits:take(ce,posChoiceEdits,{}), choiceOrder:take(co,posChoiceOrder,{}), itemGroupOrder:take(io,posItemGroupOrder,{}), itemOrder:take(ito,posItemOrder,{}), delItems:take(di,posDeletedItems,[]), newItems:take(ni,posNewItems,[]), sectionAdds:take(sa,posSectionAdds,{}),
     discRates:take(dr,posDiscRates,{}), newDiscounts:take(nd,posNewDiscounts,[]), delDiscounts:take(dd,posDeletedDiscounts,[]),
+    // null, not {} — "never edited" is a real state for this one and means "the
+    // registers use their own built-in rail", which is NOT the same as an empty rail.
+    buttons:take(bt,posBtnStore,null),
   };
   const changed=!same(next.prices,posPrices)||!same(next.mods,posGroupMods)
     ||!same(next.groups,posNewGroups)||!same(next.attach,posGroupAttach)
@@ -7165,7 +7168,8 @@ async function posLoadPrices(){
     ||!same(next.modNames,posModNames)||!same(next.delGroups,posDeletedGroups)
     ||!same(next.choiceEdits,posChoiceEdits)||!same(next.choiceOrder,posChoiceOrder)
     ||!same(next.itemGroupOrder,posItemGroupOrder)||!same(next.itemOrder,posItemOrder)||!same(next.delItems,posDeletedItems)||!same(next.newItems,posNewItems)||!same(next.sectionAdds,posSectionAdds)
-    ||!same(next.discRates,posDiscRates)||!same(next.newDiscounts,posNewDiscounts)||!same(next.delDiscounts,posDeletedDiscounts);
+    ||!same(next.discRates,posDiscRates)||!same(next.newDiscounts,posNewDiscounts)||!same(next.delDiscounts,posDeletedDiscounts)
+    ||!same(next.buttons,posBtnStore);
   posPrices=next.prices; posGroupMods=next.mods; posNewGroups=next.groups;
   posGroupAttach=next.attach; posRouting=next.routing; posNewClasses=next.classes;
   posNewMods=next.newMods; posGroupNames=next.names; posGroupDetach=next.detach;
@@ -7173,6 +7177,11 @@ async function posLoadPrices(){
   posModNames=next.modNames; posDeletedGroups=next.delGroups;
   posChoiceEdits=next.choiceEdits; posChoiceOrder=next.choiceOrder; posItemGroupOrder=next.itemGroupOrder; posItemOrder=next.itemOrder||{}; posDeletedItems=next.delItems; posNewItems=next.newItems; posSectionAdds=next.sectionAdds;
   posDiscRates=next.discRates; posNewDiscounts=next.newDiscounts; posDeletedDiscounts=next.delDiscounts;
+  posBtnStore=next.buttons;
+  // The `at` we actually loaded, kept so a save can refuse to clobber a newer one. Only
+  // from a reply we could read: a failure must not reset it to 0 and make the next save
+  // look like a first write.
+  if(bt&&!kvFailed(bt))posBtnAt=Number(bt.at)||0;
   posPruneOrphans();   // redraws itself only if it actually drops something
   if(changed)posRedraw();
 }
@@ -7969,6 +7978,19 @@ function posBuildLive(){
     // under. Unlisted items sort after the listed ones on both sides, so a stale order
     // moves what it knows about and leaves the rest alone.
     itemOrder:{...posItemOrder},
+    // ⛔ THE RAIL — ONLY THE SENT SNAPSHOT, NEVER THE DRAFT. See POS_BTN_STORE. Read
+    // straight off posBtnStore.live here rather than through a helper, so the publish
+    // coverage check can see which store this carries.
+    //
+    // A live list with no buttons at all is refused: it would leave every register with
+    // an empty rail and no way back. Reverting is `live = null`, which drops the key and
+    // returns each register to its own built-in rail — a different thing entirely.
+    ...(()=>{
+      const l=posBtnStore&&posBtnStore.live;
+      if(!l||!(((l.food||[]).length)||((l.bar||[]).length)))return {};
+      return {buttons:{v:1, at:l.at,
+        food:(l.food||[]).slice(), bar:(l.bar||[]).slice(), off:(l.off||[]).slice()}};
+    })(),
   };
 }
 // kvPush is debounced and fire-and-forget, which is right for an edit and wrong for a
@@ -9181,6 +9203,63 @@ function posRowGaps(r){
 // Mod groups sits in the category picker directly under Food Mods, because that is
 // what it is — the groups those mods are organised into. It is not a real category
 // on any item, so it gets a sentinel value and its own body.
+// ─── THE REGISTER'S BUTTON RAIL, AS VINNY ARRANGES IT ─────────────────
+//
+// Vinny: "on micros there is a screen builder where i can adjust buttons (edit mode) and
+// create buttons that connect to certain slu's". This is that, for the category rail.
+//
+// ⛔ TWO DOCUMENTS, NOT ONE, AND THE DIFFERENCE IS THE WHOLE SAFETY OF IT:
+//
+//   draft — what this page edits. Saved as he works, so he can leave it half done.
+//   live  — the snapshot from the last explicit "Send to the registers".
+//
+// posBuildLive publishes ONLY `live`. If it published the draft, the next unrelated
+// price edit would ship whatever he happened to be poking at: every edit here rides the
+// same 1400ms debounce as a price, and a rail change REARRANGES EVERY SERVER'S SCREEN
+// mid-service. A price landing a second early is fine; a screen rearranging itself
+// because somebody typed a price is not. So the rail gets the one thing nothing else in
+// this file has — a deliberate send.
+//
+// An unrelated publish re-emits the same `live` with the same `buttons.at`, so the
+// registers see no change at all. "Back to the built-in buttons" is also an explicit
+// send, setting live to null so the key leaves the blob and each register falls back to
+// its own built-in rail.
+const POS_BTN_STORE='ct_pos_buttons';
+// ⛔ AND A HARD GATE ON TOP, until the register build that READS `buttons` is live.
+//
+// Not because the draft could leak — it cannot, see above — but because "old builds
+// ignore the key" makes a SEND a delayed-action change. Vinny drags one button tonight
+// to see what it does, sends it, nothing happens... and then the day the iPad build
+// lands, every register adopts a rail he was only poking at, with no action from him in
+// between. The thing that rearranges the floor would be separated from the thing that
+// caused it by however long the build takes, which is the gap nobody connects when the
+// screen looks wrong at 7pm on a Saturday.
+//
+// Flip this to true ONLY when live main carries the reading build AND the register iPad
+// has reloaded onto it. Jarvis confirms both, explicitly. Until then the Send button is
+// disabled and says why, and the page is fully usable as a draft.
+const POS_BTN_SEND_ENABLED=false;
+let posBtnStore=null;     // null/absent = never edited. {draft:{food,bar,off}, live:{…}|null}
+let posBtnAt=0;           // the `at` this page loaded, so a save can refuse to clobber
+// Seeded from the register's own export while the store is empty, so the first thing he
+// sees is today's rail rather than a blank page he has to rebuild from memory.
+const posBtnSeed=()=>({
+  food:(((posButtons&&posButtons.food)||[]).map(e=>({cat:posBtnCat(e),color:(e&&e.color)||''}))),
+  bar:(((posButtons&&posButtons.bar)||[]).map(e=>({cat:posBtnCat(e),color:(e&&e.color)||''}))),
+  off:[],
+});
+const posBtnDraft=()=>(posBtnStore&&posBtnStore.draft)||posBtnSeed();
+const posBtnLive=()=>(posBtnStore&&posBtnStore.live)||null;
+const posBtnCount=(d)=>((d&&d.food)||[]).length+((d&&d.bar)||[]).length;
+// What "Not sent yet" is measured against. Compared on the fields that TRAVEL only, so
+// `at` and anything local can never make a rail look unsent when it is not.
+const posBtnTravel=(x)=>x?JSON.stringify({
+  food:(x.food||[]).map(e=>({cat:e.cat,label:e.label||'',color:e.color||''})),
+  bar:(x.bar||[]).map(e=>({cat:e.cat,label:e.label||'',color:e.color||''})),
+  off:(x.off||[]).slice().sort(),
+}):'';
+const posBtnUnsent=()=>posBtnTravel(posBtnDraft())!==posBtnTravel(posBtnLive());
+
 // ─── WHICH REGISTER BUTTON OPENS THIS CATEGORY ───────────────────────────────
 //
 // Vinny: "i need you to connect these menu categories to the actual buttons on the

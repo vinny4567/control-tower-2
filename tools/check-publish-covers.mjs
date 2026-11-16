@@ -56,6 +56,10 @@ const VAR = {
   // reporting two unknowns rather than confirming they land.
   ct_pos_new_discounts: 'posNewDiscounts',
   ct_pos_deleted_discounts: 'posDeletedDiscounts',
+  // The register's category rail. ⛔ Only the SENT snapshot travels (posBtnStore.live),
+  // never the draft — a rail change rearranges every server's screen, so it must not
+  // ride the same 1400ms debounce as a price edit.
+  ct_pos_buttons: 'posBtnStore',
 };
 
 // Deliberately NOT published — each with the reason, because "we meant to" is the only

@@ -12,7 +12,8 @@
 // sessions into something the repo enforces.
 import { readFileSync } from 'node:fs';
 const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
-const ok = (t, c) => console.log((c ? '  ok  ' : '  FAIL') + '  ' + t);
+let bad = 0;
+const ok = (t, c) => { if (!c) bad++; console.log((c ? '  ok  ' : '  FAIL') + '  ' + t); };
 
 const grab = (name) => {
   const i = html.indexOf('function ' + name + '(');
@@ -39,6 +40,11 @@ const state = {
   deletedMods: [], choiceCuts: {},
   groups: { groups: {}, attach: {}, detach: {}, gone: [] },
   itemOrder: {},
+  // draft and live deliberately DIFFERENT, so a check that confuses them cannot pass.
+  buttons: {
+    draft: { food: [{ cat: 'DRAFT ONLY' }], bar: [], off: [] },
+    live: { at: 1700000000001, food: [{ cat: 'Pasta' }, { cat: 'Pizza' }], bar: [{ cat: 'GIN' }], off: ['Specials'] },
+  },
 };
 const ctx = {
   posAllRows: () => state.rows,
@@ -57,6 +63,9 @@ const ctx = {
   // twice over. posLiveAt is the write-through clock; posItemOrder is the button order
   // the register reads (added 11/8/26).
   get posItemOrder() { return state.itemOrder; },
+  // The register's category rail. ⛔ posBuildLive must read `.live` and never `.draft` —
+  // state.buttons carries both so the assertions below can prove which one travels.
+  get posBtnStore() { return state.buttons; },
   posLiveAt: 0,
   posNewDiscounts: [], posDeletedDiscounts: [],
   posModLetter: (n) => (String(n).match(/[A-Za-z]/) || ['#'])[0].toUpperCase(),
@@ -153,3 +162,50 @@ ok('⚠️ carrying the keys verbatim, prefix included — a HALF item that lose
 ok('and it is a copy, so a later edit here cannot mutate what was sent',
    b.itemOrder !== state.itemOrder);
 state.itemOrder = {};
+
+// ── the register's CATEGORY RAIL ─────────────────────────────────────────────
+//
+// ⛔ The one invariant that matters here: `buttons` carries the SENT snapshot and never
+// the draft. Every edit in the Register buttons page rides the same 1400ms debounce as a
+// price, so if the draft travelled, the next unrelated price edit would rearrange every
+// server's screen with whatever Vinny happened to be part-way through arranging. The
+// draft in the fixture is deliberately a category that must never appear in a blob.
+b = build();
+ok('the sent rail rides the publish', !!b.buttons && b.buttons.v === 1);
+ok('⛔ it is the SENT snapshot, not the draft',
+   b.buttons.food.some((e) => e.cat === 'Pasta')
+   && JSON.stringify(b.buttons).indexOf('DRAFT ONLY') < 0);
+ok('…carrying the sent `at`, which is what the on-the-registers receipt compares',
+   b.buttons.at === 1700000000001);
+ok('…both rails and the off-list', Array.isArray(b.buttons.bar) && b.buttons.off[0] === 'Specials');
+ok('and they are copies, so a later edit here cannot mutate what was sent',
+   b.buttons.food !== state.buttons.live.food && b.buttons.off !== state.buttons.live.off);
+
+// An unrelated edit must re-emit the SAME rail with the SAME at — otherwise every price
+// change looks like a rail change to the register and redraws the screen.
+const railAt = b.buttons.at, railJson = JSON.stringify(b.buttons);
+state.rows = [{ key: 'm:Pasta:Rotini', cents: 1450, newCents: 1595, entered: true, cat: 'Pasta' }];
+b = build();
+ok('⚠️ an unrelated price edit re-emits the same rail, byte for byte, with the same `at`',
+   JSON.stringify(b.buttons) === railJson && b.buttons.at === railAt);
+state.rows = [];
+
+// Never edited ⇒ the key is ABSENT, so each register keeps its own built-in rail. An
+// empty rail and "use your built-in one" are different answers, and only one is safe.
+state.buttons = null;
+b = build();
+ok('⛔ never edited ⇒ no `buttons` key at all, so the register uses its built-in rail',
+   !('buttons' in b));
+state.buttons = { draft: { food: [{ cat: 'x' }], bar: [], off: [] }, live: null };
+b = build();
+ok('…and so does "back to the built-in buttons", which sends live = null',
+   !('buttons' in b));
+// A sent rail with no buttons would leave every register with an empty screen and no way
+// back. Refused here as well as at the send, because this is the half that reaches iPads.
+state.buttons = { draft: {}, live: { at: 1, food: [], bar: [], off: [] } };
+b = build();
+ok('⛔ a sent rail with ZERO buttons is refused rather than emptying every screen',
+   !('buttons' in b));
+
+console.log(bad ? `\n${bad} FAILED` : '\nall good');
+process.exit(bad ? 1 : 0);

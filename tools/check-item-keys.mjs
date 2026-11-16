@@ -143,3 +143,4 @@ if (grouped.length) {
 }
 
 console.log(bad ? `\n${bad} FAILED` : '\nall good');
+process.exit(bad ? 1 : 0);

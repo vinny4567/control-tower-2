@@ -32,8 +32,20 @@ const run=(which,html)=>{
   // that is red for a missing fixture teaches nothing. Every check reading one must be listed.
   if(/^check-(printclasses|categories|specials|buttons)\.mjs$/.test(which)) cpSync(join(REPO,'pos-catalog.json'),join(TMP,'pos-catalog.json'));
   if(/^check-buttons\.mjs$/.test(which)) cpSync(join(REPO,'pos-buttons.json'),join(TMP,'pos-buttons.json'));
-  try{ execFileSync('node',[join(TMP,'tools',which)],{encoding:'utf8'}); return {red:false,out:''} }
-  catch(e){ return {red:true,out:String(e.stdout||'')} }
+  // ⛔ JUDGE THE WAY check-all DOES — BY FAIL LINES, NOT ONLY BY EXIT CODE.
+  //
+  // This read a non-zero exit as the only signal, and three check files (check-publish-shape,
+  // check-backoffice-token, check-item-keys) never call process.exit at all: their `ok()` just
+  // prints, and check-all judges them by counting '  FAIL' lines. So a mutant aimed at any of
+  // them exited 0 and was scored GREEN no matter what it printed — "the check did not scream"
+  // reported as "the check is fine". Found when four RAIL mutants came back green while the
+  // same assertions failed loudly by hand. Nothing had fallen in before: they were the first
+  // mutants ever aimed at an exit-less file. Both signals now count.
+  try{
+    const out=execFileSync('node',[join(TMP,'tools',which)],{encoding:'utf8'});
+    return {red:(out.match(/^ {2}FAIL/gm)||[]).length>0, out};
+  }
+  catch(e){ return {red:true,out:String(e.stdout||'')+String(e.stderr||'')} }
 };
 
 const sub=(a,b)=>{ if(!SRC.includes(a)) throw new Error('anchor missing: '+a.slice(0,60)); return SRC.replace(a,b) };
@@ -230,6 +242,26 @@ const M=[
   ['BTN 11 \u00b7 BENIGN \u2014 reorder the fallback chain, same meaning','check-buttons.mjs',
     sub("const posBtnOpeners=()=>(posButtons&&(posButtons.openers||posButtons.extra||posButtons.other))||[];",
         "const posBtnOpeners=()=>(posButtons&&(posButtons.openers||posButtons.other||posButtons.extra))||[];"),false],
+  // ── THE CATEGORY RAIL: SENT vs DRAFT (11/15). Every edit in the Register buttons page
+  // rides the same 1400ms debounce as a price. If the DRAFT travelled, the next unrelated
+  // price edit would rearrange every server's screen with a half-finished rail. These are
+  // the four worlds Jarvis asked to see pinned.
+  ['RAIL 1 \u00b7 publish the DRAFT instead of the sent snapshot','check-publish-shape.mjs',
+    sub('      const l=posBtnStore&&posBtnStore.live;','      const l=posBtnStore&&posBtnStore.draft;'),true],
+  ['RAIL 2 \u00b7 re-stamp buttons.at on every publish, so a price edit looks like a rail change','check-publish-shape.mjs',
+    sub('      return {buttons:{v:1, at:l.at,','      return {buttons:{v:1, at:Date.now(),'),true],
+  ['RAIL 3 \u00b7 stop refusing a sent rail with zero buttons \u2014 every screen empties, no way back','check-publish-shape.mjs',
+    sub('      if(!l||!(((l.food||[]).length)||((l.bar||[]).length)))return {};','      if(!l)return {};'),true],
+  ['RAIL 4 \u00b7 emit the rail by reference, so a later edit mutates what was sent','check-publish-shape.mjs',
+    sub('        food:(l.food||[]).slice(), bar:(l.bar||[]).slice(), off:(l.off||[]).slice()}};',
+        '        food:(l.food||[]), bar:(l.bar||[]), off:(l.off||[])}};'),true],
+  ['RAIL 5 \u00b7 BENIGN \u2014 spread instead of slice, same copy','check-publish-shape.mjs',
+    sub('        food:(l.food||[]).slice(), bar:(l.bar||[]).slice(), off:(l.off||[]).slice()}};',
+        '        food:[...(l.food||[])], bar:[...(l.bar||[])], off:[...(l.off||[])]}};'),false],
+  // And the store must keep going through take(), which is the check that catches a 26th
+  // store being folded in raw later.
+  ['RAIL 6 \u00b7 fold the rail store in raw, bypassing the failed-read guard','check-kvtake.mjs',
+    sub('    buttons:take(bt,posBtnStore,null),','    buttons:(bt&&bt.v)||null,'),true],
 ];
 
 let wrong=0;

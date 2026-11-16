@@ -13,7 +13,8 @@
 // repo is a test that does not exist.
 import { readFileSync } from 'node:fs';
 const html = readFileSync('/Users/ernest/control-tower-2/index.html', 'utf8');
-const ok=(t,c)=>console.log((c?'  ok  ':'  FAIL')+'  '+t);
+let bad=0;
+const ok=(t,c)=>{if(!c)bad++;console.log((c?'  ok  ':'  FAIL')+'  '+t);};
 const grab=(start,end)=>html.slice(html.indexOf(start), html.indexOf(end));
 const src = grab('const posTrustedHost=','function posSaveConn');
 
@@ -45,3 +46,6 @@ ctx.posS.srv='https://mini.tail0739ce.ts.net:4320';
 ok('a key present but rejected says refused', /refused/.test(F.posAuthNote()));
 delete store['ct_office_key']; delete store['ct_kv_key'];
 ok('no key at all says no key', /no back-office key/.test(F.posAuthNote()));
+
+console.log(bad?`\n${bad} FAILED`:'\nall good');
+process.exit(bad?1:0);
