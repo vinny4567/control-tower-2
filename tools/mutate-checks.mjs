@@ -290,8 +290,20 @@ const M=[
     sub('  if(!POS_BTN_SEND_ENABLED){','  if(false){'),true],
   ['PAGE 10 \u00b7 \u26a0\ufe0f an all-off rail may be sent, leaving a register with an empty screen','check-regbuttons.mjs',
     sub('  if(!revert&&!posBtnMinPage(d)){','  if(false){'),true],
-  ['PAGE 11 \u00b7 the gate is flipped on while the registers cannot read a rail','check-regbuttons.mjs',
-    sub('const POS_BTN_SEND_ENABLED=false;','const POS_BTN_SEND_ENABLED=true;'),true],
+  // PAGE 11 used to be "the gate is flipped on while the registers cannot read a rail". That
+  // mutant's premise died on 11/15 19:42 when the reading build went live and the flag was
+  // released. What replaces it is the warning the release left behind: sending works, but the
+  // register still cannot screen a bad name, add back a category left off the list, or re-pick
+  // the active category. Dropping that note is now the regression worth catching.
+  ['PAGE 11 \u00b7 \u26d4 the page stops saying what the register cannot do for itself yet','check-regbuttons.mjs',
+    (()=>{const i=SRC.indexOf("`:(!POS_BTN_READER_HARDENED?");const j=SRC.indexOf("</div>`:'')}",i);
+          if(i<0||j<0)throw new Error('anchor missing: the reader-hardened note');
+          return SRC.slice(0,i)+"`:''}"+SRC.slice(j+"</div>`:'')}".length);})(),true],
+  ['PAGE 11b \u00b7 a second definition of the send flag, shadowing the released one','check-regbuttons.mjs',
+    sub('const POS_BTN_SEND_ENABLED=true;','const POS_BTN_SEND_ENABLED=true;\nconst POS_BTN_SEND_ENABLED=false;'),true],
+  ['PAGE 11c \u00b7 BENIGN \u2014 the three warnings are reworded','check-regbuttons.mjs',
+    subs(['A category you leave off is unreachable.','A category left off cannot be rung.'],
+         ['Taking a button off mid-service is felt.','Pulling a button mid-shift is noticed.']),false],
   ['PAGE 12 \u00b7 a draft save goes through kvPush, which publishes on every keystroke','check-regbuttons.mjs',
     sub("k!=='ct_pos_live' && k!=='ct_pos_buttons'","k!=='ct_pos_live'"),true],
   ['PAGE 13 \u00b7 the receipt trusts the mini\u2019s combined `at` again','check-regbuttons.mjs',

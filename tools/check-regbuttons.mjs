@@ -421,8 +421,34 @@ if (RBODY) {
 }
 
 // ── the gate and the auto-publish exclusion, which are one-line things worth pinning
-ok('⛔ the send is gated behind POS_BTN_SEND_ENABLED, and it is still OFF',
-   /const POS_BTN_SEND_ENABLED=false;/.test(src));
+// ⚠️ THE OLD ASSERTION HERE PINNED THE FLAG TO `false`, AND THAT INVARIANT IS RETIRED, NOT
+// WEAKENED. It said "the send is gated, and it is still OFF" — true until 11/15 19:42, when
+// the register build that reads a rail went live on main (angelis-pos 1693470→1693540) and
+// host-stand-1 reloaded onto it. The reason for the gate was that a Send would otherwise be a
+// DELAYED-ACTION change, landing whenever the build did; that reason is gone. What is still
+// true and still worth pinning is the MECHANISM: the flags exist as single named constants,
+// the send consults the send flag before anything else, and the gate-off path still refuses
+// (proven behaviourally above with mkSend(false, …), which does not care what the constant
+// currently says). Flipping the constant back and forth cannot make that coverage lie.
+const once = (re) => (src.match(re) || []).length === 1;
+ok('the send flag is ONE named constant, so nothing can shadow it',
+   once(/const POS_BTN_SEND_ENABLED=/g));
+ok('…and so is the flag that tracks what the register cannot do for itself yet',
+   once(/const POS_BTN_READER_HARDENED=/g));
+// ⛔ Jarvis asked that the page tell Vinny the truth: sending is live, but the register does
+// not refuse a bad name, does not add back a category left off the list, and does not re-pick
+// the active category when its button goes. Dropping that note would leave him sending into a
+// register that cannot guard itself, with the page implying it can. The WORDING is not pinned
+// — only that the note is keyed to the flag and actually says something.
+const HARDNOTE = (() => {
+  const i = src.indexOf('!POS_BTN_READER_HARDENED?');
+  if (i < 0) return '';
+  return src.slice(i, src.indexOf("</div>`:'')}", i));
+})();
+ok('⛔ while the register cannot screen a bad name itself, the page says so',
+   HARDNOTE.length > 400);
+ok('…and that note is keyed to the flag, so it retires itself rather than going stale',
+   /!POS_BTN_READER_HARDENED\?/.test(src));
 ok('⛔ …and the send checks it before anything else',
    /async function posBtnSend\([^)]*\)\{\s*if\(!POS_BTN_SEND_ENABLED\)\{/.test(src));
 ok('⛔ a draft save does NOT trigger the auto-publish hook (ct_pos_buttons is excluded)',

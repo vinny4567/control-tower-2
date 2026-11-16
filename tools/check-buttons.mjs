@@ -159,17 +159,41 @@ if (!existsSync(MENU)) {
   for (const name of ['RAIL_ORDER', 'BAR_CATS', 'BAR_TOP', 'BAR_FUNCS', 'FOOD_FUNCS'])
     ok(`the register still exports ${name} for the exporter to read`,
        new RegExp(`export const ${name}\\s*=`).test(m));
-  // The trap that makes a straight dump wrong: RAIL_ORDER is food AND bar in one array.
-  const rail = (m.match(/export const RAIL_ORDER = \[([\s\S]*?)\];/) || [, ''])[1];
+  // ⛔ STRIP THE COMMENTS BEFORE TESTING ANY OF THIS. The 'Wine' assertion below used to read
+  // the raw slice, and when POS-UI actually removed 'Wine' from RAIL_ORDER (angelis-pos
+  // 1693540) it kept passing — because the line they left in its place is
+  //     // ('Wine' came off 11/15: it is the hidden parent of RED WINE / WHITE WINE …)
+  // and a comment is not a behaviour. That is the second time in one day a regex over source
+  // was satisfied by prose about the code instead of the code (the other was the send
+  // receipt's `menu.buttons` pin). Any regex over a foreign file strips comments first.
+  const code = (x) => String(x || '').split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
+  const rail = code((m.match(/export const RAIL_ORDER = \[([\s\S]*?)\];/) || [, ''])[1]);
   ok('⚠️ RAIL_ORDER still holds the bar categories too, so it is NOT the food rail',
      /VODKA/.test(rail) && /Appetizers/.test(rail));
-  ok('⚠️ …and still carries ‘Wine’, which this page hides — the exporter must decide',
-     /'Wine'/.test(rail));
-  // GOLF/Sides are matched by LABEL today and carry no cat:, so the exporter cannot
-  // emit a cat for them without the register-side change.
-  const funcs = (m.match(/export const FOOD_FUNCS = \[([\s\S]*?)\n\];/) || [, ''])[1];
-  ok('⚠️ GOLF still has no cat: in FOOD_FUNCS — it is label-matched until step 5 lands',
-     /label: 'GOLF'/.test(funcs) && !/label: 'GOLF',[^}]*cat:/.test(funcs));
+  // ⚠️ These two used to pin a DEFECT ("still carries Wine", "GOLF still has no cat"), as
+  // tripwires to tell me when POS-UI fixed them. They both fired, which is what they were for
+  // — and a pin on someone else's transient state goes stale by design. They now assert the
+  // thing that must hold whichever way that file moves: THE EXPORT AND THE REGISTER AGREE.
+  // The export is read here rather than reusing BTN — BTN is a SOURCE SLICE of index.html,
+  // not the JSON, and `[...BTN.food]` on a string is how this crashed first time round.
+  const EXPF = new URL('../pos-buttons.json', import.meta.url);
+  const EXP = existsSync(EXPF) ? JSON.parse(readFileSync(EXPF, 'utf8')) : null;
+  const exportCats = EXP ? [...(EXP.food || []), ...(EXP.bar || [])].map((e) => (typeof e === 'string' ? e : e.cat)) : null;
+  ok(EXP ? '‘Wine’ is on neither the register’s rail order nor the export’s rails — they agree'
+         : '‘Wine’ agreement not checked — no pos-buttons.json',
+     !EXP || (!/'Wine'/.test(rail) === !exportCats.includes('Wine')));
+  const funcs = code((m.match(/export const FOOD_FUNCS = \[([\s\S]*?)\n\];/) || [, ''])[1]);
+  const openerCat = (lbl) => {
+    const o = EXP && (EXP.openers || EXP.extra || EXP.other || []).find((e) => e && e.label === lbl);
+    return o ? o.cat : null;
+  };
+  for (const lbl of ['GOLF', 'Sides']) {
+    const re = new RegExp("label: '" + lbl + "'[^}]*cat: '([^']+)'");
+    const hit = funcs.match(re);
+    ok(`…and ${lbl} carries the same cat in FOOD_FUNCS as the export emits`
+       + (hit ? ` (‘${hit[1]}’)` : ' — neither has one'),
+       !EXP || (hit ? openerCat(lbl) === hit[1] : !openerCat(lbl)));
+  }
 }
 
 // ── 7. THE REAL FILE, against the real catalogue. Fixtures prove the three states; this
