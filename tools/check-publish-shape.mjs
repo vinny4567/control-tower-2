@@ -206,6 +206,22 @@ state.buttons = { draft: {}, live: { at: 1, food: [], bar: [], off: [] } };
 b = build();
 ok('⛔ a sent rail with ZERO buttons is refused rather than emptying every screen',
    !('buttons' in b));
+// ⛔ AND PER PAGE, NOT ADDED TOGETHER. The register treats a page with zero buttons as
+// unusable: it draws that page's full built-in rail and stops honouring `off` for it. So a
+// full FOOD rail behind an empty LIQUOR one is not "most of a rail" — it is the bar page
+// silently reverting while the suppression list quietly stops applying to it. Both guards
+// counted food.length + bar.length, which this case passes.
+state.buttons = { draft: {}, live: { at: 1, food: [{ cat: 'Pasta' }], bar: [], off: ['Specials'] } };
+b = build();
+ok('⛔ a rail with one page FULL and the other EMPTY is refused, not half-published',
+   !('buttons' in b));
+state.buttons = { draft: {}, live: { at: 1, food: [], bar: [{ cat: 'VODKA' }], off: [] } };
+b = build();
+ok('…either way round', !('buttons' in b));
+state.buttons = { draft: {}, live: { at: 9, food: [{ cat: 'Pasta' }], bar: [{ cat: 'VODKA' }], off: [] } };
+b = build();
+ok('…while one button on EACH page travels normally',
+   !!b.buttons && b.buttons.food.length === 1 && b.buttons.bar.length === 1 && b.buttons.at === 9);
 
 console.log(bad ? `\n${bad} FAILED` : '\nall good');
 process.exit(bad ? 1 : 0);

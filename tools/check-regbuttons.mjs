@@ -29,11 +29,12 @@ const cut = (a, b, what) => {
 };
 
 const STATE = cut("const POS_BTN_STORE='ct_pos_buttons';", 'let posButtons=null;', 'the rail store helpers');
+const HOME  = cut('const posBtnHomeRail=', 'const posBtnSwatches=', 'the home-rail resolvers');
 const EDIT  = cut('const posBtnEdit=', '// ⛔ THE ONLY THING THAT REACHES A REGISTER', 'posBtnEdit and the handlers');
 
 const EXPORT = {
   food: [{ cat: 'N/A BEVS', color: '#2C7BE5' }, { cat: 'Appetizers', color: '#8E2A2A' }, { cat: 'Pasta', color: '#A83C3C' }],
-  bar: [{ cat: 'VODKA', color: '#7C86A8' }, { cat: 'GIN', color: '#7C86A8' }],
+  bar: [{ cat: 'N/A BEVS', color: '#2C7BE5' }, { cat: 'VODKA', color: '#7C86A8' }, { cat: 'GIN', color: '#7C86A8' }],
   openers: [{ cat: 'BEER', label: 'BEER', page: 'bar', where: 'top row' }],
   colors: { 'N/A BEVS': '#2C7BE5', Pasta: '#A83C3C' }, defaultColor: '#7C86A8',
 };
@@ -55,7 +56,7 @@ ok('the rail store helpers lift and run', !!(S && S.posBtnUnsent));
 if (S && S.posBtnUnsent) {
   S.store = null;
   ok('with no store the draft is SEEDED from the register’s own export',
-     S.posBtnDraft().food.length === 3 && S.posBtnDraft().bar.length === 2
+     S.posBtnDraft().food.length === 3 && S.posBtnDraft().bar.length === 3
      && S.posBtnDraft().food[0].cat === 'N/A BEVS');
   ok('⚠️ and an untouched page is NOT "not sent yet" — the seed already IS what the registers have',
      S.posBtnUnsent() === false);
@@ -84,7 +85,7 @@ if (EDIT) {
       const posBtnWrite=(make)=>{ const n=make(BASE); report(n); return n!==null; };
       const posBtnDraft=()=>(BASE&&BASE.draft)||{food:[],bar:[],off:[]};
       const posBtnLive=()=>(BASE&&BASE.live)||null;
-      const posBtnHomeRail=(cat)=>((EXPORT.bar||[]).some(e=>e.cat===cat))?'bar':'food';
+      ${HOME}
       ${EDIT}
       return {setBase(b){BASE=b},posBtnMove,posBtnRename,posBtnColor,posBtnOff,posBtnOn};`)(
       EXPORT, (n) => { last = n; });
@@ -166,6 +167,33 @@ if (H && H.posBtnMove) {
   base = { v: 1, draft: { food: [{ cat: 'A' }], bar: [], off: [] }, live: LIVE }; H.setBase(base); last = null;
   H.posBtnOn(encodeURIComponent('GIN'));
   ok('putting back something that is not in the tray changes nothing', last === null);
+  // ⚠️ A cat the export has never heard of still has to land somewhere. This is reachable:
+  // the export is regenerated, a category it used to list is gone, and a name for it is
+  // already sitting in a stored `off` — with the + chip the only control that touches it.
+  base = { v: 1, draft: { food: [{ cat: 'A' }], bar: [{ cat: 'VODKA' }], off: ['Mystery'] }, live: LIVE };
+  H.setBase(base); last = null;
+  H.posBtnOn(encodeURIComponent('Mystery'));
+  ok('+ on a cat the export never mentions puts it on a rail rather than losing it',
+     !!last && last.draft.off.length === 0
+     && (cats(last.draft.food).includes('Mystery') || cats(last.draft.bar).includes('Mystery')));
+
+  // ⛔ THE ×/+ PAIR MUST NOT DELETE A BUTTON. 'N/A BEVS' is on BOTH rails in the real
+  // export, and the ×/+ pair is the only control there is, so a restore that picks one rail
+  // loses the other for good with nothing in the UI to undo it.
+  base = { v: 1, draft: { food: [{ cat: 'N/A BEVS' }, { cat: 'A' }], bar: [{ cat: 'N/A BEVS' }, { cat: 'VODKA' }], off: [] }, live: LIVE };
+  H.setBase(base); last = null;
+  H.posBtnOff(encodeURIComponent('N/A BEVS'));
+  ok('\u00d7 on a cat that is on BOTH rails takes it off both, and records it once',
+     cats(last.draft.food) === 'A' && cats(last.draft.bar) === 'VODKA'
+     && last.draft.off.join() === 'N/A BEVS');
+  H.setBase(last); last = null;
+  H.posBtnOn(encodeURIComponent('N/A BEVS'));
+  ok('\u26d4 …and + puts it back on BOTH, not just one — one × then one + used to delete it',
+     cats(last.draft.food).includes('N/A BEVS') && cats(last.draft.bar).includes('N/A BEVS')
+     && last.draft.off.length === 0);
+  ok('\u2026and does not duplicate a rail entry that is somehow already there',
+     last.draft.food.filter((e) => e.cat === 'N/A BEVS').length === 1
+     && last.draft.bar.filter((e) => e.cat === 'N/A BEVS').length === 1);
 
   // round trip
   base = { v: 1, draft: { food: [{ cat: 'A' }, { cat: 'Pasta' }], bar: [], off: [] }, live: LIVE }; H.setBase(base);
@@ -186,6 +214,7 @@ const mkSend = (enabled, draft) => {
     const posRegButtonsRefresh=()=>{};
     const posBtnDraft=()=>DRAFT;
     const posBtnCount=(d)=>((d&&d.food)||[]).length+((d&&d.bar)||[]).length;
+    const posBtnMinPage=(d)=>Math.min(((d&&d.food)||[]).length,((d&&d.bar)||[]).length);
     const posBtnWrite=async(make)=>{ calls.wrote=make({v:1,draft:DRAFT,live:null}); return true; };
     const posBuildLive=()=>({v:1,at:1});
     const posPublishSend=async()=>{ calls.published++; };
@@ -195,8 +224,9 @@ const mkSend = (enabled, draft) => {
     return async(revert)=>{ await posBtnSend(revert); return posBtnS; };`)(enabled, draft, calls, null);
   return { fn, calls };
 };
-const FULL = { food: [{ cat: 'A' }], bar: [], off: [] };
+const FULL = { food: [{ cat: 'A' }], bar: [{ cat: 'VODKA' }], off: [] };
 const EMPTY = { food: [], bar: [], off: ['A'] };
+const HALF  = { food: [{ cat: 'A' }], bar: [], off: ['VODKA'] };
 if (SEND) {
   const off = mkSend(false, FULL);
   const s1 = await off.fn(false);
@@ -211,6 +241,14 @@ if (SEND) {
   ok('\u26a0\ufe0f a send with every button off the screen is REFUSED \u2014 an empty rail has no way back',
      empty.calls.wrote === null && empty.calls.published === 0);
   ok('\u2026and explains itself rather than just doing nothing', (s2.err || '').length > 30);
+
+  // ⛔ PER RAIL, NOT COMBINED. A page with zero buttons makes the register draw that page's
+  // full built-in rail AND stop honouring `off` for it, so half a rail is not "most of one".
+  const half = mkSend(true, HALF);
+  const s3 = await half.fn(false);
+  ok('\u26d4 a send with ONE rail empty is refused, even though the other is full',
+     half.calls.wrote === null && half.calls.published === 0);
+  ok('\u2026and explains itself', (s3.err || '').length > 30);
 
   const rev = mkSend(true, EMPTY);
   await rev.fn(true);

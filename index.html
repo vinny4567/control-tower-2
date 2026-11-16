@@ -7996,7 +7996,11 @@ function posBuildLive(){
     // returns each register to its own built-in rail — a different thing entirely.
     ...(()=>{
       const l=posBtnStore&&posBtnStore.live;
-      if(!l||!(((l.food||[]).length)||((l.bar||[]).length)))return {};
+      // ⛔ PER RAIL, NOT COMBINED. The register treats a page with ZERO buttons as unusable:
+      // it draws that page's full built-in rail and ignores `off` for it. So an empty LIQUOR
+      // rail behind a full FOOD one is not "most of a rail", it is a page silently reverting
+      // while `off` stops applying to it. If either page would go out empty, nothing goes out.
+      if(!l||!((l.food||[]).length)||!((l.bar||[]).length))return {};
       return {buttons:{v:1, at:l.at,
         food:(l.food||[]).slice(), bar:(l.bar||[]).slice(), off:(l.off||[]).slice()}};
     })(),
@@ -9260,6 +9264,9 @@ const posBtnSeed=()=>({
 const posBtnDraft=()=>(posBtnStore&&posBtnStore.draft)||posBtnSeed();
 const posBtnLive=()=>(posBtnStore&&posBtnStore.live)||null;
 const posBtnCount=(d)=>((d&&d.food)||[]).length+((d&&d.bar)||[]).length;
+// The count that decides whether a rail may travel: the EMPTIER page, because a page with
+// none is a page that reverts to built-in and stops honouring `off`.
+const posBtnMinPage=(d)=>Math.min(((d&&d.food)||[]).length,((d&&d.bar)||[]).length);
 // What "Not sent yet" is measured against. Compared on the fields that TRAVEL only, so
 // `at` and anything local can never make a rail look unsent when it is not.
 const posBtnTravel=(x)=>x?JSON.stringify({
@@ -15457,6 +15464,16 @@ const posBtnOffList=()=>((posBtnDraft().off)||[]).slice();
 // Where a button goes when it is put back: the rail the register itself has it on, so a
 // restore cannot quietly move a bar category onto the food page.
 const posBtnHomeRail=(cat)=>(((posButtons&&posButtons.bar)||[]).some(e=>posBtnCat(e)===cat))?'bar':'food';
+// ⚠️ EVERY rail the register has this cat on, not the first one that matches. A cat can be
+// on both (N/A BEVS is), and answering with one of them loses the other on a restore.
+// Falls back to posBtnHomeRail's single answer when the export does not mention it at all,
+// so a cat the export has never heard of still lands somewhere rather than nowhere.
+const posBtnHomeRails=(cat)=>{
+  const on=[];
+  if(((posButtons&&posButtons.food)||[]).some(e=>posBtnCat(e)===cat))on.push('food');
+  if(((posButtons&&posButtons.bar)||[]).some(e=>posBtnCat(e)===cat))on.push('bar');
+  return on.length?on:[posBtnHomeRail(cat)];
+};
 const posBtnSwatches=()=>{
   const seen=[],push=(c)=>{if(c&&!seen.includes(c))seen.push(c)};
   for(const v of Object.values((posButtons&&posButtons.colors)||{}))push(v);
@@ -15546,9 +15563,19 @@ function posBtnOn(encCat){
   const cat=decodeURIComponent(encCat);
   posBtnEdit((d)=>{
     if(!d.off.includes(cat))return false;
+    // ⛔ ONE × THEN ONE + USED TO DELETE A BUTTON FOR GOOD. 'N/A BEVS' is on BOTH rails
+    // in the register's own export (pos-buttons.json food[0] and bar[0], because it is in
+    // RAIL_ORDER's food half AND in BAR_CATS). posBtnOff strips it from both and records ONE
+    // name in `off`; restoring it asked posBtnHomeRail, which answers 'bar' for anything in
+    // posButtons.bar — so the FOOD rail lost it permanently, and the ×/+ pair is the only
+    // control there is. A restore now puts it back on every rail the register has it on.
+    // The wire shape of `off` is unchanged (a list of names) because that is POS-UI's contract.
     d.off=d.off.filter(c=>c!==cat);
-    const rail=posBtnHomeRail(cat)==='bar'?d.bar:d.food;
-    if(!rail.some(e=>e.cat===cat))rail.push({cat,color:((posButtons&&posButtons.colors)||{})[cat]||''});
+    const colour=((posButtons&&posButtons.colors)||{})[cat]||'';
+    for(const which of posBtnHomeRails(cat)){
+      const rail=which==='bar'?d.bar:d.food;
+      if(!rail.some(e=>e.cat===cat))rail.push({cat,color:colour});
+    }
   });
 }
 
@@ -15561,7 +15588,7 @@ async function posBtnSend(revert){
     posRegButtonsRefresh();return;
   }
   const d=posBtnDraft();
-  if(!revert&&!posBtnCount(d)){
+  if(!revert&&!posBtnMinPage(d)){
     posBtnS.err='Every button is off the screen. Send that and a register has an empty rail and no way back — use “Back to the built-in buttons” instead.';
     posRegButtonsRefresh();return;
   }
