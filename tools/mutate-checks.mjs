@@ -510,6 +510,22 @@ const M=[
   ['SCR B5 \u00b7 BENIGN \u2014 the overlap test is written the other way round','check-screens.mjs',
     csub("const overlaps = (a, b) => a[0] < b[0] + b[2] && b[0] < a[0] + a[2] && a[1] < b[1] + b[3] && b[1] < a[1] + a[3];",
          "const overlaps = (a, b) => !(a[0] + a[2] <= b[0] || b[0] + b[2] <= a[0] || a[1] + a[3] <= b[1] || b[1] + b[3] <= a[1]);"),false,'screens-core.js'],
+
+  // ── A PAGE THAT NO LONGER PARSES MUST FAIL BY NAME, NOT THROW ────────────────────────
+  // These two are not about the page's behaviour; they are about the CHECK. Half of
+  // check-regbuttons is lifted out of index.html with `new Function`, and an unbalanced
+  // template used to throw out of the compile and kill the file — every assertion after it
+  // silently skipped, while the mutant still came back RED and so still read as a pass.
+  // It was proved by the crash, not by the assertion meant to catch it. Both of these must
+  // go red on a NAMED assertion ('… evaluates', 'the posBtnSend body … evaluates') with the
+  // rest of the file still running, which is the only thing that keeps the guards honest:
+  // without these, nothing here exercises them. Verified 11/15/26 — no stack trace, 35 and
+  // 87 assertions still ran. ⚠️ If one of these ever goes GREEN, a guard has swallowed a
+  // parse error instead of reporting it, which is worse than the crash was.
+  ['PARSE 1 · the rail predicate no longer parses — H, H2, HX and mkSend all compile it','check-regbuttons.mjs',
+    sub('const POS_BTN_REFUSE=[','const POS_BTN_REFUSE=[('),true],
+  ['PARSE 2 · posBtnSend no longer parses — only mkSend compiles it','check-regbuttons.mjs',
+    sub('async function posBtnSend(revert){','async function posBtnSend(revert){ if(true{ '),true],
 ];
 
 let wrong=0;

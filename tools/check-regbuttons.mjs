@@ -335,12 +335,29 @@ if (H && H.posBtnWhyNot) {
 // real file"). The fixture above proves the RULE; this proves the rule says the right thing
 // about the buttons that are actually on Vinny's registers. A fixture can drift into being a
 // subset of the real shape and go quietly green — that just happened with the FOOD openers.
-const HX = (exp) => new Function('posButtons', 'report', `
-  const posBtnCat=(e)=>typeof e==='string'?e:(e&&e.cat)||'';
-  const posBtnOpeners=()=>(posButtons&&posButtons.openers)||[];
-  const posBtnLabelOf=(e)=>(e&&e.label)||(e&&e.cat)||'';
-  ${PRED}
-  return {posBtnWhyNot,posBtnRailCats};`)(exp, null);
+// Compiled from `PRED`, cut from the page, so the same crash class as S/H/H2 above: an
+// uncaught throw here stops the file and skips every assertion below it. Report it by name
+// and hand back a BLIND predicate — one that knows no rail categories. The count guard at
+// the top of the block below ('both rails and openers to judge') is then what goes red,
+// which is exactly what it is there for: with no rails the two `refused.length === 0`
+// assertions would be vacuously true, and that guard is what refuses to let them read as
+// coverage.
+const HX = (exp) => {
+  try {
+    return new Function('posButtons', 'report', `
+      const posBtnCat=(e)=>typeof e==='string'?e:(e&&e.cat)||'';
+      const posBtnOpeners=()=>(posButtons&&posButtons.openers)||[];
+      const posBtnLabelOf=(e)=>(e&&e.label)||(e&&e.cat)||'';
+      ${PRED}
+      return {posBtnWhyNot,posBtnRailCats};`)(exp, null);
+  } catch (e) {
+    ok('the predicate against the real export evaluates: ' + e.message, false);
+    // '' is "admitted", and answering it is what the assertions below already handle:
+    // `refused` stays empty (the count guard catches that), and every `/reason/.test('')`
+    // is false, so each one FAILS rather than throwing on an undefined reason.
+    return { posBtnWhyNot: () => '', posBtnRailCats: () => null };
+  }
+};
 
 if (PRED) {
   let REAL = null;
@@ -366,7 +383,10 @@ if (PRED) {
        openers.every(c => /already has its own button/.test(g.posBtnWhyNot(c))));
     ok('…and each one names its own screen and row, so the message is about THAT button',
        openers.every(c => {
-         const e = (REAL.openers || []).find(o => o.cat === c), w = g.posBtnWhyNot(c);
+         // `(w || '')`: a predicate that answers with no reason at all used to throw here.
+         // `e` is deliberately NOT guarded — it is found in the same list `openers` was
+         // built from, and an `e || {}` would make all three conjuncts vacuously true.
+         const e = (REAL.openers || []).find(o => o.cat === c), w = g.posBtnWhyNot(c) || '';
          return (!e.where || w.includes(e.where))
            && (e.page !== 'bar' || /LIQUOR/.test(w)) && (e.page !== 'food' || /FOOD/.test(w));
        }));
@@ -379,9 +399,18 @@ if (PRED) {
 
 // ── the send, which is the only thing here that reaches a register
 const SEND = cut('async function posBtnSend(revert){', "// \u26a0\ufe0f `ats.menu`, NOT `menu.at`", 'posBtnSend');
+// ⚠️ Built from `PRED` and `SEND`, both cut from the page. An uncaught throw here used to
+// kill the file — but a stub is NOT enough on its own: it leaves `calls` untouched, and
+// `calls.wrote === null && calls.published === 0` is exactly what most of the block below
+// asserts, so every "…is REFUSED" assertion would pass for the wrong reason. That is the
+// crash-into-vacuous-pass trap, so the parse is asserted FIRST and by name, before
+// anything reads `calls`. `SENDERR` is set here and read there.
+let SENDERR = null;
 const mkSend = (enabled, draft, exp) => {
   const calls = { wrote: null, published: 0, poked: 0, receipt: 0 };
-  const fn = new Function('ENABLED', 'DRAFT', 'calls', 'report', 'posButtons', `
+  let fn;
+  try {
+    fn = new Function('ENABLED', 'DRAFT', 'calls', 'report', 'posButtons', `
     const POS_BTN_SEND_ENABLED=ENABLED;
     const posBtnS={busy:false,note:'',err:'',sent:'',editing:''};
     const posRegButtonsRefresh=()=>{};
@@ -399,6 +428,10 @@ const mkSend = (enabled, draft, exp) => {
     const posBtnReceipt=async(at)=>{ calls.receipt++; return 'On the registers.'; };
     ${SEND}
     return async(revert)=>{ await posBtnSend(revert); return posBtnS; };`)(enabled, draft, calls, null, exp === undefined ? EXPORT : exp);
+  } catch (e) {
+    SENDERR = String(e.message);
+    fn = async () => ({ busy: false, note: '', err: '', sent: '', editing: '' });
+  }
   return { fn, calls };
 };
 const FULL = { food: [{ cat: 'Pasta' }], bar: [{ cat: 'VODKA' }], off: [] };
@@ -406,6 +439,10 @@ const EMPTY = { food: [], bar: [], off: ['Pasta'] };
 const HALF  = { food: [{ cat: 'Pasta' }], bar: [], off: ['VODKA'] };
 if (SEND) {
   const off = mkSend(false, FULL);
+  // ⛔ FIRST, before a single assertion reads `calls`. See the note on mkSend: the stub
+  // that keeps a bad parse from killing the file also satisfies every "nothing was
+  // written" assertion in this block, so a body that does not parse has to be red here.
+  ok('the posBtnSend body cut from the page evaluates', SENDERR === null);
   const s1 = await off.fn(false);
   ok('\u26d4 with the gate OFF a send writes NOTHING and publishes nothing',
      off.calls.wrote === null && off.calls.published === 0 && off.calls.poked === 0);
