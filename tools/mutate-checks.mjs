@@ -3,7 +3,7 @@
 //     node tools/mutate-checks.mjs
 //
 // A check that stays green while the invariant it names is destroyed is worse than no
-// check, because it is read as proof. Everything in tools/ is a regex over index.html,
+// check, because it is read as proof. Many checks in tools/ are a regex over index.html,
 // and a regex is only ever evidence about a SPELLING. So this breaks the page on purpose,
 // twenty-four ways, and demands the right colour each time: the invariant-breaking edits
 // must turn a check RED, and the harmless renames and reformats must leave it GREEN.
@@ -49,6 +49,11 @@ const run=(which,html)=>{
 };
 
 const sub=(a,b)=>{ if(!SRC.includes(a)) throw new Error('anchor missing: '+a.slice(0,60)); return SRC.replace(a,b) };
+// Two edits in one mutant, for the cases where one plausible change touches two places.
+const subs=(...pairs)=>pairs.reduce((h,[a,b])=>{
+  if(!h.includes(a)) throw new Error('anchor missing: '+a.slice(0,60));
+  return h.replace(a,b);
+},SRC);
 const GOOD_TAKE='const take=(got,cur,empty)=>(!got||kvFailed(got))?cur:(got.v==null?empty:got.v);';
 const ROUTE_DROP="  let dropped=false;\n  for(const i of gone){\n    const k=posNewItemKey(i);\n    if(Object.prototype.hasOwnProperty.call(posRouting,k)){delete posRouting[k];dropped=true;}\n  }\n  if(dropped)kvPush('ct_pos_routing',posRouting,Date.now());\n";
 
@@ -262,6 +267,43 @@ const M=[
   // store being folded in raw later.
   ['RAIL 6 \u00b7 fold the rail store in raw, bypassing the failed-read guard','check-kvtake.mjs',
     sub('    buttons:take(bt,posBtnStore,null),','    buttons:(bt&&bt.v)||null,'),true],
+
+  // ── the Register buttons PAGE. The two that matter most are the ▲▼ index pair and the
+  // rename, because `cat` is the key every price, route and pending special is filed under.
+  ['PAGE 1 \u00b7 \u25b2\u25bc swap the wrong neighbour (dir inverted)','check-regbuttons.mjs',
+    sub('  i=Number(i);const j=i+Number(dir);','  i=Number(i);const j=i-Number(dir);'),true],
+  ['PAGE 2 \u00b7 the swap drops the displaced one instead of exchanging','check-regbuttons.mjs',
+    sub('    const t=a[i];a[i]=a[j];a[j]=t;','    a[i]=a[j];'),true],
+  ['PAGE 3 \u00b7 moving off the end wraps round instead of refusing','check-regbuttons.mjs',
+    sub('    if(i<0||j<0||i>=a.length||j>=a.length)return false;','    if(i<0||i>=a.length)return false;'),true],
+  ['PAGE 4 \u00b7 \u26d4 a rename rewrites the KEY, orphaning every price and route filed under it','check-regbuttons.mjs',
+    sub('      if(label&&label!==cat)e.label=label;else delete e.label;','      if(label&&label!==cat)e.cat=label;else delete e.label;'),true],
+  ['PAGE 5 \u00b7 a rename is no longer capped, so one long name can break the rail','check-regbuttons.mjs',
+    sub(".trim().slice(0,24);",".trim();"),true],
+  ['PAGE 6 \u00b7 a blank box writes a blank label instead of clearing it','check-regbuttons.mjs',
+    sub('      if(label&&label!==cat)e.label=label;else delete e.label;','      e.label=label;'),true],
+  ['PAGE 7 \u00b7 \u26d4 a draft edit drops `live`, so editing silently reverts the registers','check-regbuttons.mjs',
+    sub('  return {v:1,draft:d,live:(base&&base.live)||posBtnLive()||null};','  return {v:1,draft:d,live:null};'),true],
+  ['PAGE 8 \u00b7 putting a button back always lands on the FOOD rail','check-regbuttons.mjs',
+    sub("    const rail=posBtnHomeRail(cat)==='bar'?d.bar:d.food;",'    const rail=d.food;'),true],
+  ['PAGE 9 \u00b7 \u26d4 the send stops checking the gate, so a draft send becomes delayed-action','check-regbuttons.mjs',
+    sub('  if(!POS_BTN_SEND_ENABLED){','  if(false){'),true],
+  ['PAGE 10 \u00b7 \u26a0\ufe0f an all-off rail may be sent, leaving a register with an empty screen','check-regbuttons.mjs',
+    sub('  if(!revert&&!posBtnCount(d)){','  if(false){'),true],
+  ['PAGE 11 \u00b7 the gate is flipped on while the registers cannot read a rail','check-regbuttons.mjs',
+    sub('const POS_BTN_SEND_ENABLED=false;','const POS_BTN_SEND_ENABLED=true;'),true],
+  ['PAGE 12 \u00b7 a draft save goes through kvPush, which publishes on every keystroke','check-regbuttons.mjs',
+    sub("k!=='ct_pos_live' && k!=='ct_pos_buttons'","k!=='ct_pos_live'"),true],
+  ['PAGE 13 \u00b7 the receipt trusts the mini\u2019s combined `at` again','check-regbuttons.mjs',
+    sub('    const got=j&&j.menu&&j.menu.buttons;','    const got=j&&j.menu;'),true],
+  ['PAGE 14 \u00b7 BENIGN \u2014 the refusal messages are reworded','check-regbuttons.mjs',
+    subs(['Every button is off the screen.','Nothing is on the screen.'],
+         ['The registers cannot take a button list yet, so this is switched off.',
+          'The registers are not ready for a button list, so sending is off for now.']),false],
+  ['PAGE 15 \u00b7 BENIGN \u2014 the swap is written with destructuring','check-regbuttons.mjs',
+    sub('    const t=a[i];a[i]=a[j];a[j]=t;','    [a[i],a[j]]=[a[j],a[i]];'),false],
+  ['PAGE 16 \u00b7 BENIGN \u2014 the move guard is reordered','check-regbuttons.mjs',
+    sub('    if(i<0||j<0||i>=a.length||j>=a.length)return false;','    if(j>=a.length||i>=a.length||j<0||i<0)return false;'),false],
 ];
 
 let wrong=0;

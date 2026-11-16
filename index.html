@@ -2418,7 +2418,16 @@ function kvPush(k,v,at){
   // lines below this, so a kvPush during script evaluation would hit the
   // temporal dead zone — and a throw here would lose the save itself, which is
   // far worse than missing one write-through.
-  try{ if(/^ct_pos_/.test(k) && k!=='ct_pos_live') posLiveSoon(); }catch(e){}
+  // ct_pos_buttons is the other exception, and for a different reason: the register's
+  // category RAIL is published only by an explicit "Send to the registers". Every other
+  // store here is an edit that should reach the floor on its own; a rail is a screen
+  // rearrangement, so Vinny decides when. Without this, each ▲▼ on a draft would
+  // republish the whole blob — the rail itself would not change (only `live` travels, and
+  // a draft edit does not touch it), but every iPad would re-apply the entire menu
+  // overlay on every click. The send publishes deliberately instead. Spelled literally,
+  // not via POS_BTN_STORE, because that const is declared thousands of lines below and a
+  // kvPush during script evaluation would hit its temporal dead zone.
+  try{ if(/^ct_pos_/.test(k) && k!=='ct_pos_live' && k!=='ct_pos_buttons') posLiveSoon(); }catch(e){}
   kvPending[k]={v,at};clearTimeout(kvPushTimers[k]);kvPushTimers[k]=setTimeout(()=>{const p=kvPending[k];delete kvPending[k];if(p)kvSend(k,p,false)},1200)}
 // Closing/backgrounding the app used to kill pending pushes (the 1.2s debounce) — edits made right
 // before putting the iPad down stayed device-only. Flush everything the moment we lose the foreground.
@@ -9258,7 +9267,17 @@ const posBtnTravel=(x)=>x?JSON.stringify({
   bar:(x.bar||[]).map(e=>({cat:e.cat,label:e.label||'',color:e.color||''})),
   off:(x.off||[]).slice().sort(),
 }):'';
-const posBtnUnsent=()=>posBtnTravel(posBtnDraft())!==posBtnTravel(posBtnLive());
+// ⚠️ "Not sent yet" must mean HE CHANGED SOMETHING, not merely that `live` is empty.
+// The draft is SEEDED from the register's own export, so on first open it is identical to
+// the rail the registers already have — and a bare draft-vs-live comparison called that
+// unsent, inviting a Send that would write a live list saying exactly what the built-in
+// one already says. With nothing edited there is nothing to send: against a null `live`
+// the draft is compared to the SEED.
+const posBtnUnsent=()=>{
+  const d=posBtnTravel(posBtnDraft());
+  const l=posBtnLive();
+  return l?d!==posBtnTravel(l):d!==posBtnTravel(posBtnSeed());
+};
 
 // ─── WHICH REGISTER BUTTON OPENS THIS CATEGORY ───────────────────────────────
 //
@@ -15423,7 +15442,252 @@ function posTaxHTML(){
   </div>`;
 }
 
-const POS_SECTIONS=[['items','Menu items'],['discounts','Discounts'],['printers','Printers'],['reports','Reports'],['grazie','CRM'],['staff','Staff'],['jobrates','Job rates'],['tax','Tax'],['calcs','Calculations'],['stations','Registers']];
+// ─── THE REGISTER BUTTONS PAGE ───────────────────────────────────────────────
+//
+// Two columns, the way the rail reads on the iPad. Reorder, rename the LABEL, recolour,
+// take a button off the screen, put it back. The key is never touched: it is the string
+// every item is already filed under ('m:<cat>:<name>', added[].cat, itemOrder[cat],
+// routing), so renaming the key would orphan every price and route filed against it.
+// That is why the label is a separate field and the key is shown underneath, greyed.
+let posBtnS={busy:false,note:'',err:'',sent:'',editing:''};
+// ▲▼ rather than drag: this is used on an iPad and a mis-drop that silently reorders a
+// live rail is worse than two taps.
+const posBtnRail=(which)=>{const d=posBtnDraft();return ((which==='bar'?d.bar:d.food)||[]).slice()};
+const posBtnOffList=()=>((posBtnDraft().off)||[]).slice();
+// Where a button goes when it is put back: the rail the register itself has it on, so a
+// restore cannot quietly move a bar category onto the food page.
+const posBtnHomeRail=(cat)=>(((posButtons&&posButtons.bar)||[]).some(e=>posBtnCat(e)===cat))?'bar':'food';
+const posBtnSwatches=()=>{
+  const seen=[],push=(c)=>{if(c&&!seen.includes(c))seen.push(c)};
+  for(const v of Object.values((posButtons&&posButtons.colors)||{}))push(v);
+  push((posButtons&&posButtons.defaultColor)||'');
+  for(const e of [...posBtnRail('food'),...posBtnRail('bar')])push(e&&e.color);
+  return seen;
+};
+const posBtnLabelOf=(e)=>(e&&e.label)||(e&&e.cat)||'';
+
+// ⛔ COMPARE-AND-SET. Vinny and Dad both have this open, and this store is whole-blob
+// like the other 24 — so a plain write is last-write-wins over somebody else's whole
+// rail. Every change reads the store first and refuses if it moved since this page
+// loaded. Writes with kvSend, NOT kvPush: kvPush's hook publishes, and a draft must not.
+async function posBtnWrite(make){
+  if(posBtnS.busy)return false;
+  posBtnS.busy=true;posBtnS.note='';posBtnS.err='';posRegButtonsRefresh();
+  try{
+    const got=await kvGet(POS_BTN_STORE);
+    if(kvFailed(got)){
+      posBtnS.err='Could not reach the store, so nothing was saved. Nothing has changed on the registers either.';
+      return false;
+    }
+    const remoteAt=Number(got&&got.at)||0;
+    if(remoteAt&&posBtnAt&&remoteAt>posBtnAt){
+      posBtnS.err='These buttons were changed on another device since this page loaded. Reload before editing — saving now would overwrite that change.';
+      return false;
+    }
+    const next=make((got&&got.v)||posBtnStore||null);
+    if(!next)return false;
+    const at=Math.max(Date.now(),remoteAt+1);
+    kvSend(POS_BTN_STORE,{v:next,at},false);
+    posBtnStore=next;posBtnAt=at;
+    return true;
+  }catch(e){
+    posBtnS.err='Could not save: '+((e&&e.message)||String(e));
+    return false;
+  }finally{posBtnS.busy=false;posRegButtonsRefresh();}
+}
+// Every draft edit goes through here: it keeps `live` exactly as it is, so editing can
+// never change what the registers have.
+const posBtnEdit=(fn)=>posBtnWrite((base)=>{
+  const d=JSON.parse(JSON.stringify((base&&base.draft)||posBtnDraft()));
+  d.food=d.food||[];d.bar=d.bar||[];d.off=d.off||[];
+  if(fn(d)===false)return null;
+  return {v:1,draft:d,live:(base&&base.live)||posBtnLive()||null};
+});
+
+function posBtnMove(which,i,dir){
+  i=Number(i);const j=i+Number(dir);
+  posBtnEdit((d)=>{
+    const a=which==='bar'?d.bar:d.food;
+    if(i<0||j<0||i>=a.length||j>=a.length)return false;
+    const t=a[i];a[i]=a[j];a[j]=t;
+  });
+}
+function posBtnRename(encCat,v){
+  const cat=decodeURIComponent(encCat),label=String(v||'').trim().slice(0,24);
+  posBtnEdit((d)=>{
+    let hit=false;
+    for(const a of [d.food,d.bar])for(const e of a)if(e.cat===cat){
+      // An empty box means "back to the category's own name", not a blank button.
+      if(label&&label!==cat)e.label=label;else delete e.label;
+      hit=true;
+    }
+    if(!hit)return false;
+  });
+}
+function posBtnColor(encCat,color){
+  const cat=decodeURIComponent(encCat),c=String(color||'');
+  if(!/^#[0-9A-Fa-f]{6}$/.test(c))return;
+  posBtnEdit((d)=>{
+    let hit=false;
+    for(const a of [d.food,d.bar])for(const e of a)if(e.cat===cat){e.color=c;hit=true}
+    if(!hit)return false;
+  });
+}
+function posBtnOff(encCat){
+  const cat=decodeURIComponent(encCat);
+  posBtnEdit((d)=>{
+    const before=d.food.length+d.bar.length;
+    d.food=d.food.filter(e=>e.cat!==cat);d.bar=d.bar.filter(e=>e.cat!==cat);
+    if(d.food.length+d.bar.length===before)return false;
+    if(!d.off.includes(cat))d.off.push(cat);
+  });
+}
+function posBtnOn(encCat){
+  const cat=decodeURIComponent(encCat);
+  posBtnEdit((d)=>{
+    if(!d.off.includes(cat))return false;
+    d.off=d.off.filter(c=>c!==cat);
+    const rail=posBtnHomeRail(cat)==='bar'?d.bar:d.food;
+    if(!rail.some(e=>e.cat===cat))rail.push({cat,color:((posButtons&&posButtons.colors)||{})[cat]||''});
+  });
+}
+
+// ⛔ THE ONLY THING THAT REACHES A REGISTER. Mints `at` at send time, writes it as
+// `live`, publishes, then reads the mini back and says "on the registers" only when the
+// rail it is serving is the one just sent.
+async function posBtnSend(revert){
+  if(!POS_BTN_SEND_ENABLED){
+    posBtnS.err='The registers cannot take a button list yet, so this is switched off. It turns on once the iPad software that reads one is live.';
+    posRegButtonsRefresh();return;
+  }
+  const d=posBtnDraft();
+  if(!revert&&!posBtnCount(d)){
+    posBtnS.err='Every button is off the screen. Send that and a register has an empty rail and no way back — use “Back to the built-in buttons” instead.';
+    posRegButtonsRefresh();return;
+  }
+  posBtnS.sent='';
+  const at=Date.now();
+  const ok=await posBtnWrite((base)=>({
+    v:1,
+    draft:(base&&base.draft)||d,
+    live:revert?null:{v:1,at,food:(d.food||[]).slice(),bar:(d.bar||[]).slice(),off:(d.off||[]).slice()},
+  }));
+  if(!ok)return;
+  posBtnS.busy=true;posBtnS.sent='Sending…';posRegButtonsRefresh();
+  try{
+    await posPublishSend(posBuildLive());
+    miniPoke();
+    posBtnS.sent=await posBtnReceipt(revert?null:at);
+  }catch(e){
+    posBtnS.err='Saved here, but the publish failed: '+((e&&e.message)||String(e))
+      +'. The registers still have the previous buttons.';
+  }finally{posBtnS.busy=false;posRegButtonsRefresh();}
+}
+// ⚠️ `ats.menu`, NOT `menu.at` — the mini overwrites menu.at with its own COMBINED
+// version (menu + privs + floor), so comparing a published `at` to it is meaningless.
+// The nested rail passes through untouched, so `menu.buttons.at` is the honest
+// "this exact rail is on the registers". Verified in angelis-pos-server a51002b.
+async function posBtnReceipt(at){
+  try{
+    const base=KV_MINI.replace(/\/api\/kv\/?$/,'');
+    const ac=(typeof AbortController==='function')?new AbortController():null;
+    if(ac)setTimeout(()=>{try{ac.abort()}catch(e){}},6000);
+    const r=await fetch(base+'/api/menu?since=0',{...(ac?{signal:ac.signal}:{})});
+    if(!r.ok)return 'Sent. Could not read the mini back (it said '+r.status+'), so I cannot confirm the registers have it yet.';
+    const j=await r.json();
+    const got=j&&j.menu&&j.menu.buttons;
+    if(at==null)return got?'Sent. The mini is still serving a button list — it should clear within a minute.'
+                          :'On the registers: they are back to their built-in buttons.';
+    if(got&&Number(got.at)===Number(at))return 'On the registers.';
+    return 'Sent, and the mini has it, but it is still serving an older button list. Give it a minute.';
+  }catch(e){
+    return 'Sent. I could not reach the mini to confirm — off the tailnet reads as unknown, not as failed.';
+  }
+}
+
+function posRegButtonsRefresh(){
+  const el=document.getElementById('pos-regbtn');
+  if(el)el.outerHTML=posRegButtonsHTML();else posRedraw();
+}
+
+function posRegButtonsHTML(){
+  const d=posBtnDraft(),off=posBtnOffList(),unsent=posBtnUnsent(),live=posBtnLive();
+  const sw=posBtnSwatches();
+  const row=(e,which,i,len)=>{
+    const enc=posEnc(e.cat),lab=posBtnLabelOf(e),renamed=!!e.label&&e.label!==e.cat;
+    return `<div style="display:flex;align-items:center;gap:8px;padding:7px 8px;border:1px solid var(--border);border-radius:9px;margin-bottom:6px;background:var(--bg)">
+      <span style="width:16px;height:30px;border-radius:5px;flex:0 0 16px;background:${esc(e.color||(posButtons&&posButtons.defaultColor)||'#7C86A8')}"></span>
+      <span style="flex:1;min-width:0">
+        <input value="${esc(lab)}" maxlength="24" onchange="posBtnRename('${enc}',this.value)"
+               style="${posInput};width:100%;padding:5px 7px;font-size:13px;font-weight:700">
+        <span style="display:block;font-size:11px;color:var(--text-muted);margin-top:2px">${
+          renamed?'rings as <b>'+esc(e.cat)+'</b>':'&nbsp;'}</span>
+      </span>
+      <select onchange="posBtnColor('${enc}',this.value)" style="${posInput};padding:4px 6px;font-size:11px;width:92px">
+        <option value="">colour…</option>
+        ${sw.map(c=>`<option value="${esc(c)}" ${e.color===c?'selected':''}>${esc(c)}</option>`).join('')}
+      </select>
+      <button onclick="posBtnMove('${which}',${i},-1)" ${i===0?'disabled':''} title="up"
+              style="${posBtn('#3f3f46')};padding:5px 9px;font-size:12px;opacity:${i===0?'.35':'1'}">▲</button>
+      <button onclick="posBtnMove('${which}',${i},1)" ${i===len-1?'disabled':''} title="down"
+              style="${posBtn('#3f3f46')};padding:5px 9px;font-size:12px;opacity:${i===len-1?'.35':'1'}">▼</button>
+      <button onclick="posBtnOff('${enc}')" title="take off the screen"
+              style="${posBtn('#7f1d1d')};padding:5px 9px;font-size:12px">×</button>
+    </div>`;
+  };
+  const col=(title,which)=>{
+    const a=posBtnRail(which);
+    return `<div style="flex:1;min-width:290px">
+      <div style="font-weight:800;font-size:13px;letter-spacing:.04em;margin-bottom:8px;color:var(--text-dim)">${title} — ${a.length} button${a.length===1?'':'s'}</div>
+      ${a.length?a.map((e,i)=>row(e,which,i,a.length)).join(''):`<div style="padding:12px 0;color:var(--text-muted);font-size:12px">Nothing on this page.</div>`}
+    </div>`;
+  };
+  const gate=!POS_BTN_SEND_ENABLED;
+  return `<div id="pos-regbtn">
+  <div style="${posCardCss};margin-bottom:14px">
+    <div style="font-weight:800;font-size:15px;margin-bottom:6px">Register buttons</div>
+    <div style="color:var(--text-dim);font-size:12px;line-height:1.55">
+      The category buttons down the side of the register, in the order they appear. Rename
+      changes the <b>label only</b> — a button still rings the category it always did, so
+      prices and printer routing stay put. Nothing here reaches a register until you press
+      <b>Send to the registers</b>.
+    </div>
+  </div>
+  ${gate?`<div style="${posCardCss};margin-bottom:14px;border-color:#b45309">
+    <div style="font-weight:800;font-size:13px;color:#fbbf24;margin-bottom:4px">Not connected to the registers yet</div>
+    <div style="color:var(--text-dim);font-size:12px;line-height:1.5">The iPad software that reads a button list is not live, so sending is switched off. Arrange them here as much as you like — it is saved, and nothing can reach the floor by accident in the meantime.</div>
+  </div>`:''}
+  <div style="${posCardCss};margin-bottom:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <span style="font-size:13px;font-weight:700">${
+      live?(unsent?'Not sent yet — the registers still have the last list you sent.'
+                 :'Sent. The registers have this list.')
+         :(unsent?'Not sent yet — the registers are using their own built-in buttons.'
+                 :'The registers are using their own built-in buttons.')}</span>
+    <span style="flex:1"></span>
+    <button onclick="posBtnSend(false)" ${(gate||posBtnS.busy||!unsent)?'disabled':''}
+            style="${posBtn(gate||posBtnS.busy||!unsent?'#3f3f46':'#15803d')};padding:9px 14px;font-size:13px">
+      ${posBtnS.busy?'Working…':'Send to the registers'}</button>
+    <button onclick="posBtnSend(true)" ${(gate||posBtnS.busy||!live)?'disabled':''}
+            style="${posBtn('#3f3f46')};padding:9px 14px;font-size:13px">Back to the built-in buttons</button>
+  </div>
+  ${posBtnS.err?`<div style="${posCardCss};margin-bottom:14px;border-color:#b91c1c;color:#fca5a5;font-size:13px;line-height:1.5">${esc(posBtnS.err)}</div>`:''}
+  ${posBtnS.sent?`<div style="${posCardCss};margin-bottom:14px;border-color:#15803d;font-size:13px">${esc(posBtnS.sent)}</div>`:''}
+  <div style="${posCardCss};display:flex;gap:22px;flex-wrap:wrap">
+    ${col('FOOD','food')}
+    ${col('LIQUOR','bar')}
+  </div>
+  <div style="${posCardCss};margin-top:14px">
+    <div style="font-weight:800;font-size:13px;margin-bottom:8px;color:var(--text-dim)">NOT ON A SCREEN${off.length?' — '+off.length:''}</div>
+    ${off.length?`<div style="display:flex;flex-wrap:wrap;gap:8px">${off.map(c=>
+      `<button onclick="posBtnOn('${posEnc(c)}')" style="${posBtn('#3f3f46')};padding:7px 11px;font-size:12px">${esc(c)} &nbsp;+</button>`).join('')}</div>
+      <div style="color:var(--text-muted);font-size:11px;margin-top:8px">A category with no button can still be rung from a check; it just has no tile. Items filed under it keep their prices and routing.</div>`
+      :`<div style="color:var(--text-muted);font-size:12px">Every category has a button.</div>`}
+  </div>
+  <div style="color:var(--text-muted);font-size:11px;margin-top:10px">Starting point read from the register's own button map${
+    posButtons&&posButtons.generated?' (exported '+esc(String(posButtons.generated).slice(0,10))+')':''}.</div>
+</div>`;
+}
+const POS_SECTIONS=[['items','Menu items'],['regbuttons','Register buttons'],['discounts','Discounts'],['printers','Printers'],['reports','Reports'],['grazie','CRM'],['staff','Staff'],['jobrates','Job rates'],['tax','Tax'],['calcs','Calculations'],['stations','Registers']];
 function posConnHTML(){
   return `<div style="${posCardCss};margin-bottom:14px">
     <div style="font-weight:800;font-size:15px;margin-bottom:6px">Connections</div>
@@ -15461,7 +15725,7 @@ function posHTML(){
       <span style="white-space:nowrap">${l}</span></button>`;
   }).join('');
   const who=(posS.me&&posS.health==='ok'&&posS.sec==='grazie')?`<span style="font-size:13px;color:var(--text-dim)">${esc(posS.me.username)}</span><button onclick="posLogout()" style="${posBtn('#3f3f46')};padding:7px 12px;font-size:13px">Sign out</button>`:'';
-  const body=posS.sec==='items'?posItemsHTML():posS.sec==='discounts'?posDiscountsHTML():posS.sec==='printers'?posPrintersHTML():posS.sec==='reports'?posReportsHTML():posS.sec==='staff'?posStaffHTML():posS.sec==='jobrates'?posJobRatesHTML():posS.sec==='tax'?posTaxHTML():posS.sec==='calcs'?calcHTML():posS.sec==='stations'?posStationsHTML():posGrazieHTML();
+  const body=posS.sec==='items'?posItemsHTML():posS.sec==='regbuttons'?posRegButtonsHTML():posS.sec==='discounts'?posDiscountsHTML():posS.sec==='printers'?posPrintersHTML():posS.sec==='reports'?posReportsHTML():posS.sec==='staff'?posStaffHTML():posS.sec==='jobrates'?posJobRatesHTML():posS.sec==='tax'?posTaxHTML():posS.sec==='calcs'?calcHTML():posS.sec==='stations'?posStationsHTML():posGrazieHTML();
   // #viewport is fixed and overflow:hidden, so every tab brings its own scroller —
   // without one, anything past the fold is simply clipped.
   const here=(POS_SECTIONS.find(([k])=>k===posS.sec)||[])[1]||'';
