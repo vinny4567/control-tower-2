@@ -187,6 +187,25 @@ const M=[
   ['SPEC 3 \u00b7 clear the WHOLE routing map instead of just its key','check-categories.mjs',
     sub('if(Object.prototype.hasOwnProperty.call(posRouting,k)){delete posRouting[k];dropped=true;}',
         '{posRouting={};dropped=true;}'),true],
+  // ── THE DROPDOWN THAT MUST NOT GUESS (11/15). posButtonFor is three-state:
+  // undefined = no export yet (say nothing), null = export present and nothing opens it
+  // (flag it), string = the button. Collapsing the first two flags EVERY category as
+  // unwired while pos-buttons.json is missing — which is its state right now.
+  ['BTN 1 \u00b7 collapse "unknown" into "none" \u2014 every category flagged as having no button','check-buttons.mjs',
+    sub('  if(!posButtons)return undefined;','  if(!posButtons)return null;'),true],
+  ['BTN 2 \u00b7 hand-type a rail here instead of reading the register\u2019s export','check-buttons.mjs',
+    sub("  if(!posButtons)return undefined;",
+        "  if(!posButtons)posButtons={food:['Appetizers','Pasta'],bar:[],extra:[]};"),true],
+  ['BTN 3 \u00b7 rail positions reported 0-based','check-buttons.mjs',
+    sub("    return i<0?null:what+' rail #'+(i+1);","    return i<0?null:what+' rail #'+i;"),true],
+  ['BTN 4 \u00b7 a wine section reports the button but loses which PAGE it opens','check-buttons.mjs',
+    sub("    return base+', '+(/GLASS$/.test(cat)?'glass':'bottle')+' page';","    return base;"),true],
+  ['BTN 5 \u00b7 Food Mods drifts back in with the sellable categories','check-buttons.mjs',
+    sub("    if(c==='Food Mods'){mods.push(opt(c,c),opt(POS_GROUPS_CAT,'Mod groups'));continue;}",
+        "    if(c==='Food Mods'){on.push(opt(c,c),opt(POS_GROUPS_CAT,'Mod groups'));continue;}"),true],
+  ['BTN 6 \u00b7 BENIGN \u2014 reword the two headings','check-buttons.mjs',
+    SRC.replace('Opens from a register button','Opened by a register button')
+       .replace('Modifiers (not register buttons)','Modifiers (never register buttons)'),false],
 ];
 
 let wrong=0;

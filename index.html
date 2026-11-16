@@ -6997,6 +6997,9 @@ async function posLoadCatalog(){
   }
   clearTimeout(timer);posS.catLoading=false;renderViewport();
 }
+// Fire-and-forget, on its own: the button map is an extra, and a missing or broken
+// pos-buttons.json must never take the catalogue down with it.
+posLoadButtons();
 function posRetryCatalog(){posS.cat=null;posS.catErr=null;posS.catLoading=false;posLoadCatalog()}
 // Mods created on this page are not in the snapshot, so they had no row and vanished
 // the moment they were made — you could add one and not see it anywhere. They join
@@ -9155,7 +9158,8 @@ function posItemsHTML(){
     </div>
     <div id="pos-items-body">${posItemsBodyHTML()}</div>
   </div>
-  <div style="color:var(--text-muted);font-size:12px;margin-top:10px">Snapshot generated ${esc(String(c.generated_at||'').slice(0,10))} from the register's own menu files. Re-run the exporter after a menu change.</div>`;
+  <div style="color:var(--text-muted);font-size:12px;margin-top:10px">Snapshot generated ${esc(String(c.generated_at||'').slice(0,10))} from the register's own menu files. Re-run the exporter after a menu change.${
+    posButtons?'':' <b>Register buttons not shown yet</b> — pos-buttons.json has not been exported from the register, so this page will not guess which button opens which category.'}</div>`;
 }
 
 // ---- Mod groups -------------------------------------------------------------
@@ -9177,18 +9181,81 @@ function posRowGaps(r){
 // Mod groups sits in the category picker directly under Food Mods, because that is
 // what it is — the groups those mods are organised into. It is not a real category
 // on any item, so it gets a sentinel value and its own body.
+// ─── WHICH REGISTER BUTTON OPENS THIS CATEGORY ───────────────────────────────
+//
+// Vinny: "i need you to connect these menu categories to the actual buttons on the
+// register." Step one is telling him the truth about the ones that already are.
+//
+// ⚠️ READ FROM THE REGISTER'S OWN EXPORT, NEVER TYPED HERE. The rail lives in
+// angelis-pos/pos/src/menu.js as FIVE separate structures with different conventions:
+// RAIL_ORDER (food AND bar in one array), BAR_CATS, BAR_TOP (cat:), BAR_FUNCS (cat:)
+// and FOOD_FUNCS — where GOLF and Sides are matched by LABEL and carry no cat at all.
+// A hand-typed copy here would be a second source of truth for a mapping that already
+// has five, and it would drift the first time a button moved. So this reads
+// pos-buttons.json, exported from menu.js by the register session.
+//
+// ⚠️ AND IT SAYS "I DON'T KNOW" RATHER THAN GUESSING. posButtonFor returns `undefined`
+// when the export is not on the page yet — distinct from `null`, which means the export
+// IS here and nothing opens that category. The whole point of this screen is to be
+// honest about the wiring; a confident wrong answer is worse than a blank, and the one
+// invented category in the design brief ('Baked') is the reminder.
+let posButtons=null;        // pos-buttons.json once it exists, else null
+async function posLoadButtons(){
+  try{
+    const r=await fetch('pos-buttons.json',{cache:'no-cache'});
+    if(!r.ok)return;                       // not exported yet — stay silent, stay honest
+    const b=await r.json();
+    if(b&&(Array.isArray(b.food)||Array.isArray(b.bar))){posButtons=b;posRedraw();}
+  }catch(e){}                              // absent or unparseable is a known state, not an error
+}
+// Accepts either spelling for a rail entry, so the exporter can emit plain names or
+// objects: ['Pasta', …] or [{cat:'Pasta', label:'PASTA'}, …]. `extra` (or `other`) holds
+// the buttons that are not on a rail — BEER, RED WINE, WHITE WINE, GOLF, Sides.
+const posBtnCat=(e)=>typeof e==='string'?e:(e&&e.cat)||'';
+function posButtonFor(cat){
+  if(!posButtons)return undefined;
+  const w=POS_WINE_SECTIONS[cat];
+  if(w){                                   // a Watch Tower wine SECTION, not a register category
+    const base=posButtonFor(w.cat);
+    if(base===undefined||base===null)return base;
+    return base+', '+(/GLASS$/.test(cat)?'glass':'bottle')+' page';
+  }
+  const onRail=(arr,what)=>{
+    if(!Array.isArray(arr))return null;
+    const i=arr.findIndex(e=>posBtnCat(e)===cat);
+    return i<0?null:what+' rail #'+(i+1);
+  };
+  const r=onRail(posButtons.food,'FOOD')||onRail(posButtons.bar,'LIQUOR');
+  if(r)return r;
+  const ex=(posButtons.extra||posButtons.other||[]).find(e=>posBtnCat(e)===cat);
+  if(ex)return (ex.label||cat)+' button'+(ex.where?' ('+ex.where+')':'');
+  return null;
+}
 const POS_GROUPS_CAT='__groups';
 const POS_CLASSES_CAT='__classes';
 function posCatOptions(cats){
-  const out=[];
   const opt=(v,label)=>`<option value="${esc(v)}" ${posS.catFilter===v?'selected':''}>${esc(label)}</option>`;
+  // Three groups, because they are three different KINDS of thing and the flat list said
+  // so nowhere: a category a server opens from a button, a category nothing opens, and a
+  // modifier that was never a button in the first place. Food Mods and Mod groups sat in
+  // the same list as Pasta, which is what made "connect these to the register" a fair
+  // question to ask of all of them.
+  const on=[],none=[],mods=[];
   for(const c of cats){
     if(POS_HIDDEN_CATS.has(c))continue;
-    out.push(opt(c,c));
-    if(c==='Food Mods')out.push(opt(POS_GROUPS_CAT,'Mod groups'));
+    if(c==='Food Mods'){mods.push(opt(c,c),opt(POS_GROUPS_CAT,'Mod groups'));continue;}
+    const b=posButtonFor(c);
+    if(b===undefined)on.push(opt(c,c));            // export not here — annotate nothing
+    else if(b===null)none.push(opt(c,c));
+    else on.push(opt(c,c+'  —  '+b));
   }
-  if(!cats.includes('Food Mods'))out.push(opt(POS_GROUPS_CAT,'Mod groups'));
-  return out.join('');
+  if(!cats.includes('Food Mods'))mods.push(opt(POS_GROUPS_CAT,'Mod groups'));
+  // Unlabelled when we cannot say which button opens what, so the dropdown reads exactly
+  // as it does today rather than claiming a grouping it has not earned.
+  let out=posButtons?`<optgroup label="Opens from a register button">${on.join('')}</optgroup>`:on.join('');
+  if(none.length)out+=`<optgroup label="\u26a0\ufe0f No register button opens these">${none.join('')}</optgroup>`;
+  if(mods.length)out+=`<optgroup label="Modifiers (not register buttons)">${mods.join('')}</optgroup>`;
+  return out;
 }
 
 function posPendingCount(){
