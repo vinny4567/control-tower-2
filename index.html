@@ -7996,13 +7996,26 @@ function posBuildLive(){
     // returns each register to its own built-in rail — a different thing entirely.
     ...(()=>{
       const l=posBtnStore&&posBtnStore.live;
+      if(!l)return {};
+      // ⛔ THE REFUSAL HAS TO SIT HERE, NOT ONLY AT THE SEND. This runs on EVERY publish —
+      // a price edit re-emits the stored `live` through posLiveSoon's debounce without
+      // posBtnSend being called at all. So a rail that was written by another device, by an
+      // older build, or before this predicate existed would keep going out to the iPads
+      // forever and the send-side check would never see it. Filtering (rather than refusing)
+      // because he is not here: a rail missing one unusable button still works, and POS-UI's
+      // reader appends a built-in category that is named nowhere. The SEND refuses outright
+      // instead — he is standing there, and can be told which button and why.
+      const keep=(arr)=>((arr||[]).filter(e=>{const w=posBtnWhyNot(e&&e.cat);return w===undefined||w==='';}));
+      const food=keep(l.food), bar=keep(l.bar);
       // ⛔ PER RAIL, NOT COMBINED. The register treats a page with ZERO buttons as unusable:
       // it draws that page's full built-in rail and ignores `off` for it. So an empty LIQUOR
       // rail behind a full FOOD one is not "most of a rail", it is a page silently reverting
       // while `off` stops applying to it. If either page would go out empty, nothing goes out.
-      if(!l||!((l.food||[]).length)||!((l.bar||[]).length))return {};
-      return {buttons:{v:1, at:l.at,
-        food:(l.food||[]).slice(), bar:(l.bar||[]).slice(), off:(l.off||[]).slice()}};
+      if(!food.length||!bar.length)return {};
+      // `off` is NOT filtered. It is a suppression instruction, so a name no reader knows is
+      // a no-op there — and the ×/+ pair is the only control that touches it, so refusing an
+      // off entry would leave the page permanently unsendable with nothing to clear it.
+      return {buttons:{v:1, at:l.at, food, bar, off:(l.off||[]).slice()}};
     })(),
   };
 }
@@ -9324,6 +9337,80 @@ const posBtnCat=(e)=>typeof e==='string'?e:(e&&e.cat)||'';
 // all four wine sections, falls through to null and gets flagged "no register button
 // opens these", which is exactly the false alarm the three states exist to prevent.
 const posBtnOpeners=()=>(posButtons&&(posButtons.openers||posButtons.extra||posButtons.other))||[];
+
+// ⛔ WHAT MAY BE A REGISTER BUTTON — asked of the register, never of a list typed here.
+//
+// POS-UI is hardening their reader to skip anything that is not a real rail category, and
+// asked this page to refuse the same names itself rather than lean on that backstop. Two
+// things shape how:
+//
+// 1. IT ADMITS BY ASKING THE EXPORT, NOT BY BLACKLISTING. The obvious source for "which
+//    cats are rail cats" is RAIL_ORDER, and RAIL_ORDER IS NOT THE RAIL — it is a SORT KEY
+//    (OrderScreen.js sorts MENU.filter(page) by its index, "anything unlisted falls to the
+//    end"), and it contains 'Wine' and 'BEER', which draw no rail button at all. FOOD_PAGE
+//    is worse: it contains "Baked", which is not a category anywhere in menu.js — an
+//    invented name from an old brief still sitting in a live array. A whitelist built from
+//    either admits phantoms. So the admit set is the cats the register's OWN exporter put
+//    in food, bar and openers, which is the only list that was produced by asking the
+//    screens what they draw.
+//
+// 2. TWO COMPARISONS, NOT ONE. Refusing needs case folding ('Wine' and a historical 'WINE'
+//    are the same mistake). Admitting must NOT fold, because the register matches a cat
+//    with === everywhere (menulive.js addedFor, OrderScreen's MENU.find) — so folding on
+//    the admit side would wave through 'PASTA' for 'Pasta' and publish a button that
+//    resolves to nothing. A string that folds onto a real cat but is not byte-equal is
+//    therefore neither admitted nor refused: it is a MISMATCH, and it gets named, because
+//    "the export says PASTA, the register says Pasta" is the whole of the problem and a
+//    silent drop hides it.
+//
+// Three-state on purpose: undefined means pos-buttons.json has not loaded, so nothing is
+// known and nothing is refused. Guessing while blind is how a page takes a real tab off
+// eight registers.
+const POS_BTN_REFUSE=[
+  'Wine',              // a real MENU category, deliberately on no rail; the source list the
+                       // four wine screens are built from, so a button would draw 116 duplicates
+  'Food Mods',         // the modifier vocabulary, reached from the FOOD MODS key, not a category
+  'DISCOUNTS',         // money off a check, reached from the DISC key
+  'Baked',             // in FOOD_PAGE and nowhere else — no such category exists
+  'all','—',           // this page's own filter sentinels
+  'RED WINE GLASS','RED WINE BOTTLE','WHITE WINE GLASS','WHITE WINE BOTTLE',
+];
+const posBtnFold=(c)=>String(c==null?'':c).trim().toUpperCase();
+const POS_BTN_REFUSE_FOLDED=POS_BTN_REFUSE.map(posBtnFold);
+// Every cat the register's own export says can carry a button: both rails and the openers.
+const posBtnExportCats=()=>{
+  if(!posButtons)return null;
+  const out=[];
+  for(const e of [...((posButtons.food)||[]),...((posButtons.bar)||[]),...posBtnOpeners()]){
+    const c=posBtnCat(e);
+    if(c&&!out.includes(c))out.push(c);
+  }
+  return out;
+};
+// '' = fine. undefined = the export is not loaded, so we do not know. Anything else is a
+// short reason, written to be read at 7pm on a Saturday.
+function posBtnWhyNot(cat){
+  const ex=posBtnExportCats();
+  if(!ex)return undefined;
+  if(typeof cat!=='string'||!cat.trim())return 'has no name';
+  if(/^__/.test(cat))return 'is one of this page\u2019s own views, not a category';
+  if(POS_BTN_REFUSE_FOLDED.includes(posBtnFold(cat)))return 'is not something a register can put on a rail';
+  if(ex.includes(cat))return '';
+  const near=ex.find(c=>posBtnFold(c)===posBtnFold(cat));
+  return near?('is spelled differently from the register\u2019s \u201c'+near+'\u201d \u2014 the registers match exactly')
+             :'is not a category the registers know';
+}
+// The entries of a rail that cannot travel, with enough to name them on screen: the label
+// he is looking at AND the key underneath it, because a message about a key he cannot see
+// costs him a hunt at the worst hour.
+const posBtnBadOnes=(d)=>{
+  const out=[];
+  for(const which of ['food','bar'])for(const e of ((d&&d[which])||[])){
+    const why=posBtnWhyNot(e&&e.cat);
+    if(why)out.push({which,cat:(e&&e.cat),label:posBtnLabelOf(e),why});
+  }
+  return out;
+};
 function posButtonFor(cat){
   if(!posButtons)return undefined;
   const w=POS_WINE_SECTIONS[cat];
@@ -15563,6 +15650,11 @@ function posBtnOn(encCat){
   const cat=decodeURIComponent(encCat);
   posBtnEdit((d)=>{
     if(!d.off.includes(cat))return false;
+    // A name sitting in `off` has not been through the predicate — `off` is deliberately
+    // never filtered — so putting one back is where it gets asked. Unknown (no export
+    // loaded) is allowed: refusing while blind is worse than letting him put a button back.
+    const why=posBtnWhyNot(cat);
+    if(why){posBtnS.err='\u201c'+cat+'\u201d '+why+', so it cannot go on a rail.';return false;}
     // ⛔ ONE × THEN ONE + USED TO DELETE A BUTTON FOR GOOD. 'N/A BEVS' is on BOTH rails
     // in the register's own export (pos-buttons.json food[0] and bar[0], because it is in
     // RAIL_ORDER's food half AND in BAR_CATS). posBtnOff strips it from both and records ONE
@@ -15588,6 +15680,15 @@ async function posBtnSend(revert){
     posRegButtonsRefresh();return;
   }
   const d=posBtnDraft();
+  // He is standing here, so this one is told rather than quietly cleaned. Named by the LABEL
+  // on the tile and the key underneath, because a message about a key he cannot see is a hunt.
+  const bad=revert?[]:posBtnBadOnes(d);
+  if(bad.length){
+    posBtnS.err='Not sent. '+bad.map(b=>'\u201c'+b.label+'\u201d ('+b.cat+') '+b.why).join('; ')
+      +'. Fix or remove '+(bad.length>1?'those':'that')+' first \u2014 the registers would ignore '
+      +(bad.length>1?'them':'it')+' anyway.';
+    posRegButtonsRefresh();return;
+  }
   if(!revert&&!posBtnMinPage(d)){
     posBtnS.err='Every button is off the screen. Send that and a register has an empty rail and no way back — use “Back to the built-in buttons” instead.';
     posRegButtonsRefresh();return;
@@ -15651,13 +15752,20 @@ function posRegButtonsHTML(){
   const sw=posBtnSwatches();
   const row=(e,which,i,len)=>{
     const enc=posEnc(e.cat),lab=posBtnLabelOf(e),renamed=!!e.label&&e.label!==e.cat;
-    return `<div style="display:flex;align-items:center;gap:8px;padding:7px 8px;border:1px solid var(--border);border-radius:9px;margin-bottom:6px;background:var(--bg)">
+    // ⚠️ A ROW THAT CANNOT TRAVEL IS MARKED, NEVER REMOVED. Filtering it out of the list was
+    // the obvious move and it is wrong twice: this page's whole job is to say what is really
+    // on the registers, and the "which button opens this category" lookup on the Menu items
+    // page reads the export unfiltered — so hiding it here would have the two screens in one
+    // tab quietly disagreeing, with no way to tell which one was lying.
+    const why=posBtnWhyNot(e&&e.cat);
+    return `<div style="display:flex;align-items:center;gap:8px;padding:7px 8px;border:1px solid ${why?'#b45309':'var(--border)'};border-radius:9px;margin-bottom:6px;background:var(--bg)">
       <span style="width:16px;height:30px;border-radius:5px;flex:0 0 16px;background:${esc(e.color||(posButtons&&posButtons.defaultColor)||'#7C86A8')}"></span>
       <span style="flex:1;min-width:0">
         <input value="${esc(lab)}" maxlength="24" onchange="posBtnRename('${enc}',this.value)"
                style="${posInput};width:100%;padding:5px 7px;font-size:13px;font-weight:700">
-        <span style="display:block;font-size:11px;color:var(--text-muted);margin-top:2px">${
-          renamed?'rings as <b>'+esc(e.cat)+'</b>':'&nbsp;'}</span>
+        <span style="display:block;font-size:11px;color:${why?'#b45309':'var(--text-muted)'};margin-top:2px">${
+          why?'<b>'+esc(e.cat)+'</b> '+esc(why)+' — it will not be sent'
+            :(renamed?'rings as <b>'+esc(e.cat)+'</b>':'&nbsp;')}</span>
       </span>
       <select onchange="posBtnColor('${enc}',this.value)" style="${posInput};padding:4px 6px;font-size:11px;width:92px">
         <option value="">colour…</option>
@@ -15671,6 +15779,16 @@ function posRegButtonsHTML(){
               style="${posBtn('#7f1d1d')};padding:5px 9px;font-size:12px">×</button>
     </div>`;
   };
+  // ⛔ SHOWN WHATEVER THE GATE SAYS. The send-side refusal cannot run until the flag is
+  // flipped on cutover day, so its first ever run would be live, in the restaurant, on the
+  // one evening nobody has spare attention. This puts the same verdict on the page months
+  // earlier, so a drifted export reads as a sentence here instead of a surprise there.
+  const bad=posBtnBadOnes(d);
+  const badNote=bad.length?`<div style="margin:0 0 12px;padding:10px 12px;border:1px solid #b45309;border-radius:10px;background:rgba(180,83,9,.10);font-size:12.5px;line-height:1.5">
+    <b>${bad.length} button${bad.length===1?'':'s'} here cannot be sent.</b> ${bad.map(b=>
+      '“'+esc(b.label)+'” <span style="color:var(--text-muted)">('+esc(b.cat)+', '+esc(b.which==='bar'?'LIQUOR':'FOOD')+')</span> '+esc(b.why)).join('; ')}.
+    The registers would ignore ${bad.length===1?'it':'them'}, so ${bad.length===1?'it is':'they are'} left out of anything published — take ${bad.length===1?'it':'them'} off the screen, or leave ${bad.length===1?'it':'them'} and send the rest once ${bad.length===1?'it is':'they are'} gone.
+  </div>`:'';
   const col=(title,which)=>{
     const a=posBtnRail(which);
     return `<div style="flex:1;min-width:290px">
@@ -15693,6 +15811,7 @@ function posRegButtonsHTML(){
     <div style="font-weight:800;font-size:13px;color:#fbbf24;margin-bottom:4px">Not connected to the registers yet</div>
     <div style="color:var(--text-dim);font-size:12px;line-height:1.5">The iPad software that reads a button list is not live, so sending is switched off. Arrange them here as much as you like — it is saved, and nothing can reach the floor by accident in the meantime.</div>
   </div>`:''}
+  ${badNote}
   <div style="${posCardCss};margin-bottom:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
     <span style="font-size:13px;font-weight:700">${
       live?(unsent?'Not sent yet — the registers still have the last list you sent.'

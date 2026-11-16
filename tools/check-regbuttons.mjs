@@ -30,12 +30,23 @@ const cut = (a, b, what) => {
 
 const STATE = cut("const POS_BTN_STORE='ct_pos_buttons';", 'let posButtons=null;', 'the rail store helpers');
 const HOME  = cut('const posBtnHomeRail=', 'const posBtnSwatches=', 'the home-rail resolvers');
+// The predicate is lifted into both sandboxes rather than stubbed: posBtnOn and
+// posBtnSend now consult it, so a stub would be proving things about the stub.
+const PRED  = (() => {
+  const i = src.indexOf('const POS_BTN_REFUSE=[');
+  const j = src.indexOf('const posBtnBadOnes=', i);
+  const k = src.indexOf('};', j);
+  if (i < 0 || j < 0 || k < 0) { ok('ANCHOR: the rail predicate is still in index.html', false); return ''; }
+  return src.slice(i, k + 2);
+})();
 const EDIT  = cut('const posBtnEdit=', '// ⛔ THE ONLY THING THAT REACHES A REGISTER', 'posBtnEdit and the handlers');
 
 const EXPORT = {
   food: [{ cat: 'N/A BEVS', color: '#2C7BE5' }, { cat: 'Appetizers', color: '#8E2A2A' }, { cat: 'Pasta', color: '#A83C3C' }],
   bar: [{ cat: 'N/A BEVS', color: '#2C7BE5' }, { cat: 'VODKA', color: '#7C86A8' }, { cat: 'GIN', color: '#7C86A8' }],
-  openers: [{ cat: 'BEER', label: 'BEER', page: 'bar', where: 'top row' }],
+  openers: [{ cat: 'BEER', label: 'BEER', page: 'bar', where: 'top row' },
+    { cat: 'RED WINE', label: 'RED WINE', page: 'bar', where: 'bottom row', pages: ['BY THE GLASS', 'BOTTLES'] },
+    { cat: 'WHITE WINE', label: 'WHITE WINE', page: 'bar', where: 'bottom row' }],
   colors: { 'N/A BEVS': '#2C7BE5', Pasta: '#A83C3C' }, defaultColor: '#7C86A8',
 };
 
@@ -85,13 +96,27 @@ if (EDIT) {
       const posBtnWrite=(make)=>{ const n=make(BASE); report(n); return n!==null; };
       const posBtnDraft=()=>(BASE&&BASE.draft)||{food:[],bar:[],off:[]};
       const posBtnLive=()=>(BASE&&BASE.live)||null;
+      const posBtnLabelOf=(e)=>(e&&e.label)||(e&&e.cat)||'';
+      const posBtnOpeners=()=>(posButtons&&posButtons.openers)||[];
+      const posBtnS={busy:false,note:'',err:'',sent:'',editing:''};
       ${HOME}
+      ${PRED}
       ${EDIT}
-      return {setBase(b){BASE=b},posBtnMove,posBtnRename,posBtnColor,posBtnOff,posBtnOn};`)(
+      return {setBase(b){BASE=b},posBtnMove,posBtnRename,posBtnColor,posBtnOff,posBtnOn,
+              posBtnWhyNot,posBtnBadOnes,posBtnS};`)(
       EXPORT, (n) => { last = n; });
   } catch (e) { ok('posBtnEdit and the handlers evaluate: ' + e.message, false); }
 }
 ok('posBtnEdit and the five handlers lift and run', !!(H && H.posBtnMove));
+// The same predicate with NO export loaded, for the three-state assertion below.
+const H2 = () => new Function('report', `
+  const posButtons=null;
+  const posBtnCat=(e)=>typeof e==='string'?e:(e&&e.cat)||'';
+  const posBtnOpeners=()=>[];
+  const posBtnLabelOf=(e)=>(e&&e.label)||(e&&e.cat)||'';
+  ${PRED}
+  return {posBtnWhyNot,posBtnExportCats};`)(null);
+
 
 if (H && H.posBtnMove) {
   const LIVE = { v: 1, at: 4242, food: [{ cat: 'LIVE ONLY' }], bar: [], off: [] };
@@ -170,12 +195,19 @@ if (H && H.posBtnMove) {
   // ⚠️ A cat the export has never heard of still has to land somewhere. This is reachable:
   // the export is regenerated, a category it used to list is gone, and a name for it is
   // already sitting in a stored `off` — with the + chip the only control that touches it.
-  base = { v: 1, draft: { food: [{ cat: 'A' }], bar: [{ cat: 'VODKA' }], off: ['Mystery'] }, live: LIVE };
+  base = { v: 1, draft: { food: [{ cat: 'Pasta' }], bar: [{ cat: 'VODKA' }], off: ['Mystery'] }, live: LIVE };
   H.setBase(base); last = null;
   H.posBtnOn(encodeURIComponent('Mystery'));
-  ok('+ on a cat the export never mentions puts it on a rail rather than losing it',
+  ok('\u26d4 + on a cat the register has never heard of is refused \u2014 the button would ring nothing',
+     last === null && /registers know/.test(H.posBtnS.err));
+  // The reachable fallback: an OPENER cat (BEER, RED WINE, GOLF, Sides) is admitted but sits
+  // in neither rail array, so "every rail it is on" is empty and it must still land somewhere.
+  base = { v: 1, draft: { food: [{ cat: 'Pasta' }], bar: [{ cat: 'VODKA' }], off: ['BEER'] }, live: LIVE };
+  H.setBase(base); last = null;
+  H.posBtnOn(encodeURIComponent('BEER'));
+  ok('\u2026while an opener the register DOES know lands on a rail rather than vanishing',
      !!last && last.draft.off.length === 0
-     && (cats(last.draft.food).includes('Mystery') || cats(last.draft.bar).includes('Mystery')));
+     && (cats(last.draft.food).includes('BEER') || cats(last.draft.bar).includes('BEER')));
 
   // ⛔ THE ×/+ PAIR MUST NOT DELETE A BUTTON. 'N/A BEVS' is on BOTH rails in the real
   // export, and the ×/+ pair is the only control there is, so a restore that picks one rail
@@ -204,15 +236,63 @@ if (H && H.posBtnMove) {
      last.draft.off.length === 0 && cats(last.draft.food).includes('Pasta') && last.draft.bar.length === 0);
 }
 
+// ── the predicate: what may be a register button
+// ⚠️ The dangerous half of this is NOT letting a bad name through — it is refusing a good
+// one. A match sloppy enough to eat 'RED WINE' along with 'RED WINE GLASS' takes two tabs
+// off all eight registers, which is worse than the hole it closes.
+if (H && H.posBtnWhyNot) {
+  const why = H.posBtnWhyNot;
+  const fine = (c) => why(c) === '';
+  ok('a cat the register\u2019s own export lists is fine', fine('Pasta') && fine('VODKA'));
+  ok('\u26d4 \u2026including an OPENER cat \u2014 "RED WINE" is a real button and must survive',
+     fine('BEER') && fine('RED WINE') && fine('WHITE WINE'));
+  ok('\u26d4 while the office-only wine SECTIONS are refused, and the refusal does not reach'
+     + ' the real wine buttons', !!why('RED WINE GLASS') && !!why('WHITE WINE BOTTLE'));
+  ok('\u2026"Wine" is refused: a real category on no rail, whose items are already on the'
+     + ' two wine screens', !!why('Wine'));
+  ok('\u2026and so is the retired upper-case spelling, because refusing folds case',
+     !!why('WINE'));
+  ok('the modifier vocabulary and the discount key are not categories', !!why('Food Mods') && !!why('DISCOUNTS'));
+  ok('\u26d4 "Baked" is refused \u2014 it is in FOOD_PAGE and is not a category anywhere',
+     !!why('Baked'));
+  // Asserted on the REASON, not merely on being refused: matching the two sentinels by name
+  // still refuses an unknown '__' string — as "not a category the registers know" — so a
+  // truthiness check cannot tell the prefix rule from the name list.
+  ok('this page\u2019s own view sentinels are refused by PREFIX, so the next one added is'
+     + ' covered too',
+     /own views/.test(why('__groups')) && /own views/.test(why('__classes'))
+     && /own views/.test(why('__whatever_comes_next')));
+  ok('\u26d4 ADMITTING does NOT fold case \u2014 the registers match with ===, so "PASTA" would'
+     + ' ring nothing', !!why('PASTA'));
+  ok('\u2026and that mismatch is NAMED with the register\u2019s spelling, not dropped silently',
+     /Pasta/.test(why('PASTA')) && /spelled differently/.test(why('PASTA')));
+  ok('\u2026a stray space is the same mismatch', !!why(' Pasta '));
+  ok('a name nothing knows is refused as unknown, not as a misspelling',
+     /registers know/.test(why('Nope')));
+  ok('an empty or non-string cat is refused', !!why('') && !!why(null) && !!why(42));
+  ok('\u26a0\ufe0f and with no export loaded the verdict is UNDEFINED, not "fine" and not'
+     + ' "refused" \u2014 blind is its own answer',
+     (() => { const g = H2(); return g.posBtnWhyNot('Pasta') === undefined && g.posBtnWhyNot('Wine') === undefined; })());
+  ok('posBtnBadOnes names every unusable entry on both rails, with label and key',
+     (() => {
+       const b = H.posBtnBadOnes({ food: [{ cat: 'Pasta' }, { cat: 'Wine', label: 'VINO' }], bar: [{ cat: 'PASTA' }] });
+       return b.length === 2 && b[0].label === 'VINO' && b[0].cat === 'Wine' && b[1].which === 'bar';
+     })());
+}
+
 // ── the send, which is the only thing here that reaches a register
 const SEND = cut('async function posBtnSend(revert){', "// \u26a0\ufe0f `ats.menu`, NOT `menu.at`", 'posBtnSend');
-const mkSend = (enabled, draft) => {
+const mkSend = (enabled, draft, exp) => {
   const calls = { wrote: null, published: 0, poked: 0, receipt: 0 };
-  const fn = new Function('ENABLED', 'DRAFT', 'calls', 'report', `
+  const fn = new Function('ENABLED', 'DRAFT', 'calls', 'report', 'posButtons', `
     const POS_BTN_SEND_ENABLED=ENABLED;
     const posBtnS={busy:false,note:'',err:'',sent:'',editing:''};
     const posRegButtonsRefresh=()=>{};
     const posBtnDraft=()=>DRAFT;
+    const posBtnCat=(e)=>typeof e==='string'?e:(e&&e.cat)||'';
+    const posBtnOpeners=()=>(posButtons&&posButtons.openers)||[];
+    const posBtnLabelOf=(e)=>(e&&e.label)||(e&&e.cat)||'';
+    ${PRED}
     const posBtnCount=(d)=>((d&&d.food)||[]).length+((d&&d.bar)||[]).length;
     const posBtnMinPage=(d)=>Math.min(((d&&d.food)||[]).length,((d&&d.bar)||[]).length);
     const posBtnWrite=async(make)=>{ calls.wrote=make({v:1,draft:DRAFT,live:null}); return true; };
@@ -221,12 +301,12 @@ const mkSend = (enabled, draft) => {
     const miniPoke=()=>{ calls.poked++; };
     const posBtnReceipt=async(at)=>{ calls.receipt++; return 'On the registers.'; };
     ${SEND}
-    return async(revert)=>{ await posBtnSend(revert); return posBtnS; };`)(enabled, draft, calls, null);
+    return async(revert)=>{ await posBtnSend(revert); return posBtnS; };`)(enabled, draft, calls, null, exp === undefined ? EXPORT : exp);
   return { fn, calls };
 };
-const FULL = { food: [{ cat: 'A' }], bar: [{ cat: 'VODKA' }], off: [] };
-const EMPTY = { food: [], bar: [], off: ['A'] };
-const HALF  = { food: [{ cat: 'A' }], bar: [], off: ['VODKA'] };
+const FULL = { food: [{ cat: 'Pasta' }], bar: [{ cat: 'VODKA' }], off: [] };
+const EMPTY = { food: [], bar: [], off: ['Pasta'] };
+const HALF  = { food: [{ cat: 'Pasta' }], bar: [], off: ['VODKA'] };
 if (SEND) {
   const off = mkSend(false, FULL);
   const s1 = await off.fn(false);
@@ -254,6 +334,29 @@ if (SEND) {
   await rev.fn(true);
   ok('\u2026but REVERTING with everything off is allowed, and clears `live`',
      !!rev.calls.wrote && rev.calls.wrote.live === null && rev.calls.published === 1);
+
+  // ⛔ He is standing here, so the send TELLS him instead of quietly cleaning up. The
+  // message has to carry the LABEL on the tile and the key underneath it: a message about a
+  // key he cannot see on screen is a hunt at the worst hour of the week.
+  const bad = mkSend(true, { food: [{ cat: 'Pasta' }, { cat: 'Wine', label: 'VINO' }], bar: [{ cat: 'VODKA' }], off: [] });
+  const s4 = await bad.fn(false);
+  ok('\u26d4 a send carrying a name the registers cannot use is REFUSED, not filtered',
+     bad.calls.wrote === null && bad.calls.published === 0);
+  ok('\u2026naming the label he can see AND the key underneath it',
+     /VINO/.test(s4.err) && /Wine/.test(s4.err));
+  const miss = mkSend(true, { food: [{ cat: 'PASTA' }], bar: [{ cat: 'VODKA' }], off: [] });
+  const s5 = await miss.fn(false);
+  ok('\u2026and a cat that only LOOKS right is refused with the register\u2019s spelling quoted',
+     miss.calls.wrote === null && /Pasta/.test(s5.err));
+  const blind = mkSend(true, { food: [{ cat: 'Anything' }], bar: [{ cat: 'At All' }], off: [] }, null);
+  await blind.fn(false);
+  ok('\u26a0\ufe0f but with no export loaded the send refuses NOTHING \u2014 blind is not a verdict',
+     !!blind.calls.wrote && blind.calls.published === 1);
+  // A revert is always allowed: it is the way back, and it carries no rail at all.
+  const revBad = mkSend(true, { food: [{ cat: 'Wine' }], bar: [], off: [] });
+  await revBad.fn(true);
+  ok('\u2026and "back to the built-in buttons" is never blocked by a bad draft',
+     !!revBad.calls.wrote && revBad.calls.wrote.live === null);
 
   const good = mkSend(true, FULL);
   await good.fn(false);

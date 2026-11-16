@@ -72,7 +72,21 @@ const ctx = {
   posS: { cat: { generated_at: '2026-09-17' } },
   Object, Date, Array, String, JSON, console,
 };
-const build = new Function('ctx', 'with(ctx){' + grab('posBuildLive') + '\nreturn posBuildLive;}')(ctx);
+// ⛔ The predicate is lifted, not stubbed: posBuildLive now filters through it, and a
+// stub would prove nothing about which names actually travel. posButtons is the fixture
+// export, so 'Pasta'/'Pizza'/'GIN' are admitted and anything else is not.
+const PRED = (() => {
+  const i = html.indexOf('const POS_BTN_REFUSE=[');
+  const j = html.indexOf('const posBtnBadOnes=', i);
+  const k = html.indexOf('};', j);
+  if (i < 0 || j < 0 || k < 0) { ok('ANCHOR: the rail predicate is still in index.html', false); return ''; }
+  return html.slice(i, k + 2);
+})();
+ctx.posButtons = { food: [{ cat: 'Pasta' }, { cat: 'Pizza' }], bar: [{ cat: 'GIN' }], openers: [{ cat: 'RED WINE' }] };
+ctx.posBtnCat = (e) => (typeof e === 'string' ? e : (e && e.cat) || '');
+ctx.posBtnOpeners = () => ctx.posButtons.openers;
+ctx.posBtnLabelOf = (e) => (e && e.label) || (e && e.cat) || '';
+const build = new Function('ctx', 'with(ctx){' + PRED + '\n' + grab('posBuildLive') + '\nreturn posBuildLive;}')(ctx);
 
 // 1. the empty case — nothing edited at all
 let b = build();
@@ -218,10 +232,41 @@ ok('⛔ a rail with one page FULL and the other EMPTY is refused, not half-publi
 state.buttons = { draft: {}, live: { at: 1, food: [], bar: [{ cat: 'VODKA' }], off: [] } };
 b = build();
 ok('…either way round', !('buttons' in b));
-state.buttons = { draft: {}, live: { at: 9, food: [{ cat: 'Pasta' }], bar: [{ cat: 'VODKA' }], off: [] } };
+state.buttons = { draft: {}, live: { at: 9, food: [{ cat: 'Pasta' }], bar: [{ cat: 'GIN' }], off: [] } };
 b = build();
 ok('…while one button on EACH page travels normally',
    !!b.buttons && b.buttons.food.length === 1 && b.buttons.bar.length === 1 && b.buttons.at === 9);
+
+// ⛔ THE PREDICATE HAS TO RUN HERE, NOT ONLY AT THE SEND. This function runs on EVERY
+// publish — a price edit re-emits the stored `live` with no send involved — so a rail written
+// by another device, an older build, or before the predicate existed would otherwise keep
+// going out to the iPads for ever with nothing on the send path ever seeing it.
+state.buttons = { draft: {}, live: { at: 9, food: [{ cat: 'Pasta' }, { cat: 'Wine' }], bar: [{ cat: 'GIN' }], off: [] } };
+b = build();
+ok('⛔ a stored rail carrying a name the registers cannot use publishes WITHOUT it',
+   !!b.buttons && b.buttons.food.map((e) => e.cat).join() === 'Pasta');
+state.buttons = { draft: {}, live: { at: 9, food: [{ cat: 'Pasta' }, { cat: 'PASTA' }], bar: [{ cat: 'GIN' }], off: [] } };
+b = build();
+ok('…and a MISSPELLED cat is dropped too, not waved through because it looks close',
+   !!b.buttons && b.buttons.food.map((e) => e.cat).join() === 'Pasta');
+state.buttons = { draft: {}, live: { at: 9, food: [{ cat: 'Pasta' }], bar: [{ cat: '__groups' }], off: [] } };
+b = build();
+ok('⛔ …and if dropping empties a page, the whole key goes rather than half a rail',
+   !('buttons' in b));
+// `off` is deliberately NOT filtered: it is a suppression instruction, so an unknown name is
+// a no-op for any reader, and the ×/+ pair is the only control that can touch it.
+state.buttons = { draft: {}, live: { at: 9, food: [{ cat: 'Pasta' }], bar: [{ cat: 'GIN' }], off: ['Wine', 'Specials'] } };
+b = build();
+ok('an unknown name in `off` still travels — suppressing something no reader knows is a no-op',
+   !!b.buttons && b.buttons.off.join() === 'Wine,Specials');
+// Blind must not refuse: with no export loaded nothing is known, and guessing here would
+// take real tabs off eight registers.
+const noExport = ctx.posButtons; ctx.posButtons = null;
+state.buttons = { draft: {}, live: { at: 9, food: [{ cat: 'Anything' }], bar: [{ cat: 'At All' }], off: [] } };
+b = build();
+ok('⚠️ with pos-buttons.json not loaded NOTHING is refused — blind is not a verdict',
+   !!b.buttons && b.buttons.food.length === 1 && b.buttons.bar.length === 1);
+ctx.posButtons = noExport;
 
 console.log(bad ? `\n${bad} FAILED` : '\nall good');
 process.exit(bad ? 1 : 0);
