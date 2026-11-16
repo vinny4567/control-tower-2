@@ -7125,8 +7125,26 @@ async function posLoadPrices(){
   // The 22 fetches fail independently, so one bad response wipes exactly one list — which is why
   // on 10/22 the renames and prices survived while four deletions vanished between two publishes.
   // Same shape as the tips grid that nearly lost a payroll — see [[reference_data_shape_traps]] #3.
-  // `got` null ⇒ we learned NOTHING, so keep what we hold. `got` present ⇒ trust it, empty included.
-  const take=(got,cur,empty)=>got?(got.v==null?empty:got.v):cur;
+  //
+  // ⛔⛔ AND THEN A SENTINEL REFACTOR SILENTLY RE-ARMED IT (found 11/15, by Jarvis asking
+  // whether it was still fixed). The paragraph above was TRUE when it was written and is
+  // false now: `kvGet` no longer returns null for a failure, it returns KV_FAIL — a frozen
+  // OBJECT (see line ~2369). So `got` became truthy on failure, `got.v` undefined, and this
+  // line took the `empty` branch: the guard inverted into the very wipe it was written to
+  // stop, across all 24 stores, reporting success at every layer.
+  //
+  // The comment is what hid it. Anyone re-reading this block checked the prose, saw the
+  // null contract asserted in a ⛔ banner, and moved on — nobody re-read `kvGet`. A guard
+  // is only as live as the contract it names, and a sentinel change is exactly the edit
+  // that rots one. See [[feedback_check_their_defaults]].
+  //
+  // THREE outcomes, not two, and they must stay three:
+  //   KV_FAIL ⇒ we learned NOTHING. Keep what we hold. NEVER `empty`.
+  //   null    ⇒ nothing to go on either. Keep what we hold.
+  //   present ⇒ trust it, empty included — an intentional clear must survive a reload.
+  // Guarded on kvFailed() rather than on shape, so the next sentinel change cannot rot it
+  // the same way. check-kvtake.mjs runs this function against a KV_FAIL fixture.
+  const take=(got,cur,empty)=>(!got||kvFailed(got))?cur:(got.v==null?empty:got.v);
   const next={
     prices:take(r,posPrices,{}), mods:take(g,posGroupMods,{}), groups:take(ng,posNewGroups,[]), attach:take(at,posGroupAttach,{}),
     routing:take(rt,posRouting,{}), classes:take(pc,posNewClasses,[]), newMods:take(nm,posNewMods,[]),

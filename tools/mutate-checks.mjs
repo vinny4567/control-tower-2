@@ -34,6 +34,7 @@ const run=(which,html)=>{
 };
 
 const sub=(a,b)=>{ if(!SRC.includes(a)) throw new Error('anchor missing: '+a.slice(0,60)); return SRC.replace(a,b) };
+const GOOD_TAKE='const take=(got,cur,empty)=>(!got||kvFailed(got))?cur:(got.v==null?empty:got.v);';
 
 // [name, which check, mutated html, mustGoRed]
 const M=[
@@ -149,6 +150,30 @@ const M=[
         "  const rule=POS_WINE_SECTIONS[section];\n  if(!rule)return {cat:section,name};")
       .replace("  return {cat:w.cat,name:String(name).endsWith(w.suffix)?String(name):String(name)+w.suffix};",
                "  return {cat:rule.cat,name:String(name).endsWith(rule.suffix)?String(name):String(name)+rule.suffix};"),false],
+  // ── THE RELOAD GUARD THAT INVERTED ITSELF (11/15). take() was written against a kvGet
+  // that returned null on failure; kvGet was later changed to return KV_FAIL, a truthy
+  // frozen OBJECT, and the guard silently started returning the EMPTY default on every
+  // failed read — a wipe of any of the 24 ct_pos_* stores, then published. Nothing in
+  // tools/ covered it, and the ⛔ banner above the line still asserted the old contract,
+  // which is exactly why re-reading the block never caught it. These six worlds are the
+  // ones that have to stay distinguishable.
+  ['KV 1 \u00b7 the historical bug verbatim \u2014 a failed read returns empty','check-kvtake.mjs',
+    sub(GOOD_TAKE,'const take=(got,cur,empty)=>got?(got.v==null?empty:got.v):cur;'),true],
+  ['KV 2 \u00b7 guard the failure but drop the null arm','check-kvtake.mjs',
+    sub(GOOD_TAKE,'const take=(got,cur,empty)=>kvFailed(got)?cur:(got&&got.v!=null?got.v:empty);'),true],
+  ['KV 3 \u00b7 an intentional clear stops surviving a reload','check-kvtake.mjs',
+    sub(GOOD_TAKE,'const take=(got,cur,empty)=>(!got||kvFailed(got))?cur:(got.v==null||!got.v.length?cur:got.v);'),true],
+  ['KV 4 \u00b7 one store folded in raw, the old ||[] way','check-kvtake.mjs',
+    sub('newItems:take(ni,posNewItems,[])','newItems:(ni&&ni.v)||[]'),true],
+  ['KV 5 \u00b7 a store taken TWICE by copy-paste, leaving another raw','check-kvtake.mjs',
+    sub('sectionAdds:take(sa,posSectionAdds,{})','sectionAdds:take(ni,posSectionAdds,{})'),true],
+  // The two that must stay GREEN. KV 7 is the one the first draft of check-kvtake failed:
+  // it anchored on `function kvFailed(` and went red for a pure rename, while its own
+  // header claimed it didn't. A check that screams for a rename gets its clauses trimmed.
+  ['KV 6 \u00b7 an equivalent rewrite of the same three outcomes','check-kvtake.mjs',
+    sub(GOOD_TAKE,'const take=(got,cur,empty)=>kvFailed(got)?cur:(got?(got.v==null?empty:got.v):cur);'),false],
+  ['KV 7 \u00b7 BENIGN \u2014 rename the failure guard everywhere','check-kvtake.mjs',
+    SRC.split('kvFailed').join('kvUnreadable'),false],
 ];
 
 let wrong=0;
