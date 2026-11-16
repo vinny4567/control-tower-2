@@ -228,6 +228,57 @@ if (SEND) {
      good.calls.wrote.live.food !== FULL.food);
 }
 
+// ── the receipt, RUN against each state the mini can actually be in
+// ⚠️ This was two regexes over the file. One of them passed while the code read plain
+// `j.menu`, because the comment above it mentions `menu.buttons.at` — a comment is not a
+// behaviour. These stub fetch and read the sentence back.
+const RBODY = cut('async function posBtnReceipt(at){', '\nasync function ', 'posBtnReceipt');
+const receipt = (payload, status) => {
+  const fn = new Function('payload', 'status', `
+    const KV_MINI='http://mini.example/api/kv';
+    const fetch=async()=>({ok:status===200,status,json:async()=>payload});
+    ${RBODY}
+    return posBtnReceipt;`)(payload, status === undefined ? 200 : status);
+  return fn;
+};
+if (RBODY) {
+  const CONFIRMED = 'On the registers.';
+  const served = (buttons) => ({ menu: { items: [], ...(buttons ? { buttons } : {}) } });
+  const noBlob = (buttons) => ({ menu: { ...(buttons ? { buttons } : {}) } });
+
+  ok('a matching `at` read back from the mini is the ONLY thing that says "on the registers"',
+     (await receipt(served({ v: 1, at: 500 }))(500)) === CONFIRMED);
+  ok('\u26d4 an older rail still on the mini does NOT get reported as on the registers',
+     (await receipt(served({ v: 1, at: 499 }))(500)) !== CONFIRMED);
+  ok('\u2026and says the mini has a menu but not this list yet',
+     /not this button list yet/.test(await receipt(served({ v: 1, at: 499 }))(500)));
+  ok('a served menu carrying no rail at all is not reported as on the registers',
+     (await receipt(served(null))(500)) !== CONFIRMED);
+
+  // The state angelis-pos-server 6adcee3 made reachable: mini up, no blob to serve.
+  const nb = await receipt(noBlob(null))(500);
+  ok('\u26a0\ufe0f "the mini has NO menu" is reported as its own state, not as "an older list"',
+     /not serving a menu at all/.test(nb));
+  ok('\u2026and never claims the mini has it', !/the mini has it/.test(nb) && nb !== CONFIRMED);
+  ok('\u2026while an EMPTY items list still counts as a served menu, because [] is a menu',
+     /not this button list yet/.test(await receipt(served(null))(500)));
+
+  ok('a revert is confirmed only when the mini is serving no rail',
+     /back to their built-in buttons/.test(await receipt(served(null))(null)));
+  ok('\u2026and while a rail is still being served it says so instead',
+     /still serving a button list/.test(await receipt(served({ v: 1, at: 7 }))(null)));
+
+  ok('a non-200 from the mini is reported as unconfirmed, with the status',
+     /could not read the mini back/i.test(await receipt(null, 503)(500)));
+  const dead = new Function('', `
+    const KV_MINI='http://mini.example/api/kv';
+    const fetch=async()=>{throw new Error('offline')};
+    ${RBODY}
+    return posBtnReceipt;`)();
+  ok('and off the tailnet reads as UNKNOWN, not as failed',
+     /could not reach the mini/i.test(await dead(500)));
+}
+
 // ── the gate and the auto-publish exclusion, which are one-line things worth pinning
 ok('⛔ the send is gated behind POS_BTN_SEND_ENABLED, and it is still OFF',
    /const POS_BTN_SEND_ENABLED=false;/.test(src));
@@ -237,15 +288,6 @@ ok('⛔ a draft save does NOT trigger the auto-publish hook (ct_pos_buttons is e
    /k!=='ct_pos_live'\s*&&\s*k!=='ct_pos_buttons'/.test(src));
 ok('…and the draft is written with kvSend, not kvPush, so it cannot publish',
    /kvSend\(POS_BTN_STORE,\{v:next,at\}/.test(src) && !/kvPush\(POS_BTN_STORE/.test(src));
-// ⚠️ Read the receipt's OWN BODY with the comments stripped. Spelled as a regex over
-// the whole file this passed while the code read plain `j.menu` — because the comment
-// above it says "menu.buttons.at", and a comment is not a behaviour.
-const RECEIPT = cut('async function posBtnReceipt(at){', '\nasync function ', 'posBtnReceipt')
-  .split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
-ok('⚠️ the receipt reads the NESTED `menu.buttons`, not the mini’s combined `menu.at`',
-   /j\.menu\.buttons/.test(RECEIPT));
-ok('…and only says "on the registers" when the `at` it reads back is the one just sent',
-   /Number\(got\.at\)===Number\(at\)/.test(RECEIPT));
 
 console.log(bad ? `\n${bad} FAILED` : '\nall good');
 process.exit(bad ? 1 : 0);

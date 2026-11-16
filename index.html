@@ -15595,11 +15595,20 @@ async function posBtnReceipt(at){
     const r=await fetch(base+'/api/menu?since=0',{...(ac?{signal:ac.signal}:{})});
     if(!r.ok)return 'Sent. Could not read the mini back (it said '+r.status+'), so I cannot confirm the registers have it yet.';
     const j=await r.json();
-    const got=j&&j.menu&&j.menu.buttons;
+    const m=(j&&j.menu)||null;
+    const got=m&&m.buttons;
+    // ⚠️ "NO MENU AT ALL" IS NOT "AN OLDER MENU". Since angelis-pos-server 6adcee3 the mini
+    // leaves items/deleted/added OUT of `menu` when it has no blob to serve, instead of
+    // sending an empty placeholder. Before that this function's last line fired for that
+    // state too and said "the mini has it" — claiming a thing it had not seen, which is the
+    // one sentence this receipt exists to avoid. So the blob's presence is now asked
+    // separately, with hasOwnProperty, because an EMPTY items list is still a served menu.
+    const served=!!(m&&Object.prototype.hasOwnProperty.call(m,'items'));
     if(at==null)return got?'Sent. The mini is still serving a button list — it should clear within a minute.'
                           :'On the registers: they are back to their built-in buttons.';
     if(got&&Number(got.at)===Number(at))return 'On the registers.';
-    return 'Sent, and the mini has it, but it is still serving an older button list. Give it a minute.';
+    if(!served)return 'Sent here, but the mini is not serving a menu at all right now, so I cannot confirm the registers have it.';
+    return 'Sent, and the mini is serving a menu, but not this button list yet. Give it a minute.';
   }catch(e){
     return 'Sent. I could not reach the mini to confirm — off the tailnet reads as unknown, not as failed.';
   }
