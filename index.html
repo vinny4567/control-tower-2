@@ -8157,6 +8157,26 @@ async function posDriftCloudAts(){
     return m;
   }catch(e){return null}
 }
+// ⛔ THIS CARD USED TO BE ONE-DIRECTIONAL, AND THE DIRECTION IT MISSED IS THE DANGEROUS ONE.
+// It computed `cloudAt-miniAt` and reported only a POSITIVE gap, so a mini holding something
+// NEWER than the cloud gave a negative number, pushed no row, and rendered as "ok" — silent.
+// That silence is exactly the fingerprint of a write THIS device lost: the mini's KV is
+// newest-wins (verified in angelis-pos-server/server/index.js ~3195 — kvSet is a NO-OP for an
+// older `at` and STILL answers 200), while the cloud overwrites unconditionally with no compare
+// at all (angelis-app/angelis-app/angelis-backend/server.js ~434). So the two stores can end up
+// disagreeing for good, and the half we could not see was "the registers hold something the
+// store does not". Pulled out as a pure function so it can be RUN without a network — see
+// tools/check-drift.mjs.
+function posDriftKind(cloudAt,miniAt,grace){
+  const g=(grace==null)?POS_DRIFT_GRACE_MS:grace;
+  const c=Number(cloudAt)||0;
+  if(miniAt===null||miniAt===undefined)return c?'missing':null;   // the mini never got it
+  const m=Number(miniAt)||0;
+  if(!c)return m?'ahead':null;                                    // cloud has none, mini has one: the extreme ahead case
+  if(c-m>g)return 'behind';
+  if(m-c>g)return 'ahead';
+  return null;                                                    // inside the grace window = just sent, not stale
+}
 async function posDriftCheck(force){
   if(posDrift.checking)return;
   if(!force&&posDrift.at&&Date.now()-posDrift.at<45000)return;
@@ -8190,14 +8210,14 @@ async function posDriftCheck(force){
       if(kvFailed(c)){unknown++;continue}            // cloud unreadable → can't tell, don't guess
       cloudAt=Number(c&&c.at)||0;
     }
-    if(!cloudAt)continue;                            // never written anywhere → nothing to prove
     const miniAt=(mini[k]==null)?null:mini[k];
-    if(miniAt===null){rows.push({k,label,kind:'missing',cloudAt});continue}
-    const by=cloudAt-miniAt;
-    if(by>POS_DRIFT_GRACE_MS)rows.push({k,label,kind:'behind',cloudAt,miniAt,by});
+    const kind=posDriftKind(cloudAt,miniAt,POS_DRIFT_GRACE_MS);
+    if(!kind)continue;                               // agrees, or never written anywhere
+    if(kind==='missing'){rows.push({k,label,kind:'missing',cloudAt});continue}
+    rows.push({k,label,kind,cloudAt,miniAt,by:Math.abs((Number(cloudAt)||0)-(Number(miniAt)||0))});
   }
   posDrift.rows=rows;
-  posDrift.state=rows.length?'behind':(unknown?'partial':'ok');
+  posDrift.state=rows.length?'mismatch':(unknown?'partial':'ok');   // was 'behind' — a row can now be AHEAD
   posDrift.err=unknown?(unknown+' key'+(unknown>1?'s':'')+' unreadable in the cloud'):'';
   posDrift.checking=false;posDrift.at=Date.now();
   posDriftRefresh();
@@ -8241,13 +8261,28 @@ function posDriftCardHTML(){
     `<b>Can't check the registers from here.</b> <span style="color:var(--text-dim)">The mini is only reachable on the tailnet — normal on a phone or off the network. This is <b>not</b> a sign anything is wrong, but nothing has been verified either. <span style="color:var(--text-muted)">(${esc(posDrift.err||'')})</span></span>`);
   if(st==='partial')return box('var(--border)','var(--surface)',
     `<b>Partly checked.</b> <span style="color:var(--text-dim)">${esc(posDrift.err)} — the rest match.</span>`);
+  const ahead=posDrift.rows.filter(r=>r.kind==='ahead');
+  const behind=posDrift.rows.filter(r=>r.kind!=='ahead');
   const rows=posDrift.rows.map(r=>`<li style="margin-top:3px"><b>${esc(r.label)}</b> — ${
     r.kind==='missing'?'the mini has never received this'
+    :r.kind==='ahead'?'the registers hold a copy '+posDriftAgo(r.by)+' NEWER than the store'
     :'the mini is '+posDriftAgo(r.by)+' behind'}</li>`).join('');
+  const head=(ahead.length&&!behind.length)
+    ?`<b>The registers are holding ${ahead.length} thing${ahead.length>1?'s':''} the store does not.</b>`
+    :ahead.length
+      ?`<b>${posDrift.rows.length} things do not match between the store and the registers.</b>`
+      :`<b>The registers are behind on ${behind.length} thing${behind.length>1?'s':''}.</b>`;
+  // ⚠️ THE ADVICE DIFFERS BY DIRECTION AND THE OLD LINE IS WRONG FOR 'ahead'. "Change it again
+  // and it will push" holds when the mini is merely behind. When the mini is AHEAD it refuses a
+  // write whose `at` is older than what it already holds — and still answers 200 — so changing it
+  // again can be refused every time, silently. The way back is to reload and re-apply on top.
+  const foot=ahead.length
+    ?'A change from this device may have been refused. The registers keep whichever copy has the newer time stamp and say nothing when they drop one, so saving it again may not help. Reload this page first, then make the change, so you are editing what the registers actually hold.'
+    :'Changing one of these again will push it. If it stays behind, the mini is taking writes but not keeping them.';
   return box('#f87171','rgba(248,113,113,0.08)',
-    `<b>The registers are behind on ${posDrift.rows.length} thing${posDrift.rows.length>1?'s':''}.</b>
+    `${head}
      <ul style="margin:4px 0 0 18px;padding:0">${rows}</ul>
-     <div style="color:var(--text-dim);margin-top:7px">Changing one of these again will push it. If it stays behind, the mini is taking writes but not keeping them.</div>`);
+     <div style="color:var(--text-dim);margin-top:7px">${foot}</div>`);
 }
 
 async function posPublishSend(blob){

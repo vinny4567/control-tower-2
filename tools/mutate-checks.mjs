@@ -352,6 +352,22 @@ const M=[
   // set and this mutant removed them. Jarvis ruled the other way \u2014 the five already have their
   // own buttons \u2014 so the mutant now widens the set instead of narrowing it. Same line, opposite
   // direction, because the requirement moved; the check it fires was inverted to match.
+  // ── the drift card, which was blind in one direction ──
+  ['DRIFT 1 \u00b7 \u26d4 the ahead branch is dropped, so a mini holding a NEWER copy is silent again','check-drift.mjs',
+    sub("  if(m-c>g)return 'ahead';\n", ''),true],
+  ['DRIFT 2 \u00b7 \u26d4 both directions collapse to "behind", so the card describes the opposite of what happened','check-drift.mjs',
+    sub("  if(m-c>g)return 'ahead';","  if(m-c>g)return 'behind';"),true],
+  ['DRIFT 3 \u00b7 \u26d4 a cloud with no copy goes back to being skipped, hiding the extreme case','check-drift.mjs',
+    sub("  if(!c)return m?'ahead':null;","  if(!c)return null;"),true],
+  ['DRIFT 4 \u00b7 \u26d4 the grace is dropped on the ahead side, so every ordinary save shows a false alarm','check-drift.mjs',
+    sub("  if(m-c>g)return 'ahead';","  if(m-c>0)return 'ahead';"),true],
+  ['DRIFT 5 \u00b7 \u26d4 the ahead card is given the BEHIND advice \u2014 "change it again" when the mini will refuse it','check-drift.mjs',
+    sub("    ?'A change from this device may have been refused.","    ?'Changing one of these again will push it. ("),true],
+  ['DRIFT 6 \u00b7 the mini never gave a key and the cloud has none \u2014 reported instead of staying silent','check-drift.mjs',
+    sub("  if(miniAt===null||miniAt===undefined)return c?'missing':null;","  if(miniAt===null||miniAt===undefined)return 'missing';"),true],
+  ['DRIFT 7 \u00b7 BENIGN \u2014 the ahead wording is reworded, meaning kept','check-drift.mjs',
+    sub("`<b>The registers are holding ${ahead.length} thing${ahead.length>1?'s':''} the store does not.</b>`",
+        "`<b>${ahead.length} thing${ahead.length>1?'s':''} on the registers ${ahead.length>1?'are':'is'} newer than the store.</b>`"),false],
   ['PRED 7 \u00b7 \u26d4 the openers are admitted again, so BEER lands on a rail it already sits above','check-regbuttons.mjs',
     sub('  for(const e of [...((posButtons.food)||[]),...((posButtons.bar)||[])]){',
         '  for(const e of [...((posButtons.food)||[]),...((posButtons.bar)||[]),...posBtnOpeners()]){'),true],
