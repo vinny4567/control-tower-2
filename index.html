@@ -9212,13 +9212,27 @@ async function posLoadButtons(){
 // objects: ['Pasta', …] or [{cat:'Pasta', label:'PASTA'}, …]. `extra` (or `other`) holds
 // the buttons that are not on a rail — BEER, RED WINE, WHITE WINE, GOLF, Sides.
 const posBtnCat=(e)=>typeof e==='string'?e:(e&&e.cat)||'';
+// The buttons that are NOT on a rail: BEER on the bar top row, RED/WHITE WINE on its
+// bottom row, GOLF and Sides on the food one. ⚠️ The exporter owns this key and calls it
+// `openers`; `extra`/`other` are only what this reader guessed before the file existed.
+// Reading the wrong key here is not a blank — every one of those five categories, and so
+// all four wine sections, falls through to null and gets flagged "no register button
+// opens these", which is exactly the false alarm the three states exist to prevent.
+const posBtnOpeners=()=>(posButtons&&(posButtons.openers||posButtons.extra||posButtons.other))||[];
 function posButtonFor(cat){
   if(!posButtons)return undefined;
   const w=POS_WINE_SECTIONS[cat];
   if(w){                                   // a Watch Tower wine SECTION, not a register category
     const base=posButtonFor(w.cat);
     if(base===undefined||base===null)return base;
-    return base+', '+(/GLASS$/.test(cat)?'glass':'bottle')+' page';
+    // The register's OWN names for the two pages when it gives them ('BY THE GLASS' /
+    // 'BOTTLES'), so this screen says what a server actually reads on the iPad rather
+    // than a word invented here.
+    const o=posBtnOpeners().find(e=>posBtnCat(e)===w.cat);
+    const pages=(o&&Array.isArray(o.pages)&&o.pages.length)?o.pages:null;
+    const glass=/GLASS$/.test(cat);
+    const page=pages?(glass?pages[0]:pages[pages.length-1]):(glass?'glass':'bottle');
+    return base+', '+page+' page';
   }
   const onRail=(arr,what)=>{
     if(!Array.isArray(arr))return null;
@@ -9227,8 +9241,14 @@ function posButtonFor(cat){
   };
   const r=onRail(posButtons.food,'FOOD')||onRail(posButtons.bar,'LIQUOR');
   if(r)return r;
-  const ex=(posButtons.extra||posButtons.other||[]).find(e=>posBtnCat(e)===cat);
-  if(ex)return (ex.label||cat)+' button'+(ex.where?' ('+ex.where+')':'');
+  const ex=posBtnOpeners().find(e=>posBtnCat(e)===cat);
+  if(ex){
+    // `page` and `where` are two fields: 'bar' + 'top row'. Composed, because "top row"
+    // alone does not say top row of WHICH page, and the bar and food pages each have one.
+    const rail=ex.page==='bar'?'LIQUOR':ex.page==='food'?'FOOD':'';
+    const where=[rail,ex.where].filter(Boolean).join(', ');
+    return (ex.label||cat)+' button'+(where?' ('+where+')':'');
+  }
   return null;
 }
 const POS_GROUPS_CAT='__groups';

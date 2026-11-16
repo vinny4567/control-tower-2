@@ -1,0 +1,144 @@
+{
+  "v": 1,
+  "generated": "2026-11-16T00:29:20.258Z",
+  "source": "angelis-pos pos/src/menu.js + theme.js",
+  "food": [
+    {
+      "cat": "N/A BEVS",
+      "color": "#2C7BE5"
+    },
+    {
+      "cat": "Appetizers",
+      "color": "#8E2A2A"
+    },
+    {
+      "cat": "Soup & Salad",
+      "color": "#2E8B4A"
+    },
+    {
+      "cat": "Chicken",
+      "color": "#8E2A2A"
+    },
+    {
+      "cat": "Veal/Steak",
+      "color": "#8E2A2A"
+    },
+    {
+      "cat": "Pasta",
+      "color": "#A83C3C"
+    },
+    {
+      "cat": "Seafood",
+      "color": "#A83C3C"
+    },
+    {
+      "cat": "Specials",
+      "color": "#A83C3C"
+    },
+    {
+      "cat": "Pizza",
+      "color": "#A83C3C"
+    },
+    {
+      "cat": "Dessert",
+      "color": "#A83C3C"
+    }
+  ],
+  "bar": [
+    {
+      "cat": "N/A BEVS",
+      "color": "#2C7BE5"
+    },
+    {
+      "cat": "VODKA",
+      "color": "#7C86A8"
+    },
+    {
+      "cat": "GIN",
+      "color": "#7C86A8"
+    },
+    {
+      "cat": "RUM",
+      "color": "#7C86A8"
+    },
+    {
+      "cat": "WHISKEY/BOURBON",
+      "color": "#7C86A8"
+    },
+    {
+      "cat": "SCOTCH",
+      "color": "#7C86A8"
+    },
+    {
+      "cat": "TEQUILA",
+      "color": "#7C86A8"
+    },
+    {
+      "cat": "CORDIALS",
+      "color": "#7C86A8"
+    },
+    {
+      "cat": "COCKTAILS",
+      "color": "#7C86A8"
+    }
+  ],
+  "openers": [
+    {
+      "cat": "BEER",
+      "label": "BEER",
+      "page": "bar",
+      "where": "top row",
+      "color": "#4A8FD6"
+    },
+    {
+      "cat": "RED WINE",
+      "label": "RED WINE",
+      "page": "bar",
+      "where": "bottom row",
+      "color": "#DDE6F5",
+      "pages": [
+        "BY THE GLASS",
+        "BOTTLES"
+      ]
+    },
+    {
+      "cat": "WHITE WINE",
+      "label": "WHITE WINE",
+      "page": "bar",
+      "where": "bottom row",
+      "color": "#DDE6F5",
+      "pages": [
+        "BY THE GLASS",
+        "BOTTLES"
+      ]
+    },
+    {
+      "cat": "GOLF",
+      "label": "GOLF",
+      "page": "food",
+      "where": "bottom row",
+      "color": "#8E2A2A"
+    },
+    {
+      "cat": "Sides",
+      "label": "Sides",
+      "page": "food",
+      "where": "bottom row",
+      "color": "#8E2A2A"
+    }
+  ],
+  "defaultColor": "#7C86A8",
+  "colors": {
+    "LIQUOR": "#2C7BE5",
+    "N/A BEVS": "#2C7BE5",
+    "Soup & Salad": "#2E8B4A",
+    "Appetizers": "#8E2A2A",
+    "Chicken": "#8E2A2A",
+    "Veal/Steak": "#8E2A2A",
+    "Pasta": "#A83C3C",
+    "Seafood": "#A83C3C",
+    "Specials": "#A83C3C",
+    "Pizza": "#A83C3C",
+    "Dessert": "#A83C3C"
+  }
+}

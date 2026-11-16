@@ -95,9 +95,9 @@ ok('the hidden categories never reach the dropdown',
 S.buttons = {
   food: ['N/A BEVS', 'Appetizers', 'Soup & Salad', 'Chicken', 'Pasta', 'Specials'],
   bar: [{ cat: 'N/A BEVS' }, { cat: 'VODKA' }, { cat: 'GIN' }, { cat: 'CORDIALS' }],
-  extra: [{ cat: 'BEER', label: 'BEER', where: 'bar top' },
-          { cat: 'RED WINE', label: 'RED WINE', where: 'bar bottom' },
-          { cat: 'GOLF', label: 'GOLF', where: 'food bottom' }],
+  openers: [{ cat: 'BEER', label: 'BEER', where: 'bar top' },
+            { cat: 'RED WINE', label: 'RED WINE', where: 'bar bottom' },
+            { cat: 'GOLF', label: 'GOLF', where: 'food bottom' }],
 };
 ok('a food category reports its FOOD rail position, 1-based', S.posButtonFor('Pasta') === 'FOOD rail #5');
 ok('a bar category reports its LIQUOR rail position', S.posButtonFor('GIN') === 'LIQUOR rail #3');
@@ -107,6 +107,13 @@ ok('a bottom/top button reports itself and where it sits',
    S.posButtonFor('GOLF') === 'GOLF button (food bottom)');
 ok('a category the export does not mention is NONE (null), not unknown',
    S.posButtonFor('Pizza') === null);
+// Deliberate tolerance, tested on purpose: this reader guessed `extra` before the
+// exporter existed, so an older hand-made file still resolves rather than silently
+// flagging five buttons as unwired. Removing it is a regression, not a cleanup.
+ok('a legacy file spelling the openers `extra` still resolves',
+   (() => { const keep = S.buttons;
+            S.buttons = { food: [], bar: [], extra: [{ cat: 'BEER', label: 'BEER' }] };
+            const r = S.posButtonFor('BEER'); S.buttons = keep; return r === 'BEER button'; })());
 
 // ── 4. THE FOUR WINE SECTIONS are Watch Tower display sections of TWO register
 // categories — Vinny's answer #2. Each must name the button AND which page it opens.
@@ -163,6 +170,59 @@ if (!existsSync(MENU)) {
   const funcs = (m.match(/export const FOOD_FUNCS = \[([\s\S]*?)\n\];/) || [, ''])[1];
   ok('⚠️ GOLF still has no cat: in FOOD_FUNCS — it is label-matched until step 5 lands',
      /label: 'GOLF'/.test(funcs) && !/label: 'GOLF',[^}]*cat:/.test(funcs));
+}
+
+// ── 7. THE REAL FILE, against the real catalogue. Fixtures prove the three states; this
+// proves the shipped pair actually agree. The key name is the whole risk: the exporter
+// calls the non-rail buttons `openers`, and this reader guessed `extra` before the file
+// existed — with that mismatch BEER, GOLF, Sides and both wines (so all four wine
+// sections) fall to null and get flagged "no register button opens these", which is the
+// false alarm the three states were built to prevent. A blank is honest; a false alarm
+// about a menu that is entirely wired up is not.
+const BTNF = new URL('../pos-buttons.json', import.meta.url);
+const CATF = new URL('../pos-catalog.json', import.meta.url);
+if (!existsSync(BTNF)) {
+  console.log('  --   pos-buttons.json not committed yet \u2014 real-file agreement not checked');
+} else {
+  const B = JSON.parse(readFileSync(BTNF, 'utf8'));
+  S.buttons = B;
+  ok('the committed pos-buttons.json has the rails and the openers the reader needs',
+     Array.isArray(B.food) && Array.isArray(B.bar) && Array.isArray(B.openers) && B.openers.length > 0);
+  ok('\u26a0\ufe0f the non-rail buttons are read from the key the EXPORTER owns (`openers`)',
+     !!S.posButtonFor(B.openers[0].cat));
+  for (const o of B.openers)
+    ok(`\u2026so the ${o.cat} button resolves instead of being flagged unwired`,
+       typeof S.posButtonFor(o.cat) === 'string');
+  ok('a rail category still resolves to its position',
+     S.posButtonFor(B.food[0].cat) === 'FOOD rail #1'
+     && S.posButtonFor(B.bar[B.bar.length - 1].cat) === 'LIQUOR rail #' + B.bar.length);
+  ok('\u2026and the opener label composes page and row: "(LIQUOR, top row)"',
+     S.posButtonFor('BEER') === 'BEER button (LIQUOR, top row)');
+  // The four WT wine sections must name the register's OWN page names.
+  const wsecs = Object.keys(S.POS_WINE_SECTIONS);
+  ok('all four wine sections resolve through the two wine buttons',
+     wsecs.length === 4 && wsecs.every((k) => typeof S.posButtonFor(k) === 'string'));
+  ok('\u2026naming the pages the register itself calls them, not a word invented here',
+     S.posButtonFor('RED WINE GLASS') === 'RED WINE button (LIQUOR, bottom row), BY THE GLASS page'
+     && S.posButtonFor('RED WINE BOTTLE') === 'RED WINE button (LIQUOR, bottom row), BOTTLES page');
+
+  if (!existsSync(CATF)) {
+    console.log('  --   pos-catalog.json not here \u2014 catalogue coverage not checked');
+  } else {
+    const cat = JSON.parse(readFileSync(CATF, 'utf8'));
+    const hidden = new Set(['Wine', 'DISCOUNTS']);
+    const groups = [...new Set((cat.items || []).map((i) => (i && i.group) || (i && i.cat) || ''))]
+      .filter((g) => g && !hidden.has(g) && g !== 'Food Mods');
+    const unwired = groups.filter((g) => S.posButtonFor(g) === null);
+    ok(`EVERY category in the catalogue opens from a register button (${groups.length} checked)${
+         unwired.length ? ' \u2014 UNWIRED: ' + unwired.join(', ') : ''}`,
+       groups.length > 0 && unwired.length === 0);
+    ok('\u2026and Specials, which no catalogue row fills, is on the rail too',
+       typeof S.posButtonFor('Specials') === 'string');
+    ok('\u2026while \u2018Wine\u2019 is deliberately absent from the export, so it stays hidden here',
+       ![...(B.food || []), ...(B.bar || []), ...(B.openers || [])].some((e) => (e.cat || e) === 'Wine'));
+  }
+  S.buttons = null;
 }
 
 console.log(bad ? `\n${bad} FAILED` : '\nall good');

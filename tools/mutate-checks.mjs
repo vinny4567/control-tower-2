@@ -28,7 +28,10 @@ const run=(which,html)=>{
   rmSync(TMP,{recursive:true,force:true}); mkdirSync(join(TMP,'tools'),{recursive:true});
   writeFileSync(join(TMP,'index.html'),html);
   cpSync(join(REPO,'tools',which),join(TMP,'tools',which));
-  if(/^check-(printclasses|categories|specials)\.mjs$/.test(which)) cpSync(join(REPO,'pos-catalog.json'),join(TMP,'pos-catalog.json'));
+  // ⚠️ A CHECK THAT READS A DATA FILE GOES RED IN THE SANDBOX WITHOUT IT, and a baseline
+  // that is red for a missing fixture teaches nothing. Every check reading one must be listed.
+  if(/^check-(printclasses|categories|specials|buttons)\.mjs$/.test(which)) cpSync(join(REPO,'pos-catalog.json'),join(TMP,'pos-catalog.json'));
+  if(/^check-buttons\.mjs$/.test(which)) cpSync(join(REPO,'pos-buttons.json'),join(TMP,'pos-buttons.json'));
   try{ execFileSync('node',[join(TMP,'tools',which)],{encoding:'utf8'}); return {red:false,out:''} }
   catch(e){ return {red:true,out:String(e.stdout||'')} }
 };
@@ -199,13 +202,34 @@ const M=[
   ['BTN 3 \u00b7 rail positions reported 0-based','check-buttons.mjs',
     sub("    return i<0?null:what+' rail #'+(i+1);","    return i<0?null:what+' rail #'+i;"),true],
   ['BTN 4 \u00b7 a wine section reports the button but loses which PAGE it opens','check-buttons.mjs',
-    sub("    return base+', '+(/GLASS$/.test(cat)?'glass':'bottle')+' page';","    return base;"),true],
+    sub("    return base+', '+page+' page';","    return base;"),true],
   ['BTN 5 \u00b7 Food Mods drifts back in with the sellable categories','check-buttons.mjs',
     sub("    if(c==='Food Mods'){mods.push(opt(c,c),opt(POS_GROUPS_CAT,'Mod groups'));continue;}",
         "    if(c==='Food Mods'){on.push(opt(c,c),opt(POS_GROUPS_CAT,'Mod groups'));continue;}"),true],
   ['BTN 6 \u00b7 BENIGN \u2014 reword the two headings','check-buttons.mjs',
     SRC.replace('Opens from a register button','Opened by a register button')
        .replace('Modifiers (not register buttons)','Modifiers (never register buttons)'),false],
+  // ── THE KEY NAME THE EXPORTER OWNS (11/15). This reader guessed `extra` before
+  // pos-buttons.json existed; the exporter calls it `openers`. Reading the wrong key is not
+  // a blank — BEER, GOLF, Sides and BOTH wines (so all four wine sections) fall to null and
+  // get flagged "no register button opens these", about a menu that is entirely wired up.
+  // Caught by Jarvis before it shipped, and pinned here so it cannot come back.
+  ['BTN 7 \u00b7 read `extra` instead of the exporter\u2019s `openers` \u2014 five buttons falsely unwired','check-buttons.mjs',
+    sub("const posBtnOpeners=()=>(posButtons&&(posButtons.openers||posButtons.extra||posButtons.other))||[];",
+        "const posBtnOpeners=()=>(posButtons&&(posButtons.extra||posButtons.other))||[];"),true],
+  ['BTN 8 \u00b7 an opener loses which PAGE its row is on, so "top row" says top row of nothing','check-buttons.mjs',
+    sub("    const where=[rail,ex.where].filter(Boolean).join(', ');","    const where=ex.where||'';"),true],
+  ['BTN 9 \u00b7 wine sections stop using the register\u2019s own page names','check-buttons.mjs',
+    sub("    const page=pages?(glass?pages[0]:pages[pages.length-1]):(glass?'glass':'bottle');",
+        "    const page=glass?'glass':'bottle';"),true],
+  // Labelled BENIGN at first, which was wrong: the legacy spelling is a DELIBERATE
+  // tolerance with a test of its own, so removing it is a regression and not a cleanup.
+  ['BTN 10 \u00b7 drop the documented legacy `extra`/`other` tolerance','check-buttons.mjs',
+    sub("const posBtnOpeners=()=>(posButtons&&(posButtons.openers||posButtons.extra||posButtons.other))||[];",
+        "const posBtnOpeners=()=>(posButtons&&posButtons.openers)||[];"),true],
+  ['BTN 11 \u00b7 BENIGN \u2014 reorder the fallback chain, same meaning','check-buttons.mjs',
+    sub("const posBtnOpeners=()=>(posButtons&&(posButtons.openers||posButtons.extra||posButtons.other))||[];",
+        "const posBtnOpeners=()=>(posButtons&&(posButtons.openers||posButtons.other||posButtons.extra))||[];"),false],
 ];
 
 let wrong=0;
