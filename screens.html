@@ -78,6 +78,7 @@ input[type=text]{width:100%;font:inherit;color:var(--text);background:var(--bg);
 
 <header>
   <div class="brand">🧱 Screen builder</div>
+  <span class="chip">Shelved for now — kept so nothing has to be rebuilt</span>
   <a href="./index.html">← Watch Tower</a>
   <div class="spacer"></div>
   <span id="sendwhy" class="chip"></span>
@@ -96,6 +97,27 @@ input[type=text]{width:100%;font:inherit;color:var(--text);background:var(--bg);
 <script src="./screens-core.js"></script>
 <script>
 'use strict';
+// ⏸ SHELVED 2026-11-15 at Vinny's word: "Lets shelve all this for later, possibly
+// even after go live." The file stays, DELIBERATELY UNLINKED — the Register buttons
+// page no longer points here — so nobody opens half a feature by accident, and so
+// nothing has to be rebuilt when it resumes. Do not re-link it without his word.
+//
+// When it does resume, the register's field spellings are settled (Jarvis, read from
+// the ship line rather than from memory, so they are facts not recollections):
+//   • the permanent id is `id` on the wire ("<file>.<nn>"); `bid` is only the Bevel
+//     prop, and it is ABSENT on data buttons (dishes, people, keypad keys)
+//   • there is NO natural-rect field. Natural position = x − off.dx, y − off.dy,
+//     where `off` is the edit-mode offset in force when it was measured. Converting
+//     a drawn rect back to an offset is the register reader's job, not this page's
+//   • `ink` and `fs` are as named; `kind` is 'button' | 'fixed'
+//   • x2/y2/w2/h2 are a second reading, present only when it differed
+//   • there are NO actions until plan step 7 — every button does what it does today
+//   • the recorder DOES emit separate faces ('order@food', 'order@bar'), so the
+//     "captured as one screen" warning in screens-core.js can go when this resumes
+//   • scr_base is this page's to write, from the privileged screen-exports report,
+//     behind an explicit Import button with a read-back — never on page load, and
+//     refusing an export whose last run was incomplete, naming the missing scopes
+//
 // ═══════════════════════════════════════════════════════════════════════════════
 // THE BUILDER'S PAGE. The rules live in screens-core.js, which is pure and tested;
 // this file is the part that draws and the part that writes, kept together so the
