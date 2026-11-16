@@ -35,6 +35,7 @@ const run=(which,html)=>{
 
 const sub=(a,b)=>{ if(!SRC.includes(a)) throw new Error('anchor missing: '+a.slice(0,60)); return SRC.replace(a,b) };
 const GOOD_TAKE='const take=(got,cur,empty)=>(!got||kvFailed(got))?cur:(got.v==null?empty:got.v);';
+const ROUTE_DROP="  let dropped=false;\n  for(const i of gone){\n    const k=posNewItemKey(i);\n    if(Object.prototype.hasOwnProperty.call(posRouting,k)){delete posRouting[k];dropped=true;}\n  }\n  if(dropped)kvPush('ct_pos_routing',posRouting,Date.now());\n";
 
 // [name, which check, mutated html, mustGoRed]
 const M=[
@@ -174,6 +175,18 @@ const M=[
     sub(GOOD_TAKE,'const take=(got,cur,empty)=>kvFailed(got)?cur:(got?(got.v==null?empty:got.v):cur);'),false],
   ['KV 7 \u00b7 BENIGN \u2014 rename the failure guard everywhere','check-kvtake.mjs',
     SRC.split('kvFailed').join('kvUnreadable'),false],
+  // ── THE ROUTE A REMOVED SPECIAL LEAVES BEHIND (11/15). posPruneOrphans cannot collect a
+  // routing key for a non-catalogue item — its loop is `const it=byItem[k]; if(!it)continue;`
+  // — so a route left here is permanent and cloud-synced, and specials rotate under repeating
+  // names. The dangerous inheritance is the explicit "prints nowhere" ([]), which printersFor
+  // honours over printClass and station.
+  ['SPEC 1 \u00b7 the \u00d7 stops taking the route with it \u2014 next special of that name inherits it','check-categories.mjs',
+    sub(ROUTE_DROP,''),true],
+  ['SPEC 2 \u00b7 delete the key but never push it \u2014 the next reload puts it back','check-categories.mjs',
+    sub("  if(dropped)kvPush('ct_pos_routing',posRouting,Date.now());\n",''),true],
+  ['SPEC 3 \u00b7 clear the WHOLE routing map instead of just its key','check-categories.mjs',
+    sub('if(Object.prototype.hasOwnProperty.call(posRouting,k)){delete posRouting[k];dropped=true;}',
+        '{posRouting={};dropped=true;}'),true],
 ];
 
 let wrong=0;

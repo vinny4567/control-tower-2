@@ -95,23 +95,53 @@ ok(`a wine already on the menu round-trips (${sample ? sample.name : 'none found
 const rsrc = html.slice(html.indexOf('function posRemoveNewItem('), html.indexOf('// Choices taken OUT of a group'));
 ok('the × can be read out of the page and run', wsrc.length > 0 && rsrc.length > 0);
 const bucket = buckets.find((b) => / GLASS$/.test(b)) || buckets[0];
-const tryRemove = (stored) => {
-  const R = new Function(`let posNewItems=[${JSON.stringify(stored)}];const kvPush=()=>{};const posRedraw=()=>{};
-    ${wsrc}${rsrc}\nreturn {posRemoveNewItem,get items(){return posNewItems}};`)();
-  R.posRemoveNewItem(encodeURIComponent(bucket), encodeURIComponent(stored.name));
-  return R.items.length === 0;
+// The sandbox hands it a REAL routing map and records which stores it pushed, so the
+// assertions below can ask what the × actually did to both of them.
+const run = (stored, section, routing) => {
+  const R = new Function(`let posNewItems=${JSON.stringify([].concat(stored))};
+    let posRouting=${JSON.stringify(routing || {})};
+    const pushed=[];const kvPush=(k)=>{pushed.push(k)};const posRedraw=()=>{};
+    ${wsrc}${rsrc}
+    return {posRemoveNewItem,pushed,get items(){return posNewItems},get routing(){return posRouting}};`)();
+  R.posRemoveNewItem(encodeURIComponent(section), encodeURIComponent([].concat(stored)[0].name));
+  return R;
 };
+const tryRemove = (stored, section) => run(stored, section === undefined ? bucket : section).items.length === 0;
+
 ok('…and it removes an item saved the way this page saves them now',
    !!bucket && tryRemove(pub(bucket, 'Test Wine')));
 ok('⚠️ …and one saved under the old bucket spelling, which still draws and still publishes',
    !!bucket && tryRemove({ cat: bucket, name: 'Test Wine' }));
 ok('and a plain dish, where the two spellings are the same thing',
-   tryRemove({ cat: 'Pasta', name: 'Test Dish' }) || (() => {
-     const R = new Function(`let posNewItems=[{cat:'Pasta',name:'Test Dish'}];const kvPush=()=>{};const posRedraw=()=>{};
-       ${wsrc}${rsrc}\nreturn {posRemoveNewItem,get items(){return posNewItems}};`)();
-     R.posRemoveNewItem(encodeURIComponent('Pasta'), encodeURIComponent('Test Dish'));
-     return R.items.length === 0;
-   })());
+   tryRemove({ cat: 'Pasta', name: 'Test Dish' }, 'Pasta'));
+
+// ⚠️ AND THE ROUTE GOES WITH IT. posPruneOrphans cannot collect these — its routing
+// loop is `const it=byItem[k]; if(!it)continue;` and a special is never in the catalogue —
+// so a route left behind here is permanent and cloud-synced. Specials rotate and names come
+// back, so the next "Chicken Kalina" would silently inherit the last one's printer, or its
+// "prints nowhere". Asked of the real function.
+const KEY = 'm:Specials:Chicken Kalina';
+const routed = run({ cat: 'Specials', name: 'Chicken Kalina' }, 'Specials',
+                   { [KEY]: ['Salad'], 'm:Pasta:Rotini': ['Main'] });
+ok('removing a routed special drops ITS routing key',
+   !Object.prototype.hasOwnProperty.call(routed.routing, KEY));
+ok('…and leaves every other item’s route alone',
+   JSON.stringify(routed.routing['m:Pasta:Rotini'] || []) === JSON.stringify(['Main']));
+ok('…and pushes ct_pos_routing, so the drop syncs instead of being undone by the next reload',
+   routed.pushed.includes('ct_pos_routing') && routed.pushed.includes('ct_pos_new_items'));
+
+const unrouted = run({ cat: 'Specials', name: 'Soup' }, 'Specials', { 'm:Pasta:Rotini': ['Main'] });
+ok('removing an UNROUTED special does not write the routing store at all',
+   !unrouted.pushed.includes('ct_pos_routing') && unrouted.pushed.includes('ct_pos_new_items'));
+
+// The legacy-spelling trap again, one layer deeper: the key must be built from what the
+// entry actually HOLDS, not from a forward translation of the section the × sat in.
+const legacyKey = bucket ? 'm:' + bucket + ':Test Wine' : '';
+const legacy = bucket
+  ? run({ cat: bucket, name: 'Test Wine' }, bucket, { [legacyKey]: ['Bar'] })
+  : { routing: { x: 1 } };
+ok('⚠️ …and a wine saved under the old bucket spelling drops the key built from its STORED cat',
+   !!bucket && !Object.prototype.hasOwnProperty.call(legacy.routing, legacyKey));
 
 console.log(bad ? `\n${bad} FAILED` : '\nall good');
 process.exit(bad ? 1 : 0);

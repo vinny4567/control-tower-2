@@ -7463,7 +7463,32 @@ function posRemoveNewItem(encCat,encName){
   // would do nothing, silently, while the entry kept publishing. Same question in, same
   // question out.
   const section=decodeURIComponent(encCat), name=decodeURIComponent(encName);
+  const gone=posNewItems.filter(i=>i.name===name&&posSectionOf(i)===section);
   posNewItems=posNewItems.filter(i=>!(i.name===name&&posSectionOf(i)===section));
+  // ⚠️ AND TAKE ITS ROUTE WITH IT, or the next special with the same name inherits it.
+  //
+  // posPruneOrphans cannot do this: its routing loop is `const it=byItem[k]; if(!it)continue;`
+  // (≈7726), and a special is BY DEFINITION not in the catalogue, so the key is unprunable —
+  // it would sit in ct_pos_routing for ever, cloud-synced to every device.
+  //
+  // That matters because SPECIALS ROTATE AND NAMES COME BACK. Route "Chicken Kalina" to the
+  // salad printer, pull it at the end of the rotation, re-add it next month: with the route
+  // left behind, the new item silently inherits the old one the moment it is re-added — under
+  // a key built from cat+name, which is exactly what repeats. The dangerous spelling is the
+  // explicit "— prints nowhere —" option (printers:[]), because printersFor honours an empty
+  // array over printClass and station: a special that silently prints NOWHERE, on a busy
+  // night, with the back office showing a route nobody chose this time.
+  //
+  // Removing the row is the only moment we still know which key belonged to it, so it has to
+  // happen here. Keyed off the entries actually removed, not off a re-translated section, for
+  // the same reason the filter above is — a wine stored under the old bucket spelling has a
+  // different posNewItemKey than a forward translation would build.
+  let dropped=false;
+  for(const i of gone){
+    const k=posNewItemKey(i);
+    if(Object.prototype.hasOwnProperty.call(posRouting,k)){delete posRouting[k];dropped=true;}
+  }
+  if(dropped)kvPush('ct_pos_routing',posRouting,Date.now());
   kvPush('ct_pos_new_items',posNewItems,Date.now());
   posRedraw();
 }
