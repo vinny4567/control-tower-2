@@ -23,10 +23,17 @@ import { fileURLToPath } from 'node:url';
 const REPO=dirname(dirname(fileURLToPath(import.meta.url)));
 const TMP=join(tmpdir(),'ct2-mutate-checks');
 const SRC=readFileSync(join(REPO,'index.html'),'utf8');
+// The screen builder's core is its OWN file, so a mutant for check-screens has to break that
+// file instead of the page. `run` takes which file the mutated text belongs in; everything
+// else is copied through unchanged, so a mutant aimed at one subject cannot accidentally
+// exercise the other.
+const CORE=readFileSync(join(REPO,'screens-core.js'),'utf8');
 
-const run=(which,html)=>{
+const run=(which,text,file)=>{
+  const target=file||'index.html';
   rmSync(TMP,{recursive:true,force:true}); mkdirSync(join(TMP,'tools'),{recursive:true});
-  writeFileSync(join(TMP,'index.html'),html);
+  writeFileSync(join(TMP,'index.html'),target==='index.html'?text:SRC);
+  if(/^check-screens\.mjs$/.test(which)) writeFileSync(join(TMP,'screens-core.js'),target==='screens-core.js'?text:CORE);
   cpSync(join(REPO,'tools',which),join(TMP,'tools',which));
   // ⚠️ A CHECK THAT READS A DATA FILE GOES RED IN THE SANDBOX WITHOUT IT, and a baseline
   // that is red for a missing fixture teaches nothing. Every check reading one must be listed.
@@ -49,6 +56,10 @@ const run=(which,html)=>{
 };
 
 const sub=(a,b)=>{ if(!SRC.includes(a)) throw new Error('anchor missing: '+a.slice(0,60)); return SRC.replace(a,b) };
+// Same, against screens-core.js. Anchors are asserted PRESENT and UNIQUE: a mutant whose
+// anchor has drifted is a mutant that silently tests nothing, which reads as a pass.
+const csub=(a,b)=>{ const n=CORE.split(a).length-1;
+  if(n!==1) throw new Error('core anchor '+(n?'not unique':'missing')+': '+a.slice(0,60)); return CORE.replace(a,b) };
 // Two edits in one mutant, for the cases where one plausible change touches two places.
 const subs=(...pairs)=>pairs.reduce((h,[a,b])=>{
   if(!h.includes(a)) throw new Error('anchor missing: '+a.slice(0,60));
@@ -414,11 +425,81 @@ const M=[
     sub('    const t=a[i];a[i]=a[j];a[j]=t;','    [a[i],a[j]]=[a[j],a[i]];'),false],
   ['PAGE 16 \u00b7 BENIGN \u2014 the move guard is reordered','check-regbuttons.mjs',
     sub('    if(i<0||j<0||i>=a.length||j>=a.length)return false;','    if(j>=a.length||i>=a.length||j<0||i<0)return false;'),false],
+  // ── THE SCREEN BUILDER'S CORE (subject = screens-core.js, not the page) ──────────────
+  //
+  // Two of these are the bug these checks exist to prevent: a draft compare that reads
+  // "we know nothing" as permission, and three states collapsed into two.
+  ['SCR 1 \u00b7 \u26d4 the draft compare reverts to `remoteAt && localAt && remoteAt>localAt`','check-screens.mjs',
+    csub("function scrSaveVerdict(remoteAt, loadedAt) {",
+         "function scrSaveVerdict(remoteAt, loadedAt) {\n    if (!(remoteAt && loadedAt && remoteAt > loadedAt)) return { ok: true, why: 'current', msg: '' };\n    return { ok: false, why: 'stale', msg: 'Reload this screen first.' };"),true,'screens-core.js'],
+  ['SCR 2 \u00b7 \u26d4 "never read the remote" becomes permission','check-screens.mjs',
+    csub("if (loadedAt === undefined) return { ok: false, why: 'never-loaded',",
+         "if (loadedAt === undefined) return { ok: true, why: 'never-loaded',"),true,'screens-core.js'],
+  ['SCR 3 \u00b7 \u26d4 no capture reports NULL, so "not asked yet" and "there are none" become one answer','check-screens.mjs',
+    csub("return { ok: false, reason: 'no-capture', size: undefined, screens: undefined, sheets: undefined,",
+         "return { ok: false, reason: 'no-capture', size: null, screens: null, sheets: null,"),true,'screens-core.js'],
+  ['SCR 4 \u00b7 \u26d4 an unknown screen size falls back to a plausible one','check-screens.mjs',
+    csub("const size = (w && h) ? { w, h, top } : null;",
+         "const size = (w && h) ? { w, h, top } : { w: 1024, h: 768, top };"),true,'screens-core.js'],
+  ['SCR 5 \u00b7 \u26d4 a button with no id gets a RANDOM one, so every import is a different button','check-screens.mjs',
+    csub("if (id) withId++; else { id = 'k:' + key; derivedId++; }",
+         "if (id) withId++; else { id = scrNewId(); derivedId++; }"),true,'screens-core.js'],
+  ['SCR 6 \u00b7 \u26d4 two buttons with one key keep one id, so a drag moves whichever came first','check-screens.mjs',
+    csub("if (seen[id]) { seen[id]++; id = id + '#' + seen[id]; } else { seen[id] = 1; }",
+         "seen[id] = 1;"),true,'screens-core.js'],
+  ['SCR 7 \u00b7 \u26d4 the clear band at the top stops being kept clear','check-screens.mjs',
+    csub("const top = num(size.top) || 0;",
+         "const top = 0;"),true,'screens-core.js'],
+  ['SCR 8 \u00b7 \u26d4 a tap picks up the BOTTOM button, so one moved on top can never be moved again','check-screens.mjs',
+    csub("for (let i = list.length - 1; i >= 0; i--) {",
+         "for (let i = 0; i < list.length; i++) {"),true,'screens-core.js'],
+  ['SCR 9 \u00b7 \u26d4 an unplaced dish flows from the top, landing on a placed one','check-screens.mjs',
+    csub("return { x: 0, y: num(lowest + gap), w, h, gap };",
+         "return { x: 0, y: num(gap), w, h, gap };"),true,'screens-core.js'],
+  ['SCR 10 \u00b7 \u26d4 a full undo stack drops the NEWEST step instead of the oldest','check-screens.mjs',
+    csub("while (s.length > c) s.shift();",
+         "while (s.length > c) s.pop();"),true,'screens-core.js'],
+  ['SCR 11 \u00b7 \u26d4 a screen with nothing visible on it passes as fine','check-screens.mjs',
+    csub("if (!drawable) problems.push(",
+         "if (false) problems.push("),true,'screens-core.js'],
+  ['SCR 12 \u00b7 \u26d4 a screen captured as one face is shown as the whole screen, silently','check-screens.mjs',
+    csub("if (bothFaces.food && bothFaces.bar && name.indexOf('.') < 0) {",
+         "if (false) {"),true,'screens-core.js'],
+  ['SCR 13 \u00b7 \u26d4 an action the register has never heard of is passed through','check-screens.mjs',
+    csub("if (isObj(a) && ACTION_KINDS.indexOf(a.k || a.kind) >= 0) {",
+         "if (isObj(a)) {"),true,'screens-core.js'],
+  ['SCR 14 \u00b7 \u26d4 a draft key gains the ct_ prefix, so every keystroke is mirrored to the mini','check-screens.mjs',
+    csub("const scrDraftKey = (screenId) => 'scr_draft:' + String(screenId || '');",
+         "const scrDraftKey = (screenId) => 'ct_scr_draft:' + String(screenId || '');"),true,'screens-core.js'],
+  ['SCR 15 \u00b7 \u26d4 the core reads the clock itself, so no check can pin a timestamp','check-screens.mjs',
+    csub("at: num(at) || 0,",
+         "at: num(at) || Date.now(),"),true,'screens-core.js'],
+  ['SCR 16 \u00b7 \u26d4 a resize can shrink a button past a thumb and past its own far edge','check-screens.mjs',
+    csub("if (e.indexOf('w') >= 0) { const nw = w - dx; if (nw >= MIN_SIDE) { x = x + dx; w = nw; } else { x = x + (w - MIN_SIDE); w = MIN_SIDE; } }",
+         "if (e.indexOf('w') >= 0) { x = x + dx; w = w - dx; }"),true,'screens-core.js'],
+
+  // The other half: a different number, three rewords and a rewrite must all stay GREEN, or
+  // the next person to tidy this file learns to delete assertions to get back to green.
+  ['SCR B1 \u00b7 BENIGN \u2014 the undo limit is a different number','check-screens.mjs',
+    csub("const UNDO_CAP = 40;",
+         "const UNDO_CAP = 25;"),false,'screens-core.js'],
+  ['SCR B2 \u00b7 BENIGN \u2014 the stale-draft message is reworded','check-screens.mjs',
+    csub("msg: 'Someone has saved this screen since this page read it. Reload it before saving, or their change is lost.' };",
+         "msg: 'This screen changed on another device after this page read it. Reload it first, or that change is lost.' };"),false,'screens-core.js'],
+  ['SCR B3 \u00b7 BENIGN \u2014 the two-faces warning is reworded','check-screens.mjs',
+    csub("warnings.push('Screen \"' + name + '\" was captured as one screen, but the register draws it as two (food and liquor). '",
+         "warnings.push('Screen \"' + name + '\" came over as a single screen, though the register splits it into two: food and liquor. '"),false,'screens-core.js'],
+  ['SCR B4 \u00b7 BENIGN \u2014 the permanent-id note is reworded','check-screens.mjs',
+    csub("warnings.push('This capture was taken before the register gave its buttons permanent names, so they are being '",
+         "warnings.push('This capture predates permanent button names on the register, so they are being '"),false,'screens-core.js'],
+  ['SCR B5 \u00b7 BENIGN \u2014 the overlap test is written the other way round','check-screens.mjs',
+    csub("const overlaps = (a, b) => a[0] < b[0] + b[2] && b[0] < a[0] + a[2] && a[1] < b[1] + b[3] && b[1] < a[1] + a[3];",
+         "const overlaps = (a, b) => !(a[0] + a[2] <= b[0] || b[0] + b[2] <= a[0] || a[1] + a[3] <= b[1] || b[1] + b[3] <= a[1]);"),false,'screens-core.js'],
 ];
 
 let wrong=0;
-for(const [name,which,html,mustRed] of M){
-  const r=run(which,html);
+for(const [name,which,html,mustRed,file] of M){
+  const r=run(which,html,file);
   const good = r.red===mustRed;
   if(!good) wrong++;
   const want = mustRed?'must go RED':'must stay GREEN';
