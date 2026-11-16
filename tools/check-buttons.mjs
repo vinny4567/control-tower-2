@@ -71,7 +71,7 @@ ok('with no pos-buttons.json, a category’s button is UNKNOWN (undefined), not 
 const cats = ['Appetizers', 'Pasta', 'GOLF', 'Food Mods', 'Wine', 'DISCOUNTS', 'Specials'];
 const blind = S.posCatOptions(cats);
 ok('…so no category is put in a "nothing opens these" group',
-   groups(blind).length === 1 && groups(blind)[0].vals.includes(S.POS_GROUPS_CAT));
+   groups(blind).length === 1 && (groups(blind)[0].vals || []).includes(S.POS_GROUPS_CAT));
 ok('…and the sellable categories are left UNGROUPED, so the dropdown reads as it does today',
    loose(blind).includes('Pasta') && loose(blind).includes('Specials'));
 ok('…and no category carries a button annotation', !/rail #/.test(blind));

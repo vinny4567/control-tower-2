@@ -210,8 +210,11 @@ const routed = publish(sp, { [KEY]: ['Salad'] });
 ok('⚠️ …and once a printer is chosen it rides under the register\'s own key',
    !!routed.items && !!routed.items[KEY]
    && JSON.stringify(routed.items[KEY].printers) === JSON.stringify(['Salad']));
+// `|| []` at the point of access only: a route that publishes no `printers` at all used to
+// throw here, which stops the file and silently skips every assertion below it — so the
+// mutant came back red for the CRASH, not for this assertion (see tools/check-screens.mjs).
 ok('…so a salad special reaches the salad station instead of the hot line',
-   !!routed.items && (routed.items[KEY] || {}).printers.includes('Salad'));
+   !!routed.items && ((routed.items[KEY] || {}).printers || []).includes('Salad'));
 const nowhere = publish(sp, { [KEY]: [] });
 ok('and an explicit "prints nowhere" travels as the empty list the register honours',
    !!nowhere.items && !!nowhere.items[KEY]

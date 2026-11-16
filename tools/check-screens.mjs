@@ -113,8 +113,11 @@ const byId = (s, id) => (((IM.screens || {})[s] || {}).els || []).find((e) => e.
 ok('a rail button becomes a button element with its label and colour',
    !!byId('order', 'k:order|Appetizers') && byId('order', 'k:order|Appetizers').t === 'Appetizers'
    && byId('order', 'k:order|Appetizers').c === '#8a5a2b');
+// `.a` needs the same guard as the element itself: a button that comes through with no
+// action at all threw here, which stopped the file and skipped every assertion below.
+const actOf = (s, id) => (byId(s, id).a || {});
 ok('…carrying the category action the capture implies',
-   byId('order', 'k:order|Appetizers').a.k === 'cat' && byId('order', 'k:order|Appetizers').a.cat === 'Appetizers');
+   actOf('order', 'k:order|Appetizers').k === 'cat' && actOf('order', 'k:order|Appetizers').cat === 'Appetizers');
 ok('a known panel becomes a block, not a button', byId('order', 'k:chrome|check').kind === 'check');
 ok('…and a block carries no label or action', byId('order', 'k:chrome|check').t === undefined);
 ok('the register\'s own key is kept on the element, so a draft can be matched back to it',
@@ -168,11 +171,17 @@ const ACT = SCR.scrImport({ window: { w: 100, h: 100 }, scopes: { s: { buttons: 
   { key: 'a', label: 'A', x: 0, y: 0, w: 10, h: 10, a: { k: 'item', cat: 'Pasta', key: 'm:Pasta:Rigatoni' } },
   { key: 'b', label: 'B', x: 20, y: 0, w: 10, h: 10, a: { k: 'teleport', to: 'mars' } },
   { key: 'c', label: 'C', x: 40, y: 0, w: 10, h: 10 }] } } });
-ok('a known action survives the import', ACT.screens.s.els[0].a.k === 'item' && ACT.screens.s.els[0].a.key === 'm:Pasta:Rigatoni');
+// Same shape as `byId` above: an import that drops the screen or the button used to throw
+// here instead of failing. The two `=== undefined` assertions keep an explicit existence
+// conjunct, because `{}` has no action either and would otherwise satisfy them for free.
+const AEls = () => (((ACT.screens || {}).s || {}).els || []);
+const AE = (i) => (AEls()[i] || {});
+ok('a known action survives the import',
+   (AE(0).a || {}).k === 'item' && (AE(0).a || {}).key === 'm:Pasta:Rigatoni');
 ok('⛔ an action the register has never heard of is left ABSENT, not passed through',
-   ACT.screens.s.els[1].a === undefined);
+   !!AEls()[1] && AE(1).a === undefined);
 ok('a button with nothing to go on has no action at all, rather than a guessed one',
-   ACT.screens.s.els[2].a === undefined);
+   !!AEls()[2] && AE(2).a === undefined);
 
 // ═══ 2. GEOMETRY ══════════════════════════════════════════════════════════════
 const SZ = { w: 1180, h: 820, top: 32 };

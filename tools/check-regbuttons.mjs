@@ -114,13 +114,20 @@ if (EDIT) {
 }
 ok('posBtnEdit and the five handlers lift and run', !!(H && H.posBtnMove));
 // The same predicate with NO export loaded, for the three-state assertion below.
-const H2 = () => new Function('report', `
-  const posButtons=null;
-  const posBtnCat=(e)=>typeof e==='string'?e:(e&&e.cat)||'';
-  const posBtnOpeners=()=>[];
-  const posBtnLabelOf=(e)=>(e&&e.label)||(e&&e.cat)||'';
-  ${PRED}
-  return {posBtnWhyNot,posBtnExportCats};`)(null);
+// Built from page source like the two above, so a page that no longer parses must FAIL by
+// name rather than throw: an uncaught throw here stops the file and skips every assertion
+// below it. Returns null on a compile error, and the one call site asserts it got something.
+const H2 = () => {
+  try {
+    return new Function('report', `
+      const posButtons=null;
+      const posBtnCat=(e)=>typeof e==='string'?e:(e&&e.cat)||'';
+      const posBtnOpeners=()=>[];
+      const posBtnLabelOf=(e)=>(e&&e.label)||(e&&e.cat)||'';
+      ${PRED}
+      return {posBtnWhyNot,posBtnExportCats};`)(null);
+  } catch (e) { ok('the predicate with no export evaluates: ' + e.message, false); return null; }
+};
 
 
 if (H && H.posBtnMove) {
@@ -131,6 +138,19 @@ if (H && H.posBtnMove) {
   };
   const cats = (a) => (a || []).map((e) => e.cat).join(',');
 
+  // ── reading through `last` without throwing ─────────────────────────────────────────
+  // A refused write leaves `last` null and a write that drops a rail leaves it without
+  // one, so reading straight through threw. A crash stops the file: every assertion below
+  // it is silently skipped, the reported assertion count quietly drops, and
+  // `mutate-checks` then scores the mutant red for the CRASH rather than for the
+  // assertion meant to catch it. Same pattern as tools/check-screens.mjs — `D(rail)` is
+  // the drafted rail or [], `E(rail,i)` its i-th button or {}, so the ok() line FAILS with
+  // its own message. Nothing here asserts less: where a missing button would otherwise
+  // satisfy an assertion vacuously (`!…label`, `!('label' in …)`), the existence the
+  // throw used to stand in for is now written out as `!!D(rail)[i] &&`.
+  const D = (rail) => (((last || {}).draft || {})[rail] || []);
+  const E = (rail, i) => (D(rail)[i] || {});
+
   // ── 2. a draft edit must never touch `live`
   fresh(); H.posBtnMove('food', 0, 1);
   ok('⛔ a draft edit leaves `live` exactly as it was — editing cannot change the registers',
@@ -138,39 +158,40 @@ if (H && H.posBtnMove) {
   ok('…and it is written back under v:1 with both halves', !!last && last.v === 1 && !!last.draft);
 
   // ── the ▲▼ swap
-  ok('moving down swaps with the one below', cats(last.draft.food) === 'B,A,C');
+  ok('moving down swaps with the one below', cats(D('food')) === 'B,A,C');
   fresh(); H.posBtnMove('food', 2, -1);
-  ok('moving up swaps with the one above', cats(last.draft.food) === 'A,C,B');
+  ok('moving up swaps with the one above', cats(D('food')) === 'A,C,B');
   fresh(); H.posBtnMove('food', 0, -1);
   ok('moving the top one up is refused, not wrapped to the bottom', last === null);
   fresh(); H.posBtnMove('food', 2, 1);
   ok('moving the last one down is refused', last === null);
   fresh(); H.posBtnMove('bar', 0, 1);
   ok('a move on one rail leaves the other alone',
-     cats(last.draft.bar) === 'GIN,VODKA' && cats(last.draft.food) === 'A,B,C');
+     cats(D('bar')) === 'GIN,VODKA' && cats(D('food')) === 'A,B,C');
 
   // ── 1. THE KEY IS NEVER TOUCHED
   fresh(); H.posBtnRename(encodeURIComponent('B'), 'Kids Menu');
   ok('⛔ a rename sets the LABEL and leaves the key alone',
-     last.draft.food[1].cat === 'B' && last.draft.food[1].label === 'Kids Menu');
-  ok('…and no other button is relabelled', !last.draft.food[0].label && !last.draft.food[2].label);
+     E('food', 1).cat === 'B' && E('food', 1).label === 'Kids Menu');
+  ok('…and no other button is relabelled',
+     !!D('food')[0] && !E('food', 0).label && !!D('food')[2] && !E('food', 2).label);
   fresh(); H.posBtnRename(encodeURIComponent('B'), '   ');
   ok('an empty box clears the label rather than making a blank button',
-     last.draft.food[1].cat === 'B' && !('label' in last.draft.food[1]));
+     E('food', 1).cat === 'B' && !('label' in E('food', 1)));
   fresh(); H.posBtnRename(encodeURIComponent('B'), 'B');
   ok('a label equal to the key is stored as no label at all',
-     !('label' in last.draft.food[1]));
+     !!D('food')[1] && !('label' in E('food', 1)));
   fresh(); H.posBtnRename(encodeURIComponent('B'), '  Spaced  ');
-  ok('a label is trimmed', last.draft.food[1].label === 'Spaced');
+  ok('a label is trimmed', E('food', 1).label === 'Spaced');
   fresh(); H.posBtnRename(encodeURIComponent('B'), 'x'.repeat(60));
   ok('…and capped, so one long name cannot break the rail’s layout',
-     last.draft.food[1].label.length === 24);
+     (E('food', 1).label || '').length === 24);
   fresh(); H.posBtnRename(encodeURIComponent('NOPE'), 'x');
   ok('renaming a button that is not there changes nothing', last === null);
 
   // ── colour
   fresh(); H.posBtnColor(encodeURIComponent('A'), '#123456');
-  ok('a colour is set on the right button', last.draft.food[0].color === '#123456');
+  ok('a colour is set on the right button', E('food', 0).color === '#123456');
   fresh(); H.posBtnColor(encodeURIComponent('A'), 'red');
   ok('…and anything that is not a #rrggbb hex is ignored, not written through', last === null);
   fresh(); H.posBtnColor(encodeURIComponent('A'), '#12345');
@@ -179,21 +200,21 @@ if (H && H.posBtnMove) {
   // ── off and back on
   fresh(); H.posBtnOff(encodeURIComponent('B'));
   ok('× takes the button off the rail and into the tray',
-     cats(last.draft.food) === 'A,C' && last.draft.off.join() === 'B');
+     cats(D('food')) === 'A,C' && D('off').join() === 'B');
   fresh(); H.posBtnOff(encodeURIComponent('NOPE'));
   ok('taking off a button that is not on a rail changes nothing', last === null);
   base = { v: 1, draft: { food: [{ cat: 'A' }], bar: [], off: ['GIN'] }, live: LIVE }; H.setBase(base); last = null;
   H.posBtnOn(encodeURIComponent('GIN'));
   ok('⚠️ putting one back goes to the rail the REGISTER has it on, not whichever column is handy',
-     last.draft.off.length === 0 && cats(last.draft.bar) === 'GIN' && cats(last.draft.food) === 'A');
+     D('off').length === 0 && cats(D('bar')) === 'GIN' && cats(D('food')) === 'A');
   base = { v: 1, draft: { food: [], bar: [], off: ['Pasta'] }, live: LIVE }; H.setBase(base); last = null;
   H.posBtnOn(encodeURIComponent('Pasta'));
   ok('\u2026carrying the register\u2019s own colour for that category, not a new one',
-     last.draft.food[0].color === '#A83C3C');
+     E('food', 0).color === '#A83C3C');
   base = { v: 1, draft: { food: [], bar: [], off: ['GIN'] }, live: LIVE }; H.setBase(base); last = null;
   H.posBtnOn(encodeURIComponent('GIN'));
   ok('\u2026and blank when the register has no colour for it, so it falls back to the default',
-     last.draft.bar[0].color === '');
+     E('bar', 0).color === '');
   base = { v: 1, draft: { food: [{ cat: 'A' }], bar: [], off: [] }, live: LIVE }; H.setBase(base); last = null;
   H.posBtnOn(encodeURIComponent('GIN'));
   ok('putting back something that is not in the tray changes nothing', last === null);
@@ -226,16 +247,16 @@ if (H && H.posBtnMove) {
   H.setBase(base); last = null;
   H.posBtnOff(encodeURIComponent('N/A BEVS'));
   ok('\u00d7 on a cat that is on BOTH rails takes it off both, and records it once',
-     cats(last.draft.food) === 'A' && cats(last.draft.bar) === 'VODKA'
-     && last.draft.off.join() === 'N/A BEVS');
+     cats(D('food')) === 'A' && cats(D('bar')) === 'VODKA'
+     && D('off').join() === 'N/A BEVS');
   H.setBase(last); last = null;
   H.posBtnOn(encodeURIComponent('N/A BEVS'));
   ok('\u26d4 …and + puts it back on BOTH, not just one — one × then one + used to delete it',
-     cats(last.draft.food).includes('N/A BEVS') && cats(last.draft.bar).includes('N/A BEVS')
-     && last.draft.off.length === 0);
+     cats(D('food')).includes('N/A BEVS') && cats(D('bar')).includes('N/A BEVS')
+     && D('off').length === 0);
   ok('\u2026and does not duplicate a rail entry that is somehow already there',
-     last.draft.food.filter((e) => e.cat === 'N/A BEVS').length === 1
-     && last.draft.bar.filter((e) => e.cat === 'N/A BEVS').length === 1);
+     D('food').filter((e) => e.cat === 'N/A BEVS').length === 1
+     && D('bar').filter((e) => e.cat === 'N/A BEVS').length === 1);
 
   // round trip
   base = { v: 1, draft: { food: [{ cat: 'A' }, { cat: 'Pasta' }], bar: [], off: [] }, live: LIVE }; H.setBase(base);
@@ -243,7 +264,7 @@ if (H && H.posBtnMove) {
   const afterOff = last; H.setBase(afterOff); last = null;
   H.posBtnOn(encodeURIComponent('Pasta'));
   ok('off then on puts a food category back on the FOOD rail',
-     last.draft.off.length === 0 && cats(last.draft.food).includes('Pasta') && last.draft.bar.length === 0);
+     D('off').length === 0 && cats(D('food')).includes('Pasta') && D('bar').length === 0);
 }
 
 // ── the predicate: what may be a register button
@@ -302,7 +323,7 @@ if (H && H.posBtnWhyNot) {
   ok('an empty or non-string cat is refused', !!why('') && !!why(null) && !!why(42));
   ok('\u26a0\ufe0f and with no export loaded the verdict is UNDEFINED, not "fine" and not'
      + ' "refused" \u2014 blind is its own answer',
-     (() => { const g = H2(); return g.posBtnWhyNot('Pasta') === undefined && g.posBtnWhyNot('Wine') === undefined; })());
+     (() => { const g = H2(); return !!g && g.posBtnWhyNot('Pasta') === undefined && g.posBtnWhyNot('Wine') === undefined; })());
   ok('posBtnBadOnes names every unusable entry on both rails, with label and key',
      (() => {
        const b = H.posBtnBadOnes({ food: [{ cat: 'Pasta' }, { cat: 'Wine', label: 'VINO' }], bar: [{ cat: 'PASTA' }] });
@@ -439,10 +460,14 @@ if (SEND) {
   ok('a real send writes `live` with a minted `at`, publishes once, pokes the mini and reads back',
      !!good.calls.wrote && good.calls.wrote.live && Number(good.calls.wrote.live.at) > 0
      && good.calls.published === 1 && good.calls.poked === 1 && good.calls.receipt === 1);
+  // `wrote` is null whenever a send is refused, so read it through a guard: a crash here
+  // would skip the receipt block below entirely. The `!!gw().live` conjunct keeps the copy
+  // assertion from passing vacuously when nothing was written at all.
+  const gw = () => (good.calls.wrote || {});
   ok('\u2026and the draft survives the send, so he can keep editing from where he was',
-     good.calls.wrote.draft === FULL);
+     gw().draft === FULL);
   ok('\u2026and `live` is a COPY, so a later draft edit cannot reach the registers',
-     good.calls.wrote.live.food !== FULL.food);
+     !!gw().live && (gw().live || {}).food !== FULL.food);
 }
 
 // ── the receipt, RUN against each state the mini can actually be in
@@ -450,15 +475,29 @@ if (SEND) {
 // `j.menu`, because the comment above it mentions `menu.buttons.at` — a comment is not a
 // behaviour. These stub fetch and read the sentence back.
 const RBODY = cut('async function posBtnReceipt(at){', '\nasync function ', 'posBtnReceipt');
+// ⚠️ The body is CUT FROM THE PAGE, so a page whose template no longer parses used to
+// throw out of `new Function` here and kill the file — every assertion below it silently
+// skipped. Record the parse error instead and hand back a stub, so the block runs and the
+// named parse assertion below is what goes red.
+let RPARSE = null;
 const receipt = (payload, status) => {
-  const fn = new Function('payload', 'status', `
-    const KV_MINI='http://mini.example/api/kv';
-    const fetch=async()=>({ok:status===200,status,json:async()=>payload});
-    ${RBODY}
-    return posBtnReceipt;`)(payload, status === undefined ? 200 : status);
-  return fn;
+  try {
+    return new Function('payload', 'status', `
+      const KV_MINI='http://mini.example/api/kv';
+      const fetch=async()=>({ok:status===200,status,json:async()=>payload});
+      ${RBODY}
+      return posBtnReceipt;`)(payload, status === undefined ? 200 : status);
+  } catch (e) {
+    RPARSE = String(e.message);
+    return async () => '\u0000posBtnReceipt did not parse';
+  }
 };
 if (RBODY) {
+  // ⛔ Asserted FIRST and by name. Several assertions below are `!== CONFIRMED`, which a
+  // stub would satisfy for the wrong reason, so a body that does not parse has to be red
+  // here rather than quietly green there.
+  receipt({ menu: { items: [] } }, 200);
+  ok('the posBtnReceipt body cut from the page still parses', RPARSE === null);
   const CONFIRMED = 'On the registers.';
   const served = (buttons) => ({ menu: { items: [], ...(buttons ? { buttons } : {}) } });
   const noBlob = (buttons) => ({ menu: { ...(buttons ? { buttons } : {}) } });
@@ -487,11 +526,18 @@ if (RBODY) {
 
   ok('a non-200 from the mini is reported as unconfirmed, with the status',
      /could not read the mini back/i.test(await receipt(null, 503)(500)));
-  const dead = new Function('', `
-    const KV_MINI='http://mini.example/api/kv';
-    const fetch=async()=>{throw new Error('offline')};
-    ${RBODY}
-    return posBtnReceipt;`)();
+  // Compiles RBODY a second time, so it needs the same guard as `receipt` above —
+  // otherwise a page whose template no longer balances throws HERE instead, and the file
+  // dies two assertions from the end. The parse assertion at the top of this block is
+  // what reports it.
+  let dead;
+  try {
+    dead = new Function('', `
+      const KV_MINI='http://mini.example/api/kv';
+      const fetch=async()=>{throw new Error('offline')};
+      ${RBODY}
+      return posBtnReceipt;`)();
+  } catch (e) { RPARSE = String(e.message); dead = async () => '\u0000posBtnReceipt did not parse'; }
   ok('and off the tailnet reads as UNKNOWN, not as failed',
      /could not reach the mini/i.test(await dead(500)));
 }

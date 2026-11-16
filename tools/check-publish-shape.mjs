@@ -90,6 +90,15 @@ const build = new Function('ctx', 'with(ctx){' + PRED + '\n' + grab('posBuildLiv
 
 // 1. the empty case — nothing edited at all
 let b = build();
+// ── reading through the blob without throwing ───────────────────────────────────────────
+// `BT()` is `b.buttons` or `{}`, and arrays are taken as `(… || [])` AT THE POINT OF
+// ACCESS. A blob that publishes no rail at all used to throw on the first `b.buttons.food`
+// below, which stops the file: every assertion after it is silently skipped, the reported
+// assertion count quietly drops, and `mutate-checks` scores the mutant red for the CRASH
+// rather than for the assertion meant to catch it. Same pattern as tools/check-screens.mjs.
+// Nothing here is weakened — where absence would otherwise satisfy an assertion vacuously,
+// the `!!b.buttons &&` that used to be implied by the throw is now written out.
+const BT = () => (b.buttons || {});
 ok('an empty publish is still ACCEPTED by the mini', miniAccepts(b));
 ok('  items is an object', b.items && typeof b.items === 'object');
 ok('  deleted is an array', Array.isArray(b.deleted));
@@ -187,21 +196,21 @@ state.itemOrder = {};
 b = build();
 ok('the sent rail rides the publish', !!b.buttons && b.buttons.v === 1);
 ok('⛔ it is the SENT snapshot, not the draft',
-   b.buttons.food.some((e) => e.cat === 'Pasta')
-   && JSON.stringify(b.buttons).indexOf('DRAFT ONLY') < 0);
+   (BT().food || []).some((e) => e.cat === 'Pasta')
+   && JSON.stringify(BT()).indexOf('DRAFT ONLY') < 0);
 ok('…carrying the sent `at`, which is what the on-the-registers receipt compares',
-   b.buttons.at === 1700000000001);
-ok('…both rails and the off-list', Array.isArray(b.buttons.bar) && b.buttons.off[0] === 'Specials');
+   BT().at === 1700000000001);
+ok('…both rails and the off-list', Array.isArray(BT().bar) && (BT().off || [])[0] === 'Specials');
 ok('and they are copies, so a later edit here cannot mutate what was sent',
-   b.buttons.food !== state.buttons.live.food && b.buttons.off !== state.buttons.live.off);
+   !!b.buttons && BT().food !== state.buttons.live.food && BT().off !== state.buttons.live.off);
 
 // An unrelated edit must re-emit the SAME rail with the SAME at — otherwise every price
 // change looks like a rail change to the register and redraws the screen.
-const railAt = b.buttons.at, railJson = JSON.stringify(b.buttons);
+const railAt = BT().at, railJson = JSON.stringify(BT());
 state.rows = [{ key: 'm:Pasta:Rotini', cents: 1450, newCents: 1595, entered: true, cat: 'Pasta' }];
 b = build();
 ok('⚠️ an unrelated price edit re-emits the same rail, byte for byte, with the same `at`',
-   JSON.stringify(b.buttons) === railJson && b.buttons.at === railAt);
+   !!b.buttons && JSON.stringify(BT()) === railJson && BT().at === railAt);
 state.rows = [];
 
 // Never edited ⇒ the key is ABSENT, so each register keeps its own built-in rail. An
@@ -235,7 +244,7 @@ ok('…either way round', !('buttons' in b));
 state.buttons = { draft: {}, live: { at: 9, food: [{ cat: 'Pasta' }], bar: [{ cat: 'GIN' }], off: [] } };
 b = build();
 ok('…while one button on EACH page travels normally',
-   !!b.buttons && b.buttons.food.length === 1 && b.buttons.bar.length === 1 && b.buttons.at === 9);
+   !!b.buttons && (BT().food || []).length === 1 && (BT().bar || []).length === 1 && BT().at === 9);
 
 // ⛔ THE PREDICATE HAS TO RUN HERE, NOT ONLY AT THE SEND. This function runs on EVERY
 // publish — a price edit re-emits the stored `live` with no send involved — so a rail written
@@ -244,11 +253,11 @@ ok('…while one button on EACH page travels normally',
 state.buttons = { draft: {}, live: { at: 9, food: [{ cat: 'Pasta' }, { cat: 'Wine' }], bar: [{ cat: 'GIN' }], off: [] } };
 b = build();
 ok('⛔ a stored rail carrying a name the registers cannot use publishes WITHOUT it',
-   !!b.buttons && b.buttons.food.map((e) => e.cat).join() === 'Pasta');
+   !!b.buttons && (BT().food || []).map((e) => e.cat).join() === 'Pasta');
 state.buttons = { draft: {}, live: { at: 9, food: [{ cat: 'Pasta' }, { cat: 'PASTA' }], bar: [{ cat: 'GIN' }], off: [] } };
 b = build();
 ok('…and a MISSPELLED cat is dropped too, not waved through because it looks close',
-   !!b.buttons && b.buttons.food.map((e) => e.cat).join() === 'Pasta');
+   !!b.buttons && (BT().food || []).map((e) => e.cat).join() === 'Pasta');
 state.buttons = { draft: {}, live: { at: 9, food: [{ cat: 'Pasta' }], bar: [{ cat: '__groups' }], off: [] } };
 b = build();
 ok('⛔ …and if dropping empties a page, the whole key goes rather than half a rail',
@@ -258,14 +267,14 @@ ok('⛔ …and if dropping empties a page, the whole key goes rather than half a
 state.buttons = { draft: {}, live: { at: 9, food: [{ cat: 'Pasta' }], bar: [{ cat: 'GIN' }], off: ['Wine', 'Specials'] } };
 b = build();
 ok('an unknown name in `off` still travels — suppressing something no reader knows is a no-op',
-   !!b.buttons && b.buttons.off.join() === 'Wine,Specials');
+   !!b.buttons && (BT().off || []).join() === 'Wine,Specials');
 // Blind must not refuse: with no export loaded nothing is known, and guessing here would
 // take real tabs off eight registers.
 const noExport = ctx.posButtons; ctx.posButtons = null;
 state.buttons = { draft: {}, live: { at: 9, food: [{ cat: 'Anything' }], bar: [{ cat: 'At All' }], off: [] } };
 b = build();
 ok('⚠️ with pos-buttons.json not loaded NOTHING is refused — blind is not a verdict',
-   !!b.buttons && b.buttons.food.length === 1 && b.buttons.bar.length === 1);
+   !!b.buttons && (BT().food || []).length === 1 && (BT().bar || []).length === 1);
 ctx.posButtons = noExport;
 
 console.log(bad ? `\n${bad} FAILED` : '\nall good');
