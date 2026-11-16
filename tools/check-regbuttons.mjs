@@ -509,22 +509,31 @@ if (RBODY) {
 const once = (re) => (src.match(re) || []).length === 1;
 ok('the send flag is ONE named constant, so nothing can shadow it',
    once(/const POS_BTN_SEND_ENABLED=/g));
-ok('…and so is the flag that tracks what the register cannot do for itself yet',
-   once(/const POS_BTN_READER_HARDENED=/g));
-// ⛔ Jarvis asked that the page tell Vinny the truth: sending is live, but the register does
-// not refuse a bad name, does not add back a category left off the list, and does not re-pick
-// the active category when its button goes. Dropping that note would leave him sending into a
-// register that cannot guard itself, with the page implying it can. The WORDING is not pinned
-// — only that the note is keyed to the flag and actually says something.
-const HARDNOTE = (() => {
-  const i = src.indexOf('!POS_BTN_READER_HARDENED?');
+// ✅ POS_BTN_READER_HARDENED IS RETIRED, and these assertions changed shape with it. It tracked
+// three things the register could not do; 9756817 (in live main 5218ccc) closed all three, each
+// verified in the register's own code. What survives is NOT a gap but the FEATURE: a category in
+// `off` has no button because the register honours that deliberately (rail.js:95). So the note is
+// now permanent and unconditional, and the thing worth pinning flipped from "the warning retires
+// itself with the flag" to "the warning can no longer be retired at all".
+ok('\u26d4 the retired flag is really gone, so no stale warning can be keyed to it',
+   !/const POS_BTN_READER_HARDENED=/.test(src));
+const OFFNOTE = (() => {
+  const i = src.indexOf('>Sending is live<');
   if (i < 0) return '';
-  return src.slice(i, src.indexOf("</div>`:'')}", i));
+  return src.slice(i, src.indexOf('</div>`}', i));
 })();
-ok('⛔ while the register cannot screen a bad name itself, the page says so',
-   HARDNOTE.length > 400);
-ok('…and that note is keyed to the flag, so it retires itself rather than going stale',
-   /!POS_BTN_READER_HARDENED\?/.test(src));
+ok('\u26d4 the page still says that a category taken off has no button',
+   /no button/.test(OFFNOTE) && /still need to ring/.test(OFFNOTE));
+ok('\u2026and says the register does it ON PURPOSE, not that it is waiting to be fixed',
+   /on purpose/.test(OFFNOTE) && !/\byet\b/.test(OFFNOTE));
+// ⛔ The stale claim is the dangerous one: "the register does not add it back YET" invited him to
+// expect it would. For an `off` category it never will, by design.
+ok('\u26d4 …and does NOT promise the register will put a removed category back',
+   !/add(s)? it back/.test(OFFNOTE) && !/put it back, so/.test(OFFNOTE.replace('not put it back, so','')));
+ok('\u2026and it is NOT behind a flag any more — it shows whenever sending is possible',
+   OFFNOTE.length > 200 && !/POS_BTN_/.test(OFFNOTE));
+ok('\u2026while the gated page still has its own separate "not connected" note',
+   /Not connected to the registers yet/.test(src));
 ok('⛔ …and the send checks it before anything else',
    /async function posBtnSend\([^)]*\)\{\s*if\(!POS_BTN_SEND_ENABLED\)\{/.test(src));
 ok('⛔ a draft save does NOT trigger the auto-publish hook (ct_pos_buttons is excluded)',

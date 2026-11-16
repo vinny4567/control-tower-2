@@ -9303,18 +9303,18 @@ const POS_BTN_STORE='ct_pos_buttons';
 // resolves to zero buttons; 'Wine' now out of RAIL_ORDER), and host-stand-1, the only
 // register iPad, reloaded onto it at 19:42:20 with a clean log. So a Send is no longer a
 // delayed-action change: it lands within about a minute, while he is standing there.
-// ⛔ Sending being live does NOT mean the register guards itself yet — see the next flag.
 const POS_BTN_SEND_ENABLED=true;
-// ⛔ WHAT THE REGISTER STILL DOES NOT DO (POS-UI 9756817, in Jarvis's review, NOT live):
-//   · refuse a forbidden name itself — so this page's predicate is the ONLY guard against
-//     'Wine' and the view sentinels reaching a rail;
-//   · append an office-made category that has dishes but no button, so a category left off
-//     the list is simply UNREACHABLE on the register;
-//   · re-pick the active category when its button leaves the rail, so taking a button off
-//     while a server has that screen open leaves them with no tab lit until they tap another.
-// This exists to keep the page's copy honest about all three. Set it to true when Jarvis
-// says 9756817 is live, and the note it drives disappears on its own.
-const POS_BTN_READER_HARDENED=false;
+// ✅ THE REGISTER NOW GUARDS ITSELF — POS_BTN_READER_HARDENED IS GONE, NOT SET TRUE.
+// It tracked three things the reader could not do. POS-UI 9756817 (inside live main 5218ccc,
+// on the floor 11/15 20:53) closed all three, verified in the register’s own code rather than
+// taken on report: listable() refuses the forbidden names (rail.js), appendOrphans() gives an
+// office-made category with dishes a FOOD button (rail.js ~104-108), and an effect re-picks the
+// start tab when a published rail drops the open category (OrderScreen.js ~171-173).
+// ⚠️ The page’s old bullet "a category you leave off is unreachable — the register does not add
+// it back YET" conflated a gap with the feature. An `off` category still has no button, and that
+// is DELIBERATE (rail.js:95 "takes it off on purpose"). So that one line stays, permanently and
+// unconditionally, worded as a fact rather than as a thing waiting to be fixed — a flag that can
+// only ever be true is noise, and a warning that retires a truth is worse than noise.
 let posBtnStore=null;     // null/absent = never edited. {draft:{food,bar,off}, live:{…}|null}
 let posBtnAt=0;           // the `at` this page loaded, so a save can refuse to clobber
 // Seeded from the register's own export while the store is empty, so the first thing he
@@ -15887,16 +15887,16 @@ function posRegButtonsHTML(){
   ${gate?`<div style="${posCardCss};margin-bottom:14px;border-color:#b45309">
     <div style="font-weight:800;font-size:13px;color:#fbbf24;margin-bottom:4px">Not connected to the registers yet</div>
     <div style="color:var(--text-dim);font-size:12px;line-height:1.5">The iPad software that reads a button list is not live, so sending is switched off. Arrange them here as much as you like — it is saved, and nothing can reach the floor by accident in the meantime.</div>
-  </div>`:(!POS_BTN_READER_HARDENED?`<div style="${posCardCss};margin-bottom:14px;border-color:#b45309">
-    <div style="font-weight:800;font-size:13px;color:#fbbf24;margin-bottom:4px">Sending is live — three things to know first</div>
+  </div>`:`<div style="${posCardCss};margin-bottom:14px;border-color:#b45309">
+    <div style="font-weight:800;font-size:13px;color:#fbbf24;margin-bottom:4px">Sending is live</div>
     <div style="color:var(--text-dim);font-size:12px;line-height:1.6">
       The registers read this list now, and a Send lands on them in about a minute.
-      <br>· <b>A category you leave off is unreachable.</b> The register does not add it back yet, so if it has dishes on it, take nothing off that you still need to ring.
-      <br>· <b>Taking a button off mid-service is felt.</b> If a server has that screen open they are left with no tab lit until they tap another one.
-      <br>· <b>Anything this page refuses, the register would accept.</b> It does not screen out bad names itself yet, so the warnings here are the only thing standing between a wrong name and a dead button.
+      <br>· <b>A category you take off has no button at all.</b> The register does that on purpose and will
+      not put it back, so take nothing off that you still need to ring.
+      <br>· A brand-new category you make in the office gets a button on its own, so that one cannot be lost.
       <br>“Back to the built-in buttons” undoes a Send at any time.
     </div>
-  </div>`:'')}
+  </div>`}
   ${badNote}
   <div style="${posCardCss};margin-bottom:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
     <span style="font-size:13px;font-weight:700">${

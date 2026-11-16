@@ -295,15 +295,23 @@ const M=[
   // released. What replaces it is the warning the release left behind: sending works, but the
   // register still cannot screen a bad name, add back a category left off the list, or re-pick
   // the active category. Dropping that note is now the regression worth catching.
-  ['PAGE 11 \u00b7 \u26d4 the page stops saying what the register cannot do for itself yet','check-regbuttons.mjs',
-    (()=>{const i=SRC.indexOf("`:(!POS_BTN_READER_HARDENED?");const j=SRC.indexOf("</div>`:'')}",i);
-          if(i<0||j<0)throw new Error('anchor missing: the reader-hardened note');
-          return SRC.slice(0,i)+"`:''}"+SRC.slice(j+"</div>`:'')}".length);})(),true],
+  // ✅ PAGE 11 CHANGED TARGET when POS_BTN_READER_HARDENED was retired (9756817 live in 5218ccc).
+  // The old mutant deleted a flag-keyed note. The surviving truth is the FEATURE — an `off`
+  // category has no button on purpose — so the regression worth catching is now the page losing
+  // that line, or going back to implying the register will put it back.
+  ['PAGE 11 \u00b7 \u26d4 the page stops saying a category taken off has no button','check-regbuttons.mjs',
+    (()=>{const i=SRC.indexOf('>Sending is live<');const j=SRC.indexOf('</div>`}',i);
+          if(i<0||j<0)throw new Error('anchor missing: the off note');
+          const a=SRC.lastIndexOf('`<div',i);
+          return SRC.slice(0,a)+"`'"+"'"+SRC.slice(j+'</div>`}'.length);})(),true],
+  ['PAGE 11e \u00b7 \u26d4 the note goes back to promising the register adds a removed category back','check-regbuttons.mjs',
+    sub('The register does that on purpose and will\n      not put it back, so take nothing off that you still need to ring.',
+        'The register does not add it back yet, so take nothing off that you still need to ring.'),true],
+  ['PAGE 11d \u00b7 BENIGN \u2014 the off note is reworded, meaning kept','check-regbuttons.mjs',
+    sub('      The registers read this list now, and a Send lands on them in about a minute.',
+        '      The registers read this list, and a Send reaches them within a minute or so.'),false],
   ['PAGE 11b \u00b7 a second definition of the send flag, shadowing the released one','check-regbuttons.mjs',
     sub('const POS_BTN_SEND_ENABLED=true;','const POS_BTN_SEND_ENABLED=true;\nconst POS_BTN_SEND_ENABLED=false;'),true],
-  ['PAGE 11c \u00b7 BENIGN \u2014 the three warnings are reworded','check-regbuttons.mjs',
-    subs(['A category you leave off is unreachable.','A category left off cannot be rung.'],
-         ['Taking a button off mid-service is felt.','Pulling a button mid-shift is noticed.']),false],
   ['PAGE 12 \u00b7 a draft save goes through kvPush, which publishes on every keystroke','check-regbuttons.mjs',
     sub("k!=='ct_pos_live' && k!=='ct_pos_buttons'","k!=='ct_pos_live'"),true],
   ['PAGE 13 \u00b7 the receipt trusts the mini\u2019s combined `at` again','check-regbuttons.mjs',
