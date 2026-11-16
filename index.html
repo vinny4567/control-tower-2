@@ -9392,26 +9392,53 @@ const POS_BTN_REFUSE=[
 ];
 const posBtnFold=(c)=>String(c==null?'':c).trim().toUpperCase();
 const POS_BTN_REFUSE_FOLDED=POS_BTN_REFUSE.map(posBtnFold);
-// Every cat the register's own export says can carry a button: both rails and the openers.
-const posBtnExportCats=()=>{
+// ⛔ THE ADMIT SET IS THE TWO RAILS ONLY — NOT THE OPENERS. It included the openers at first,
+// on the reasoning that the export lists them as button-capable, which they are: BEER, RED
+// WINE, WHITE WINE, GOLF and Sides each already have a button of their own above the item
+// grid. That is exactly why they must not go on a RAIL. Jarvis ruled it on 11/15 after POS-UI's
+// reader (5218ccc) was found to skip them: both sides refuse, and putting any button anywhere
+// is the screen builder's job, not this page's. Refusing them here is not taking their
+// existing buttons away — the reason text says so, because "BEER cannot be sent" would read
+// like BEER is being removed from the bar screen.
+const posBtnRailCats=()=>{
   if(!posButtons)return null;
   const out=[];
-  for(const e of [...((posButtons.food)||[]),...((posButtons.bar)||[]),...posBtnOpeners()]){
+  for(const e of [...((posButtons.food)||[]),...((posButtons.bar)||[])]){
     const c=posBtnCat(e);
     if(c&&!out.includes(c))out.push(c);
   }
   return out;
 };
+// Everything the export knows of, rails and openers together. Not the admit set — this is for
+// telling him WHICH thing he has nearly named.
+const posBtnExportCats=()=>{
+  if(!posButtons)return null;
+  const out=(posBtnRailCats()||[]).slice();
+  for(const e of posBtnOpeners()){
+    const c=posBtnCat(e);
+    if(c&&!out.includes(c))out.push(c);
+  }
+  return out;
+};
+// The opener entry for a cat that has a button of its own, matched folded so a case variant
+// gets this reason rather than being called unknown.
+const posBtnOpenerFor=(cat)=>posBtnOpeners().find(e=>posBtnFold(posBtnCat(e))===posBtnFold(cat))||null;
 // '' = fine. undefined = the export is not loaded, so we do not know. Anything else is a
 // short reason, written to be read at 7pm on a Saturday.
 function posBtnWhyNot(cat){
-  const ex=posBtnExportCats();
-  if(!ex)return undefined;
+  const rails=posBtnRailCats();
+  if(!rails)return undefined;
   if(typeof cat!=='string'||!cat.trim())return 'has no name';
   if(/^__/.test(cat))return 'is one of this page\u2019s own views, not a category';
   if(POS_BTN_REFUSE_FOLDED.includes(posBtnFold(cat)))return 'is not something a register can put on a rail';
-  if(ex.includes(cat))return '';
-  const near=ex.find(c=>posBtnFold(c)===posBtnFold(cat));
+  if(rails.includes(cat))return '';
+  // Asked before the spelling check, so a case variant of an opener is told the useful thing.
+  const op=posBtnOpenerFor(cat);
+  if(op){
+    const where=[op.page==='bar'?'LIQUOR':op.page==='food'?'FOOD':'',op.where].filter(Boolean).join(', ');
+    return 'already has its own button'+(where?' ('+where+')':'')+' on the register, so it does not go on a rail as well';
+  }
+  const near=rails.find(c=>posBtnFold(c)===posBtnFold(cat));
   return near?('is spelled differently from the register\u2019s \u201c'+near+'\u201d \u2014 the registers match exactly')
              :'is not a category the registers know';
 }

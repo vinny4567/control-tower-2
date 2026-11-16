@@ -31,7 +31,7 @@ const run=(which,html)=>{
   // ⚠️ A CHECK THAT READS A DATA FILE GOES RED IN THE SANDBOX WITHOUT IT, and a baseline
   // that is red for a missing fixture teaches nothing. Every check reading one must be listed.
   if(/^check-(printclasses|categories|specials|buttons)\.mjs$/.test(which)) cpSync(join(REPO,'pos-catalog.json'),join(TMP,'pos-catalog.json'));
-  if(/^check-buttons\.mjs$/.test(which)) cpSync(join(REPO,'pos-buttons.json'),join(TMP,'pos-buttons.json'));
+  if(/^check-(reg)?buttons\.mjs$/.test(which)) cpSync(join(REPO,'pos-buttons.json'),join(TMP,'pos-buttons.json'));
   // ⛔ JUDGE THE WAY check-all DOES — BY FAIL LINES, NOT ONLY BY EXIT CODE.
   //
   // This read a non-zero exit as the only signal, and three check files (check-publish-shape,
@@ -334,23 +334,34 @@ const M=[
         '      if(!food.length&&!bar.length)return {};'),true],
   // ── the predicate. The first two are the ones that would cost real tabs on real iPads.
   ['PRED 1 \u00b7 \u26d4 admitting folds case, so "PASTA" publishes a button that rings nothing','check-regbuttons.mjs',
-    sub('  if(ex.includes(cat))return \'\';','  if(ex.map(posBtnFold).includes(posBtnFold(cat)))return \'\';'),true],
+    sub('  if(rails.includes(cat))return \'\';','  if(rails.map(posBtnFold).includes(posBtnFold(cat)))return \'\';'),true],
   ['PRED 2 \u00b7 \u26d4 refusing by substring, which eats the real "RED WINE" button as well','check-regbuttons.mjs',
     sub('  if(POS_BTN_REFUSE_FOLDED.includes(posBtnFold(cat)))return',
         '  if(POS_BTN_REFUSE_FOLDED.some(r=>r.indexOf(posBtnFold(cat))>=0||posBtnFold(cat).indexOf(r)>=0))return'),true],
   ['PRED 3 \u00b7 \u26d4 a blind page refuses everything instead of answering "do not know"','check-regbuttons.mjs',
-    sub('  if(!ex)return undefined;',"  if(!ex)return 'is not a category the registers know';"),true],
+    sub('  if(!rails)return undefined;',"  if(!rails)return 'is not a category the registers know';"),true],
   ['PRED 4 \u00b7 \u26d4 \u2026or calls everything fine while blind','check-regbuttons.mjs',
-    sub('  if(!ex)return undefined;',"  if(!ex)return '';"),true],
+    sub('  if(!rails)return undefined;',"  if(!rails)return '';"),true],
   ['PRED 5 \u00b7 the view sentinels are matched by name, so the next one added slips through','check-regbuttons.mjs',
     sub("  if(/^__/.test(cat))return",
         "  if(['__groups','__classes'].includes(cat))return"),true],
   ['PRED 6 \u00b7 a spelling mismatch is reported as simply unknown, hiding the real cause','check-regbuttons.mjs',
     sub('  return near?(\'is spelled differently from the register\\u2019s \\u201c\'+near+\'\\u201d \\u2014 the registers match exactly\')\n             :\'is not a category the registers know\';',
         "  return 'is not a category the registers know';"),true],
-  ['PRED 7 \u00b7 the openers are left out of the admit set, so "RED WINE"/BEER are refused','check-regbuttons.mjs',
-    sub('  for(const e of [...((posButtons.food)||[]),...((posButtons.bar)||[]),...posBtnOpeners()]){',
-        '  for(const e of [...((posButtons.food)||[]),...((posButtons.bar)||[])]){'),true],
+  // \u26a0\ufe0f PRED 7 USED TO BE ITS OWN MIRROR IMAGE. Until 11/15 the openers were IN the admit
+  // set and this mutant removed them. Jarvis ruled the other way \u2014 the five already have their
+  // own buttons \u2014 so the mutant now widens the set instead of narrowing it. Same line, opposite
+  // direction, because the requirement moved; the check it fires was inverted to match.
+  ['PRED 7 \u00b7 \u26d4 the openers are admitted again, so BEER lands on a rail it already sits above','check-regbuttons.mjs',
+    sub('  for(const e of [...((posButtons.food)||[]),...((posButtons.bar)||[])]){',
+        '  for(const e of [...((posButtons.food)||[]),...((posButtons.bar)||[]),...posBtnOpeners()]){'),true],
+  ['PRED 15 \u00b7 \u26d4 the opener lookup is dropped, so BEER reads as a name the register never heard of','check-regbuttons.mjs',
+    sub('  const op=posBtnOpenerFor(cat);','  const op=null;'),true],
+  ['PRED 16 \u00b7 the opener reason is reworded \u2014 benign, must stay GREEN','check-regbuttons.mjs',
+    sub('so it does not go on a rail as well','so it doesn\u2019t also need one on a rail'),false],
+  ['PRED 17 \u00b7 the opener lookup stops folding case, so "beer" is called unknown','check-regbuttons.mjs',
+    sub('const posBtnOpenerFor=(cat)=>posBtnOpeners().find(e=>posBtnFold(posBtnCat(e))===posBtnFold(cat))||null;',
+        'const posBtnOpenerFor=(cat)=>posBtnOpeners().find(e=>posBtnCat(e)===cat)||null;'),true],
   ['PRED 8 \u00b7 \u26d4 posBtnOn stops asking, so a stored off entry becomes a button in one tap','check-regbuttons.mjs',
     sub("    if(why){posBtnS.err='\\u201c'+cat+'\\u201d '+why+', so it cannot go on a rail.';return false;}",''),true],
   ['PRED 9 \u00b7 \u26d4 the send stops naming bad buttons and sends them anyway','check-regbuttons.mjs',

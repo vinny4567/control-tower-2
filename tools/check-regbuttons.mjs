@@ -46,7 +46,12 @@ const EXPORT = {
   bar: [{ cat: 'N/A BEVS', color: '#2C7BE5' }, { cat: 'VODKA', color: '#7C86A8' }, { cat: 'GIN', color: '#7C86A8' }],
   openers: [{ cat: 'BEER', label: 'BEER', page: 'bar', where: 'top row' },
     { cat: 'RED WINE', label: 'RED WINE', page: 'bar', where: 'bottom row', pages: ['BY THE GLASS', 'BOTTLES'] },
-    { cat: 'WHITE WINE', label: 'WHITE WINE', page: 'bar', where: 'bottom row' }],
+    { cat: 'WHITE WINE', label: 'WHITE WINE', page: 'bar', where: 'bottom row' },
+    // The real export has openers on BOTH pages. They were missing here, and their absence
+    // made the "GOLF is refused" assertion pass for the WRONG reason (refused as unknown,
+    // not as an opener) \u2014 a fixture that is a subset of the real shape is a quiet green.
+    { cat: 'GOLF', label: 'GOLF', page: 'food', where: 'bottom row' },
+    { cat: 'Sides', label: 'SIDES', page: 'food', where: 'bottom row' }],
   colors: { 'N/A BEVS': '#2C7BE5', Pasta: '#A83C3C' }, defaultColor: '#7C86A8',
 };
 
@@ -103,7 +108,7 @@ if (EDIT) {
       ${PRED}
       ${EDIT}
       return {setBase(b){BASE=b},posBtnMove,posBtnRename,posBtnColor,posBtnOff,posBtnOn,
-              posBtnWhyNot,posBtnBadOnes,posBtnS};`)(
+              posBtnWhyNot,posBtnBadOnes,posBtnS,posBtnHomeRails};`)(
       EXPORT, (n) => { last = n; });
   } catch (e) { ok('posBtnEdit and the handlers evaluate: ' + e.message, false); }
 }
@@ -200,14 +205,19 @@ if (H && H.posBtnMove) {
   H.posBtnOn(encodeURIComponent('Mystery'));
   ok('\u26d4 + on a cat the register has never heard of is refused \u2014 the button would ring nothing',
      last === null && /registers know/.test(H.posBtnS.err));
-  // The reachable fallback: an OPENER cat (BEER, RED WINE, GOLF, Sides) is admitted but sits
-  // in neither rail array, so "every rail it is on" is empty and it must still land somewhere.
   base = { v: 1, draft: { food: [{ cat: 'Pasta' }], bar: [{ cat: 'VODKA' }], off: ['BEER'] }, live: LIVE };
   H.setBase(base); last = null;
   H.posBtnOn(encodeURIComponent('BEER'));
-  ok('\u2026while an opener the register DOES know lands on a rail rather than vanishing',
-     !!last && last.draft.off.length === 0
-     && (cats(last.draft.food).includes('BEER') || cats(last.draft.bar).includes('BEER')));
+  ok('\u26d4 + on an opener is refused too, and says it already has its own button',
+     last === null && /already has its own button/.test(H.posBtnS.err));
+  // posBtnHomeRails' "it is on no rail" fallback is tested DIRECTLY rather than through
+  // posBtnOn. Through the handler it is unreachable now \u2014 the predicate refuses anything that
+  // is not already on a rail \u2014 and a fallback whose only test runs through a door that is now
+  // locked is untested code that looks covered.
+  ok('posBtnHomeRails never answers "no rail at all", even for a cat the export omits',
+     Array.isArray(H.posBtnHomeRails('Mystery')) && H.posBtnHomeRails('Mystery').length === 1);
+  ok('\u2026and answers with EVERY rail for one the export has twice',
+     H.posBtnHomeRails('N/A BEVS').slice().sort().join() === 'bar,food');
 
   // ⛔ THE ×/+ PAIR MUST NOT DELETE A BUTTON. 'N/A BEVS' is on BOTH rails in the real
   // export, and the ×/+ pair is the only control there is, so a restore that picks one rail
@@ -243,11 +253,31 @@ if (H && H.posBtnMove) {
 if (H && H.posBtnWhyNot) {
   const why = H.posBtnWhyNot;
   const fine = (c) => why(c) === '';
-  ok('a cat the register\u2019s own export lists is fine', fine('Pasta') && fine('VODKA'));
-  ok('\u26d4 \u2026including an OPENER cat \u2014 "RED WINE" is a real button and must survive',
-     fine('BEER') && fine('RED WINE') && fine('WHITE WINE'));
-  ok('\u26d4 while the office-only wine SECTIONS are refused, and the refusal does not reach'
-     + ' the real wine buttons', !!why('RED WINE GLASS') && !!why('WHITE WINE BOTTLE'));
+  ok('a cat on one of the register\u2019s two rails is fine', fine('Pasta') && fine('VODKA'));
+  // \u26a0\ufe0f THIS ASSERTION WAS THE OPPOSITE UNTIL 11/15, AND THE CHANGE IS A RULING, NOT A FIX.
+  // It read "\u2026including an OPENER cat \u2014 RED WINE is a real button and must survive", because a
+  // match sloppy enough to eat 'RED WINE' along with 'RED WINE GLASS' would take two tabs off
+  // every register. That danger is unchanged and still pinned below. What changed is the
+  // REQUIREMENT: POS-UI's reader (5218ccc) lists a built-in only if it is a built-in RAIL
+  // category, so it skips these five, and Jarvis ruled both sides refuse them \u2014 they already
+  // have their own buttons above the item grid, and placing a button anywhere else is the
+  // screen builder's job. So the admit set is the two RAILS, not the openers.
+  ok('\u26d4 every opener is refused for a rail, FOR THE OPENER REASON \u2014 not merely refused',
+     ['BEER', 'RED WINE', 'WHITE WINE', 'GOLF', 'Sides']
+       .every(c => /already has its own button/.test(why(c))));
+  ok('\u26d4 \u2026and it says so, rather than implying its real button is being taken away',
+     /already has its own button/.test(why('RED WINE')) && /already has its own button/.test(why('BEER')));
+  ok('\u2026naming where that button is, in the register\u2019s own words',
+     /LIQUOR/.test(why('BEER')) && /FOOD/.test(why('GOLF')));
+  ok('\u2026and a case variant of an opener gets the SAME reason, not "unknown"',
+     /already has its own button/.test(why('beer')));
+  // The one that would actually hurt, still pinned: these two must not be confused. 'RED WINE'
+  // is a real button being kept off a rail; 'RED WINE GLASS' is not a category at all.
+  ok('\u26d4 the office-only wine SECTIONS are refused for a DIFFERENT reason than the real'
+     + ' wine buttons, so the two are never conflated',
+     !!why('RED WINE GLASS') && !!why('WHITE WINE BOTTLE')
+     && !/already has its own button/.test(why('RED WINE GLASS'))
+     && why('RED WINE GLASS') !== why('RED WINE'));
   ok('\u2026"Wine" is refused: a real category on no rail, whose items are already on the'
      + ' two wine screens', !!why('Wine'));
   ok('\u2026and so is the retired upper-case spelling, because refusing folds case',
@@ -278,6 +308,52 @@ if (H && H.posBtnWhyNot) {
        const b = H.posBtnBadOnes({ food: [{ cat: 'Pasta' }, { cat: 'Wine', label: 'VINO' }], bar: [{ cat: 'PASTA' }] });
        return b.length === 2 && b[0].label === 'VINO' && b[0].cat === 'Wine' && b[1].which === 'bar';
      })());
+}
+
+// ── THE SAME PREDICATE, RUN AGAINST THE COMMITTED EXPORT (Jarvis: "pin it against the
+// real file"). The fixture above proves the RULE; this proves the rule says the right thing
+// about the buttons that are actually on Vinny's registers. A fixture can drift into being a
+// subset of the real shape and go quietly green — that just happened with the FOOD openers.
+const HX = (exp) => new Function('posButtons', 'report', `
+  const posBtnCat=(e)=>typeof e==='string'?e:(e&&e.cat)||'';
+  const posBtnOpeners=()=>(posButtons&&posButtons.openers)||[];
+  const posBtnLabelOf=(e)=>(e&&e.label)||(e&&e.cat)||'';
+  ${PRED}
+  return {posBtnWhyNot,posBtnRailCats};`)(exp, null);
+
+if (PRED) {
+  let REAL = null;
+  try { REAL = JSON.parse(readFileSync(new URL('../pos-buttons.json', import.meta.url), 'utf8')); }
+  // Absent is a SKIP, not a failure \u2014 same as check-buttons. The export is a committed file,
+  // not part of index.html, so a missing one says nothing about the code under test. A silent
+  // drop of these five is caught by check-all's assertion COUNT, which is why it prints.
+  catch (e) { console.log('  --   pos-buttons.json not readable \u2014 real-file pin not checked'); }
+  if (REAL) {
+    const g = HX(REAL);
+    const rails = g.posBtnRailCats() || [];
+    const openers = (REAL.openers || []).map(e => e && e.cat).filter(Boolean);
+    // ⚠️ FIRST, that there is something to judge. With an empty export every assertion
+    // below is vacuously true, which is the worst kind of green: it reads as coverage.
+    ok('the real export has both rails and openers to judge (' + rails.length + ' rail cats, '
+       + openers.length + ' openers)', rails.length >= 10 && openers.length >= 5);
+    // The direction that costs money: a false refusal takes a tab off all eight registers.
+    const refused = rails.filter(c => g.posBtnWhyNot(c) !== '');
+    ok('⛔ EVERY category on the real rails is admitted — nothing Vinny already has gets'
+       + ' refused' + (refused.length ? ' (refused: ' + JSON.stringify(refused) + ')' : ''),
+       refused.length === 0);
+    ok('⛔ every opener in the real export is refused, for the opener reason',
+       openers.every(c => /already has its own button/.test(g.posBtnWhyNot(c))));
+    ok('…and each one names its own screen and row, so the message is about THAT button',
+       openers.every(c => {
+         const e = (REAL.openers || []).find(o => o.cat === c), w = g.posBtnWhyNot(c);
+         return (!e.where || w.includes(e.where))
+           && (e.page !== 'bar' || /LIQUOR/.test(w)) && (e.page !== 'food' || /FOOD/.test(w));
+       }));
+    // If a cat were in both places the rule would be ambiguous and the verdict would depend
+    // on check order. It is not today; this catches the export that changes that.
+    ok('no category is both a rail category and an opener, so the rule is unambiguous',
+       !rails.some(c => openers.includes(c)));
+  }
 }
 
 // ── the send, which is the only thing here that reaches a register
