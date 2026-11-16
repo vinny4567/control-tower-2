@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Screen builder</title>
+<link rel="icon" href="./icon.svg">
+<style>
+/* Same palette as the Watch Tower, so this does not look like a different product.
+   Deliberately NOT a copy of its stylesheet: this page is loaded on its own, and the
+   point of it being a separate file is that opening the Email tab does not parse the
+   builder and opening the builder does not parse 17,000 lines of back office. */
+:root{--bg:#0a0b0f;--surface:#12161f;--surface2:#1b2130;--border:#2b3346;--accent:#ffb300;
+      --accent2:#22d3ee;--text:#eef2f8;--text-dim:#c3ccdb;--text-muted:#9aa5ba;
+      --warn:#fbbf24;--bad:#f87171;--good:#34d399;--header-h:54px}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-serif;font-size:14px}
+a{color:var(--accent2);text-decoration:none}
+header{height:calc(var(--header-h) + env(safe-area-inset-top));padding:env(safe-area-inset-top) 14px 0;
+  background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px}
+.brand{font-weight:700;font-size:15px;letter-spacing:-.3px;white-space:nowrap}
+.spacer{flex:1}
+button{font:inherit;color:var(--text);background:var(--surface2);border:1px solid var(--border);
+  border-radius:8px;padding:7px 11px;cursor:pointer}
+button:hover:not(:disabled){border-color:var(--accent2)}
+button:disabled{opacity:.5;cursor:not-allowed}
+button.primary{background:var(--accent);color:#1a1d2e;border-color:var(--accent);font-weight:700}
+#wrap{display:flex;height:calc(100% - var(--header-h) - env(safe-area-inset-top))}
+#list{width:224px;flex:none;border-right:1px solid var(--border);overflow-y:auto;background:var(--surface)}
+#list h4{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted);
+  padding:12px 12px 6px}
+.row{padding:9px 12px;border-bottom:1px solid var(--border);cursor:pointer;display:flex;
+  justify-content:space-between;gap:8px;align-items:baseline}
+.row:hover{background:var(--surface2)}
+.row.on{background:var(--surface2);box-shadow:inset 3px 0 0 var(--accent)}
+.row .n{color:var(--text-muted);font-size:11px;font-variant-numeric:tabular-nums}
+#mid{flex:1;min-width:0;display:flex;flex-direction:column}
+#status{padding:8px 14px;border-bottom:1px solid var(--border);color:var(--text-dim);font-size:12.5px;
+  display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+#stage-pane{flex:1;overflow:auto;padding:18px;display:flex;align-items:flex-start;justify-content:center}
+#stage{position:relative;background:#05060a;border:1px solid var(--border);border-radius:10px;
+  transform-origin:top left;touch-action:none;flex:none}
+#band{position:absolute;left:0;top:0;width:100%;border-bottom:1px dashed #334;
+  background:rgba(255,179,0,.06);pointer-events:none}
+.el{position:absolute;left:0;top:0;border-radius:6px;display:flex;align-items:center;
+  justify-content:center;text-align:center;overflow:hidden;font-weight:600;line-height:1.15;
+  border:1px solid rgba(255,255,255,.14);will-change:transform;touch-action:none;padding:2px}
+.el.block{background:rgba(34,211,238,.07);border-style:dashed;border-color:#2b3346;color:var(--text-muted);
+  font-weight:500;font-size:11px}
+.el.sel{outline:2px solid var(--accent);outline-offset:1px;z-index:5}
+.el.off{opacity:.3}
+.el.clash{box-shadow:inset 0 0 0 2px var(--bad)}
+.grip{position:absolute;right:-1px;bottom:-1px;width:14px;height:14px;background:var(--accent);
+  border-radius:3px 0 6px 0;cursor:nwse-resize;touch-action:none}
+#side{width:272px;flex:none;border-left:1px solid var(--border);overflow-y:auto;background:var(--surface)}
+.pad{padding:12px 14px;border-bottom:1px solid var(--border)}
+label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.6px;
+  color:var(--text-muted);margin:0 0 5px}
+input[type=text]{width:100%;font:inherit;color:var(--text);background:var(--bg);
+  border:1px solid var(--border);border-radius:7px;padding:7px 9px}
+.swatches{display:flex;flex-wrap:wrap;gap:6px}
+.sw{width:26px;height:26px;border-radius:6px;border:1px solid var(--border);cursor:pointer}
+.notes{background:rgba(251,191,36,.09);border:1px solid rgba(251,191,36,.35);border-radius:9px;
+  padding:10px 12px;margin:12px 14px;color:#f6e3b4;font-size:12.5px;line-height:1.5}
+.notes b{color:var(--warn)}
+.notes ul{margin:6px 0 0 16px}
+.notes li{margin:3px 0}
+.hint{color:var(--text-muted);font-size:12px;line-height:1.5}
+.chip{font-size:11px;padding:2px 7px;border-radius:999px;border:1px solid var(--border);color:var(--text-dim)}
+.big{padding:40px;max-width:620px;margin:auto;color:var(--text-dim);line-height:1.65;text-align:center}
+.big h2{font-size:18px;color:var(--text);margin-bottom:10px}
+.rail{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.rail span{font-size:11px;padding:3px 7px;border-radius:5px;border:1px solid var(--border)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">🧱 Screen builder</div>
+  <a href="./index.html">← Watch Tower</a>
+  <div class="spacer"></div>
+  <span id="sendwhy" class="chip"></span>
+  <button id="send" disabled>Send to the registers</button>
+</header>
+
+<div id="wrap">
+  <div id="list"></div>
+  <div id="mid">
+    <div id="status"></div>
+    <div id="stage-pane"><div id="stage"><div id="band"></div></div></div>
+  </div>
+  <div id="side"></div>
+</div>
+
+<script src="./screens-core.js"></script>
+<script>
+'use strict';
+// ═══════════════════════════════════════════════════════════════════════════════
+// THE BUILDER'S PAGE. The rules live in screens-core.js, which is pure and tested;
+// this file is the part that draws and the part that writes, kept together so the
+// writing is readable in one place.
+//
+// WHAT IT DELIBERATELY DOES NOT DO:
+//  • It never writes ct_scr_live. Send is drawn and switched off, with the reason
+//    on the button, because no register can draw a layout yet — the reader is a
+//    later step. A button he drags "to see what it does" must not reach the floor.
+//  • It never reloads itself on a timer and never polls. The Watch Tower refreshes
+//    itself; a page that re-rendered under his hand mid-drag would throw away the
+//    arrangement he was in the middle of making.
+//  • It writes one draft per screen, and only after a drop. Per-screen so that two
+//    devices arranging at once cost one screen and not the whole layout.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const KV_URL = 'https://order.angeliscatering.com/api/kv/';
+const KEY = () => { try { return localStorage.getItem('ct_kv_key') || ''; } catch (e) { return ''; } };
+
+// Same split as the Watch Tower's store client, and for the same reason: "nothing is
+// saved there" and "I could not ask" must not arrive as one answer, because every
+// caller turns an empty answer into an empty default and then saves it back.
+const KV_FAIL = Object.freeze({ __kvFail: true });
+const kvFailed = (r) => r === KV_FAIL;
+async function kvGet(k) {
+  try {
+    const r = await fetch(KV_URL + encodeURIComponent(k), { headers: { 'x-sync-token': KEY() } });
+    if (!r.ok) return KV_FAIL;
+    return await r.json();
+  } catch (e) { return KV_FAIL; }
+}
+// A WRITE THAT IS NOT READ BACK IS NOT A SAVE. The Watch Tower's kvSend is
+// fire-and-forget (`.catch(()=>{})`, the reply never read) which is right for a
+// price that will be republished anyway and wrong for an arrangement he spent an
+// hour on. So: POST, check the reply, then GET and compare the `at` that landed.
+// Three outcomes, and "I could not tell" is never reported as saved.
+async function kvPut(k, v, at) {
+  try {
+    const r = await fetch(KV_URL + encodeURIComponent(k), {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-sync-token': KEY() },
+      body: JSON.stringify({ v, at }),
+    });
+    if (!r.ok) return { ok: false, why: r.status === 401 ? 'key' : 'store' };
+    const back = await kvGet(k);
+    if (kvFailed(back)) return { ok: false, why: 'unconfirmed' };
+    if (!back || Number(back.at) !== Number(at)) return { ok: false, why: 'overtaken', at: back && back.at };
+    return { ok: true, at };
+  } catch (e) { return { ok: false, why: 'store' }; }
+}
+
+// ── state ───────────────────────────────────────────────────────────────────────
+const S = {
+  base: undefined,        // undefined = not asked yet · null = asked, nothing there · value
+  im: null,               // the result of SCR.scrImport(base)
+  screen: null,           // which screenId is open
+  els: [],                // the open screen's elements, live
+  sel: null,              // selected element id
+  undo: [],
+  loadedAt: Object.create(null),   // screenId -> the `at` we READ for its draft (undefined = never read)
+  dirty: false,
+  saving: false,
+  note: '',
+  noteKind: '',
+  rail: undefined,        // pos-buttons.json, for the reference strip
+};
+const SIZE = () => (S.im && S.im.size) || null;
+const byId = (id) => S.els.find((e) => e.id === id);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// ── loading ─────────────────────────────────────────────────────────────────────
+async function boot() {
+  if (!KEY()) {
+    S.base = undefined;
+    paint('This computer has no sync key, so it cannot read your screens or save anything. '
+        + 'Add the key in the Watch Tower under Manage Panels → Access keys, then reload this page.', 'bad');
+    return;
+  }
+  paint('Reading your screens…', '');
+  const r = await kvGet(SCR.SCR_BASE_KEY);
+  if (kvFailed(r)) {
+    // NOT "you have no screens". The difference decides whether he goes and walks
+    // the registers for nothing.
+    S.base = undefined;
+    paint('Could not reach the store, so this page does not know what your screens look like. '
+        + 'Nothing has been changed. Try again in a moment.', 'bad');
+    return;
+  }
+  S.base = (r && r.v) ? r.v : null;
+  S.im = SCR.scrImport(S.base === null ? undefined : S.base);
+  // The rail strip is a reference only, and a missing file must annotate nothing —
+  // the same three states, for the same reason as everywhere else.
+  try {
+    const f = await fetch('./pos-buttons.json', { cache: 'reload' });
+    S.rail = f.ok ? await f.json() : null;
+  } catch (e) { S.rail = null; }
+  const ids = S.im.screens ? Object.keys(S.im.screens) : [];
+  if (ids.length) await open(ids[0]);
+  else paint('', '');
+  render();
+}
+
+async function open(id) {
+  if (S.dirty && !confirm('This screen has changes that have not been saved. Leave it anyway?')) return;
+  S.screen = id;
+  S.sel = null; S.undo = []; S.dirty = false;
+  const from = (S.im.screens && S.im.screens[id]) || { els: [] };
+  S.els = JSON.parse(JSON.stringify(from.els || []));
+  // Read the draft BEFORE anything can be saved, so `loadedAt` is a fact and not a
+  // zero. Saving without having read it is refused by the core, which is the whole
+  // point of that refusal existing.
+  const d = await kvGet(SCR.scrDraftKey(id));
+  if (kvFailed(d)) {
+    delete S.loadedAt[id];
+    paint('Could not read the saved arrangement for this screen, so nothing here can be saved yet. '
+        + 'You are looking at how the register has it.', 'bad');
+  } else {
+    S.loadedAt[id] = (d && d.at) ? Number(d.at) : null;
+    if (d && d.v && Array.isArray(d.v.els) && d.v.els.length) {
+      S.els = d.v.els;
+      paint('Showing your saved arrangement for this screen.', 'good');
+    } else {
+      paint('Showing this screen exactly as the register has it.', '');
+    }
+  }
+  render();
+}
+
+function paint(msg, kind) { S.note = msg; S.noteKind = kind || ''; renderStatus(); }
+
+// ── saving ──────────────────────────────────────────────────────────────────────
+let saveTimer = null;
+function saveSoon() { S.dirty = true; clearTimeout(saveTimer); saveTimer = setTimeout(save, 700); renderStatus(); }
+
+async function save() {
+  if (S.saving || !S.screen) return;
+  const id = S.screen, key = SCR.scrDraftKey(id);
+  S.saving = true; renderStatus();
+  const remote = await kvGet(key);
+  if (kvFailed(remote)) { S.saving = false; paint('Not saved — the store could not be reached. Nothing was changed.', 'bad'); return; }
+  const remoteAt = (remote && remote.at) ? Number(remote.at) : null;
+  const verdict = SCR.scrSaveVerdict(remoteAt, S.loadedAt[id]);
+  if (!verdict.ok) { S.saving = false; paint('Not saved — ' + verdict.msg, 'bad'); return; }
+  const at = Date.now();
+  const res = await kvPut(key, SCR.scrDraftOf(id, S.els, SIZE(), at), at);
+  S.saving = false;
+  if (res.ok) {
+    S.loadedAt[id] = at; S.dirty = false;
+    paint('Saved ✓', 'good');
+  } else if (res.why === 'overtaken') {
+    paint('Not saved — another device saved this screen at the same moment. Reload this screen before changing it again.', 'bad');
+  } else if (res.why === 'key') {
+    paint('Not saved — the sync key on this computer was refused.', 'bad');
+  } else if (res.why === 'unconfirmed') {
+    // Deliberately not "saved". The write may well have landed; we could not read it
+    // back, and reporting that as success is how a lost afternoon looks like a good one.
+    paint('Not saved as far as this page can tell — the store took the change but would not confirm it. Reload to see what it kept.', 'bad');
+  } else {
+    paint('Not saved — the store refused the change.', 'bad');
+  }
+  renderStatus();
+}
+
+// ── editing ─────────────────────────────────────────────────────────────────────
+function snap() { S.undo = SCR.scrUndoPush(S.undo, JSON.stringify(S.els)); }
+function undo() {
+  const u = SCR.scrUndoPop(S.undo);
+  if (u.snapshot === undefined) return;
+  S.undo = u.stack; S.els = JSON.parse(u.snapshot);
+  saveSoon(); render();
+}
+function setRect(id, r) { const e = byId(id); if (e && r) { e.r = r; } }
+function rename(v) { const e = byId(S.sel); if (!e) return; snap(); e.t = String(v || '').slice(0, 40); saveSoon(); render(); }
+function recolour(c) { const e = byId(S.sel); if (!e) return; snap(); e.c = c; saveSoon(); render(); }
+function takeOff() {
+  const e = byId(S.sel); if (!e) return;
+  snap(); e.hide = true; saveSoon(); render();
+}
+function putBack(id) { const e = byId(id); if (!e) return; snap(); delete e.hide; S.sel = id; saveSoon(); render(); }
+function backToRegister() {
+  if (!S.screen) return;
+  if (!confirm('Put this screen back exactly as the register has it? Anything arranged here is dropped.')) return;
+  snap();
+  const from = (S.im.screens && S.im.screens[S.screen]) || { els: [] };
+  S.els = JSON.parse(JSON.stringify(from.els || []));
+  saveSoon(); render();
+}
+
+// ── the canvas ──────────────────────────────────────────────────────────────────
+// ONE delegated pointer handler and transform positioning, because the worst screen
+// in the catalogue has 328 buttons on it and a listener each would make an iPad
+// crawl. The 4px threshold is the same as the Watch Tower's item drag: a tap that
+// wobbles is a tap, not a drag, and on a touchscreen every tap wobbles.
+let scale = 1;
+const stage = document.getElementById('stage');
+let drag = null;
+
+stage.addEventListener('pointerdown', (ev) => {
+  const size = SIZE(); if (!size) return;
+  const box = stage.getBoundingClientRect();
+  const px = (ev.clientX - box.left) / scale, py = (ev.clientY - box.top) / scale;
+  const grip = ev.target && ev.target.classList && ev.target.classList.contains('grip');
+  const id = grip ? S.sel : SCR.scrHit(S.els, px, py);
+  if (!id) { S.sel = null; render(); return; }
+  S.sel = id;
+  const e = byId(id);
+  drag = { id, mode: grip ? 'size' : 'move', x0: ev.clientX, y0: ev.clientY, r0: e.r.slice(), moved: false };
+  // Wrapped: a browser that refuses the capture must not take the drag down with it.
+  // Pointer events still arrive on the stage without it; capture only keeps them coming
+  // when the finger leaves the element, which the clamping handles anyway.
+  try { stage.setPointerCapture(ev.pointerId); } catch (err) {}
+  render();
+});
+stage.addEventListener('pointermove', (ev) => {
+  if (!drag) return;
+  const size = SIZE(); if (!size) return;
+  const dxp = ev.clientX - drag.x0, dyp = ev.clientY - drag.y0;
+  if (!drag.moved && Math.abs(dxp) < 4 && Math.abs(dyp) < 4) return;
+  if (!drag.moved) { drag.moved = true; snap(); }
+  const dx = dxp / scale, dy = dyp / scale;
+  const r = drag.mode === 'size'
+    ? SCR.scrResize(drag.r0, 'se', dx, dy, size)
+    : SCR.scrMove(drag.r0, dx, dy, size);
+  if (!r) return;
+  setRect(drag.id, r);
+  place(drag.id);                 // move only what moved; a full re-render per frame is unusable
+  renderSide();
+});
+const endDrag = () => {
+  if (!drag) return;
+  const moved = drag.moved; drag = null;
+  if (moved) { saveSoon(); render(); }                 // the drop is what saves
+};
+stage.addEventListener('pointerup', endDrag);
+stage.addEventListener('pointercancel', endDrag);
+
+function place(id) {
+  const n = document.getElementById('el-' + cssId(id)); const e = byId(id);
+  if (!n || !e) return;
+  n.style.transform = 'translate(' + e.r[0] + 'px,' + e.r[1] + 'px)';
+  n.style.width = e.r[2] + 'px'; n.style.height = e.r[3] + 'px';
+}
+const cssId = (id) => String(id).replace(/[^a-zA-Z0-9_-]/g, '_');
+
+// ── rendering ───────────────────────────────────────────────────────────────────
+function render() { renderList(); renderStage(); renderSide(); renderStatus(); }
+
+function renderList() {
+  const el = document.getElementById('list');
+  if (!S.im || !S.im.screens) { el.innerHTML = ''; return; }
+  const ids = Object.keys(S.im.screens);
+  const sheets = Object.keys(S.im.sheets || {});
+  el.innerHTML = '<h4>Screens</h4>' + ids.map((id) => {
+    const n = (S.im.screens[id].els || []).length;
+    return '<div class="row ' + (id === S.screen ? 'on' : '') + '" data-open="' + esc(id) + '">'
+         + '<span>' + esc(id) + '</span><span class="n">' + n + '</span></div>';
+  }).join('')
+  + (sheets.length ? '<h4>Dish pages</h4>' + sheets.map((p) => {
+      const n = Object.keys(S.im.sheets[p].place || {}).length;
+      return '<div class="row" data-sheet="' + esc(p) + '"><span>' + esc(p) + '</span><span class="n">' + n + '</span></div>';
+    }).join('') : '');
+}
+
+function renderStage() {
+  const pane = document.getElementById('stage-pane');
+  const size = SIZE();
+  if (!size || !S.screen) {
+    stage.style.display = 'none';
+    if (!pane.querySelector('.big')) {
+      const d = document.createElement('div');
+      d.className = 'big';
+      d.innerHTML = emptyHTML();
+      pane.appendChild(d);
+    } else { pane.querySelector('.big').innerHTML = emptyHTML(); }
+    return;
+  }
+  const old = pane.querySelector('.big'); if (old) old.remove();
+  stage.style.display = 'block';
+  const availW = pane.clientWidth - 40, availH = pane.clientHeight - 40;
+  scale = Math.min(availW / size.w, availH / size.h, 1);
+  stage.style.width = size.w + 'px'; stage.style.height = size.h + 'px';
+  stage.style.transform = 'scale(' + scale + ')';
+  const clash = new Set(); SCR.scrOverlaps(S.els).forEach((p) => { clash.add(p[0]); clash.add(p[1]); });
+  const band = document.getElementById('band');
+  band.style.height = (size.top || 0) + 'px';
+  const html = S.els.map((e) => {
+    const sel = e.id === S.sel;
+    const cls = ['el', e.kind ? 'block' : '', sel ? 'sel' : '', e.hide ? 'off' : '', clash.has(e.id) ? 'clash' : ''].join(' ');
+    const bg = e.kind ? '' : 'background:' + (e.c || '#2b3346') + ';';
+    const fs = e.fs ? 'font-size:' + e.fs + 'px;' : 'font-size:12px;';
+    return '<div class="' + cls + '" id="el-' + cssId(e.id) + '" style="' + bg + fs
+         + (e.ink ? 'color:' + e.ink + ';' : '')
+         + 'transform:translate(' + e.r[0] + 'px,' + e.r[1] + 'px);width:' + e.r[2] + 'px;height:' + e.r[3] + 'px">'
+         + esc(e.kind ? e.kind : (e.t || ''))
+         + (sel && !e.hide ? '<div class="grip"></div>' : '') + '</div>';
+  }).join('');
+  stage.innerHTML = '<div id="band"></div>' + html;
+  document.getElementById('band').style.height = (size.top || 0) + 'px';
+}
+
+function emptyHTML() {
+  if (!KEY()) return '<h2>No sync key on this computer</h2><p>This page cannot read your screens or save '
+    + 'anything without it. Add it in the Watch Tower under Manage Panels → Access keys, then reload.</p>';
+  if (S.base === undefined) return '<h2>Reading…</h2>';
+  if (S.base === null || (S.im && S.im.reason === 'empty-capture')) {
+    return '<h2>Your screens have not been captured yet</h2>'
+      + '<p>Nothing is wrong. The builder starts from the screens you already have, and the register is the '
+      + 'only thing that knows where its buttons actually sit — so it has to send them over once.</p>'
+      + '<p>On Host Stand 1: open each screen you want to arrange, then tap Export on the dashboard. '
+      + 'Come back here and reload.</p>';
+  }
+  if (S.im && S.im.reason === 'bad-capture') return '<h2>The capture could not be read</h2>'
+    + '<p>Nothing has been changed. It is worth taking it again from Host Stand 1.</p>';
+  if (S.im && !SIZE()) return '<h2>The capture does not say how big the screen is</h2>'
+    + '<p>Without that, buttons cannot be drawn where they really are, so nothing is drawn at all rather '
+    + 'than drawn wrongly. Take the capture again from Host Stand 1.</p>';
+  return '<h2>Pick a screen on the left</h2>';
+}
+
+function renderStatus() {
+  const el = document.getElementById('status');
+  const bits = [];
+  if (S.screen) bits.push('<b>' + esc(S.screen) + '</b>');
+  const size = SIZE();
+  if (size) bits.push('<span class="chip">' + size.w + ' × ' + size.h + ' pt</span>');
+  if (S.im && S.im.counts) bits.push('<span class="chip">' + S.im.counts.screens + ' screens</span>');
+  if (S.saving) bits.push('<span style="color:var(--text-dim)">Saving…</span>');
+  else if (S.dirty) bits.push('<span style="color:var(--warn)">Not saved yet</span>');
+  if (S.note) {
+    const col = S.noteKind === 'bad' ? 'var(--bad)' : S.noteKind === 'good' ? 'var(--good)' : 'var(--text-dim)';
+    bits.push('<span style="color:' + col + '">' + esc(S.note) + '</span>');
+  }
+  el.innerHTML = bits.join('');
+  // The Send button is drawn and refuses, with the reason ON it. A control that is
+  // simply missing reads as something being broken; one that says why reads as a
+  // decision, and this one IS a decision.
+  const why = document.getElementById('sendwhy');
+  why.textContent = 'Sending is off until the registers can draw a layout';
+  document.getElementById('send').disabled = true;
+}
+
+function renderSide() {
+  const el = document.getElementById('side');
+  const e = byId(S.sel);
+  const notes = buildNotes();
+  const offs = S.els.filter((x) => x.hide);
+  let h = '';
+  if (notes.length) {
+    h += '<div class="notes"><b>Worth knowing</b><ul>' + notes.map((n) => '<li>' + esc(n) + '</li>').join('') + '</ul></div>';
+  }
+  if (e) {
+    h += '<div class="pad"><label>Button</label>';
+    if (e.kind) {
+      h += '<div class="hint">This is the ' + esc(e.kind) + ' panel. It can be moved and resized, but it has no '
+        + 'name or colour of its own — the register fills it in.</div>';
+    } else {
+      h += '<input type="text" id="t" value="' + esc(e.t || '') + '" maxlength="40">'
+        + '<div class="hint" style="margin-top:6px">The words on the button only. What it rings is not changed by renaming it.</div>'
+        + '</div><div class="pad"><label>Colour</label><div class="swatches">'
+        + ['#2b3346', '#8a5a2b', '#2E7D32', '#1565C0', '#6A1B9A', '#B71C1C', '#00838F', '#4E342E', '#37474F']
+            .map((c) => '<div class="sw" data-c="' + c + '" style="background:' + c + '"></div>').join('')
+        + '</div>';
+    }
+    h += '<div class="hint" style="margin-top:8px">'
+      + Math.round(e.r[0]) + ', ' + Math.round(e.r[1]) + ' · ' + Math.round(e.r[2]) + ' × ' + Math.round(e.r[3]) + ' pt</div>';
+    h += '<div style="margin-top:10px"><button data-off="1">Take off this screen</button></div></div>';
+  } else {
+    h += '<div class="pad"><div class="hint">Tap a button to rename it, recolour it, move it or take it off. '
+      + 'Drag it anywhere; drag the corner to resize. Nothing you do here reaches a register.</div></div>';
+  }
+  if (offs.length) {
+    h += '<div class="pad"><label>Taken off this screen (' + offs.length + ')</label>'
+      + offs.map((o) => '<div class="row" data-back="' + esc(o.id) + '"><span>' + esc(o.t || o.kind || o.id) + '</span><span class="n">put back</span></div>').join('')
+      + '</div>';
+  }
+  h += '<div class="pad"><button data-undo="1"' + (S.undo.length ? '' : ' disabled') + '>Undo'
+    + (S.undo.length ? ' (' + S.undo.length + ')' : '') + '</button> '
+    + '<button data-reload="1">Reload this screen</button>'
+    + '<div style="margin-top:10px"><button data-revert="1">Back to how the register has it</button></div>'
+    + '<div class="hint" style="margin-top:8px">Undo is this page only — it is not shared and it does not survive a reload. '
+    + 'The one that always works is putting the screen back to how the register has it.</div></div>';
+  if (S.rail && (S.rail.food || S.rail.bar)) {
+    h += '<div class="pad"><label>The register’s rails today</label><div class="rail">'
+      + [].concat(S.rail.food || [], S.rail.bar || []).map((b) => '<span>' + esc(b && b.cat ? b.cat : b) + '</span>').join('')
+      + '</div><div class="hint" style="margin-top:6px">Reference only. The rails are set on the Register buttons page.</div></div>';
+  }
+  el.innerHTML = h;
+  const t = document.getElementById('t');
+  if (t) t.addEventListener('change', () => rename(t.value));
+}
+
+function buildNotes() {
+  const out = [];
+  if (S.im && S.im.warnings) out.push.apply(out, S.im.warnings);
+  const clash = SCR.scrOverlaps(S.els);
+  if (clash.length) out.push(clash.length + ' button' + (clash.length > 1 ? 's sit' : ' sits') + ' on top of another. That is allowed — it is marked in red so you can see it.');
+  const size = SIZE();
+  if (size && S.screen) {
+    const doc = { v: 1, layouts: { main: { size, screens: { [S.screen]: { ctx: S.screen, rev: 0, els: S.els } } } } };
+    const v = SCR.scrValidate(doc);
+    out.push.apply(out, v.problems);
+    out.push.apply(out, v.notes.slice(0, 4));
+  }
+  return out.slice(0, 8);
+}
+
+// ── one delegated click handler for the lists and buttons ───────────────────────
+document.body.addEventListener('click', (ev) => {
+  const t = ev.target.closest('[data-open],[data-back],[data-undo],[data-off],[data-c],[data-reload],[data-revert],[data-sheet]');
+  if (!t) return;
+  if (t.dataset.open) { open(t.dataset.open); return; }
+  if (t.dataset.sheet) { paint('Dish pages are shown in a later step; this one has '
+    + Object.keys(((S.im.sheets || {})[t.dataset.sheet] || {}).place || {}).length + ' dishes placed.', ''); return; }
+  if (t.dataset.back) { putBack(t.dataset.back); return; }
+  if (t.dataset.undo) { undo(); return; }
+  if (t.dataset.off) { takeOff(); return; }
+  if (t.dataset.c) { recolour(t.dataset.c); return; }
+  if (t.dataset.reload) { S.dirty = false; open(S.screen); return; }
+  if (t.dataset.revert) { backToRegister(); return; }
+});
+window.addEventListener('resize', () => { if (S.screen) renderStage(); });
+// Leaving with something unsaved should cost a question, not an arrangement.
+window.addEventListener('beforeunload', (e) => { if (S.dirty) { e.preventDefault(); e.returnValue = ''; } });
+
+boot();
+</script>
+</body>
+</html>
