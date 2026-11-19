@@ -83,6 +83,7 @@ const subs=(...pairs)=>pairs.reduce((h,[a,b])=>{
   return h.replace(a,b);
 },SRC);
 const TIPS_SOON_HEAD='  const key=tipPeriodKey(),gen=tipsGen;\n  clearTimeout(tipsSaveTimer);\n  tipsSaveTimer=setTimeout(()=>{\n    if(gen!==tipsGen)return;';
+const REG_ABORT="  if(gen!==tipsGen){tipsSetStatus('⚠ nothing filled in — the dates changed while the register was being read. Press it again.','#fbbf24');return;}";
 const GOOD_TAKE='const take=(got,cur,empty)=>(!got||kvFailed(got))?cur:(got.v==null?empty:got.v);';
 const ROUTE_DROP="  let dropped=false;\n  for(const i of gone){\n    const k=posNewItemKey(i);\n    if(Object.prototype.hasOwnProperty.call(posRouting,k)){delete posRouting[k];dropped=true;}\n  }\n  if(dropped)kvPush('ct_pos_routing',posRouting,Date.now());\n";
 
@@ -614,6 +615,21 @@ const M=[
          "  if(tipsState.loadFailed)return;\n  // Work out WHICH period"),true],
   ['TIPS 15 · the hours save loses its gate entirely','check-tipssaves.mjs',
     tsub("  if(tipsSaveBlocked())return;\n  // Work out WHICH period","  // Work out WHICH period"),true],
+  ['TIPS 16 · the register pull stops asking whether the dates moved mid-read','check-tipssaves.mjs',
+    tsub("  if(gen!==tipsGen){tipsSetStatus('⚠ nothing filled in — the dates changed while the register was being read. Press it again.','#fbbf24');return;}\n",""),true],
+  ['TIPS 17 · the register pull checks the dates AFTER filling the grid in','check-tipssaves.mjs',
+    tsubs(["  if(gen!==tipsGen){tipsSetStatus('⚠ nothing filled in — the dates changed while the register was being read. Press it again.','#fbbf24');return;}\n  const n=tipsMergeMicros(people,{},{},{keepRates:true,keepSplit:true});",
+           "  const n=tipsMergeMicros(people,{},{},{keepRates:true,keepSplit:true});\n  if(gen!==tipsGen){tipsSetStatus('⚠ nothing filled in — the dates changed while the register was being read. Press it again.','#fbbf24');return;}"]),true],
+  ['TIPS 18 · the register pull reads the generation when it finishes, not when it started','check-tipssaves.mjs',
+    tsubs(["  const gen=tipsGen;\n  let r;","  let r;"],
+          [REG_ABORT, "  const gen=tipsGen;\n" + REG_ABORT]),true],
+  ['TIPS 19 · the timesheet import stops asking whether the dates moved mid-parse','check-tipssaves.mjs',
+    tsub("    if(gen!==tipsGen){tipsSetStatus('⚠ nothing filled in — the dates changed while the timesheet was being read. Import it again.','#fbbf24');return;}\n",""),true],
+  ['TIPS 20 · the timesheet import checks the dates AFTER filling the grid in','check-tipssaves.mjs',
+    tsubs(["    if(gen!==tipsGen){tipsSetStatus('⚠ nothing filled in — the dates changed while the timesheet was being read. Import it again.','#fbbf24');return;}\n    const n=tipsMergeMicros(people,split,byDay,nb?undefined:{keepSplit:true});",
+           "    const n=tipsMergeMicros(people,split,byDay,nb?undefined:{keepSplit:true});\n    if(gen!==tipsGen){tipsSetStatus('⚠ nothing filled in — the dates changed while the timesheet was being read. Import it again.','#fbbf24');return;}"]),true],
+  ['TIPS 21 · BENIGN — the register pull\'s abort reworded','check-tipssaves.mjs',
+    tsub("the dates changed while the register was being read. Press it again.","the dates moved while the register was being read — press it again."),false],
   ['TIPS 11 · rename the captured generation (harmless)','check-tipssaves.mjs',
     tsub(TIPS_SOON_HEAD, TIPS_SOON_HEAD
       .replace('gen=tipsGen;','loadAtEdit=tipsGen;')

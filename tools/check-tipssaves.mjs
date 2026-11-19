@@ -140,5 +140,107 @@ ok('⛔ exactly one place writes the worker-ID map', raw === 1);
 ok('…and it is inside the guarded saver',
    lift('tipsSaveEmpIds').includes("kvPush('ct_emp_ids'"));
 
+
+// ── THE TWO LONG READS ──────────────────────────────────────────────────────
+// The register read and the timesheet parse take SECONDS. Click a different fortnight
+// inside one and the rows coming back describe the period he left. The saves would
+// refuse (same gate), but the grid on screen would already be filled with the wrong
+// fortnight's hours — and the next thing he typed would then save them under the new
+// period's key, with the new generation, past every guard above. So the abort has to
+// happen before anything is merged into memory, not just before the write.
+// Lifted and RUN, because the ordering is the whole invariant and a regex only ever
+// proves a spelling.
+function longRead(name, { bumpDuring }) {
+  const seen = { merged: 0, saved: 0, status: [] };
+  const body = (() => { const i = src.indexOf('async function ' + name + '('); return src.slice(i, src.indexOf('\n}', i) + 2); })();
+  const env = { gen: 3 };
+  const fn = new Function('env', 'seen', 'posS', 'posSrv', 'tipsSetStatus', 'tipISO', 'tipsMergeMicros',
+    'tipsSaveHoursSoon', 'tipsSaveEmpIds', 'tipsHTML', 'activeTab', 'TIPS', 'document', 'esc', 'tipMoney',
+    'tipsState', 'tipsExtractPdfLines', 'tipsParseMicros', 'tipsComputeBusserSplit', 'tipsLoadPdfjs',
+    'fetch', 'TIPS_LOG_URL', 'TIPS_LOG_KEY', 'tipsScanTimesheets', 'tipsRerender',
+    `let tipsGen; Object.defineProperty(this,'x',{});
+     ${body.replace(/\btipsGen\b/g, 'env.gen')}
+     return ${name};`
+  ).call({}, env, seen,
+    { srv: 'http://mini' },
+    async () => { if (bumpDuring) env.gen++; return { ok: true, status: 200, body: {
+        people: [{ emp_id: 7, name: 'Ann', jobs: [{ job: 'Server', regular: 30, ot: 2, rate_cents: 1500 }] }],
+        shifts: [], tip_name_collisions: [] } }; },
+    (t) => seen.status.push(String(t)),
+    () => '2026-12-01',
+    () => { seen.merged++; return 1; },
+    () => { seen.saved++; },
+    () => { seen.saved++; },
+    () => '', 'other', 'tips',
+    { getElementById: () => ({ set innerHTML(_v) {} }) },
+    (x) => x, () => '$0',
+    { busserSplit: { x: 1 }, start: new Date(2026, 11, 1), end: new Date(2026, 11, 14) },
+    async () => [], () => ({ people: {}, shifts: [], punches: [] }), () => ({}), async () => {},
+    async () => ({ json: async () => ({}) }), '', () => '', () => {}, () => {});
+  return { run: fn, seen, env };
+}
+
+const quiet = longRead('tipsPullFromPos', { bumpDuring: false });
+await quiet.run();
+ok('a register pull on a sheet that did not move fills the grid', quiet.seen.merged === 1);
+ok('…and saves', quiet.seen.saved === 2);
+
+const moved = longRead('tipsPullFromPos', { bumpDuring: true });
+await moved.run();
+ok('⛔ a register pull whose dates changed mid-read fills NOTHING IN', moved.seen.merged === 0);
+ok('…writes nothing', moved.seen.saved === 0);
+// NOT pinned to the wording — a check that goes red for a reword gets trimmed until it
+// passes, and then it is not checking anything. The property is: he is told, and he is
+// never told it worked.
+ok('…and never claims success', !moved.seen.status.some(t => t.includes('✓')));
+ok('…but does say something after the read, so he is not left thinking it filled in',
+   moved.seen.status.length > quiet.seen.status.length - 1 && moved.seen.status.length >= 2);
+
+
+
+// Same for the timesheet import, across the PDF parse and the tip-out log fetch.
+// ⚠️ This function ends in a catch-all that turns any throw into "import failed", so a
+// broken stub here would read as a quiet pass. The happy-path assertion below is what
+// makes the moved-period one mean anything: if the stubs are wrong, it goes red too.
+function importRun({ bumpDuring }) {
+  const seen = { merged: 0, saved: 0, status: [] };
+  const i = src.indexOf('async function tipsImportTimesheet(');
+  const body = src.slice(i, src.indexOf('\n}', i) + 2);
+  const env = { gen: 5 };
+  const fn = new Function('env', 'seen', 'tipsSetStatus', 'tipsExtractPdfLines', 'tipsParseMicros',
+    'tipsComputeBusserSplit', 'tipsMergeMicros', 'tipsSaveHoursSoon', 'tipsSaveEmpIds', 'tipsHTML',
+    'activeTab', 'TIPS', 'document', 'tipsState', 'fetch', 'TIPS_LOG_URL', 'TIPS_LOG_KEY',
+    `${body.replace(/\btipsGen\b/g, 'env.gen')}
+     return tipsImportTimesheet;`
+  )(env, seen,
+    (t) => seen.status.push(String(t)),
+    async () => { if (bumpDuring) env.gen++; return ['a line']; },
+    () => ({ people: { 7: { name: 'Ann', jobs: {} } }, shifts: [{ n: 'Bob' }], punches: [] }),
+    () => ({ split: { Bob: 40 }, byDay: {} }),
+    () => { seen.merged++; return 1; },
+    () => { seen.saved++; }, () => { seen.saved++; },
+    () => '', 'other', 'tips',
+    { getElementById: () => ({ set innerHTML(_v) {} }) },
+    { punches: [] },
+    async () => ({ ok: true, json: async () => ({ log: [{ pool: 40 }] }) }),
+    '', () => 'k');
+  return { run: () => fn({ files: [{ name: 't.pdf', arrayBuffer: async () => new ArrayBuffer(8) }], value: '' }), seen };
+}
+const imp = importRun({ bumpDuring: false });
+await imp.run();
+ok('a timesheet import on a sheet that did not move fills the grid', imp.seen.merged === 1);
+ok('…and saves', imp.seen.saved === 2);
+ok('…and says it imported (if this is red the stubs below prove nothing)',
+   imp.seen.status.join('|').includes('imported'));
+
+const impMoved = importRun({ bumpDuring: true });
+await impMoved.run();
+ok('⛔ a timesheet import whose dates changed mid-parse fills NOTHING IN', impMoved.seen.merged === 0);
+ok('…writes nothing', impMoved.seen.saved === 0);
+ok('…and never claims it imported', !impMoved.seen.status.some(t => t.includes('✓')));
+ok('…but does say something, so he is not left thinking it imported',
+   impMoved.seen.status.length >= 2);
+
+
 console.log(bad ? `\n${bad} FAILED` : '\nall good');
 process.exit(bad ? 1 : 0);

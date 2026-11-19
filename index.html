@@ -5997,6 +5997,7 @@ async function tipsImportTimesheet(input){
   const f=input&&input.files&&input.files[0];if(!f){return;}
   input.value='';
   tipsSetStatus('Reading '+f.name+'…','var(--text-dim)');
+  const gen=tipsGen;   // which fortnight this import is about — the parse and the log fetch take seconds
   try{
     const buf=await f.arrayBuffer();
     tipsSetStatus('Parsing the timesheet…','var(--text-dim)');
@@ -6021,6 +6022,7 @@ async function tipsImportTimesheet(input){
     const stot=Object.values(split).reduce((a,b)=>a+b,0),nb=Object.keys(split).length;
     // An import that worked out no split must not erase the one already there. Passing an
     // empty split through is how a good period gets wiped by a bad read.
+    if(gen!==tipsGen){tipsSetStatus('⚠ nothing filled in — the dates changed while the timesheet was being read. Import it again.','#fbbf24');return;}
     const n=tipsMergeMicros(people,split,byDay,nb?undefined:{keepSplit:true});
     tipsSaveHoursSoon();
     tipsSaveEmpIds();
@@ -6058,6 +6060,11 @@ async function tipsPullFromPos(){
   const from=tipISO(tipsState.start),to=tipISO(tipsState.end);
   if(!from||!to){tipsSetStatus('⚠ pick a date range first','#f87171');return;}
   tipsSetStatus('Reading the register, '+from+' → '+to+'…','var(--text-dim)');
+  // WHICH fortnight this read is about. The register call takes seconds; click another
+  // date inside it and the rows coming back describe the period he LEFT. The saves below
+  // would refuse (they carry the same guard), but the grid on screen would already be
+  // wrong — so abort before anything is merged into memory, not just before the write.
+  const gen=tipsGen;
   let r;
   try{r=await posSrv('/api/reports/labor?from='+encodeURIComponent(from)+'&to='+encodeURIComponent(to));}
   catch(e){tipsSetStatus('⚠ could not reach the register: '+(e&&e.message||e),'#f87171');return;}
@@ -6096,6 +6103,7 @@ async function tipsPullFromPos(){
   // MICROS, so the register is not the time clock yet. Its report does carry raw shifts, so
   // the day that changes this can read them; until then the MICROS PDF is the only source.
   const posShifts=(r.body&&Array.isArray(r.body.shifts))?r.body.shifts:[];
+  if(gen!==tipsGen){tipsSetStatus('⚠ nothing filled in — the dates changed while the register was being read. Press it again.','#fbbf24');return;}
   const n=tipsMergeMicros(people,{},{},{keepRates:true,keepSplit:true});
   tipsSaveHoursSoon();
   tipsSaveEmpIds();
