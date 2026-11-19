@@ -6023,7 +6023,7 @@ async function tipsImportTimesheet(input){
     // empty split through is how a good period gets wiped by a bad read.
     const n=tipsMergeMicros(people,split,byDay,nb?undefined:{keepSplit:true});
     tipsSaveHoursSoon();
-    try{kvPush('ct_emp_ids',{emp:tipsState.empIds},Date.now());}catch(e){}
+    tipsSaveEmpIds();
     if(activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();
     // Say why when there is no split — this failed silently for weeks behind a cheerful
     // "imported 58 employees" and the bussers simply read as zero.
@@ -6098,7 +6098,7 @@ async function tipsPullFromPos(){
   const posShifts=(r.body&&Array.isArray(r.body.shifts))?r.body.shifts:[];
   const n=tipsMergeMicros(people,{},{},{keepRates:true,keepSplit:true});
   tipsSaveHoursSoon();
-  try{kvPush('ct_emp_ids',{emp:tipsState.empIds},Date.now());}catch(e){}
+  tipsSaveEmpIds();
   if(activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();
   // An unpunched shift is somebody's pay being wrong, and it has to be LOUD — a
   // manager who does not hear about it signs off a period that is short a night.
@@ -6195,7 +6195,10 @@ function tipHoursPosPay(p){const r=+(p&&p.r)||0;return Math.round((r*(+(p&&p.h)|
 function tipHoursPersonTot(name){const h=tipHours(name);let reg=0,ot=0,pay=0;Object.keys(h).forEach(sec=>{reg+=+h[sec].h||0;ot+=+h[sec].o||0;pay+=tipHoursPosPay(h[sec]);});return {reg:Math.round(reg*100)/100,ot:Math.round(ot*100)/100,pay:Math.round(pay*100)/100};}
 let tipsHoursSaveTimer=null;
 function tipsSaveHoursSoon(){
-  if(tipsState.loadFailed){tipsSetStatus('⚠ not saved — the store could not be reached. Reload before typing.','#f87171');return;}
+  // Same gate as every other save (see tipsSaveBlocked). This used to carry its own copy of
+  // the load-failed line, which meant it also MISSED the still-loading one: hours typed into
+  // a half-loaded fortnight went to the store anyway.
+  if(tipsSaveBlocked())return;
   // Work out WHICH period this save belongs to now, not when the timer fires 600ms later.
   // Change the dates inside that window and the old period's hours and busser split were
   // written under the new period's key — data that is correct, in the wrong fortnight, and
@@ -6256,7 +6259,7 @@ function tipHoursDelPerson(name){
   tipsSaveSoon();tipsSaveHoursSoon();tipsRerender();
   tipsSetStatus(name+' removed from this period','#fbbf24');
 }
-function tipEmpIdSet(name,val){if(!tipsState.empIds)tipsState.empIds={};val=(val||'').trim();if(val)tipsState.empIds[name]=val;else delete tipsState.empIds[name];try{kvPush('ct_emp_ids',{emp:tipsState.empIds},Date.now());}catch(e){}tipsRerender();tipsSaveHoursSoon();}   // emp-IDs are global + permanent
+function tipEmpIdSet(name,val){if(tipsSaveBlocked())return;if(!tipsState.empIds)tipsState.empIds={};val=(val||'').trim();if(val)tipsState.empIds[name]=val;else delete tipsState.empIds[name];tipsSaveEmpIds();tipsRerender();tipsSaveHoursSoon();}   // emp-IDs are global + permanent — and the map is REPLACED wholesale, so it must never be written from a screen that did not load
 const EVENTS_HOURS_URL='https://restaurant-scheduler-hh5e.onrender.com/api/events-hours';
 async function tipsPullWeddingHours(auto){
   const g=tipsGen;
@@ -6329,7 +6332,31 @@ function tipCleanAdds(){
   return changed;
 }
 function tipEffSection(name){return (tipsState.moves&&tipsState.moves[name])||tipBaseSection(name);}
-function tipsSaveMoves(){if(tipsState.loadFailed)return;try{kvPush('ct_tips_moves',{moves:tipsState.moves},Date.now());}catch(e){}}
+// ⛔ EVERY TIPS SAVE ANSWERS TWO QUESTIONS FIRST: is this screen real, and is it still the
+// fortnight it was about? Vinny 11/18: "fix both".
+// Clicking a date EMPTIES the sheet and then loads the new period. Any save that fires in
+// that window — a 600ms autosave timer, or an import that comes back a few seconds later —
+// used to write whatever was in memory under whatever key was current. That is how an
+// emptied sheet lands on the fortnight you just left, or a real fortnight's hours get filed
+// under the next one's name. The store compares nothing, the screen says "Saved", and there
+// is no undo.
+// A refusal is always VISIBLE. A save that silently declines is worse than the bug it
+// prevents: you would keep typing into a sheet that is not being kept.
+function tipsSaveBlocked(){
+  if(tipsState.loadFailed){tipsSetStatus('⚠ not saved — the store could not be reached. Reload before typing.','#f87171');return true;}
+  if(tipsState.loading){tipsSetStatus('⚠ not saved — still loading this fortnight. Try again in a moment.','#fbbf24');return true;}
+  return false;
+}
+// ⛔ ONE PLACE WRITES THE PAYCHEX IDs. It used to be written from three, and the one that
+// mattered — typing an ID — had no guard at all: on a screen that failed to load,
+// tipsState.empIds is empty, so typing one ID wrote a map containing ONLY that ID over
+// every worker in the business. After that every row is quietly left out of the payroll
+// file. Three copies of a rule is how one of them ends up missing it.
+function tipsSaveEmpIds(){
+  if(tipsSaveBlocked())return false;
+  try{kvPush('ct_emp_ids',{emp:tipsState.empIds},Date.now());return true;}catch(e){return false;}
+}
+function tipsSaveMoves(){if(tipsSaveBlocked())return;try{kvPush('ct_tips_moves',{moves:tipsState.moves},Date.now());}catch(e){}}
 function tipMovePerson(name,sec){if(!tipsState.moves)tipsState.moves={};if(tipBaseSection(name)===sec)delete tipsState.moves[name];else tipsState.moves[name]=sec;tipsSaveMoves();document.getElementById('viewport').innerHTML=tipsHTML();}
 
 // Default range = the current 14-day pay period (anchor Mar 23 2026, same as the tip-out app).
@@ -6404,7 +6431,20 @@ function tipCellComps(c){const out=[];if(!c)return out;if(c.p)out.push({txt:tipN
 function tipCompsHTML(c){const comps=tipCellComps(c);if(!comps.length)return '';const multi=comps.length>1;return `<div style="display:flex;gap:5px;justify-content:flex-end;align-items:baseline;white-space:nowrap">`+comps.map(x=>`<span style="color:${x.color};font-size:${multi?'10px':'12px'};line-height:1.2;font-weight:${multi?'700':'500'}">${x.txt}</span>`).join('')+`</div>`;}
 function tipRowTotals(name){let paid=0,upt=0;const p=tipsState.cells[name]||{};Object.keys(p).forEach(k=>{const c=p[k];paid+=c.p||0;upt+=(c.u||0)+(c.w||0);});return {paid:Math.round(paid*100)/100,upt:Math.round(upt*100)/100};}
 let tipsSaveTimer=null;
-function tipsSaveSoon(){if(tipsState.loadFailed){tipsSetStatus('⚠ not saved — the store could not be reached. Reload before typing.','#f87171');return;}clearTimeout(tipsSaveTimer);tipsSaveTimer=setTimeout(()=>{try{kvPush(tipPeriodKey(),{cells:tipsState.cells,adds:tipsState.adds},Date.now());tipsSetStatus('Saved ✓','var(--text-dim)');}catch(e){tipsSetStatus('⚠ not saved','#f87171');}},600);tipsSetStatus('Saving…','var(--text-dim)');}
+function tipsSaveSoon(){
+  if(tipsSaveBlocked())return;
+  // WHICH fortnight and WHICH load this save is about, decided now. Calling tipPeriodKey()
+  // inside the timer asked "which period is on screen in 600ms?" — the wrong question, and
+  // the answer wrote these cells into the period he had just clicked to.
+  const key=tipPeriodKey(),gen=tipsGen;
+  clearTimeout(tipsSaveTimer);
+  tipsSaveTimer=setTimeout(()=>{
+    if(gen!==tipsGen)return;   // the period moved under us — this save is no longer about anything on screen
+    try{kvPush(key,{cells:tipsState.cells,adds:tipsState.adds},Date.now());tipsSetStatus('Saved ✓','var(--text-dim)');}
+    catch(e){tipsSetStatus('⚠ not saved','#f87171');}
+  },600);
+  tipsSetStatus('Saving…','var(--text-dim)');
+}
 function tipSectionPeople(sec){
   const all=[],seen={},add=n=>{if(n&&!seen[n]){seen[n]=1;all.push(n);}};
   Object.keys(tipsState.roster||{}).forEach(s=>((tipsState.roster[s])||[]).forEach(add));

@@ -82,6 +82,7 @@ const subs=(...pairs)=>pairs.reduce((h,[a,b])=>{
   if(!h.includes(a)) throw new Error('anchor missing: '+a.slice(0,60));
   return h.replace(a,b);
 },SRC);
+const TIPS_SOON_HEAD='  const key=tipPeriodKey(),gen=tipsGen;\n  clearTimeout(tipsSaveTimer);\n  tipsSaveTimer=setTimeout(()=>{\n    if(gen!==tipsGen)return;';
 const GOOD_TAKE='const take=(got,cur,empty)=>(!got||kvFailed(got))?cur:(got.v==null?empty:got.v);';
 const ROUTE_DROP="  let dropped=false;\n  for(const i of gone){\n    const k=posNewItemKey(i);\n    if(Object.prototype.hasOwnProperty.call(posRouting,k)){delete posRouting[k];dropped=true;}\n  }\n  if(dropped)kvPush('ct_pos_routing',posRouting,Date.now());\n";
 
@@ -579,6 +580,50 @@ const M=[
   ['ROST B4 · BENIGN — the two buttons swapped round','check-tipsroster.mjs',
     tsubs(['return `<button onclick="tipRosterVerify()"','return `<button onclick="tipRosterSeed()"'],
           ['+`<button onclick="tipRosterSeed()"','+`<button onclick="tipRosterVerify()"']),false],
+
+  // ── THE TIP SHEET'S SAVES (check-tipssaves) ─────────────────────────────────────────
+  // Every one of these is a world that existed in this file before 11/18. They are
+  // behavioural: the check lifts the real functions and RUNS them, so a mutant has to
+  // change what they DO, not how they read.
+  ['TIPS 1 · the save stops asking whether the fortnight moved under it','check-tipssaves.mjs',
+    tsub(TIPS_SOON_HEAD, TIPS_SOON_HEAD.replace('if(gen!==tipsGen)return;','if(false)return;')),true],
+  ['TIPS 2 · the key is read when the timer fires instead of when he typed','check-tipssaves.mjs',
+    tsubs(['  const key=tipPeriodKey(),gen=tipsGen;','  const gen=tipsGen;'],
+          ['try{kvPush(key,{cells:tipsState.cells','try{kvPush(tipPeriodKey(),{cells:tipsState.cells']),true],
+  ['TIPS 3 · a sheet that failed to load writes its empty self back','check-tipssaves.mjs',
+    tsub("  if(tipsState.loadFailed){tipsSetStatus('⚠ not saved — the store could not be reached. Reload before typing.','#f87171');return true;}",""),true],
+  ['TIPS 4 · a sheet still loading writes its half-empty self back','check-tipssaves.mjs',
+    tsub("  if(tipsState.loading){tipsSetStatus('⚠ not saved — still loading this fortnight. Try again in a moment.','#fbbf24');return true;}",""),true],
+  ['TIPS 5 · nothing is ever blocked','check-tipssaves.mjs',
+    tsub('function tipsSaveBlocked(){','function tipsSaveBlocked(){\n  return false;'),true],
+  ['TIPS 6 · ⛔ typing a Paychex ID loses its guard — the payroll-wipe bug itself','check-tipssaves.mjs',
+    tsub('function tipEmpIdSet(name,val){if(tipsSaveBlocked())return;','function tipEmpIdSet(name,val){'),true],
+  ['TIPS 7 · the moves save loses its guard','check-tipssaves.mjs',
+    tsub('function tipsSaveMoves(){if(tipsSaveBlocked())return;','function tipsSaveMoves(){'),true],
+  ['TIPS 8 · the refusal goes silent — he keeps typing into a sheet nobody is keeping','check-tipssaves.mjs',
+    tsubs(["{tipsSetStatus('⚠ not saved — the store could not be reached. Reload before typing.','#f87171');return true;}","{return true;}"],
+          ["{tipsSetStatus('⚠ not saved — still loading this fortnight. Try again in a moment.','#fbbf24');return true;}","{return true;}"]),true],
+  ['TIPS 9 · the worker-ID map gets a SECOND writer, the way it had three before','check-tipssaves.mjs',
+    tsub('function tipsSaveMoves(){',"function tipsRestoreIds(m){kvPush('ct_emp_ids',{emp:m},Date.now());}\nfunction tipsSaveMoves(){"),true],
+  ['TIPS 10 · tipEmpIdSet stops writing through the guarded saver','check-tipssaves.mjs',
+    tsub("else delete tipsState.empIds[name];tipsSaveEmpIds();","else delete tipsState.empIds[name];"),true],
+  // …and the harmless edits, which must NOT be punished. A check that goes red for a
+  // rename teaches whoever meets it to trim clauses until it passes.
+  ['TIPS 14 · the hours save goes back to its own private copy of the gate','check-tipssaves.mjs',
+    tsub("  if(tipsSaveBlocked())return;\n  // Work out WHICH period",
+         "  if(tipsState.loadFailed)return;\n  // Work out WHICH period"),true],
+  ['TIPS 15 · the hours save loses its gate entirely','check-tipssaves.mjs',
+    tsub("  if(tipsSaveBlocked())return;\n  // Work out WHICH period","  // Work out WHICH period"),true],
+  ['TIPS 11 · rename the captured generation (harmless)','check-tipssaves.mjs',
+    tsub(TIPS_SOON_HEAD, TIPS_SOON_HEAD
+      .replace('gen=tipsGen;','loadAtEdit=tipsGen;')
+      .replace('if(gen!==tipsGen)return;','if(loadAtEdit!==tipsGen)return;')),false],
+  ['TIPS 12 · reword the refusals, keeping "not saved" (harmless)','check-tipssaves.mjs',
+    tsubs(["'⚠ not saved — the store could not be reached. Reload before typing.'","'⚠ not saved — no connection to the store. Reload first.'"],
+          ["'⚠ not saved — still loading this fortnight. Try again in a moment.'","'⚠ not saved — this fortnight is still opening.'"]),false],
+  ['TIPS 13 · lengthen the save delay to a second (harmless)','check-tipssaves.mjs',
+    tsub("  },600);\n  tipsSetStatus('Saving…','var(--text-dim)');\n}\nfunction tipSectionPeople",
+         "  },1000);\n  tipsSetStatus('Saving…','var(--text-dim)');\n}\nfunction tipSectionPeople"),false],
 
   // ── A PAGE THAT NO LONGER PARSES MUST FAIL BY NAME, NOT THROW ────────────────────────
   // These two are not about the page's behaviour; they are about the CHECK. Half of
