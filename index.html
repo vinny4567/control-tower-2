@@ -7338,6 +7338,12 @@ let posDiscRates={};   // discount id -> rate in cents (percent stored as basis 
 // Discount TYPES added here rather than shipped with the register. Same shape the register
 // merges over its built-ins: {id,name,kind:'amount'|'percent'|'open',unit?,rate,manager}.
 let posNewDiscounts=[];
+// The `at` this device last loaded OR itself wrote for ct_pos_new_discounts, so a save
+// can refuse to clobber a newer one — same role as posBtnAt, but an object (not a bare
+// number) so posCompareAndSetWrite can update it in place after a successful write, the
+// same way posBtnWrite reassigns posBtnAt inline. Set from the real load in posLoadPrices;
+// {at:0} means "no known baseline yet", which never refuses (see posCompareAndSetWrite).
+let posNewDiscAt={at:0};
 // Discounts taken OFF the DISC key. The ones Vinny adds here he could always remove
 // again (they only ever existed here); the ones that ship in the catalog had no ✕ at
 // all, so a discount the restaurant has stopped giving stayed on the key for ever.
@@ -7424,6 +7430,7 @@ async function posLoadPrices(){
   // from a reply we could read: a failure must not reset it to 0 and make the next save
   // look like a first write.
   if(bt&&!kvFailed(bt))posBtnAt=Number(bt.at)||0;
+  if(nd&&!kvFailed(nd))posNewDiscAt.at=Number(nd.at)||0;
   posPruneOrphans();   // redraws itself only if it actually drops something
   if(changed)posRedraw();
 }
@@ -9000,7 +9007,70 @@ function posSetDiscRate(id,kind,str){
 function posDiscSlug(name){
   return 'new:'+String(name).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40);
 }
-function posAddDiscount(){
+// ⛔ ONE COMPARE-AND-SET WRITER, generalized from posBtnWrite (the only store that already
+// had this — see its own comment a few thousand lines down). Re-reads the key immediately
+// before writing and refuses if it moved since the caller's own baseline, instead of a
+// newer value being silently overwritten. This is slice 1 of wt-merge-saves: a REFUSAL
+// nobody can silently lose data to, not a merge — the newer write still wins outright, the
+// loser is told instead of clobbered without knowing.
+//
+// Deliberately NOT applied to every store tonight. It is single-key, whole-value refusal,
+// safe only where ONE discrete action writes ONE key — a button press, not typing a price
+// character by character (that would mean a network round trip per keystroke, and a false
+// "conflict" against this device's own not-yet-flushed previous edit), and not an action
+// that touches two keys at once. Removing a discount touches BOTH ct_pos_new_discounts and
+// ct_pos_disc_rates — that needs the multi-key gate planned for slice 2 first, or loss path
+// #12 from the 11/15 attack pass reopens: a refusal on one of two keys with the other
+// applying regardless leaves the store and the registers disagreeing, which is WORSE than
+// today's silent last-write-wins, not better. Only posAddDiscount uses this tonight —
+// posRemoveNewDiscount and posSetDiscRate are untouched on purpose.
+//
+// Writes with kvSend directly, not kvPush: kvPush debounces 1200ms, and the gap between
+// this function's read and an eventual debounced write would reopen the exact race this
+// exists to close. A direct kvSend writes the instant the check passes, same as
+// posBtnWrite. That bypasses kvPush's own posLiveSoon hook too, so it is called
+// explicitly here — an edit through this path must still reach the registers
+// automatically, same as every other ct_pos_* edit does.
+//
+// key: the KV key. atHolder: a {at} box the CALLER owns (same shape as posNewDiscAt) —
+// read for the baseline, updated in place after a successful write, so the next save in
+// the same session has a fresh baseline rather than just the one from page load.
+// make(current): given the FRESH remote value (never stale in-memory state), returns the
+// value to write, or null/false/undefined to abandon without writing.
+// conflictMsg: shown verbatim if the store moved since the baseline.
+//
+// Returns `false` on any abandon/failure. On success returns `{written}` — the EXACT value
+// that was written, wrapped so it can never be confused with `false`/`true`/the value
+// itself. The caller MUST sync its local state from `written`, not from its own
+// pre-call copy plus a guessed delta: `make` ran against the fresh remote value, which can
+// differ from what the caller had on screen (another device may have added or removed
+// something in between), and `written` is the only place that difference is visible.
+async function posCompareAndSetWrite(key, atHolder, make, conflictMsg){
+  try{
+    const got=await kvGet(key);
+    if(kvFailed(got)){
+      alert('Could not reach the store, so nothing was saved. Nothing has changed on the registers either.');
+      return false;
+    }
+    const remoteAt=Number(got&&got.at)||0;
+    if(remoteAt&&atHolder.at&&remoteAt>atHolder.at){
+      alert(conflictMsg);
+      return false;
+    }
+    const current=(got&&got.v)!=null?got.v:undefined;
+    const next=make(current);
+    if(next===false||next==null)return false;
+    const at=Math.max(Date.now(),remoteAt+1);
+    kvSend(key,{v:next,at},false);
+    atHolder.at=at;
+    posLiveSoon();
+    return {written:next};
+  }catch(e){
+    alert('Could not save: '+((e&&e.message)||String(e)));
+    return false;
+  }
+}
+async function posAddDiscount(){
   const val=id=>{const el=document.getElementById(id);return el?el.value:''};
   const name=String(val('nd-name')||'').trim().replace(/\s+/g,' ');
   if(!name){alert('Give it a name first — that is what the server taps on the register.');return;}
@@ -9022,10 +9092,28 @@ function posAddDiscount(){
   if(clash){alert('The register already has a discount called “'+clash.name+'”.\n\nSet its rate in the list above rather than adding a second one with the same name.');return;}
   const id=posDiscSlug(name);
   if(!id||id==='new:'){alert('That name has no letters or numbers in it.');return;}
+  // The IN-MEMORY list is checked here for the same-tab double-click case — a real
+  // cross-device clash is caught below, against the FRESH remote list, by the writer.
   if((posNewDiscounts||[]).some(d=>d.id===id||String(d.name).toLowerCase()===name.toLowerCase())){
     alert('You have already added one called that.');return;}
-  posNewDiscounts.push({id,name,kind,...(kind==='open'?{unit:val('nd-unit')||'amount'}:{}),rate,manager});
-  kvPush('ct_pos_new_discounts',posNewDiscounts,Date.now());
+  const entry={id,name,kind,...(kind==='open'?{unit:val('nd-unit')||'amount'}:{}),rate,manager};
+  const result=await posCompareAndSetWrite('ct_pos_new_discounts', posNewDiscAt, (remote)=>{
+    const list=Array.isArray(remote)?remote:(posNewDiscounts||[]);
+    // Re-check against the list this write is ACTUALLY about to replace, not the one on
+    // screen when the button was pressed — another device may have added or removed
+    // something in between. A silent `return null` here would leave the Add button
+    // looking like it did nothing, so this says why.
+    if(list.some(d=>d.id===id||String(d.name).toLowerCase()===name.toLowerCase())){
+      alert('Someone already added a discount called “'+name+'” from another device.\n\nReload to see it.');
+      return null;
+    }
+    return [...list, entry];
+  }, 'Someone else changed the discounts list on another device since this page loaded. Reload before adding — saving now could overwrite that change.');
+  if(!result)return;
+  // Sync from what was ACTUALLY written, not a guess layered on the stale in-memory list —
+  // the fresh remote list `make` saw may have held an addition from another device that
+  // this device's own posNewDiscounts did not know about yet.
+  posNewDiscounts=result.written;
   posRedraw();
 }
 function posRemoveNewDiscount(id){
@@ -9033,8 +9121,16 @@ function posRemoveNewDiscount(id){
   if(!confirm('Remove “'+d.name+'”?\n\nIt comes off the registers within a second — there is no Publish step any more.'))return;
   posNewDiscounts=posNewDiscounts.filter(x=>x.id!==id);
   delete posDiscRates[id];
-  kvPush('ct_pos_new_discounts',posNewDiscounts,Date.now());
+  // ⛔ EVERY WRITE TO THIS KEY MUST MOVE THE BASELINE, not just posAddDiscount's own —
+  // posCompareAndSetWrite compares against posNewDiscAt.at, so a remove-then-add on the
+  // SAME device would otherwise refuse the add against this device's own prior write,
+  // with "someone else changed this" shown for a change nobody else made. Safe (no data
+  // lost — it's a false refusal, not a false success) but it trains staff to ignore a
+  // warning that means something real elsewhere. Found in review (Jarvis), not by me.
+  const at=Date.now();
+  kvPush('ct_pos_new_discounts',posNewDiscounts,at);
   kvPush('ct_pos_disc_rates',posDiscRates,Date.now());
+  posNewDiscAt.at=at;
   posRedraw();
 }
 // TAKING A CATALOG DISCOUNT OFF THE KEY.
@@ -9950,13 +10046,20 @@ function posClearChanges(){
   posNewClasses=[];posNewMods=[];posGroupNames={};posGroupDetach={};
   posChoiceCuts={};posModLetters={};posDeletedMods=[];posModNames={};posDeletedGroups=[];
   posChoiceEdits={};posChoiceOrder={};posItemGroupOrder={};posItemOrder={};posDeletedItems=[];posNewItems=[];posSectionAdds={};posNewDiscounts=[];posDeletedDiscounts=[];
+  // One shared `at` for the whole revert, not a fresh Date.now() per key — this is a
+  // single moment ("undo everything"), and ct_pos_new_discounts' baseline needs the EXACT
+  // value its own kvPush used, which a re-call to Date.now() after the fact would not be.
+  const at=Date.now();
   for(const k of ['ct_pos_prices','ct_pos_routing','ct_pos_group_mods','ct_pos_new_groups',
                   'ct_pos_group_attach','ct_pos_print_classes','ct_pos_new_mods',
                   'ct_pos_group_names','ct_pos_group_detach','ct_pos_choice_cuts',
                   'ct_pos_mod_letters','ct_pos_deleted_mods','ct_pos_mod_names',
                   'ct_pos_deleted_groups','ct_pos_choice_edits','ct_pos_choice_order','ct_pos_item_group_order','ct_pos_item_order','ct_pos_deleted_items','ct_pos_new_items','ct_pos_section_adds','ct_pos_new_discounts','ct_pos_deleted_discounts'])
     kvPush(k,(k==='ct_pos_new_groups'||k==='ct_pos_print_classes'||k==='ct_pos_new_mods'
-              ||k==='ct_pos_deleted_mods'||k==='ct_pos_deleted_groups'||k==='ct_pos_deleted_items'||k==='ct_pos_new_items'||k==='ct_pos_new_discounts'||k==='ct_pos_deleted_discounts')?[]:{},Date.now());
+              ||k==='ct_pos_deleted_mods'||k==='ct_pos_deleted_groups'||k==='ct_pos_deleted_items'||k==='ct_pos_new_items'||k==='ct_pos_new_discounts'||k==='ct_pos_deleted_discounts')?[]:{},at);
+  // Same reason as posRemoveNewDiscount: posCompareAndSetWrite compares against
+  // posNewDiscAt.at, so this device's OWN revert must not look like someone else's change.
+  posNewDiscAt.at=at;
   posRedraw();
 }
 
