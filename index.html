@@ -15745,11 +15745,15 @@ function posStaffHTML(){
         style="${posBtn('#3f3f46')};padding:7px 13px;font-size:13px">Assign a job</button>
       <button onclick="staffAddPerson()" title="Add somebody who is not in the schedule app yet"
         style="${posBtn('#22c55e')};padding:7px 13px;font-size:13px">+ Add person</button>
-      <!-- One-time, approved 11/19/26 on the shared board (staff-cleanup-1-names). Safe to
-           press more than once — see staffCleanup1Plan's own comment. Leave the button here;
-           it costs nothing once every line reads "already" and makes the work re-checkable. -->
-      <button onclick="staffCleanup1Apply()" title="The 3 misspelling merges + Sophia→Sophie + 11 new hires + 45 position fills Vinny approved 11/19. Shows exactly what it's about to do before writing anything."
-        style="${posBtn('#f59e0b')};padding:7px 13px;font-size:13px">Apply 11/19 cleanup</button>
+      <!-- BUTTON REMOVED 11/19/26 — staff-cleanup-1-names is DONE. Vinny pressed it; Jarvis
+           verified on the mini's own copy: 11/11 new hires, all 4 aliases, 230 live rows, 125
+           with positions. Same treatment as the schedule-pull and MICROS-import buttons above:
+           staffCleanup1Plan()/staffCleanup1Apply() and the three STAFF_CLEANUP_1_* tables stay
+           in the file (idempotent, harmless to re-run, and a record of exactly what the batch
+           was) — only the button comes off the page. Put one back by calling
+           staffCleanup1Apply() from the console, or re-adding one <button> line, if it is ever
+           needed again. -->
+      <!-- was: <button onclick="staffCleanup1Apply()">Apply 11/19 cleanup</button> -->
     <button onclick="staffS.showDupes=!staffS.showDupes;staffRedraw()" title="Show names that might be the same person twice"
       style="background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:6px 12px;font-size:12.5px;cursor:pointer;font-family:inherit;white-space:nowrap">Find duplicates</button>
     </div>
