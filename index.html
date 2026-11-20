@@ -6475,6 +6475,28 @@ async function tipsFetchRoster(){
   TIP_ROSTER_CANON=canon;
   tipsState.roster=g;return g;
 }
+// "NOT A PERSON (IGNORE)" — a loose-name mark on something that was never a name (a
+// system label like "Private Party", a typo that will never match anybody real).
+// 11/20/26, Vinny — a WT-local, display-only suppression list. NOT a Staff/mini
+// concern: it never touches ct_staff, never goes through staffWriteOp, and does not
+// make a name "resolved" — it only stops nagging about this one spelling. Separate
+// cloud key, own small shape, so a bad write here can never touch money or the roster.
+const TIPS_IGNORE_KEY='ct_tips_ignore';
+async function tipsFetchIgnore(){
+  if(tipsState.ignoreLoaded)return;
+  tipsState.ignoreLoaded=true;
+  const set={};
+  try{
+    const r=await kvGet(TIPS_IGNORE_KEY);
+    const names=(r&&r.v&&Array.isArray(r.v.names))?r.v.names:[];
+    names.forEach(n=>{const k=staffKeyOf(n);if(k)set[k]=n;});
+  }catch(e){}
+  tipsState.ignoreSet=set;
+}
+function staffFlagIgnored(rawName){
+  const k=staffKeyOf(rawName);
+  return !!(k&&tipsState.ignoreSet&&tipsState.ignoreSet[k]);
+}
 function tipCell(name,label){const p=tipsState.cells[name];return p&&p[label]?p[label]:null;}
 // A day cell holds up to three components: p=paid $, u=unpaid $, w=wedding $ (w shows "W", counts as unpaid).
 // One day can carry BOTH a paid tip (own/direct party) AND an unpaid tip (tip-out) — e.g. a bartender who
@@ -6549,6 +6571,7 @@ async function tipsInit(){
   if(tipsState.loaded)return;
   const g=++tipsGen;tipsState.loading=true;   // any newer reload bumps tipsGen and supersedes this load
   await tipsFetchRoster();if(g!==tipsGen)return;
+  await tipsFetchIgnore();if(g!==tipsGen)return;
   // Fetch EVERYTHING first, then decide whether the answer can be trusted.
   // Nothing is assigned into tipsState until we know the store actually
   // answered — an empty default written into state is one autosave away from
@@ -6864,7 +6887,7 @@ function tsChecksHTML(){
   const row=c=>`<div style="display:flex;gap:10px;align-items:baseline;padding:6px 0;border-top:1px solid var(--border)">
     <span style="flex:none;width:8px;height:8px;border-radius:50%;background:${c.sev==='high'?'#f87171':'#fbbf24'};margin-top:5px"></span>
     <span style="flex:none;width:96px;font-size:11px;color:var(--text-muted);font-variant-numeric:tabular-nums">${esc(String(c.date||''))}</span>
-    <span style="flex:none;width:150px;font-size:12.5px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(staffDisplayName(c.name).name)}</span>
+    <span style="flex:none;width:150px;font-size:12.5px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(staffDisplayName(c.name).name)}${staffDisplayMark(staffDisplayName(c.name).matched,c.name)}</span>
     <span style="flex:none;width:92px;font-size:11px;color:var(--text-dim)">${esc(c.where)}${c.job?' · '+esc(String(c.job)):''}</span>
     <span style="flex:1;font-size:12px;color:var(--text-dim)"><b style="color:${c.sev==='high'?'#f87171':'#fbbf24'}">${esc(c.detail)}</b> — ${esc(c.why)}</span>
   </div>`;
@@ -6937,7 +6960,7 @@ function hoursHTML(){
     // Name row = the person + their period totals; each position sits on its own
     // indented ↳ row below (positions stay, just never inline next to the name).
     const disp=staffDisplayName(name);
-    body+=`<tr style="background:${nameBg}"><td style="${nb};font-weight:800;width:270px"><div style="display:flex;align-items:center;width:100%">${empBadge(name)}<span style="white-space:nowrap">${esc(disp.name)}${staffDisplayMark(disp.matched)}</span>${addBtn(name,asrc)}${delPersonBtn(name)}</div></td><td style="${bb}"></td><td id="hreg-${id}" style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.reg||''}</td><td id="hot-${id}" style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.ot||''}</td><td id="hpt-${id}" style="padding:3px 10px;text-align:right;font-weight:800;color:#34d399;border-left:2px solid var(--border);${bb}">${t.pay?tipMoney(t.pay):''}</td>${tipCells(id,tt.paid,uptTot)}</tr>`;
+    body+=`<tr style="background:${nameBg}"><td style="${nb};font-weight:800;width:270px"><div style="display:flex;align-items:center;width:100%">${empBadge(name)}<span style="white-space:nowrap">${esc(disp.name)}${staffDisplayMark(disp.matched,name)}</span>${addBtn(name,asrc)}${delPersonBtn(name)}</div></td><td style="${bb}"></td><td id="hreg-${id}" style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.reg||''}</td><td id="hot-${id}" style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.ot||''}</td><td id="hpt-${id}" style="padding:3px 10px;text-align:right;font-weight:800;color:#34d399;border-left:2px solid var(--border);${bb}">${t.pay?tipMoney(t.pay):''}</td>${tipCells(id,tt.paid,uptTot)}</tr>`;
     secs.forEach(sec=>{body+=`<tr><td style="position:sticky;left:0;background:var(--surface);padding:2px 12px 2px 26px;white-space:nowrap;border-right:2px solid var(--border);${bb}">↳ ${posInput(name,sec)}${wtag(all,sec,name)}${delX(name,sec)}</td>${cells(name,sec)}${blankTips}</tr>`;});
   });
   if(!names.length)body=`<tr><td colspan="7" style="padding:34px;text-align:center;color:var(--text-dim);line-height:1.6">No hours or tips yet — pick a date range to pull weddings, and give me the MICROS timesheet.</td></tr>`;
@@ -6988,7 +7011,7 @@ function hoursHTML(){
 }
 function tipsHTML(){
   if(!tipsState.loaded)return '<div style="padding:48px;text-align:center;color:var(--text-dim)">Loading tips…</div>';
-  if((tipsState.view||'tips')==='hours')return hoursHTML();
+  if((tipsState.view||'tips')==='hours')return hoursHTML()+staffFlagHTML();
   const days=tipDays(),roster=tipsState.roster||{};
   let gp=0,gu=0;
   const rowFor=(name,isPool)=>{
@@ -7001,7 +7024,7 @@ function tipsHTML(){
     const tds=days.map(d=>{const lb=tipDayLabel(d);const mon=(d.getDay()===1);const c=tipCell(name,lb),sp=tipBusserDay(name,lb);
       return `<td id="tc-${id}-${lb.replace('/','_')}" data-tipcell onclick="tipCellEdit('${en}','${lb}')" title="Click to edit" style="cursor:pointer;border-right:1px solid var(--border);${bb};text-align:right;padding:5px ${mon?'2px':'6px'};min-width:${mon?'18px':'58px'};white-space:nowrap;vertical-align:middle">${tipCompsHTML(sp?Object.assign({},c||{},{u:Math.round((((c&&c.u)||0)+sp)*100)/100}):c)}</td>`;}).join('');
     return `<tr style="${isPool?'background:rgba(251,191,36,0.06)':''}">
-      <td style="position:sticky;left:0;z-index:1;background:var(--surface);padding:7px 12px;font-weight:${isPool?'800':'600'};white-space:nowrap;border-right:2px solid var(--border);${bb};${isPool?'color:#fbbf24':''}"><span style="display:inline-flex;align-items:center;gap:6px">${esc(disp.name)}${staffDisplayMark(disp.matched)}${isPool?'':`<select title="Move to another section" onchange="tipMovePerson('${esc(name).replace(/'/g,"\\'")}',this.value)" style="background:transparent;border:none;color:var(--text-muted);font-size:11px;font-family:inherit;cursor:pointer;-webkit-appearance:none;appearance:none;padding:0 2px">${TIP_SECTIONS.map(s=>`<option value="${s}" ${tipEffSection(name)===s?'selected':''} style="color:#000">${TIP_SEC_SHORT[s]}</option>`).join('')}</select>`}</span></td>
+      <td style="position:sticky;left:0;z-index:1;background:var(--surface);padding:7px 12px;font-weight:${isPool?'800':'600'};white-space:nowrap;border-right:2px solid var(--border);${bb};${isPool?'color:#fbbf24':''}"><span style="display:inline-flex;align-items:center;gap:6px">${esc(disp.name)}${staffDisplayMark(disp.matched,name)}${isPool?'':`<select title="Move to another section" onchange="tipMovePerson('${esc(name).replace(/'/g,"\\'")}',this.value)" style="background:transparent;border:none;color:var(--text-muted);font-size:11px;font-family:inherit;cursor:pointer;-webkit-appearance:none;appearance:none;padding:0 2px">${TIP_SECTIONS.map(s=>`<option value="${s}" ${tipEffSection(name)===s?'selected':''} style="color:#000">${TIP_SEC_SHORT[s]}</option>`).join('')}</select>`}</span></td>
       ${tds}
       <td id="tp-${id}" style="padding:7px 8px;text-align:right;font-weight:700;color:#34d399;white-space:nowrap;border-left:2px solid var(--border);${bb}">${t.paid?tipMoney(t.paid):''}</td>
       <td id="tu-${id}" style="padding:7px 8px;text-align:right;font-weight:700;color:#fbbf24;white-space:nowrap;border-left:2px solid var(--border);${bb}">${upt?tipMoney(upt):''}</td>
@@ -7076,7 +7099,7 @@ function tipsHTML(){
     <div style="margin-top:10px;font-size:12px;color:var(--text-muted);line-height:1.5">
 Picking a date range automatically pulls the nightly <b>tip-out log</b> (restaurant) and the <b>wedding/event tips</b> (schedule app) — filling only empty cells, so your hand edits are never overwritten. <b style="color:#34d399">Paid</b> = green, <b style="color:#fbbf24">Unpaid</b> = amber, <b style="color:#c4b5fd">Wedding</b> = purple W. Click any cell to edit. Saves automatically.
     </div>
-  </div>`;
+  </div>`+staffFlagHTML();
 }
 
 function renderViewport(){if(activeTab===WED){document.getElementById('viewport').innerHTML=wedHTML();wedInit();return}if(activeTab===DOCS){docsSetNS('ct_docs');docsPullSync();document.getElementById('viewport').innerHTML=docsHTML();return}if(activeTab===MAIL){document.getElementById('viewport').innerHTML=mailHTML();restoreGmailListScroll();mailAcctsRestore();return}if(activeTab===LIQ){document.getElementById('viewport').innerHTML=liqHTML();return}if(activeTab===BANK){document.getElementById('viewport').innerHTML=bankHTML();return}
@@ -13574,8 +13597,141 @@ function staffDisplayName(rawName){
 }
 // A name that did NOT resolve is shown AS-IS, with a small visible mark — "visible rather
 // than silently loose" (Vinny's own words for this). Never hides a name, never guesses.
-function staffDisplayMark(matched){
-  return matched?'':'<span title="Not on the Staff list — check the spelling there" style="color:#fbbf24;font-size:10px;margin-left:3px;vertical-align:super">⚑</span>';
+// 11/20/26 — the mark is now TAPPABLE: it opens the fix-it picker (staffFlagOpen) for
+// that raw spelling, unless Vinny has already said it's "not a person" (the ignore
+// list), in which case it shows nothing at all — that spelling is settled, not fixed.
+// rawName is the STORAGE name (same boundary as staffDisplayName above) — never the
+// resolved display name, or the picker would act on the wrong spelling.
+function staffDisplayMark(matched,rawName){
+  if(matched)return '';
+  if(rawName&&staffFlagIgnored(rawName))return '';
+  if(!rawName)return '<span title="Not on the Staff list — check the spelling there" style="color:#fbbf24;font-size:10px;margin-left:3px;vertical-align:super">⚑</span>';
+  const en=esc(rawName).replace(/'/g,"\\'");
+  return `<button onclick="staffFlagOpen('${en}')" title="Not on the Staff list — tap to fix" style="background:none;border:none;color:#fbbf24;font-size:10px;margin-left:3px;vertical-align:super;cursor:pointer;padding:0;font-family:inherit">⚑</button>`;
+}
+
+// ── FIX A LOOSE NAME — tap the ⚑, Vinny's call 11/20/26 ─────────────────────────────
+//
+// Four ways a raw sheet/timesheet spelling that doesn't resolve to Staff gets settled,
+// right from where it's seen (Tips, Hours, timesheet checks — anywhere staffDisplayMark
+// renders):
+//  · "Same person as…" — it's really an existing Staff person, spelled differently
+//    here. Sends {op:'alias',pid,spelling:rawName}; the mini refuses a spelling that's
+//    already somebody else's.
+//  · "Add to Staff" — nobody on Staff is this person yet. {op:'create'}.
+//  · "Restore <name>" — only offered when the raw spelling matches a REMOVED Staff
+//    person by name (not by key: a removed person's projection key is mangled with
+//    their pid, so the plain staffKeyOf lookup staffDisplayName uses can't find them —
+//    that's WHY they flag at all). {op:'status',status:'active'}.
+//  · "Not a person (ignore)" — a label, not a hire ("Private Party"), or a typo that
+//    will never resolve. WT-local only (TIPS_IGNORE_KEY) — never a mini write, never
+//    treated as a Staff match.
+// The leave-it boundary holds throughout: every op keys off the PID the mini already
+// has, never the raw name, and nothing here ever touches what a period's own data is
+// stored under — only staffS.aliases, which staffDisplayName already reads through.
+let staffFlagS={name:null,removedPerson:null,q:'',results:[],busy:false,err:null};
+// A removed person's own KEY is mangled on the mini (suffixed with their pid, so two
+// removed people who once shared a spelling don't collide) — that's exactly why they
+// read as unmatched here. Found by NAME, scanning every removed record, never by key.
+function staffFlagFindRemoved(rawName){
+  const want=staffKeyOf(rawName);if(!want)return null;
+  return Object.values(staffS.people||{}).find(p=>p&&p.removed&&staffKeyOf(p.name)===want)||null;
+}
+function staffFlagRedraw(){if(activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();}
+function staffFlagOpen(name){
+  staffFlagS={name,removedPerson:staffFlagFindRemoved(name),q:'',results:[],busy:false,err:null};
+  staffFlagRedraw();
+}
+function staffFlagClose(){staffFlagS={name:null,removedPerson:null,q:'',results:[],busy:false,err:null};staffFlagRedraw();}
+function staffFlagResultsHTML(){
+  const s=staffFlagS;
+  if(!s.q)return '';
+  if(!s.results.length)return '<div style="font-size:12px;color:var(--text-muted);margin-top:4px">Nobody matches.</div>';
+  return s.results.map(p=>`<button onclick="staffFlagAlias('${esc(p.pid)}')" ${s.busy?'disabled':''} style="display:block;width:100%;text-align:left;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:5px 9px;font-size:13px;margin-top:4px;cursor:pointer;font-family:inherit">${esc(p.name)}</button>`).join('');
+}
+// Scoped refresh of just the results list — a full redraw on every keystroke would
+// rebuild the search box out from under the person typing into it, same lesson as
+// staffSearch's own #staff-body-only refresh.
+function staffFlagSearch(q){
+  const s=staffFlagS;s.q=q;
+  const k=String(q||'').trim().toLowerCase();
+  s.results=!k?[]:Object.values(staffS.people||{}).filter(p=>p&&!p.removed&&String(p.name||'').toLowerCase().includes(k)).sort(staffByFirst).slice(0,8);
+  const el=document.getElementById('staff-flag-results');
+  if(el)el.innerHTML=staffFlagResultsHTML();
+}
+async function staffFlagAlias(pid){
+  const name=staffFlagS.name;if(!name)return;
+  staffFlagS.busy=true;staffFlagRedraw();
+  const r=await staffWriteOp({op:'alias',pid,spelling:name});
+  if(!r){staffFlagS.busy=false;staffFlagRedraw();return;}   // staffWriteOp already alerted (e.g. the mini's "spelling already taken" refusal)
+  staffFlagClose();
+}
+async function staffFlagCreate(){
+  const name=staffFlagS.name;if(!name)return;
+  if(!confirm('Add “'+name+'” as a brand-new person on Staff?'))return;
+  staffFlagS.busy=true;staffFlagRedraw();
+  const r=await staffWriteOp({op:'create',person:{name}});
+  if(!r){staffFlagS.busy=false;staffFlagRedraw();return;}
+  staffFlagClose();
+}
+async function staffFlagRestore(pid){
+  staffFlagS.busy=true;staffFlagRedraw();
+  const r=await staffWriteOp({op:'status',pid,status:'active'});
+  if(!r){staffFlagS.busy=false;staffFlagRedraw();return;}
+  staffFlagClose();
+}
+async function staffFlagIgnore(){
+  const name=staffFlagS.name;if(!name)return;
+  staffFlagS.busy=true;staffFlagRedraw();
+  try{
+    const r=await kvGet(TIPS_IGNORE_KEY);
+    const names=(r&&r.v&&Array.isArray(r.v.names))?r.v.names.slice():[];
+    const k=staffKeyOf(name);
+    if(!names.some(n=>staffKeyOf(n)===k))names.push(name);
+    await kvPush(TIPS_IGNORE_KEY,{names},Date.now());
+    const set=Object.assign({},tipsState.ignoreSet);set[k]=name;tipsState.ignoreSet=set;
+  }catch(e){staffFlagS.busy=false;staffFlagS.err='Could not save: '+(e&&e.message||e);staffFlagRedraw();return;}
+  staffFlagClose();
+}
+// OTHER SPELLINGS, on the Staff row. staffS.aliases is one GLOBAL map (key → target's
+// own Staff key), not per-person, so a person's own spellings are everyone pointing AT
+// their key — found by scanning it, same direction the ⚑ picker's Restore lookup scans
+// removed people by name instead of by key.
+function staffAliasesFor(p){
+  if(!p)return [];
+  return Object.keys(staffS.aliases||{}).filter(k=>staffS.aliases[k]===p.key).sort();
+}
+async function staffAddSpelling(k){
+  const p=staffS.people[k];if(!p)return;
+  const typed=prompt('Add another spelling for “'+(p.name||'')+'”.\n\nType exactly how it appears elsewhere (a timesheet, the tip roster).');
+  if(typed===null)return;
+  const spelling=String(typed).trim();if(!spelling)return;
+  await staffWriteOp({op:'alias',pid:p.pid,spelling});
+}
+function staffFlagHTML(){
+  const s=staffFlagS;
+  if(!s||!s.name)return '';
+  const removed=s.removedPerson;
+  return `<div onclick="staffFlagClose()" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50;display:flex;align-items:flex-start;justify-content:center;padding-top:80px">
+    <div onclick="event.stopPropagation()" style="${posCardCss};width:min(360px,90vw);max-height:70vh;overflow:auto">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <b style="font-size:14px">⚑ ${esc(s.name)}</b>
+        <button onclick="staffFlagClose()" style="margin-left:auto;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:14px">✕</button>
+      </div>
+      <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px">Not on the Staff list under this spelling.</div>
+      ${removed?`<div style="margin-bottom:10px">
+        <button onclick="staffFlagRestore('${esc(removed.pid)}')" ${s.busy?'disabled':''} style="${posBtn('#22c55e')};width:100%;padding:7px;font-size:13px">Restore ${esc(removed.name)}</button>
+      </div>`:''}
+      <div style="margin-bottom:10px">
+        <div style="font-size:12.5px;margin-bottom:4px">Same person as…</div>
+        <input value="${esc(s.q||'')}" oninput="staffFlagSearch(this.value)" placeholder="Search Staff" ${s.busy?'disabled':''} style="${posInput};width:100%;padding:6px 9px;font-size:13px">
+        <div id="staff-flag-results">${staffFlagResultsHTML()}</div>
+      </div>
+      <button onclick="staffFlagCreate()" ${s.busy?'disabled':''} style="${posBtn('#3f3f46')};width:100%;padding:7px;font-size:13px;margin-bottom:6px">Add “${esc(s.name)}” to Staff</button>
+      <button onclick="staffFlagIgnore()" ${s.busy?'disabled':''} style="background:none;border:1px solid var(--border);color:var(--text-dim);border-radius:8px;width:100%;padding:7px;font-size:13px;cursor:pointer;font-family:inherit">Not a person (ignore)</button>
+      ${s.err?`<div style="color:#f87171;font-size:12px;margin-top:8px">⚠ ${esc(s.err)}</div>`:''}
+    </div>
+  </div>`;
 }
 
 // ---- saving: MERGE, never a blind whole-blob push ---------------------------
@@ -15853,6 +16009,19 @@ function staffDetail(p){
           <button onclick="staffSaveAddress('${esc(k)}')" style="${posBtn('#0ea5e9')};padding:3px 9px;font-size:12px;align-self:flex-start;margin-top:2px">Save address</button>
         </div>
       </div>
+    </div>
+
+    <!-- OTHER SPELLINGS. Vinny, 11/20/26 — the mini's aliases for this person: every
+         spelling that resolves to them (a timesheet's "Gabby Chavez", the tip roster's
+         "Mike Fornero"), landed either here or through the ⚑ picker on a loose name.
+         Removing one isn't needed (Vinny's instruction) — an alias is additive and
+         harmless to leave; there is no delete button here on purpose. -->
+    <div style="${col}">
+      <div style="${hd}">OTHER SPELLINGS</div>
+      ${(()=>{const al=staffAliasesFor(p);return al.length
+        ?al.map(a=>`<div style="font-size:13px;color:var(--text-dim);padding:1px 0">${esc(a)}</div>`).join('')
+        :'<div style="color:var(--text-muted);font-size:12px">None yet.</div>';})()}
+      <button onclick="staffAddSpelling('${esc(k)}')" style="${posBtn('#3f3f46')};padding:3px 9px;font-size:12px;margin-top:6px">+ Add spelling</button>
     </div>
 
     <button onclick="staffRename('${esc(k)}')" title="Fix or change this person's name"
