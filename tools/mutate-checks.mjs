@@ -755,6 +755,26 @@ const M=[
   ['JRO 8 · BENIGN — the boot-wiring comment reworded, staffLoad() itself untouched','check-job-rate-override.mjs',
     tsub("A code change nobody's screen ever\n  // visits is not a fix;",
          "A fix nobody's device ever runs is not a fix;"),false],
+
+  // ── STAFF CLEANUP 1: PLAN BEFORE APPLY (check-staff-cleanup-1) ─────────────────────
+  ['SC1 1 · ⛔ the mutations move back INTO the plan pass — Cancel no longer undoes anything','check-staff-cleanup-1.mjs',
+    tsub("    note('merge: '+loserName+' → '+keeperName,()=>{\n      const loser=staffS.people[lk];\n      if(loser&&!loser.removed){",
+         "    const loser=staffS.people[lk];\n    if(loser&&!loser.removed){"),true],
+  ['SC1 2 · the "nothing left to do" short-circuit is removed — a second press shows an empty confirm dialog','check-staff-cleanup-1.mjs',
+    tsub("  if(!actions.length){alert('Nothing left to do — every line already matches:\\n\\n'+lines.join('\\n'));return}\n  if(!confirm(",
+         "  if(!confirm("),true],
+  ['SC1 3 · ⛔ actions run even when confirm() is declined','check-staff-cleanup-1.mjs',
+    tsub("  actions.forEach(fn=>fn());\n  staffSave();",
+         "  staffSave();\n  actions.forEach(fn=>fn());"),true],
+  ['SC1 4 · ⛔ Sophia Evans’s removed tombstone gets un-removed by the merge path (Jarvis said keep it removed)','check-staff-cleanup-1.mjs',
+    tsub("      staffS.aliases[lk]=kk;\n      // Deliberately NOT touching staffS.people[lk].removed — Jarvis: \"keep it removed\".\n    });",
+         "      staffS.aliases[lk]=kk;\n      delete staffS.people[lk].removed;\n    });"),true],
+  ['SC1 5 · a position fill overwrites someone who ALREADY has a position','check-staff-cleanup-1.mjs',
+    tsub("    if(p.positions&&p.positions.length){note('✓ already has positions, left alone: '+name);return}\n",
+         ""),true],
+  ['SC1 6 · BENIGN — a status-line wording tweak, no behaviour change','check-staff-cleanup-1.mjs',
+    tsub("note('no position to give (hours were all skip-listed types): '+name);return}",
+         "note('no position to give — the hours were all a skip-listed type: '+name);return}"),false],
 ];
 
 let wrong=0;

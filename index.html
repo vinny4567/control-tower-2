@@ -14774,6 +14774,146 @@ function staffMergeInto(loserKey){
   staffRefreshNotes();
 }
 
+// ── ONE-TIME CLEANUP, approved by Vinny 11/19/26 on the shared board
+// (staff-cleanup-1-names: "yes and sophie evans is the same person") ──────────────────
+//
+// Everything that card asked for, applied in one write: 3 misspellings merged as
+// aliases, Sophia Evans aliased onto Sophie Evans (Sophia is a REMOVED tombstone —
+// stays removed, just points at the right person now, per Jarvis's instruction), 11
+// new hires added with positions, and positions filled for the 45 people who had none
+// — from the jobs they actually worked, same job-name mapping as staffJobRatesForMini's
+// neighbourhood (Servers→Server, Bussers→Busser, Bar→Bartender, Salad→Salads,
+// Runner→Food Runner; Training/Setup/wedding/rest/Day Party skipped — Day Party is
+// event work, not a register position, Jarvis's call).
+//
+// ⚠️ IDEMPOTENT ON PURPOSE. This is driven by one button on a keyed device, pressed by
+// hand — not something this screen can verify ran, or ran exactly once. So every piece
+// re-checks the CURRENT state before acting: a merge that already happened is skipped
+// (the alias is already there), a new person who already exists is skipped, a position
+// fill only ever touches somebody who currently has NONE (never overwrites a position
+// set since this list was written). Safe to press twice; the second press reports
+// "already done" for everything the first one finished.
+const STAFF_CLEANUP_1_MERGES=[
+  ['Fernado Armenta','Fernando Armenta'],
+  ['Heribert Ferrel','Heriberto Ferrel'],
+  ['Priscilla La Gace','Priscilla Lagace'],
+];
+const STAFF_CLEANUP_1_NEW=[
+  ['Agnieszka Kuc',['Bartender']],
+  ['Arsen Kronshtal',['Busser']],
+  ['Ashton Dwyer',['Busser']],
+  ['Caden Poss',['Server']],
+  ['Harper McDonald',['Busser']],
+  ['Jeana Koo',['Busser']],
+  ['Justyna Consuegra',['Bartender']],
+  ['Lydia Freeborn',['Busser']],
+  ['Ryanna Weiss',['Server']],
+  ['Terrence Mastrino',['Server']],
+  ['Vivian Lederer',['Busser']],
+];
+const STAFF_CLEANUP_1_POSITIONS=[
+  ['Maria Ruiz',['Server']],['Avery White',['Busser']],['Chris Dosch',['Server']],
+  ['Emily Stone',['Busser','Server']],['Lily Baxter',['Busser']],
+  ['Kevork Sevan',['Bartender','Server']],['Oakley White',['Busser','Server']],
+  ['Preston Rose',['Busser']],['Isaiah Watson',['Server']],['Ethan Browning',['Busser']],
+  ['Javier Carmona',['Dishwasher']],['Jennifer Dosch',['Server']],
+  ['Kimberly Davis',['Host','Server']],['Walter Johnson',['Dishwasher','Cook','Server']],
+  ['Gerardo Armenta',['Cook']],['Miguel Ferrel',['Cook']],['Robin Jaramillo',['Bartender']],
+  ['Samantha Drager',['Host','Busser']],['Charley Feldmann',['Dishwasher','Cook']],
+  ['Laurie Baldassano',['Server']],['Aiden Burke',[]],
+  ['Alicia Corrao',['Server','Bartender']],['Anthony Fornero',['Server']],
+  ['Christy Hatfield',['Server']],['Dimitar Stefanov',['Server']],['Elise Evans',['Server']],
+  ['Ethan Nauert',['Server','Busser','Dishwasher']],['Gianna Izzo',['Server']],
+  ['Guadalupe Martinez',['Server']],['Jared Carlson',['Server']],
+  ['Jillian Hatfield',['Busser']],['Natalie Kulczycki',['Server']],['Norma Garcia',['Server']],
+  ['Sarah Nelson',['Server']],['Tessa New',['Busser']],['Vincent Notarangeli',['Server']],
+  ['Wendy Campos',['Server']],['Wyatt Hunt',['Server']],['Angel Morales',['Busser','Dishwasher']],
+  ['Susan Hurwitz',['Busser']],['Michael Fornero',['Server']],['Rebecca Evans',['Server']],
+  ['Diego J Campos',['Busser','Server']],['Katia Morfin',['Server']],['Mauricio Gomez',['Dishwasher']],
+];
+// ⚠️ PLAN, THEN APPLY — NEVER THE OTHER WAY AROUND. A first draft of this built the
+// preview lines and the actual staffS mutations in the SAME pass, with confirm() only
+// gating the final staffSave(). Pressing Cancel would still have left every mutation
+// sitting in memory, ready to be persisted whole by the next unrelated save — the exact
+// half-applied shape this file's own culture warns about everywhere else. Caught before
+// ever reaching a browser. staffCleanup1Plan() only READS staffS and returns what it
+// would do, as closures; staffCleanup1Apply() shows that preview, and only on confirm
+// actually calls the closures.
+function staffCleanup1Plan(){
+  const lines=[],actions=[];
+  const note=(line,fn)=>{lines.push(line);if(fn)actions.push(fn);};
+
+  STAFF_CLEANUP_1_MERGES.forEach(([loserName,keeperName])=>{
+    const lk=staffKeyOf(loserName),kk=staffKeyOf(keeperName);
+    if((staffS.aliases||{})[lk]===kk){note('✓ already merged: '+loserName+' → '+keeperName);return}
+    const keeper=staffS.people[kk];
+    if(!keeper){note('⚠ SKIPPED (no "'+keeperName+'" row to merge into): '+loserName);return}
+    note('merge: '+loserName+' → '+keeperName,()=>{
+      const loser=staffS.people[lk];
+      if(loser&&!loser.removed){
+        const fill=(f)=>{if((keeper[f]==null||keeper[f]==='')&&loser[f]!=null&&loser[f]!=='')keeper[f]=loser[f]};
+        ['paychex_id','micros_num','micros_id','phone','since','nickname','role','empclass'].forEach(fill);
+        keeper.rates=Object.assign({},loser.rates||{},keeper.rates||{});
+        keeper.positions=(keeper.positions&&keeper.positions.length)?keeper.positions:(loser.positions||[]);
+        keeper.register=Object.assign({},loser.register||{},keeper.register||{});
+        keeper.sources=Object.assign({},loser.sources||{},keeper.sources||{});
+        delete staffS.people[lk];
+      }
+      staffS.aliases=staffS.aliases||{};
+      staffS.aliases[lk]=kk;
+      staffTouch(keeper);
+    });
+  });
+
+  // Sophia Evans — a REMOVED tombstone, not an active duplicate. Stays removed; only
+  // the alias is new, so her old spelling still finds Sophie's hours.
+  (()=>{
+    const lk=staffKeyOf('Sophia Evans'),kk=staffKeyOf('Sophie Evans');
+    if((staffS.aliases||{})[lk]===kk){note('✓ already aliased: Sophia Evans → Sophie Evans');return}
+    if(!staffS.people[kk]){note('⚠ SKIPPED (no "Sophie Evans" row): Sophia Evans');return}
+    note('alias (tombstone kept removed): Sophia Evans → Sophie Evans',()=>{
+      staffS.aliases=staffS.aliases||{};
+      staffS.aliases[lk]=kk;
+      // Deliberately NOT touching staffS.people[lk].removed — Jarvis: "keep it removed".
+    });
+  })();
+
+  STAFF_CLEANUP_1_NEW.forEach(([name,positions])=>{
+    const k=staffKeyOf(name);
+    const existing=staffS.people[k];
+    if(existing&&!existing.removed){note('✓ already on the list: '+name);return}
+    note(existing?'restore + add: '+name:'add: '+name+' ('+positions.join(', ')+')',()=>{
+      if(existing){
+        delete existing.removed;delete existing.removedAt;
+        existing.name=name;existing.positions=positions.slice();existing.at=Date.now();
+      }else{
+        staffS.people[k]={key:k,pid:staffNewPid(),name,positions:positions.slice(),sources:{},addedAt:Date.now(),at:Date.now()};
+      }
+    });
+  });
+
+  STAFF_CLEANUP_1_POSITIONS.forEach(([name,positions])=>{
+    const k=staffKeyOf(name);
+    const p=staffS.people[k];
+    if(!p){note('⚠ SKIPPED (not on the list): '+name);return}
+    if(p.positions&&p.positions.length){note('✓ already has positions, left alone: '+name);return}
+    if(!positions.length){note('no position to give (hours were all skip-listed types): '+name);return}
+    note('positions: '+name+' → '+positions.join(', '),()=>{p.positions=positions.slice();staffTouch(p);});
+  });
+
+  return {lines,actions};
+}
+function staffCleanup1Apply(){
+  const {lines,actions}=staffCleanup1Plan();
+  if(!actions.length){alert('Nothing left to do — every line already matches:\n\n'+lines.join('\n'));return}
+  if(!confirm('Apply the staff cleanup Vinny approved?\n\n'+actions.length+' change'+(actions.length===1?'':'s')+' of '+lines.length+' line items (the rest already match). Full list:\n\n'+lines.join('\n')+'\n\nThis writes to the shared staff list on this device.'))return;
+  actions.forEach(fn=>fn());
+  staffSave();
+  alert('Staff cleanup applied:\n\n'+lines.join('\n'));
+  staffS.regNote='Staff cleanup (11/19) applied. See the alert for the full line-by-line result.';
+  staffRefreshNotes();staffRedraw();
+}
+
 // "These two are NOT the same person." Worth storing as firmly as a merge:
 // a later pass runs the same surname-and-initial scan, finds the pair again,
 // and it looks just as suspicious the second time. Kamrin and Kristina Mastrino
@@ -15605,6 +15745,11 @@ function posStaffHTML(){
         style="${posBtn('#3f3f46')};padding:7px 13px;font-size:13px">Assign a job</button>
       <button onclick="staffAddPerson()" title="Add somebody who is not in the schedule app yet"
         style="${posBtn('#22c55e')};padding:7px 13px;font-size:13px">+ Add person</button>
+      <!-- One-time, approved 11/19/26 on the shared board (staff-cleanup-1-names). Safe to
+           press more than once — see staffCleanup1Plan's own comment. Leave the button here;
+           it costs nothing once every line reads "already" and makes the work re-checkable. -->
+      <button onclick="staffCleanup1Apply()" title="The 3 misspelling merges + Sophia→Sophie + 11 new hires + 45 position fills Vinny approved 11/19. Shows exactly what it's about to do before writing anything."
+        style="${posBtn('#f59e0b')};padding:7px 13px;font-size:13px">Apply 11/19 cleanup</button>
     <button onclick="staffS.showDupes=!staffS.showDupes;staffRedraw()" title="Show names that might be the same person twice"
       style="background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:6px 12px;font-size:12.5px;cursor:pointer;font-family:inherit;white-space:nowrap">Find duplicates</button>
     </div>
