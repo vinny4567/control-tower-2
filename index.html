@@ -6170,8 +6170,12 @@ function tipsPaychexCsv(){
     const rates=Object.keys(byRate).map(Number).sort((a,b)=>a-b);
     const rows=rates.map(r=>({hours:byRate[r].reg,rate:r,ot:byRate[r].ot}));
     if(!rows.length&&(tips||unpaid||trainH))rows.push({hours:0,rate:0,ot:0});
+    // The printed NAME column only — Worker ID is what Paychex actually matches on, so
+    // this never risks an import; it only fixes what prints next to it. Vinny, with
+    // screenshots: "names and spelling has to come from the back office master list".
+    const dispName=staffDisplayName(name).name;
     rows.forEach((row,i)=>{const base=i===0;
-      lines.push([COMPANY,wid,csvEsc(name),'hourly',f(row.hours),rn(row.rate),base?f(tips):'',base?f(unpaid):'',f(row.ot),base?f(trainH):'',base&&trainR?rn(trainR):'',''].join(','));});
+      lines.push([COMPANY,wid,csvEsc(dispName),'hourly',f(row.hours),rn(row.rate),base?f(tips):'',base?f(unpaid):'',f(row.ot),base?f(trainH):'',base&&trainR?rn(trainR):'',''].join(','));});
   });
   return {csv:lines.join('\n'),people,skipped};
 }
@@ -6813,7 +6817,7 @@ function tsChecksHTML(){
   const row=c=>`<div style="display:flex;gap:10px;align-items:baseline;padding:6px 0;border-top:1px solid var(--border)">
     <span style="flex:none;width:8px;height:8px;border-radius:50%;background:${c.sev==='high'?'#f87171':'#fbbf24'};margin-top:5px"></span>
     <span style="flex:none;width:96px;font-size:11px;color:var(--text-muted);font-variant-numeric:tabular-nums">${esc(String(c.date||''))}</span>
-    <span style="flex:none;width:150px;font-size:12.5px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.name)}</span>
+    <span style="flex:none;width:150px;font-size:12.5px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(staffDisplayName(c.name).name)}</span>
     <span style="flex:none;width:92px;font-size:11px;color:var(--text-dim)">${esc(c.where)}${c.job?' · '+esc(String(c.job)):''}</span>
     <span style="flex:1;font-size:12px;color:var(--text-dim)"><b style="color:${c.sev==='high'?'#f87171':'#fbbf24'}">${esc(c.detail)}</b> — ${esc(c.why)}</span>
   </div>`;
@@ -6872,7 +6876,7 @@ function hoursHTML(){
   if(filt==='rest')names=names.filter(isRestEmp);else if(filt==='wed')names=names.filter(n=>!isRestEmp(n));
   const nameBg='rgba(255,179,0,0.13)',nameBar='var(--accent)';
   const outNames=Object.keys(tipsState.hoursOut||{});
-  const outHTML=outNames.length?`<div style="display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(251,191,36,.35);background:rgba(251,191,36,.07);border-radius:8px;padding:3px 8px;font-size:11px;color:var(--text-dim)"><span>taken out:</span>${outNames.map(n=>`<button onclick="tipHoursUndoOut('${esc(n).replace(/'/g,"\\'")}')" title="Put ${esc(n)} back in this period" style="background:transparent;border:none;border-bottom:1px dashed var(--border);color:#fbbf24;cursor:pointer;font-size:11px;font-family:inherit;padding:0">${esc(n)} ↩</button>`).join('')}</div>`:'';
+  const outHTML=outNames.length?`<div style="display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(251,191,36,.35);background:rgba(251,191,36,.07);border-radius:8px;padding:3px 8px;font-size:11px;color:var(--text-dim)"><span>taken out:</span>${outNames.map(n=>{const dn=staffDisplayName(n).name;return `<button onclick="tipHoursUndoOut('${esc(n).replace(/'/g,"\\'")}')" title="Put ${esc(dn)} back in this period" style="background:transparent;border:none;border-bottom:1px dashed var(--border);color:#fbbf24;cursor:pointer;font-size:11px;font-family:inherit;padding:0">${esc(dn)} ↩</button>`;}).join('')}</div>`:'';
   const fbtn=(f,lab)=>`<button onclick="tipsSetHoursFilter('${f}')" style="background:${filt===f?'var(--accent)':'transparent'};color:${filt===f?'#000':'var(--text-dim)'};border:none;padding:5px 11px;font-weight:700;cursor:pointer;font-size:12px;font-family:inherit;${f!=='all'?'border-left:1px solid var(--border)':''}">${lab}</button>`;
   const filtToggle=`<div style="display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden">${fbtn('all','Both')}${fbtn('rest','🍽 Restaurant')}${fbtn('wed','💍 Weddings')}</div>`;
   const tipCells=(id,paid,upt)=>`<td id="htip-${id}" style="padding:3px 10px;text-align:right;font-weight:700;color:#34d399;border-left:1px solid var(--border);${bb};white-space:nowrap">${paid?tipMoney(paid):''}</td><td id="hupt-${id}" style="padding:3px 10px;text-align:right;font-weight:700;color:#fbbf24;border-left:1px solid var(--border);${bb};white-space:nowrap">${upt?tipMoney(upt):''}</td>`;
@@ -6885,7 +6889,8 @@ function hoursHTML(){
     const nb=`position:sticky;left:0;background:${nameBg};border-left:3px solid ${nameBar};padding:3px 12px;white-space:nowrap;border-right:2px solid var(--border);${bb}`;
     // Name row = the person + their period totals; each position sits on its own
     // indented ↳ row below (positions stay, just never inline next to the name).
-    body+=`<tr style="background:${nameBg}"><td style="${nb};font-weight:800;width:270px"><div style="display:flex;align-items:center;width:100%">${empBadge(name)}<span style="white-space:nowrap">${esc(name)}</span>${addBtn(name,asrc)}${delPersonBtn(name)}</div></td><td style="${bb}"></td><td id="hreg-${id}" style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.reg||''}</td><td id="hot-${id}" style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.ot||''}</td><td id="hpt-${id}" style="padding:3px 10px;text-align:right;font-weight:800;color:#34d399;border-left:2px solid var(--border);${bb}">${t.pay?tipMoney(t.pay):''}</td>${tipCells(id,tt.paid,uptTot)}</tr>`;
+    const disp=staffDisplayName(name);
+    body+=`<tr style="background:${nameBg}"><td style="${nb};font-weight:800;width:270px"><div style="display:flex;align-items:center;width:100%">${empBadge(name)}<span style="white-space:nowrap">${esc(disp.name)}${staffDisplayMark(disp.matched)}</span>${addBtn(name,asrc)}${delPersonBtn(name)}</div></td><td style="${bb}"></td><td id="hreg-${id}" style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.reg||''}</td><td id="hot-${id}" style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.ot||''}</td><td id="hpt-${id}" style="padding:3px 10px;text-align:right;font-weight:800;color:#34d399;border-left:2px solid var(--border);${bb}">${t.pay?tipMoney(t.pay):''}</td>${tipCells(id,tt.paid,uptTot)}</tr>`;
     secs.forEach(sec=>{body+=`<tr><td style="position:sticky;left:0;background:var(--surface);padding:2px 12px 2px 26px;white-space:nowrap;border-right:2px solid var(--border);${bb}">↳ ${posInput(name,sec)}${wtag(all,sec,name)}${delX(name,sec)}</td>${cells(name,sec)}${blankTips}</tr>`;});
   });
   if(!names.length)body=`<tr><td colspan="7" style="padding:34px;text-align:center;color:var(--text-dim);line-height:1.6">No hours or tips yet — pick a date range to pull weddings, and give me the MICROS timesheet.</td></tr>`;
@@ -6943,10 +6948,13 @@ function tipsHTML(){
     const t=tipRowTotals(name),upt=Math.round((t.upt+tipBusserSplit(name))*100)/100;gp+=t.paid;gu+=upt;const id=tipId(name);
     const bb='border-bottom:1px solid var(--border)';
     const en=esc(name).replace(/'/g,"\\'");
+    // "Busser Pool" isn't a person — never run it through the Staff lookup, or it would
+    // show a loose-name flag on a label that was never a name to begin with.
+    const disp=isPool?{name,matched:true}:staffDisplayName(name);
     const tds=days.map(d=>{const lb=tipDayLabel(d);const mon=(d.getDay()===1);const c=tipCell(name,lb),sp=tipBusserDay(name,lb);
       return `<td id="tc-${id}-${lb.replace('/','_')}" data-tipcell onclick="tipCellEdit('${en}','${lb}')" title="Click to edit" style="cursor:pointer;border-right:1px solid var(--border);${bb};text-align:right;padding:5px ${mon?'2px':'6px'};min-width:${mon?'18px':'58px'};white-space:nowrap;vertical-align:middle">${tipCompsHTML(sp?Object.assign({},c||{},{u:Math.round((((c&&c.u)||0)+sp)*100)/100}):c)}</td>`;}).join('');
     return `<tr style="${isPool?'background:rgba(251,191,36,0.06)':''}">
-      <td style="position:sticky;left:0;z-index:1;background:var(--surface);padding:7px 12px;font-weight:${isPool?'800':'600'};white-space:nowrap;border-right:2px solid var(--border);${bb};${isPool?'color:#fbbf24':''}"><span style="display:inline-flex;align-items:center;gap:6px">${esc(name)}${isPool?'':`<select title="Move to another section" onchange="tipMovePerson('${esc(name).replace(/'/g,"\\'")}',this.value)" style="background:transparent;border:none;color:var(--text-muted);font-size:11px;font-family:inherit;cursor:pointer;-webkit-appearance:none;appearance:none;padding:0 2px">${TIP_SECTIONS.map(s=>`<option value="${s}" ${tipEffSection(name)===s?'selected':''} style="color:#000">${TIP_SEC_SHORT[s]}</option>`).join('')}</select>`}</span></td>
+      <td style="position:sticky;left:0;z-index:1;background:var(--surface);padding:7px 12px;font-weight:${isPool?'800':'600'};white-space:nowrap;border-right:2px solid var(--border);${bb};${isPool?'color:#fbbf24':''}"><span style="display:inline-flex;align-items:center;gap:6px">${esc(disp.name)}${staffDisplayMark(disp.matched)}${isPool?'':`<select title="Move to another section" onchange="tipMovePerson('${esc(name).replace(/'/g,"\\'")}',this.value)" style="background:transparent;border:none;color:var(--text-muted);font-size:11px;font-family:inherit;cursor:pointer;-webkit-appearance:none;appearance:none;padding:0 2px">${TIP_SECTIONS.map(s=>`<option value="${s}" ${tipEffSection(name)===s?'selected':''} style="color:#000">${TIP_SEC_SHORT[s]}</option>`).join('')}</select>`}</span></td>
       ${tds}
       <td id="tp-${id}" style="padding:7px 8px;text-align:right;font-weight:700;color:#34d399;white-space:nowrap;border-left:2px solid var(--border);${bb}">${t.paid?tipMoney(t.paid):''}</td>
       <td id="tu-${id}" style="padding:7px 8px;text-align:right;font-weight:700;color:#fbbf24;white-space:nowrap;border-left:2px solid var(--border);${bb}">${upt?tipMoney(upt):''}</td>
@@ -13491,6 +13499,34 @@ function staffKeyOf(name){
     .split(/\s+/).filter(t=>t.length>1).join(' ').trim();
 }
 
+// DISPLAY ONLY — resolves any name the Tips tab shows (sections, Hours, MICROS-sourced
+// rows, the Paychex CSV name column) to the Staff master's own spelling. 11/20/26, Vinny
+// with screenshots: "names and spelling has to come from the back office master list" —
+// the Tips roster had "Maria S Ruiz" where Staff has "Maria Ruiz" (keyOf drops the lone
+// middle initial, same as every other matcher in this file). Same staffKeyOf + alias
+// chain `staffPull` already follows to land on a record, so a merge in Staff resolves
+// here automatically, with no second lookup table to keep in step.
+// ⛔ NEVER CHANGES WHAT A PERIOD'S DATA IS STORED UNDER. ct_hours/ct_tips/ct_emp_ids key
+// by the name the storage layer has always used — that is the LEAVE-IT money zone this
+// function is not allowed near. Every call site below passes the STORAGE name in for every
+// write/lookup and only swaps in `.name` for the text actually printed on screen.
+function staffDisplayName(rawName){
+  const raw=String(rawName||'').trim();
+  const k0=staffKeyOf(raw);
+  if(!k0)return {name:raw,matched:false};
+  let k=k0;
+  const al=(staffS.aliases||{})[k];
+  if(al&&staffS.people&&staffS.people[al])k=al;
+  const p=staffS.people&&staffS.people[k];
+  if(p&&p.name)return {name:p.name,matched:true};
+  return {name:raw,matched:false};
+}
+// A name that did NOT resolve is shown AS-IS, with a small visible mark — "visible rather
+// than silently loose" (Vinny's own words for this). Never hides a name, never guesses.
+function staffDisplayMark(matched){
+  return matched?'':'<span title="Not on the Staff list — check the spelling there" style="color:#fbbf24;font-size:10px;margin-left:3px;vertical-align:super">⚑</span>';
+}
+
 // ---- saving: MERGE, never a blind whole-blob push ---------------------------
 //
 // This list is built by hand on more than one screen — rates on the office iMac, a
@@ -13657,6 +13693,10 @@ async function staffLoad(){
   // any load that actually found something to clean.
   if(staffBackfillPids()||strippedAny)staffSave();
   if(activeTab===POS&&(posS.sec==='staff'||posS.sec==='jobrates'))renderViewport();
+  // Tips already shows names resolved through Staff (staffDisplayName) — if Tips was
+  // opened before this load finished, catch it up now rather than leaving last-paint's
+  // raw/flagged names on screen until something else happens to redraw.
+  if(activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();
   staffReconcileJobNums();
 }
 
@@ -14719,7 +14759,10 @@ function staffDupesHTML(){
         ${(p.positions&&p.positions.length)?' · '+esc(p.positions.slice(0,3).join(', ')):''}
       </div>
       ${onlyId?`<div style="font-size:11.5px;color:#fbbf24;margin-top:4px">This is the only one with a Paychex ID — keep this one.</div>`:''}
-      <button onclick="staffRemove('${esc(p.key)}')" style="margin-top:7px;background:none;border:1px solid #7f1d1d;color:#f87171;border-radius:6px;padding:3px 10px;font-size:12px;cursor:pointer;font-family:inherit">Delete this one</button>
+      <div style="display:flex;gap:6px;margin-top:7px">
+        <button onclick="staffRemove('${esc(p.key)}')" style="background:none;border:1px solid #7f1d1d;color:#f87171;border-radius:6px;padding:3px 10px;font-size:12px;cursor:pointer;font-family:inherit">Delete this one</button>
+        ${staffRawRows?'':`<button onclick="staffMergeInto('${esc(p.key)}')" title="Keep this one as an ALIAS instead of deleting it — their old spelling still finds their hours on a timesheet. staffMergeInto exists but had never been wired to a button until now." style="background:none;border:1px solid var(--border);color:var(--text-dim);border-radius:6px;padding:3px 10px;font-size:12px;cursor:pointer;font-family:inherit">Merge into…</button>`}
+      </div>
     </div>`;};
   const row=(pr)=>`<div style="border-top:1px solid var(--border);padding:10px 0">
       <div style="font-size:12px;color:${pr.strength>=3?'#fbbf24':'var(--text-muted)'};margin-bottom:6px">${pr.strength>=3?'⚠ ':''}${esc(pr.why)}</div>
