@@ -1045,6 +1045,17 @@ const M=[
   ['TIPSMOVE 6 · BENIGN — the tipsActive top comment reworded, no behaviour change','check-tips-move.mjs',
     tsub("function tipsActive(){return activeTab===POS&&posS.sec===TIPS;}",
          "function tipsActive(){ /* is the Tips section open? */ return activeTab===POS&&posS.sec===TIPS;}"),false],
+
+  // ── SCROLL POSITION ON A STAFF WRITE (check-staff-scroll) ───────────────────────────
+  ['SCROLL 1 · ⛔ a staff write goes back to a full renderViewport() — every edit, remove or restore jumps the scroll to the top again','check-staff-scroll.mjs',
+    tsub("        if(activeTab===POS&&posS.sec==='staff')staffRefresh();\n        if(activeTab===POS&&posS.sec==='jobrates')posJobRatesRefresh();",
+         "        if(activeTab===POS&&(posS.sec==='staff'||posS.sec==='jobrates'))renderViewport();"),true],
+  ['SCROLL 2 · ⛔ only the Staff refresh survives, Job rates goes back to the whole-viewport jump','check-staff-scroll.mjs',
+    tsub("        if(activeTab===POS&&posS.sec==='jobrates')posJobRatesRefresh();",
+         "        if(activeTab===POS&&posS.sec==='jobrates')renderViewport();"),true],
+  ['SCROLL 3 · BENIGN — the scoped-refresh comment reworded, no behaviour change','check-staff-scroll.mjs',
+    tsub("// ⚠️ SCOPED REFRESH, NEVER renderViewport() HERE.",
+         "// Keep the scroll position on a staff write."),false],
 ];
 
 let wrong=0;

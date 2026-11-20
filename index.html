@@ -13752,7 +13752,16 @@ async function staffLoad(force){
         const s=r.body.staff;
         staffS.people=s.people||{};staffS.jobs=s.jobs||{};staffS.aliases=s.aliases||{};staffS.at=s.at||0;
         staffMirrorToCloud();
-        if(activeTab===POS&&(posS.sec==='staff'||posS.sec==='jobrates'))renderViewport();
+        // ⚠️ SCOPED REFRESH, NEVER renderViewport() HERE. Vinny, 11/20/26: "deleting someone
+        // from the staff list snaps me back up to the top of the page." renderViewport()
+        // replaces the whole #viewport — including the POS content pane that actually holds
+        // the scroll — so the pane is rebuilt from scratch at scrollTop 0 on EVERY staff
+        // write (staffWriteOp calls staffLoad(true) after every success). staffRefresh() and
+        // posJobRatesRefresh() only replace their own inner div, so the ancestor pane (and
+        // its scroll position) is never touched. staffRefresh() also re-reads staffS.open on
+        // every render, so an expanded row stays expanded for free — nothing extra needed.
+        if(activeTab===POS&&posS.sec==='staff')staffRefresh();
+        if(activeTab===POS&&posS.sec==='jobrates')posJobRatesRefresh();
         // Tips already shows names resolved through Staff (staffDisplayName) — if Tips was
         // opened before this load finished, catch it up now rather than leaving last-paint's
         // raw/flagged names on screen until something else happens to redraw.
@@ -13778,6 +13787,12 @@ async function staffLoad(force){
       staffStripSignin(staffS.people);
     }
   }catch(e){ /* keep whatever the instant-paint above already showed */ }
+  // Full rebuild here, deliberately — this is the path where the mini just dropped
+  // (answered the write, then failed the immediate re-pull), and the read-only banner at
+  // the TOP of posStaffHTML() has to actually appear. staffRefresh()'s scoped #staff-body
+  // refresh wouldn't touch it. Rare enough (a connectivity blip mid-re-pull, not a normal
+  // write) that losing scroll position here is the lesser problem — unlike the success
+  // path above, which is every ordinary write and is what Vinny actually hit.
   if(activeTab===POS&&(posS.sec==='staff'||posS.sec==='jobrates'))renderViewport();
   if(tipsActive())document.getElementById('pos-body').innerHTML=tipsHTML();
 }
