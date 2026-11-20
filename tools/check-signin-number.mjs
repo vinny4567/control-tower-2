@@ -205,5 +205,75 @@ ok('staffMergeOne carries an independent backstop (it never emits the field even
    /delete out\.register\.signin;delete out\.register\.signin_at;/.test(mergeOneSrc) &&
    mergeOneSrc.indexOf('out.register=Object.assign') < mergeOneSrc.indexOf('delete out.register.signin;'));
 
+// ---- strip-but-never-save: the 11/20 follow-up Jarvis caught live --------------
+// Vinny opened Staff; the mini mirror didn't move. Cause: staffLoad strips signin from
+// memory on EVERY load, but a load that touches nothing else never used to call
+// staffSave() at all — the clean copy stayed local forever. And staffPushMerged's own
+// "nothing of ours to add" guard independently re-fetches and re-strips the cloud copy,
+// so even calling it directly would silently no-op unless THAT strip is also counted.
+// RUN both real functions, not just grep their source.
+let PUSH = null;
+try {
+  const liftedPush = new Function(`
+    let staffS = {people:{},jobs:{},at:0,syncNote:''};
+    let staffWriteAt = 0;
+    const STAFF_KEY = 'ct_staff';
+    function staffRefreshNotes(){}
+    function staffPublishJobRates(){}
+    const localStorage = { _s:{}, getItem(k){return Object.prototype.hasOwnProperty.call(this._s,k)?this._s[k]:null;}, setItem(k,v){this._s[k]=v;} };
+    localStorage.setItem('ct_kv_key','fake-token');
+    let _kv = null, _pushed = null;
+    function __setRemote(people,at){_kv={v:{people,jobs:{}},at};}
+    function __resetPushed(){_pushed=null;}   // each test case starts with a clean slate, not a leftover from the last
+    function kvPush(k,v,at){_pushed={k,v,at};}
+    function __getPushed(){return _pushed;}
+    async function kvGet(k){ return _kv===null ? {v:null,at:0} : _kv; }
+    ${grab('staffStripSignin')}
+    ${grab('staffMergeOne')}
+    ${grab('staffMerge')}
+    ${grab('staffMergeJobs')}
+    ${grab('staffPushMerged')}
+    return {staffPushMerged, __setRemote, __resetPushed, __getPushed, setLocal:(p)=>{staffS.people=p;}, setJobs:(j)=>{staffS.jobs=j;}};
+  `)();
+  PUSH = liftedPush;
+} catch (e) { ok('staffPushMerged + its deps lift and run: ' + e.message, false); }
+
+if (PUSH) {
+  // The exact case Jarvis described: the local device already believes a clean record;
+  // the cloud's OWN copy still carries the retired field. After stripping, the two sides
+  // read identically — the OLD "same" check would have skipped the write entirely.
+  const clean = { dana: { at: 100, name: 'Dana', register: { pin_set: true, emp_id: 9 } } };
+  const dirtyRemote = { dana: { at: 100, name: 'Dana', register: { pin_set: true, emp_id: 9, signin: '5678', signin_at: 50 } } };
+  PUSH.setLocal(JSON.parse(JSON.stringify(clean)));
+  PUSH.setJobs({});
+  PUSH.__setRemote(JSON.parse(JSON.stringify(dirtyRemote)), 100);
+  await PUSH.staffPushMerged();
+  const pushed1 = PUSH.__getPushed();
+  ok('⛔ a cloud copy that still carries the retired field IS pushed clean, even though content reads identical after stripping',
+     !!pushed1 && pushed1.v.people.dana.register.signin === undefined);
+
+  // The genuine no-op case must still be guarded — two polling devices with an ALREADY
+  // clean remote and nothing of ours to add must not push forever.
+  PUSH.__resetPushed();
+  PUSH.setLocal(JSON.parse(JSON.stringify(clean)));
+  PUSH.setJobs({});
+  PUSH.__setRemote(JSON.parse(JSON.stringify(clean)), 100);
+  await PUSH.staffPushMerged();
+  const pushed2 = PUSH.__getPushed();
+  ok('…but a remote that is ALREADY clean, with nothing of ours to add, still does not push (the original guard survives)',
+     pushed2 === null);
+}
+
+// staffLoad: a strip (local OR cloud) must trigger the save, same as a backfilled pid.
+ok('⛔ staffLoad counts BOTH strips (local and cloud) and saves if either found something',
+   /let strippedAny=staffStripSignin\(staffS\.people\)/.test(load) &&
+   /strippedAny\+=staffStripSignin\(r\.v\.people\)/.test(load) &&
+   /if\(staffBackfillPids\(\)\|\|strippedAny\)staffSave\(\)/.test(load));
+// staffPushMerged: the independent re-strip of ITS OWN cloud read must defeat the
+// "nothing of ours to add" guard, not just staffLoad's.
+ok('⛔ staffPushMerged captures its own strip count and bypasses the no-op guard with it',
+   /const strippedRemote=staffStripSignin\(r\.v\.people\)/.test(push) &&
+   /if\(same&&!strippedRemote\)/.test(push));
+
 console.log(bad ? `\n${bad} FAILED` : '\nall good');
 process.exit(bad ? 1 : 0);

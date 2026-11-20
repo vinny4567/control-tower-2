@@ -13544,12 +13544,22 @@ function staffBackfillPids(){
 // about which copy is newer, past every future clean write. So every record this page
 // reads, from every source (local, cloud, merged), has register.signin/signin_at deleted
 // before anything else touches it — not just on the next write through staffSetPin.
+//
+// ⚠️ STRIPPING IN MEMORY IS NOT THE SAME AS SAVING. Jarvis caught this live 11/20: Vinny
+// opened Staff, and the mini mirror did not move — strip-on-read cleans staffS.people on
+// every load, but a load that touches nothing else never calls staffSave(), so the cleaned
+// copy stayed local and the cloud/mini blob kept its 128 old copies forever. Returns the
+// count actually stripped so staffLoad (below) can tell "nothing to clean" from "cleaned,
+// needs saving" — the same shape as staffBackfillPids().
 function staffStripSignin(people){
-  if(!people)return;
+  if(!people)return 0;
+  let n=0;
   Object.keys(people).forEach(k=>{
     const reg=people[k]&&people[k].register;
+    if(reg&&(reg.signin!==undefined||reg.signin_at!==undefined))n++;
     if(reg){delete reg.signin;delete reg.signin_at;}
   });
+  return n;
 }
 function staffMergeOne(a,b){
   if(!a)return b;if(!b)return a;
@@ -13622,11 +13632,11 @@ async function staffLoad(){
   staffS.loaded=true;
   try{const local=localStorage.getItem(STAFF_KEY);if(local){const j=JSON.parse(local);
     if(j&&j.people){staffS.people=j.people;staffS.jobs=j.jobs||{};staffS.aliases=j.aliases||{};staffS.at=j.at||0}}}catch(e){}
-  staffStripSignin(staffS.people);      // this device's OWN stored copy, before it touches anything
+  let strippedAny=staffStripSignin(staffS.people);      // this device's OWN stored copy, before it touches anything
   const r=await kvGet(STAFF_KEY);
   // MERGED, not replaced: this device may hold edits the cloud has never seen.
   if(r&&r.v&&r.v.people){
-    staffStripSignin(r.v.people);        // the cloud's copy, before it ever reaches the merge
+    strippedAny+=staffStripSignin(r.v.people);        // the cloud's copy, before it ever reaches the merge
     staffS.people=staffMerge(staffS.people,r.v.people);
     staffS.jobs=staffMergeJobs(staffS.jobs,r.v.jobs);
     // Renames made on another screen. UNION, never replace — losing an alias
@@ -13638,8 +13648,14 @@ async function staffLoad(){
   // for somebody the cloud already has one for, and the merge would then have to throw
   // one of the two away — churn, on the one field that must never churn.
   //
-  // Saved only if something was actually minted, so an ordinary load does not write.
-  if(staffBackfillPids())staffSave();
+  // Saved only if something was actually minted OR stripped, so an ordinary load does
+  // not write. ⛔ THE STRIP HALF IS THE 11/20 FIX: cleaning staffS.people in memory is
+  // not the same as cleaning the cloud/mini blob — Jarvis caught that a load which
+  // strips but touches nothing else never used to call staffSave() at all, so the 128
+  // old copies sat in the mirror forever, no matter how many times Staff was opened.
+  // One queued staffPushMerged (via staffSave's existing 700ms debounce) now follows
+  // any load that actually found something to clean.
+  if(staffBackfillPids()||strippedAny)staffSave();
   if(activeTab===POS&&(posS.sec==='staff'||posS.sec==='jobrates'))renderViewport();
   staffReconcileJobNums();
 }
@@ -13689,7 +13705,14 @@ async function staffPushMerged(){
   staffS.syncNote='';
   const r=await kvGet(STAFF_KEY);
   if(r&&r.v&&r.v.people){
-    staffStripSignin(r.v.people);        // the cloud's copy, before it ever reaches the merge
+    // Captured, not discarded: stripping MUTATES r.v.people in place, so the `same`
+    // check two lines down would compare two already-clean sides and never notice the
+    // dirty copy it just cleaned — exactly the bug Jarvis caught 11/20 (Vinny opened
+    // Staff, the mirror didn't move, because strip-on-read is silent about whether it
+    // found anything). A non-zero count means the cloud's OWN copy still had the
+    // retired field — that is new content worth writing even if, after cleaning, it
+    // now reads identically to what this device already believed.
+    const strippedRemote=staffStripSignin(r.v.people);
     staffS.people=staffMerge(staffS.people,r.v.people);
     staffS.jobs=staffMergeJobs(staffS.jobs,r.v.jobs);
     // NOTHING OF OURS TO ADD → DON'T WRITE.
@@ -13708,7 +13731,7 @@ async function staffPushMerged(){
     const same=JSON.stringify({p:staffS.people,j:staffS.jobs||{}})
              ===JSON.stringify({p:staffMerge(r.v.people,r.v.people),
                                 j:staffMergeJobs(r.v.jobs,r.v.jobs)});
-    if(same){staffS.at=r.at||staffS.at;return;}
+    if(same&&!strippedRemote){staffS.at=r.at||staffS.at;return;}
   }
   // ⚠️ MONOTONIC, same as privS.at and posBuildLive. Two staff edits tying on
   // one millisecond would leave `ct_staff.at` unchanged — and because the

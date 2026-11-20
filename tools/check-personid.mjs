@@ -16,7 +16,11 @@ const src = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 let bad = 0;
 const ok = (t, c) => { if (!c) bad++; console.log((c ? '  ok  ' : '  FAIL') + '  ' + t); };
 
-const mint = src.slice(src.indexOf('function staffNewPid('), src.indexOf('function staffMergeOne('));
+// Bounded to staffStripSignin, not the far-off staffMergeOne — code inserted between
+// staffBackfillPids and staffMergeOne (staffStripSignin, 11/20) was swept into this slice
+// under the old anchor, and its own `Object.keys(people)` tripped the NAME/key regex below
+// on the built-in method name, not a real leak.
+const mint = src.slice(src.indexOf('function staffNewPid('), src.indexOf('function staffStripSignin('));
 ok('an id is generated, not derived', /randomUUID|Math\.random/.test(mint));
 // ⚠️ THE WHOLE POINT. Anything drawn from the name is the bug we are fixing.
 ok('⚠️ nothing about the NAME goes into it', !/name|key/.test(mint.replace(/\/\/.*$/gm, '')));
@@ -37,7 +41,13 @@ ok('an id is not invented by the merge itself', /if \(!out\.pid\) delete out\.pi
 const load = src.slice(src.indexOf('async function staffLoad('), src.indexOf('let staffPushTimer'));
 ok('⚠️ the backfill runs AFTER the cloud merge',
    load.indexOf('staffMerge(') < load.indexOf('staffBackfillPids()'));
-ok('and only writes when something was actually minted', /if\(staffBackfillPids\(\)\)staffSave\(\)/.test(load));
+// ⚠️ WIDENED 11/20, deliberately — the retired register.signin field being stripped from
+// a record is ALSO something worth saving (Jarvis caught that a load which only stripped
+// never wrote at all, so a stale cloud/mini copy survived no matter how often Staff was
+// opened). Still gated: an ordinary load that minted nothing AND stripped nothing writes
+// nothing.
+ok('and only writes when something was actually minted OR a stale signin was stripped',
+   /if\(staffBackfillPids\(\)\|\|strippedAny\)staffSave\(\)/.test(load));
 
 // A brand new person gets one at creation, not on some later pass.
 ok('a row created by a scheduler pull is born with an id', /pid:staffNewPid\(\),name:r\.name/.test(src));
