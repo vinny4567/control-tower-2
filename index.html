@@ -6335,12 +6335,30 @@ async function tipsPullWeddingHours(auto){
   if(!auto||filled)tipsSetStatus((filled?('Pulled '+filled+' wedding hour line'+(filled>1?'s':'')+' ✓'):'✓ in sync')+heldTxt,'var(--text-dim)');
 }
 // Which section a person really belongs to = a manual move (global, sticks
-// across periods) if set, else where the embedded roster puts them.
+// across periods) if set, else where their Staff department puts them, else
+// where the embedded roster puts them.
 function tipRosterHas(name){return TIP_SECTIONS.some(s=>((tipsState.roster&&tipsState.roster[s])||[]).indexOf(name)>=0);}
+// DEPARTMENT DECIDES THE SECTION NOW (Vinny, 11/20/26) — one department, one Tips
+// section: Server/Bartender/Busser/Food Runner (=runner)/Weddings (=events). Kitchen
+// and null never resolve here. TRANSITION: while a person's department is null (not
+// filled in yet — see "Fill departments"), they fall through to the roster/adds lookup
+// below exactly as before, so nobody drops off a section mid-migration.
+const TIP_SECTION_FROM_DEPT={server:'Server',bartender:'Bartender',busser:'Busser',runner:'Food Runner',events:'Weddings'};
+// Same alias-chain resolution staffDisplayName uses — a Tips name resolves to the
+// Staff record it would land on, not just an exact-spelling hit.
+function tipDeptSection(name){
+  const k0=staffKeyOf(name);if(!k0)return null;
+  const al=(staffS.aliases||{})[k0];
+  const key=(al&&staffS.people&&staffS.people[al])?al:k0;
+  const p=staffS.people&&staffS.people[key];
+  if(!p||!p.department)return null;
+  return TIP_SECTION_FROM_DEPT[p.department]||null;
+}
 // Roster placement ALWAYS wins over a stray `adds` entry, so someone in the
 // canonical roster (e.g. Emma Dawson = Bartender) can never be dragged into
 // another section by a stale add left over from an old pull.
 function tipBaseSection(name){
+  const d=tipDeptSection(name);if(d)return d;
   for(const s of TIP_SECTIONS){if(((tipsState.roster&&tipsState.roster[s])||[]).indexOf(name)>=0)return s;}
   for(const s of TIP_SECTIONS){if(((tipsState.adds&&tipsState.adds[s])||[]).indexOf(name)>=0)return s;}
   return null;
@@ -6488,12 +6506,41 @@ function tipsSaveSoon(){
   },600);
   tipsSetStatus('Saving…','var(--text-dim)');
 }
+// Resolves a Tips name to its Staff record (same alias chain as staffDisplayName) and
+// answers whether that person is still employed. Unknown-to-Staff names (a roster entry
+// that's never been matched) have no removal signal at all, so they always count as live
+// — "live" here never means "visible", only "not known to have left".
+function tipStaffLive(name){
+  const k0=staffKeyOf(name);if(!k0)return true;
+  const al=(staffS.aliases||{})[k0];
+  const key=(al&&staffS.people&&staffS.people[al])?al:k0;
+  const p=staffS.people&&staffS.people[key];
+  if(!p)return true;
+  return staffEmployed(p);
+}
+function tipPersonHasTipsThisPeriod(name){const t=tipRowTotals(name);return t.paid>0||t.upt>0||tipBusserSplit(name)>0;}
 function tipSectionPeople(sec){
   const all=[],seen={},add=n=>{if(n&&!seen[n]){seen[n]=1;all.push(n);}};
   Object.keys(tipsState.roster||{}).forEach(s=>((tipsState.roster[s])||[]).forEach(add));
   Object.keys(tipsState.adds||{}).forEach(s=>((tipsState.adds[s])||[]).forEach(add));
   if(sec==='Busser')tipBusserSplitPeople().forEach(add);   // paid by the pool ⇒ has a row, roster or not
-  return all.filter(n=>tipEffSection(n)===sec||(sec==='Busser'&&!tipEffSection(n)&&tipBusserSplit(n)>0)).sort((a,b)=>{const la=a.split(' ').pop(),lb=b.split(' ').pop();return la.localeCompare(lb)||a.localeCompare(b);});
+  return all.filter(n=>{
+    // ⚠️ A busser-pool share ALWAYS shows in Busser for the period it was paid in, even
+    // when department now puts this person somewhere else (a busser later promoted to
+    // server, department='server', so tipEffSection(n) today resolves to 'Server' — not
+    // empty, as it always was in the pre-department world). Flagged by Jarvis's review,
+    // 11/20/26: department is CURRENT, read fresh on every period; a past period's pool
+    // share must still render wherever it was paid, regardless of today's department. The
+    // old `!tipEffSection(n)` guard assumed a non-empty section always meant "the roster
+    // already claims them elsewhere" — true before department could produce one on its
+    // own. Placement only: the dollars still live in tipsState.busserSplit, keyed by the
+    // raw name, same as always.
+    if(!(tipEffSection(n)===sec||(sec==='Busser'&&tipBusserSplit(n)>0)))return false;
+    // A former/removed Staff person shows ONLY in a period where they actually have
+    // tips recorded — history, and nowhere else. Live staff, and anyone this page
+    // can't match to a Staff record at all, show exactly as before.
+    return tipStaffLive(n)||tipPersonHasTipsThisPeriod(n);
+  }).sort((a,b)=>{const la=a.split(' ').pop(),lb=b.split(' ').pop();return la.localeCompare(lb)||a.localeCompare(b);});
 }
 function tipAddPerson(sec){const inp=document.getElementById('tip-add-'+sec.replace(/ /g,'_'));if(!inp)return;const name=(inp.value||'').trim();if(!name)return;if(!tipsState.adds[sec])tipsState.adds[sec]=[];const all=tipSectionPeople(sec);if(all.indexOf(name)<0){tipsState.adds[sec].push(name);tipsSaveSoon();}document.getElementById('viewport').innerHTML=tipsHTML();}
 function tipsSetStatus(s,c){const el=document.getElementById('tips-status');if(el){el.textContent=s;el.style.color=c||'var(--text-dim)';}}
@@ -14394,6 +14441,13 @@ async function staffPushPaychex(p){
 // see the merge rules in staffPull.
 const STAFF_JOBS=['Server','Bartender','Busser','Food Runner','Host','Cook','Dishwasher','Manager','Setup'];
 
+// DEPARTMENT. Vinny's 11/20/26 rebuild: one per person, decides which Tips sheet section
+// they land in. 'restaurant' is retired — the mini refuses it on write, and null means not
+// set. Keep this list and the mini's own in step; an unknown-to-the-mini value here would
+// write and 409.
+const STAFF_DEPARTMENTS=['server','bartender','busser','runner','kitchen','events'];
+const STAFF_DEPARTMENT_LABELS={server:'Server',bartender:'Bartender',busser:'Busser',runner:'Runner',kitchen:'Kitchen',events:'Events'};
+
 // WHO MAY OPEN THE CASH DRAWER. A separate question from who may sign in, and the one
 // worth being narrow about — the drawer is money in a box that anybody standing at the
 // register can reach.
@@ -14446,6 +14500,8 @@ function staffRefresh(){
   // #staff-body too (it belongs above the stat row, not in the scrolling list).
   const pend=document.getElementById('staff-pending');
   if(pend)pend.innerHTML=staffPendingCardHTML();
+  const fd=document.getElementById('staff-filldept');
+  if(fd)fd.innerHTML=staffFillDeptHTML();
   const sc=el.closest('[style*="overflow-y"]')||document.getElementById('viewport');
   const top=sc?sc.scrollTop:0;
   el.innerHTML=staffBodyHTML();
@@ -14529,9 +14585,23 @@ async function staffEdit(k,f,v){
     await staffWriteOp({op:'update',pid:p.pid,patch:{register:staffRegisterPatch(p,{drawer:p.register.drawer})}});
     return;
   }
-  // Restaurant / events, same as the new-hire sign-up form asks.
+  // Which Tips sheet section this person belongs in. Only a value the mini still
+  // accepts is ever sent — the dropdown only offers these, but a stale caller
+  // sending the retired 'restaurant' would 409 the mini rather than silently land.
   if(f==='department'){
-    await staffWriteOp({op:'update',pid:p.pid,patch:{department:v||null}});
+    await staffWriteOp({op:'update',pid:p.pid,patch:{department:STAFF_DEPARTMENTS.includes(v)?v:null}});
+    return;
+  }
+  // EMAIL / BIRTHDAY. 11/20/26, Vinny — collected at sign-up, live only on the mini.
+  // Empty clears (sent as null, the mini's own "clear" convention, same as paychex/
+  // department above). The mini 400s with a plain message on a bad email or an
+  // impossible/out-of-range date — staffWriteOp already surfaces that message as-is.
+  if(f==='email'){
+    await staffWriteOp({op:'update',pid:p.pid,patch:{email:String(v||'').trim()||null}});
+    return;
+  }
+  if(f==='birthday'){
+    await staffWriteOp({op:'update',pid:p.pid,patch:{birthday:String(v||'').trim()||null}});
     return;
   }
 }
@@ -14879,6 +14949,113 @@ async function staffNotDupe(ka,kb){
   staffRedraw();
 }
 
+// ── FILL DEPARTMENTS — one-time pass, Vinny's call 11/20/26 ────────────────
+//
+// For everyone LIVE (staffEmployed) with no department set, propose one from two
+// signals that already exist and never touches anyone who already has a value:
+//  1. which Tips-roster section they're already placed in (Server/Bartender/
+//     Busser/Food Runner/Weddings → server/bartender/busser/runner/events)
+//  2. their Staff positions, when they point at a single department (Server/
+//     Bartender/Busser/Food Runner the same as above; Dishwasher/Cook/Salads → kitchen)
+// More than one candidate (the two signals disagree, or positions imply two
+// different departments) is a CONFLICT — left for Vinny to pick, never guessed.
+// A Host, or anyone with no signal at all, is "you pick" too — there's nothing
+// here that says what they are.
+const STAFF_FILLDEPT_SECTION={'Server':'server','Bartender':'bartender','Busser':'busser','Food Runner':'runner','Weddings':'events'};
+const STAFF_FILLDEPT_POSITION={server:'server',bartender:'bartender',busser:'busser','food runner':'runner',dishwasher:'kitchen',cook:'kitchen',salads:'kitchen'};
+// Same alias-chain resolution staffDisplayName uses, in reverse: given a roster
+// name, land on the Staff key it would resolve to (or its own staffKeyOf if
+// nothing aliases it) — so a roster entry matches whichever key this person
+// is actually filed under, not just an exact-spelling hit.
+function staffFillDeptRosterKey(rawName){
+  const k0=staffKeyOf(rawName);if(!k0)return null;
+  const al=(staffS.aliases||{})[k0];
+  return (al&&staffS.people&&staffS.people[al])?al:k0;
+}
+async function staffFillDeptBuild(){
+  staffS.fillDept={loading:true,rows:null,err:null};
+  try{
+    await tipsFetchRoster();
+    if(tipsState.rosterFailed){staffS.fillDept={loading:false,rows:null,err:'Could not read the Tips roster — try again in a moment.'};staffRefresh();return;}
+    const rows=[];
+    Object.values(staffS.people).forEach(p=>{
+      if(!staffEmployed(p)||p.department)return;        // never touch somebody who already has one
+      const cands=new Set();
+      TIP_SECTIONS.forEach(s=>{
+        if((TIP_ROSTER_DATA[s]||[]).some(n=>staffFillDeptRosterKey(n)===p.key))cands.add(STAFF_FILLDEPT_SECTION[s]);
+      });
+      (p.positions||[]).forEach(pos=>{
+        const d=STAFF_FILLDEPT_POSITION[staffJobKey(pos)];
+        if(d)cands.add(d);
+      });
+      const list=[...cands];
+      rows.push({key:p.key,name:p.name,conflict:list.length>1,options:list,pick:list.length===1?list[0]:''});
+    });
+    rows.sort(staffByFirst);
+    staffS.fillDept={loading:false,rows,err:null};
+  }catch(e){staffS.fillDept={loading:false,rows:null,err:'Could not reach the register: '+(e&&e.message||e)};}
+  staffRefresh();
+}
+function staffFillDeptSetRow(key,v){
+  const r=(staffS.fillDept&&staffS.fillDept.rows||[]).find(x=>x.key===key);
+  if(!r)return;
+  r.pick=STAFF_DEPARTMENTS.includes(v)?v:'';
+  staffRefresh();
+}
+// One update op per person, through the same door as every other Staff edit —
+// re-pulls after each success, same as staffRetireRoles's bulk move. Re-checks
+// `!p.department` right before sending, so a department set from another screen
+// in the meantime is never overwritten by a stale proposal.
+async function staffFillDeptApply(){
+  const st=staffS.fillDept;if(!st||!st.rows)return;
+  const todo=st.rows.filter(r=>r.pick);
+  if(!todo.length){alert('Nothing picked yet — set a department on at least one row first.');return;}
+  if(!confirm('Set a department on '+todo.length+' '+(todo.length===1?'person':'people')+'?\n\nNobody who already has a department is touched.'))return;
+  st.applying=true;staffRefresh();
+  let ok=0,skipped=0,failed=0;
+  for(const r of todo){
+    const p=staffS.people[r.key];
+    if(!p||p.department){skipped++;continue;}
+    const res=await staffWriteOp({op:'update',pid:p.pid,patch:{department:r.pick}});
+    if(res)ok++;else failed++;
+  }
+  staffS.fillDept=null;staffS.showFillDept=false;
+  staffRefresh();
+  alert(ok+' set'+(skipped?(', '+skipped+' already had one by then — left alone'):'')+(failed?(', '+failed+' failed — reopen Fill departments to retry'):'')+'.');
+}
+function staffFillDeptHTML(){
+  if(!staffS.showFillDept)return '';
+  const st=staffS.fillDept;
+  const close=`<button onclick="staffS.showFillDept=false;staffRedraw()" style="margin-left:auto;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:13px">✕</button>`;
+  if(!st||st.loading)return `<div style="${posCardCss};margin-bottom:14px">
+    <div style="display:flex;align-items:center;gap:10px"><b style="font-size:14px">Fill departments</b>${close}</div>
+    <div style="color:var(--text-dim);font-size:12.5px;margin-top:4px">Reading the Tips roster and positions…</div>
+  </div>`;
+  if(st.err)return `<div style="${posCardCss};margin-bottom:14px">
+    <div style="display:flex;align-items:center;gap:10px"><b style="font-size:14px">Fill departments</b>${close}</div>
+    <div style="color:#f87171;font-size:12.5px;margin-top:4px">⚠ ${esc(st.err)} <button onclick="staffFillDeptBuild()" style="background:none;border:none;color:var(--accent);text-decoration:underline;cursor:pointer;font-family:inherit;font-size:12.5px">Try again</button></div>
+  </div>`;
+  const rows=st.rows||[];
+  const needsPick=rows.filter(r=>!r.pick).length;
+  const row=(r)=>`<div style="border-top:1px solid var(--border);padding:7px 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <div style="flex:1;min-width:160px;font-size:13.5px">${esc(r.name)}${r.conflict?' <span style="font-size:11px;color:#fbbf24">multiple possible — you pick</span>':(!r.options.length?' <span style="font-size:11px;color:var(--text-muted)">no signal — you pick</span>':'')}</div>
+    <select onchange="staffFillDeptSetRow('${esc(r.key)}',this.value)" style="${posInput};width:auto;padding:5px 9px;font-size:13px">
+      <option value="" ${!r.pick?'selected':''}>— skip —</option>
+      ${STAFF_DEPARTMENTS.map(d=>`<option value="${d}" ${r.pick===d?'selected':''}>${STAFF_DEPARTMENT_LABELS[d]}${r.options.includes(d)?' ✓':''}</option>`).join('')}
+    </select>
+  </div>`;
+  return `<div style="${posCardCss};margin-bottom:14px">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <b style="font-size:14px">Fill departments</b>
+      <span style="font-size:12.5px;color:var(--text-dim)">${rows.length?rows.length+' with no department — '+(rows.length-needsPick)+' proposed, '+needsPick+' need a pick':'everybody already has one'}</span>
+      ${close}
+    </div>
+    <div style="font-size:12px;color:var(--text-muted);margin-top:3px">One-time pass, from the Tips roster and positions. Never touches anyone who already has a department. Review each row, change any pick, then Apply.</div>
+    ${rows.map(row).join('')}
+    ${rows.length?`<div style="margin-top:9px"><button onclick="staffFillDeptApply()" ${st.applying?'disabled':''} style="${posBtn('#22c55e')};padding:6px 14px;font-size:13px">${st.applying?'Applying…':'Apply'}</button></div>`:''}
+  </div>`;
+}
+
 // ── MERGE TWO RECORDS INTO ONE PERSON ───────────────────────────────────────
 //
 // Vinny's bar is "they all need to be one in the same" — one record per person,
@@ -14936,11 +15113,13 @@ async function staffMergeInto(loserKey){
   staffRefreshNotes();staffRedraw();
 }
 
-// ── WAITING FOR APPROVAL: new-hire sign-ups from the register QR ──────────────────
+// ── WAITING FOR APPROVAL: new-hire sign-ups ────────────────────────────────────────
 //
 // 11/20/26 — the register's "New hire" QR → schedule-app sign-up flow is live on the
 // mini. A sign-up lands as PENDING there within ~2 minutes; it never touches ct_staff
-// on its own. This card is the one place that decides what a pending sign-up becomes:
+// on its own. 11/20/26, same day: every sign-up path reaches pending now, not just the
+// QR — the PIN pad and an invite link too (extra.via says which). This card is the one
+// place that decides what a pending sign-up becomes:
 //  · New person — nobody on Staff is this person. Adds a fresh row.
 //  · Same as… — this IS somebody already on Staff, just signed up under a different
 //    spelling. The sign-up's name becomes an alias; nothing else changes.
@@ -15019,7 +15198,10 @@ async function staffPendingNew(pid){
     alert('“'+name+'” already matches an existing Staff record ('+(existing.name||landKey)+').\n\nUse “Same as…” instead if this is the same person, or Reject if it is not.');
     return;
   }
-  const dept=row.department==='events'?'Events':row.department==='restaurant'?'Restaurant':'';
+  // 'restaurant' is retired (11/20/26) — the sign-up form may still send it for a
+  // while, but the mini refuses it, so it is never carried over; only a value
+  // STAFF_DEPARTMENTS still recognizes lands on the new person.
+  const dept=STAFF_DEPARTMENT_LABELS[row.department]||'';
   if(!confirm('Add “'+name+'” as a brand-new person on Staff?'+(dept||(row.positions&&row.positions.length)?('\n\n'+[dept,(row.positions&&row.positions.length)?row.positions.join(', '):''].filter(Boolean).join(' · ')):'')))return;
   if(!await staffPendingDecide(row.pid,'new'))return;
   const p=existing||(staffS.people[landKey]={key:landKey,sources:{},at:0,name});
@@ -15027,7 +15209,7 @@ async function staffPendingNew(pid){
   if(!p.name)p.name=name;
   if(!p.phone&&row.phone)p.phone=row.phone;
   if((!p.positions||!p.positions.length)&&row.positions&&row.positions.length)p.positions=row.positions.slice();
-  if(row.department&&!p.department)p.department=row.department;
+  if(STAFF_DEPARTMENTS.includes(row.department)&&!p.department)p.department=row.department;
   p.sources=p.sources||{};p.sources.hireQR={at:Date.now(),station:(row.extra&&row.extra.station)||null};
   staffTouch(p);staffSave();
   staffPendingDrop(pid);staffRedraw();
@@ -15078,11 +15260,25 @@ function staffPendingAgo(iso){
   const h=Math.round(m/60);if(h<24)return h+'h ago';
   return Math.round(h/24)+'d ago';
 }
+// 11/20/26 — sign-ups now reach pending from more than the register QR (PIN pad, invite
+// link too), carried as extra.via. Labels only; an unrecognized/missing value shows nothing
+// rather than guessing.
+const STAFF_PENDING_VIA_LABELS={qr:'QR code',pin:'PIN pad',invite:'invite link'};
+// Email/birthday/address live ONLY on the mini (never in ct_staff or its cloud mirror) — see
+// Vinny's 11/20/26 instruction. Shown here so Vinny can check them before approving, same as
+// phone/positions/department; never rendered in any list view or export, only this card and
+// the person's own expanded Staff row.
+function staffPendingAddrLine(addr){
+  if(!addr)return '';
+  return [addr.street,[addr.city,addr.state].filter(Boolean).join(', '),addr.zip].filter(Boolean).join(' · ');
+}
 function staffPendingRowHTML(row){
   const pid=row.pid,matches=staffPendingMatches(row);
-  const dept=row.department==='events'?'Events':row.department==='restaurant'?'Restaurant':'';
+  const dept=STAFF_DEPARTMENT_LABELS[row.department]||'';
   const station=(row.extra&&row.extra.station)?esc(String(row.extra.station)):'';
+  const via=STAFF_PENDING_VIA_LABELS[row.extra&&row.extra.via]||'';
   const when=staffPendingAgo(row.extra&&row.extra.signed_up_at);
+  const addrLine=staffPendingAddrLine(row.address);
   const btn=(bg,label,onclick,title)=>`<button onclick="${onclick}" ${title?`title="${esc(title)}"`:''} style="background:${bg};border:1px solid ${bg==='none'?'var(--border)':'transparent'};color:${bg==='none'?'var(--text-dim)':'#fff'};border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:inherit;font-weight:${bg==='none'?'400':'700'};white-space:nowrap">${label}</button>`;
   return `<div style="border-top:1px solid var(--border);padding:10px 0;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start">
     <div style="flex:1;min-width:220px">
@@ -15091,8 +15287,13 @@ function staffPendingRowHTML(row){
         ${row.phone?esc(row.phone):'<span style="color:var(--text-muted)">no phone</span>'}
         ${dept?' · '+dept:''}
         ${(row.positions&&row.positions.length)?' · '+esc(row.positions.join(', ')):''}
-        ${station?' · '+station:''}${when?' · '+when:''}
+        ${via?' · '+esc(via):''}${station?' · '+station:''}${when?' · '+when:''}
       </div>
+      ${(row.email||row.birthday||addrLine)?`<div style="font-size:12px;color:var(--text-dim);margin-top:2px">
+        ${row.email?esc(row.email):''}
+        ${row.birthday?(row.email?' · ':'')+esc(row.birthday):''}
+        ${addrLine?((row.email||row.birthday)?' · ':'')+esc(addrLine):''}
+      </div>`:''}
       ${matches.length?`<div style="margin-top:5px;font-size:12px;color:#fbbf24">possible match — same phone as ${matches.map(m=>esc(m.person.name)).join(', ')}</div>`:''}
     </div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
@@ -15116,7 +15317,7 @@ function staffPendingCardHTML(){
   return `<div id="staff-pending" style="${posCardCss};margin-bottom:14px;border-color:rgba(52,211,153,.35)">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <b style="font-size:14px">🆕 Waiting for approval</b>
-      <span style="font-size:12.5px;color:var(--text-dim)">${list.length} sign-up${list.length===1?'':'s'} from the register</span>
+      <span style="font-size:12.5px;color:var(--text-dim)">${list.length} sign-up${list.length===1?'':'s'} waiting</span>
       <button onclick="staffPendingLoad(true)" style="margin-left:auto;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:12px">↻ refresh</button>
     </div>
     ${list.map(staffPendingRowHTML).join('')}
@@ -15460,6 +15661,26 @@ async function staffSaveNumber(k,el){
   // and the box always renders blank now (see staffDetail) — there is no stored value
   // left on this page to show it holding.
 }
+// ADDRESS. 11/20/26, Vinny — one Save for all four fields, not an onchange-per-box, since
+// the mini validates the object as a WHOLE (street, city, a 2-letter state, a 5-digit zip,
+// all or none) and firing a partial write on every keystroke-equivalent change would 400
+// mid-edit for no reason. All four blank clears it (sent as null); anything else is sent
+// exactly as typed and the mini's own 400 message (missing a field, bad state/zip) comes
+// back through staffWriteOp unchanged.
+async function staffSaveAddress(k){
+  const kid=k.replace(/[^a-z0-9]/gi,'_');
+  const street=document.getElementById('staff-addr-street-'+kid);
+  const city=document.getElementById('staff-addr-city-'+kid);
+  const state=document.getElementById('staff-addr-state-'+kid);
+  const zip=document.getElementById('staff-addr-zip-'+kid);
+  if(!street||!city||!state||!zip)return;
+  const v={street:street.value.trim(),city:city.value.trim(),state:state.value.trim().toUpperCase(),zip:zip.value.trim()};
+  const addr=Object.values(v).some(Boolean)?v:null;
+  const p=staffS.people[k];if(!p)return;
+  [street,city,state,zip].forEach(el=>el.disabled=true);
+  try{ await staffWriteOp({op:'update',pid:p.pid,patch:{address:addr}}); }
+  finally{ [street,city,state,zip].forEach(el=>el.disabled=false); }
+}
 
 function staffDetail(p){
   const k=p.key, kid=k.replace(/[^a-z0-9]/gi,'_');
@@ -15585,23 +15806,53 @@ function staffDetail(p){
         </select>
         ${reg.role==='clockonly'?`<div style="font-size:11.5px;color:var(--text-muted);margin-top:3px;max-width:220px">Clock in and out only. Any other class lets them sign in to a register.</div>`:''}
       </div>
-      <!-- DEPARTMENT. 11/20/26 — the new-hire QR sign-up form on the schedule app now
-           asks restaurant-or-events up front (department:'restaurant'|'events'); this is
-           where that classification lands on an approved person, same placement logic as
-           Employee class (a fact about the person, not their job). Carried through from
-           the "Waiting for approval" card below when a sign-up is approved as new. -->
+      <!-- DEPARTMENT. 11/20/26 — decides where this person sits on the Tips sheet (one per
+           person, same placement logic as Employee class — a fact about the person, not
+           their job). Vinny's 11/20 rebuild retired 'restaurant' (the mini refuses it now);
+           an old stored value the mini no longer accepts renders as not-set below, same as
+           any other value STAFF_DEPARTMENTS doesn't recognize. -->
       <div style="margin-top:8px">
         <div style="font-size:13px;margin-bottom:3px">Department</div>
         <select onchange="staffEdit('${esc(k)}','department',this.value)" style="${inp};width:auto">
-          <option value="" ${!p.department?'selected':''}>— not set —</option>
-          <option value="restaurant" ${p.department==='restaurant'?'selected':''}>Restaurant</option>
-          <option value="events" ${p.department==='events'?'selected':''}>Events</option>
+          <option value="" ${!STAFF_DEPARTMENTS.includes(p.department)?'selected':''}>— not set —</option>
+          ${STAFF_DEPARTMENTS.map(d=>`<option value="${d}" ${p.department===d?'selected':''}>${STAFF_DEPARTMENT_LABELS[d]}</option>`).join('')}
         </select>
       </div>
       ${(p.micros_num||p.micros_id)?`<div style="display:flex;gap:6px;align-items:center;margin-top:6px">
         <span style="font-size:13px">MICROS</span>
         <span style="font-size:13px;color:var(--text-dim);font-variant-numeric:tabular-nums">${esc([p.micros_num,p.micros_id].filter(Boolean).join('  /  '))}</span>
       </div>`:''}
+    </div>
+
+    <!-- CONTACT. Vinny, 11/20/26: email/birthday/home address, collected at sign-up and
+         kept HERE, never on any list view or export (Tips/Paychex CSV never read these).
+         They live only on the mini — NOT in ct_staff or its cloud mirror (see staffLoad's
+         read-only fallback) — so on that fallback they simply read as absent ("—"), which
+         is never treated as "cleared": editing is refused outright while read-only, same
+         as every other field, so there is no path that could send an absent value as a
+         clear. Socials and bank go through Paychex's own link, never through here. -->
+    <div style="${col}">
+      <div style="${hd}">CONTACT</div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <span style="font-size:13px">Email</span>
+        <input type="email" value="${esc(p.email||'')}" placeholder="—" ${staffNoFill()} onchange="staffEdit('${esc(k)}','email',this.value)" style="${inp};width:150px">
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;margin-top:6px">
+        <span style="font-size:13px">Birthday</span>
+        <input type="date" value="${esc(p.birthday||'')}" onchange="staffEdit('${esc(k)}','birthday',this.value)" style="${inp};width:auto">
+      </div>
+      <div style="margin-top:8px">
+        <div style="font-size:13px;margin-bottom:3px">Address</div>
+        <div style="display:flex;flex-direction:column;gap:3px;max-width:220px">
+          <input id="staff-addr-street-${kid}" placeholder="Street" value="${esc((p.address&&p.address.street)||'')}" style="${inp};width:100%">
+          <div style="display:flex;gap:4px">
+            <input id="staff-addr-city-${kid}" placeholder="City" value="${esc((p.address&&p.address.city)||'')}" style="${inp};flex:1;width:auto">
+            <input id="staff-addr-state-${kid}" placeholder="ST" maxlength="2" value="${esc((p.address&&p.address.state)||'')}" style="${inp};width:38px;text-transform:uppercase">
+            <input id="staff-addr-zip-${kid}" placeholder="Zip" maxlength="5" inputmode="numeric" value="${esc((p.address&&p.address.zip)||'')}" style="${inp};width:56px">
+          </div>
+          <button onclick="staffSaveAddress('${esc(k)}')" style="${posBtn('#0ea5e9')};padding:3px 9px;font-size:12px;align-self:flex-start;margin-top:2px">Save address</button>
+        </div>
+      </div>
     </div>
 
     <button onclick="staffRename('${esc(k)}')" title="Fix or change this person's name"
@@ -16166,10 +16417,13 @@ function posStaffHTML(){
       <!-- was: <button onclick="staffCleanup1Apply()">Apply 11/19 cleanup</button> -->
     <button onclick="staffS.showDupes=!staffS.showDupes;staffRedraw()" title="Show names that might be the same person twice"
       style="background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:6px 12px;font-size:12.5px;cursor:pointer;font-family:inherit;white-space:nowrap">Find duplicates</button>
+    <button onclick="staffS.showFillDept=!staffS.showFillDept;if(staffS.showFillDept&&!staffS.fillDept)staffFillDeptBuild();staffRedraw()" title="One-time: propose a department for everyone who doesn't have one yet"
+      style="background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:6px 12px;font-size:12.5px;cursor:pointer;font-family:inherit;white-space:nowrap">Fill departments</button>
     </div>
     ${staffMicrosHTML()}
     <div id="staff-notes">${staffNotesHTML()}</div>
     <div id="staff-dupes">${staffDupesHTML()}</div>
+    <div id="staff-filldept">${staffFillDeptHTML()}</div>
     <div style="display:flex;gap:10px;padding:4px 0;font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px">
       <span style="flex:1;min-width:150px">Name</span><span style="width:78px">Paychex</span></div>
     <div id="staff-body">${staffBodyHTML()}</div>

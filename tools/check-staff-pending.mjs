@@ -23,6 +23,12 @@ const grab = (name) => {
   }
   return src.slice(i, j + 1);
 };
+const grabConst = (name) => {
+  const i = src.indexOf('const ' + name + '=');
+  if (i === -1) throw new Error('missing const ' + name);
+  const j = src.indexOf(';', i);
+  return src.slice(i, j + 1);
+};
 
 // A tiny world: every real staffPending* function + staffKeyOf + esc, a swappable
 // posSrv/posS/confirm/prompt/alert, and a recorder for everything that happened.
@@ -35,6 +41,10 @@ function world({ staffPeople = {}, srvSet = true, readOnly = false, pendingRespo
     let posS = { srv: ${srvSet ? "'http://fake'" : 'null'} };
     ${grab('staffKeyOf')}
     function esc(s){return(s||'').toString().replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+    const STAFF_DEPARTMENTS=['server','bartender','busser','runner','kitchen','events'];
+    const STAFF_DEPARTMENT_LABELS={server:'Server',bartender:'Bartender',busser:'Busser',runner:'Runner',kitchen:'Kitchen',events:'Events'};
+    ${grabConst('STAFF_PENDING_VIA_LABELS')}
+    ${grab('staffPendingAddrLine')}
     function staffTouch(p){if(p)p.at=1;return p}
     function staffSave(){ctx.calls.saves++;}
     function staffRefresh(){}
@@ -88,7 +98,7 @@ function world({ staffPeople = {}, srvSet = true, readOnly = false, pendingRespo
 }
 
 const person = (name, extra = {}) => ({ key: '', name, sources: {}, at: 0, ...extra });
-const pendingRow = (pid, name, extra = {}) => ({ pid, name, phone: '555-0100', department: 'restaurant', positions: ['Server'], flags: [], extra: {}, ...extra });
+const pendingRow = (pid, name, extra = {}) => ({ pid, name, phone: '555-0100', department: 'server', positions: ['Server'], flags: [], extra: {}, ...extra });
 
 // ── LOAD: quiet without a register, honest about 401, parses several response shapes ──
 {
@@ -147,6 +157,17 @@ const pendingRow = (pid, name, extra = {}) => ({ pid, name, phone: '555-0100', d
   ok('…phone, positions and department all carried across', p.phone === '555-0100' && p.positions.join(',') === 'Busser' && p.department === 'events');
   ok('…and the source is recorded', !!p.sources && !!p.sources.hireQR);
   ok('the decide POST was sent with as:"new"', w.calls.posts.some((c) => c.path === '/api/people/decide' && JSON.parse(c.opts.body).as === 'new'));
+}
+// ⚠️ 11/20/26 — 'restaurant' is retired as a department value (the mini refuses it now).
+// A sign-up still carrying the old value from a form that hasn't caught up must NOT land
+// on the new person — same discipline as never carrying over a value STAFF_DEPARTMENTS
+// doesn't recognize.
+{
+  const w = world({ pendingResponse: ok1({ pending: [pendingRow('p1', 'Old Form Hire', { department: 'restaurant' })] }) });
+  await w.load();
+  await w.new('p1');
+  const p = w.getStaffS().people['old form hire'];
+  ok('⛔ a retired department value ("restaurant") from an old sign-up form is never carried onto the new person', !!p && p.department == null);
   ok('the row is dropped from the pending list once approved', !w.getPendingS().people.some((r) => r.pid === 'p1'));
   ok('⛔ a successful decide re-pulls the projection, same as staffWriteOp (not just the local gap-fill)', w.calls.loads === 1);
 }
@@ -323,16 +344,22 @@ const refreshFn = grab('staffRefresh');
 ok('⛔ staffRefresh updates #staff-pending too — it lives outside #staff-body, same as #staff-dupes',
    /getElementById\('staff-pending'\)/.test(refreshFn) && /staffPendingCardHTML\(\)/.test(refreshFn));
 
-// ── DEPARTMENT: the restaurant/events classification the new-hire flow carries ─────
-// ⚠️ 11/20/26 — staffEdit's department branch now writes through the mini (staffWriteOp),
+// ── DEPARTMENT: which Tips sheet section this person belongs in ─────────────────────
+// ⚠️ 11/20/26 — staffEdit's department branch writes through the mini (staffWriteOp),
 // not a plain local field, since the mini is the sole writer. staffMergeInto no longer
 // gap-fills ANY field locally (that moved server-side into the mini's own merge op) — see
 // check-staff-mergeinto.mjs for that assertion now.
+// Vinny's 11/20 rebuild: department is now server|bartender|busser|runner|kitchen|events
+// (one per person, decides the Tips sheet section) — 'restaurant' is retired, the mini
+// refuses it, so staffEdit never sends anything outside STAFF_DEPARTMENTS.
 const editFn = grab('staffEdit');
-ok('staffEdit has a department branch, writing it through the mini',
-   /if\(f==='department'\)\{\s*\n\s*await staffWriteOp\(\{op:'update',pid:p\.pid,patch:\{department:v\|\|null\}\}\);/.test(editFn));
+ok('staffEdit has a department branch, writing a valid value through the mini',
+   /if\(f==='department'\)\{\s*\n\s*await staffWriteOp\(\{op:'update',pid:p\.pid,patch:\{department:STAFF_DEPARTMENTS\.includes\(v\)\?v:null\}\}\);/.test(editFn));
 const detailFn = grab('staffDetail');
-ok('staffDetail renders a Department dropdown with Restaurant/Events options', /Department/.test(detailFn) && /value="restaurant"/.test(detailFn) && /value="events"/.test(detailFn));
+ok('⛔ staffDetail renders a Department dropdown built from STAFF_DEPARTMENTS, not a hand-written Restaurant option',
+   /Department/.test(detailFn) && /STAFF_DEPARTMENTS\.map/.test(detailFn) && !/value="restaurant"/.test(detailFn));
+ok('…and a retired/unrecognized stored value renders as not-set, not a phantom selected option',
+   /!STAFF_DEPARTMENTS\.includes\(p\.department\)\?'selected':''/.test(detailFn));
 
 console.log(bad ? `\n${bad} FAILED` : '\nall good');
 process.exit(bad ? 1 : 0);
