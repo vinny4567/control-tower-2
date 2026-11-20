@@ -91,14 +91,14 @@ if (R) {
 
 // ── every call site passes the STORAGE name to logic/keys and only swaps `.name` for text ──
 const tipsHTMLFn = grab('tipsHTML');
-ok('tipsHTML resolves the row label through staffDisplayName', /staffDisplayMark\(disp\.matched\)/.test(tipsHTMLFn) && /staffDisplayName\(name\)/.test(tipsHTMLFn));
+ok('tipsHTML resolves the row label through staffDisplayName', /staffDisplayMark\(disp\.matched,name\)/.test(tipsHTMLFn) && /staffDisplayName\(name\)/.test(tipsHTMLFn));
 ok('⛔ the "Busser Pool" row is NEVER run through the Staff lookup (it is not a person)',
    /isPool\?\{name,matched:true\}:staffDisplayName\(name\)/.test(tipsHTMLFn));
 ok('⛔ the section-move dropdown still keys off the RAW name, not the resolved display name',
    /onchange="tipMovePerson\('\$\{esc\(name\)\.replace/.test(tipsHTMLFn));
 
 const hoursHTMLFn = grab('hoursHTML');
-ok('hoursHTML resolves the per-person row label through staffDisplayName', /staffDisplayName\(name\)/.test(hoursHTMLFn) && /staffDisplayMark\(disp\.matched\)/.test(hoursHTMLFn));
+ok('hoursHTML resolves the per-person row label through staffDisplayName', /staffDisplayName\(name\)/.test(hoursHTMLFn) && /staffDisplayMark\(disp\.matched,name\)/.test(hoursHTMLFn));
 ok('⛔ the emp-ID badge still keys off the RAW name (tipsState.empIds is a LEAVE-IT store)',
    /const empBadge=\(name\)=>\{const id=\(tipsState\.empIds\|\|\{\}\)\[name\]/.test(hoursHTMLFn));
 ok('⛔ tipHoursInput/tipHoursDelPos/tipHoursRenamePos/tipHoursAddRow/tipHoursDelPerson are all still called with the RAW name',
