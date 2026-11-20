@@ -2383,10 +2383,23 @@ const kvPending={}; // k -> {v,at} not yet sent (debounce window)
 // delay or fail a cloud write. Turn it off on a device with:
 //   localStorage.setItem('ct_kv_mini','off')
 const KV_MINI='https://angelis-pos.tail0739ce.ts.net:8443/api/kv/';
+// ⛔ A REFUSED SAVE USED TO JUST VANISH. The mini is newest-wins: `kvSet` is a no-op for an
+// OLDER `at` and still answers 200 with the WINNING row's `at` — that reply was always on the
+// wire and nobody read it (`fetch(...).catch(()=>{})`, both responses discarded). So "my save
+// went through" and "the mini quietly kept what it already had" looked identical from here.
+// This reads the body and resolves to exactly one of THREE outcomes — never two, because a
+// network failure is not evidence either way:
+//   'won'     — the echoed `at` equals what we sent: we are the stored value.
+//   'lost'    — it differs: something else was already newer and ours was dropped.
+//   'unknown' — no response to read (bad status, timed out, off the tailnet, no token, this
+//               device has the mirror turned off, or `k` is not a `ct_*` key at all).
+// Unknown is never reported as won and never as lost — see [[feedback_echo_is_not_confirmation]].
+// Keepalive sends (pagehide) stay pure fire-and-forget: the page is unloading and there is
+// nobody left here to tell, so those resolve 'unknown' without waiting on a body.
 function kvSendMini(k,p,keepalive){
-  if(!/^ct_/.test(k))return;                                   // only the ct_* keys move
-  if(localStorage.getItem('ct_kv_mini')==='off')return;
-  if(!KV_TOKEN())return;
+  if(!/^ct_/.test(k))return Promise.resolve({outcome:'unknown'});   // only the ct_* keys move
+  if(localStorage.getItem('ct_kv_mini')==='off')return Promise.resolve({outcome:'unknown'});
+  if(!KV_TOKEN())return Promise.resolve({outcome:'unknown'});
   try{
     const opts={method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({v:p.v,at:p.at}),keepalive:!!keepalive};
@@ -2400,12 +2413,32 @@ function kvSendMini(k,p,keepalive){
     // validated rather than waved through). The cloud write below still uses the query form
     // because that server has not been checked yet — see kvSend.
     opts.headers['x-sync-token']=KV_TOKEN();
-    fetch(KV_MINI+encodeURIComponent(k),opts).catch(()=>{});
-  }catch(e){}
+    const req=fetch(KV_MINI+encodeURIComponent(k),opts);
+    if(keepalive)return req.catch(()=>{}).then(()=>({outcome:'unknown'}));
+    return req.then(async r=>{
+      if(!r.ok)return {outcome:'unknown'};
+      let j; try{j=await r.json()}catch(e){return {outcome:'unknown'}}
+      const winAt=Number(j&&j.at);
+      if(!Number.isFinite(winAt))return {outcome:'unknown'};
+      return winAt===Number(p.at)?{outcome:'won',winAt}:{outcome:'lost',winAt};
+    }).catch(()=>({outcome:'unknown'}));
+  }catch(e){return Promise.resolve({outcome:'unknown'});}
+}
+// Reads a kvSendMini() outcome and, ONLY for a key the back-office collision risk is actually
+// about (POS_SYNC_KEYS — the same list posDriftCheck already watches: prices/routing,
+// privileges, staff, job rates, calculations), surfaces a loss FAST rather than leaving it to
+// the next 45s poll. Everything else (tips, docs, wedding, liquor…) keeps the old fire-and-
+// forget behaviour unchanged — those are not the "two people editing the same settings" problem
+// this exists for, and reading their echoes too would be scope creep this ticket didn't ask for.
+// One place decides what counts, so a POS store added later does not silently miss the wiring —
+// same reasoning as the single kvPush hook above.
+function posWatchMiniEcho(k,miniResultPromise){
+  if(!POS_SYNC_KEYS.some(pair=>pair[0]===k))return;
+  miniResultPromise.then(res=>{ if(res&&res.outcome==='lost')posWriteLostSoon(); }).catch(()=>{});
 }
 function kvSend(k,p,keepalive){
   try{fetch(KV_URL+encodeURIComponent(k),{method:'POST',headers:{'Content-Type':'application/json','x-sync-token':KV_TOKEN()},body:JSON.stringify({v:p.v,at:p.at}),keepalive:!!keepalive}).catch(()=>{})}catch(e){}
-  kvSendMini(k,p,keepalive);   // after the cloud write, and it can't affect it
+  posWatchMiniEcho(k,kvSendMini(k,p,keepalive));   // after the cloud write, and it can't affect it
 }
 function kvPush(k,v,at){
   // ⚠️ ONE HOOK FOR THE WHOLE BACK OFFICE. Every POS store — prices, routing,
@@ -8328,6 +8361,17 @@ const POS_SYNC_KEYS=[
 ];
 const posDrift={state:'idle',rows:[],at:0,err:'',checking:false};
 let posDriftSoonTimer=null;   // re-check shortly after a write-through, see posLiveSoon
+let posWriteLostTimer=null;
+// Called from posWatchMiniEcho (above kvSend, this file) the moment a write echoes back as
+// LOST — not estimated from a timestamp gap, the exact outcome the mini itself reported for
+// OUR write. Debounced briefly so a burst of edits (several price fields typed in a row)
+// triggers one recheck, not one per key. Reuses posDriftCheck's own card rather than a new
+// banner: he already knows what that one means, and a second warning UI for the same fact
+// would be the kind of thing that drifts out of sync with the first.
+function posWriteLostSoon(){
+  clearTimeout(posWriteLostTimer);
+  posWriteLostTimer=setTimeout(()=>{posDriftCheck(true)},400);
+}
 // Writes are debounced 1400ms and the mirror is fire-and-forget, so a key can be
 // legitimately in flight. Anything under this is "just sent", not "stale".
 const POS_DRIFT_GRACE_MS=10000;
@@ -8501,7 +8545,7 @@ async function posPublishSend(blob){
   // is the source of truth and a mini that cannot be reached must never fail
   // an edit. miniPoke() still covers the latency today; this is what lets the
   // mini serve the menu from its own copy and drop the round-trip entirely.
-  try{ kvSendMini(POS_LIVE_KEY,{v:blob,at:blob.at}); }catch(e){}
+  try{ posWatchMiniEcho(POS_LIVE_KEY,kvSendMini(POS_LIVE_KEY,{v:blob,at:blob.at})); }catch(e){}
   return true;
 }
 async function posPublish(){
