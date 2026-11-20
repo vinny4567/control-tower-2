@@ -11605,9 +11605,13 @@ async function staffRetireRoles(){
     +`${label} can ring in orders, take payment, and redeem a gift card against a check — a busser could do none of those.\n\n`
     +`Their JOB does not change: they still clock in as bussers and are still paid as bussers.`))return;
   list.forEach(p=>{p.register.role=to;staffTouch(p)});
-  staffSave();
+  staffRefresh();
   let sent=0,failed=0;
-  for(const p of list){ if(await staffPushRegister(p,'role'))sent++; else failed++; }
+  for(const p of list){
+    const ok=await staffPushRegister(p,'role');
+    if(ok)sent++; else failed++;
+    await staffWriteOp({op:'update',pid:p.pid,patch:{register:staffRegisterPatch(p,{role:to})}});
+  }
   staffS.regNote=failed
     ? `Moved ${list.length} to ${label} here. ${sent} reached the register, ${failed} did not — they will need pushing again.`
     : `Moved ${list.length} to ${label}, on the register too.`;
@@ -13663,54 +13667,111 @@ function staffMergeJobs(mine,theirs){
   return out;
 }
 
-async function staffLoad(){
-  if(staffS.loaded)return;
+// 11/20/26 — THE MINI IS THE WRITER NOW. Vinny: "Back office saves to mini." Staff used to
+// be a store in its own right (this device's localStorage merged against a cloud KV blob,
+// last-content-wins). It is now a WINDOW: the mini owns every person record, every edit goes
+// to it as one write op (staffWriteOp, below), and this function's only job is to show
+// whatever the mini last said — never to reconcile two copies, because there is only one
+// copy any more. staffMerge/staffMergeJobs/staffBackfillPids/staffStripSignin (above) existed
+// solely to settle disagreements between this device and the cloud under the OLD model; with
+// one writer there is nothing left for them to settle, so this function stops calling them.
+// They stay defined, unused, rather than deleted in the same pass as everything else here —
+// a function with no caller is a safe thing to leave behind; a half-finished deletion is not.
+async function staffLoad(force){
+  if(staffS.loaded&&!force)return;
   staffS.loaded=true;
-  try{const local=localStorage.getItem(STAFF_KEY);if(local){const j=JSON.parse(local);
+  staffS.readOnly=false;staffS.readOnlyNote='';
+  // Instant paint from whichever copy this device last saw — mini or mirror, doesn't
+  // matter which, it is overwritten the moment a real read answers either way.
+  if(!force)try{const local=localStorage.getItem(STAFF_KEY);if(local){const j=JSON.parse(local);
     if(j&&j.people){staffS.people=j.people;staffS.jobs=j.jobs||{};staffS.aliases=j.aliases||{};staffS.at=j.at||0}}}catch(e){}
-  let strippedAny=staffStripSignin(staffS.people);      // this device's OWN stored copy, before it touches anything
-  const r=await kvGet(STAFF_KEY);
-  // MERGED, not replaced: this device may hold edits the cloud has never seen.
-  if(r&&r.v&&r.v.people){
-    strippedAny+=staffStripSignin(r.v.people);        // the cloud's copy, before it ever reaches the merge
-    staffS.people=staffMerge(staffS.people,r.v.people);
-    staffS.jobs=staffMergeJobs(staffS.jobs,r.v.jobs);
-    // Renames made on another screen. UNION, never replace — losing an alias
-    // means the next pull recreates a name somebody already tidied away.
-    staffS.aliases=Object.assign({},r.v.aliases||{},staffS.aliases||{});
-    staffS.at=Math.max(staffS.at||0,r.at||0);
+  if(posS.srv){
+    try{
+      const r=await posSrv('/api/people/projection');
+      if(r.ok&&r.body&&r.body.staff&&r.body.staff.people){
+        const s=r.body.staff;
+        staffS.people=s.people||{};staffS.jobs=s.jobs||{};staffS.aliases=s.aliases||{};staffS.at=s.at||0;
+        staffMirrorToCloud();
+        if(activeTab===POS&&(posS.sec==='staff'||posS.sec==='jobrates'))renderViewport();
+        // Tips already shows names resolved through Staff (staffDisplayName) — if Tips was
+        // opened before this load finished, catch it up now rather than leaving last-paint's
+        // raw/flagged names on screen until something else happens to redraw.
+        if(activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();
+        staffReconcileJobNums();
+        return;
+      }
+    }catch(e){ /* unreachable — fall through to the read-only cloud mirror below */ }
   }
-  // ⚠️ AFTER the merge, never before. Backfilling first would mint an id on this device
-  // for somebody the cloud already has one for, and the merge would then have to throw
-  // one of the two away — churn, on the one field that must never churn.
-  //
-  // Saved only if something was actually minted OR stripped, so an ordinary load does
-  // not write. ⛔ THE STRIP HALF IS THE 11/20 FIX: cleaning staffS.people in memory is
-  // not the same as cleaning the cloud/mini blob — Jarvis caught that a load which
-  // strips but touches nothing else never used to call staffSave() at all, so the 128
-  // old copies sat in the mirror forever, no matter how many times Staff was opened.
-  // One queued staffPushMerged (via staffSave's existing 700ms debounce) now follows
-  // any load that actually found something to clean.
-  if(staffBackfillPids()||strippedAny)staffSave();
+  // ⚠️ THE MINI COULD NOT BE REACHED (off-site, or no register configured on this device).
+  // Read the CLOUD'S last-known mirror and say so plainly — this branch NEVER writes
+  // anywhere. "Changes can be made at the restaurant" is the one honest thing to tell him:
+  // the mini is the only writer, and it is not answering.
+  staffS.readOnly=true;
+  staffS.readOnlyNote='⚠ Could not reach the register — showing the last-known copy. Changes can be made at the restaurant.';
+  try{
+    const r=await kvGet(STAFF_KEY);
+    if(r&&r.v&&r.v.people){
+      staffS.people=r.v.people;staffS.jobs=r.v.jobs||{};staffS.aliases=r.v.aliases||{};staffS.at=r.v.at||0;
+      // Defensive only, this branch reads an externally-sourced blob this device does not
+      // control — the mini is trusted not to carry the retired register.signin field in its
+      // own answers, but a stale pre-11/20 cloud copy still might.
+      staffStripSignin(staffS.people);
+    }
+  }catch(e){ /* keep whatever the instant-paint above already showed */ }
   if(activeTab===POS&&(posS.sec==='staff'||posS.sec==='jobrates'))renderViewport();
-  // Tips already shows names resolved through Staff (staffDisplayName) — if Tips was
-  // opened before this load finished, catch it up now rather than leaving last-paint's
-  // raw/flagged names on screen until something else happens to redraw.
   if(activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();
-  staffReconcileJobNums();
+}
+// One-way: after a successful READ from the mini, copy that projection into the cloud KV
+// as a read-only mirror for off-site viewing (Tips/Staff when nobody is on the tailnet).
+// Never read FROM here back into staffS while the mini is reachable — the mini is the only
+// source of truth. Fire-and-forget on purpose: a missed mirror write means the off-site copy
+// is one load stale, not a lost edit (the mini already has the real one).
+function staffMirrorToCloud(){
+  if(!localStorage.getItem('ct_kv_key'))return;      // no sync key on this device — nothing to mirror with
+  try{
+    const payload={people:staffS.people,jobs:staffS.jobs||{},aliases:staffS.aliases||{},at:staffS.at||Date.now()};
+    localStorage.setItem(STAFF_KEY,JSON.stringify(payload));
+    kvPush(STAFF_KEY,payload,payload.at);
+  }catch(e){}
+}
+// THE ONE DOOR EVERY STAFF EDIT GOES THROUGH NOW. Posts exactly one op (the shapes the mini
+// documents: create/update/status/merge/alias/distinct/jobs), and — ⛔ ONLY ON SUCCESS —
+// re-pulls the mini's own projection rather than trusting a local guess at what landed. A
+// caller that mutated staffS itself before this returned would be the exact "plan after
+// apply" shape this file's merge/cleanup code has been burned by before; every converted
+// call site below waits for a truthy return before touching anything locally.
+async function staffWriteOp(op){
+  if(!posS.srv){alert('No register server set — POS tab → Connections.');return null;}
+  // ⛔ ONE ENFORCEMENT POINT, not forty disabled buttons. Every edit funnels through here,
+  // so refusing while read-only (the mini was unreachable on the last load) is the single
+  // place that needs to know about it, rather than every button in Staff checking for
+  // itself. staffLoad(true), called below on success, clears readOnly the moment the mini
+  // actually answers again — this is never a standing lock, only "not reachable right now".
+  if(staffS.readOnly){alert('Changes can be made at the restaurant.\n\nThis device could not reach the register on the last load, so Staff is read-only here. Nothing was changed.');return null;}
+  let r;
+  try{
+    r=await posSrv('/api/people/write',{method:'POST',body:JSON.stringify(op)});
+  }catch(e){alert('Could not reach the register: '+(e&&e.message||e));return null;}
+  if(r.status===401){alert(posAuthNote().replace(/^⚠ /,'')+'\n\nNothing was changed.');return null;}
+  if(!r.ok){alert('The register would not take that:\n\n'+((r.body&&r.body.error)||('HTTP '+r.status)));return null;}
+  await staffLoad(true);
+  return r.body||{};
 }
 
-// Republish ct_job_rates if what the mini holds no longer matches what we'd publish now.
+// Republish ct_job_rates (a SEPARATE key from ct_staff — the register's labor-cost report
+// reads this one, keyed by job number/name, in CENTS) if what the mini holds no longer
+// matches what staffJobRatesForMini() would build now from staffS.people's own rates.
 //
-// WHY THIS EXISTS: changing STAFF_JOB_NUMS in this file changes NOTHING on the floor.
-// ct_job_rates is only written by staffSave → staffPublishJobRates, and staffPushMerged
-// returns early when nothing changed — so after the Nov 2026 renumber the mini would have
-// kept serving rates keyed to the OLD numbers (and, per the warning on STAFF_JOB_NUMS,
-// number-first matching turns that into three wrong rates, not a lookup miss) until Vinny
-// happened to edit a rate by hand. A code fix nobody ever pushes is not a fix.
+// WHY THIS EXISTS: changing STAFF_JOB_NUMS in this file changes NOTHING on the floor on its
+// own — ct_job_rates only gets (re)written when something calls staffPublishJobRates, so
+// after the Nov 2026 renumber the mini would have kept serving rates keyed to the OLD
+// numbers (and, per the warning on STAFF_JOB_NUMS, number-first matching turns that into
+// three wrong rates, not a lookup miss) until Vinny happened to edit a rate by hand. A code
+// fix nobody ever pushes is not a fix.
 //
-// Self-heals any drift, not just this renumber: constant edited, a stale device winning a
-// merge, a half-finished publish.
+// Self-heals any drift, not just this renumber: constant edited, a half-finished publish,
+// or (now) a mini projection whose rates simply changed underneath this device since the
+// last publish.
 async function staffReconcileJobNums(){
   const want=staffJobRatesForMini();
   // ⚠️ NEVER PUBLISH AN EMPTY MAP. staffLoad can reach here with no rates yet (cold device,
@@ -13727,68 +13788,31 @@ async function staffReconcileJobNums(){
   staffPublishJobRates();
 }
 
-let staffPushTimer=null;
-let staffWriteAt=0;   // monotonic clock for ct_staff.at — see staffPushMerged
+// COMPATIBILITY SHIM, 11/20/26. Most edits now go through staffWriteOp (above), which
+// already re-pulls from the mini on success — calling staffSave() from one of THOSE paths
+// is redundant, not wrong, and harmless. What still calls this directly: the register-only
+// writes (staffPushRegister/staffSetPin — already POST to /api/employees/* first, which IS
+// the mini), the pending-approval decisions (already POST to /api/people/decide first), and
+// the register-drift comparison cache (never writes identity data — it only caches what the
+// register itself already says, for display). None of those need a blob pushed anywhere any
+// more; the mini already has whatever they wrote, or never held identity data to begin with.
+// This just paints the local cache immediately and schedules ONE re-pull from the mini
+// shortly after, so this device settles on whatever the mini actually ended up holding
+// rather than trusting its own optimistic local edit forever.
+let staffResyncTimer=null;
 function staffSave(){
   staffS.at=Date.now();
   try{localStorage.setItem(STAFF_KEY,JSON.stringify({people:staffS.people,jobs:staffS.jobs||{},aliases:staffS.aliases||{},at:staffS.at}))}catch(e){}
-  clearTimeout(staffPushTimer);
-  staffPushTimer=setTimeout(staffPushMerged,700);
-}
-async function staffPushMerged(){
-  // No sync key on this device means every edit stays here and no other screen ever
-  // sees it — silently, until somebody notices a rate they typed is gone. The header
-  // carries a "⚠ Not syncing" badge for exactly this; do not also fail quietly.
-  // Its own line, not `note` — that one carries the result of the last pull, and
-  // clobbering it would trade one piece of information for another.
-  if(!localStorage.getItem('ct_kv_key')){staffS.syncNote='⚠ Saved on this computer only — no sync key on this device';staffRefreshNotes();return;}
-  staffS.syncNote='';
-  const r=await kvGet(STAFF_KEY);
-  if(r&&r.v&&r.v.people){
-    // Captured, not discarded: stripping MUTATES r.v.people in place, so the `same`
-    // check two lines down would compare two already-clean sides and never notice the
-    // dirty copy it just cleaned — exactly the bug Jarvis caught 11/20 (Vinny opened
-    // Staff, the mirror didn't move, because strip-on-read is silent about whether it
-    // found anything). A non-zero count means the cloud's OWN copy still had the
-    // retired field — that is new content worth writing even if, after cleaning, it
-    // now reads identically to what this device already believed.
-    const strippedRemote=staffStripSignin(r.v.people);
-    staffS.people=staffMerge(staffS.people,r.v.people);
-    staffS.jobs=staffMergeJobs(staffS.jobs,r.v.jobs);
-    // NOTHING OF OURS TO ADD → DON'T WRITE.
-    //
-    // This push cannot re-enter staffSave (it writes storage and kvPush directly, it
-    // does not go back through the debounce), so there is no local loop. The one to
-    // guard is the two-device version: every payload carries a fresh `at`, so if a
-    // pull-and-merge ever runs on a timer, each side would see the other's "new" value
-    // and answer it — forever, with no change in content. Writing only when the merge
-    // actually added something makes that impossible before it can be built by
-    // accident.
-    // Compared THROUGH the merge on both sides. Merging normalises a record (it fills
-    // in the empty `rates`/`register`/`sources` objects), so comparing a merged result
-    // against a raw remote would differ on shape alone and push every single time —
-    // defeating the guard it is meant to be.
-    const same=JSON.stringify({p:staffS.people,j:staffS.jobs||{}})
-             ===JSON.stringify({p:staffMerge(r.v.people,r.v.people),
-                                j:staffMergeJobs(r.v.jobs,r.v.jobs)});
-    if(same&&!strippedRemote){staffS.at=r.at||staffS.at;return;}
-  }
-  // ⚠️ MONOTONIC, same as privS.at and posBuildLive. Two staff edits tying on
-  // one millisecond would leave `ct_staff.at` unchanged — and because the
-  // register only re-fetches /api/roster when `rosterAt` moves, and rosterAt is
-  // max(ct_staff.at, ct_job_rates.at), a tied edit stays INVISIBLE to the floor
-  // until something else changes staff. It does not self-heal in between.
-  // Unticking register access down a list is exactly the burst that ties.
-  staffWriteAt=Math.max(Date.now(),(staffWriteAt||0)+1,(staffS.at||0)+1);
-  const payload={people:staffS.people,jobs:staffS.jobs||{},aliases:staffS.aliases||{},at:staffWriteAt};
-  staffS.at=payload.at;
-  try{localStorage.setItem(STAFF_KEY,JSON.stringify(payload))}catch(e){}
-  kvPush(STAFF_KEY,payload,payload.at);
-  // Derived, and derived AFTER the merge — so the map the mini reads is built from the
-  // rates that actually survived, not from this screen's view of them.
-  staffPublishJobRates();
+  clearTimeout(staffResyncTimer);
+  staffResyncTimer=setTimeout(()=>staffLoad(true),700);
 }
 
+// ⛔ NOT CONVERTED, 11/20/26 — flagged for Jarvis, not fixed here. staffPull still mutates
+// staffS.people directly then calls the local staffSave() shim: under the mini-is-sole-writer
+// model that edit would be silently LOST on the next resync (the mini never heard about it).
+// Left as-is only because it has had no reachable button since 9/24 (nothing in this file
+// calls staffPull() from a click) — if it is ever wired back up, convert it to a loop of
+// create/update ops (one per scheduler row) FIRST, same shape as staffMicrosApply below.
 async function staffPull(){
   if(!staffRosterKey())return staffSetKey();
   staffS.busy=true;staffS.note='';renderViewport();
@@ -14024,22 +14048,29 @@ function staffMicrosNotSame(i){
   m.plan.unmatched.push(pick.r);
   renderViewport();
 }
-function staffMicrosApply(){
+// ⛔ ONE update OP PER PERSON — the write contract has no bulk shape, same as
+// staffBulkJob/staffDelJobRow. Sequential, gap-fill only (never overwrites an id already
+// set — that check already happened when the plan was built, re-stated here in the patch).
+async function staffMicrosApply(){
   const m=staffS.micros;
   if(!m||!m.plan)return;
-  m.plan.set.forEach(({p,r})=>{
-    if(r.micros_num&&(p.micros_num==null||p.micros_num===''))p.micros_num=r.micros_num;
-    if(r.micros_id&&(p.micros_id==null||p.micros_id===''))p.micros_id=r.micros_id;
-    staffTouch(p);
-  });
-  const n=m.plan.set.length;
-  staffS.note='✓ MICROS ids: '+n+' '+(n===1?'person':'people')+' updated'
+  const set=m.plan.set;
+  staffS.micros=null;
+  renderViewport();
+  let done=0;
+  for(const {p,r} of set){
+    const patch={};
+    if(r.micros_num&&(p.micros_num==null||p.micros_num===''))patch.micros_num=r.micros_num;
+    if(r.micros_id&&(p.micros_id==null||p.micros_id===''))patch.micros_id=r.micros_id;
+    if(!Object.keys(patch).length)continue;
+    if(await staffWriteOp({op:'update',pid:p.pid,patch}))done++;
+  }
+  const n=set.length;
+  staffS.note='✓ MICROS ids: '+done+' of '+n+' '+(n===1?'person':'people')+' updated'
     +(m.plan.same.length?('  ·  '+m.plan.same.length+' already had theirs'):'')
     +(m.plan.unmatched.length?('  ·  '+m.plan.unmatched.length+' not on this roster (nobody added)'):'')
     +(m.plan.maybe.length?('  ·  '+m.plan.maybe.length+' suggestion'+(m.plan.maybe.length===1?'':'s')+' left undecided'):'')
     +(m.plan.conflicts.length?('  ·  ⚠ '+m.plan.conflicts.length+(m.plan.conflicts.length===1?' needs':' need')+' a decision'):'');
-  staffS.micros=null;
-  staffSave();
   renderViewport();
 }
 function staffMicrosHTML(){
@@ -14420,10 +14451,29 @@ function staffRefresh(){
   el.innerHTML=staffBodyHTML();
   if(sc)sc.scrollTop=top;
 }
-function staffEdit(k,f,v){
+// ⚠️ patch.register REPLACES THE WHOLE OBJECT ON THE MINI, confirmed by Jarvis 11/20/26 —
+// never send a partial {role} or {drawer} alone, or every other register field on that
+// person is wiped. The ONE exception is emp_id: omit it to KEEP whatever the mini already
+// has, send it explicitly (null to clear, a value to set) only when this call means to
+// change it. Also strips the two fields that are WT-local annotations, not real register
+// attributes, and have no business being written back: `mini` (the register-drift
+// comparison cache) and `pin_pending` (a wait-for-the-pin-endpoint flag).
+function staffRegisterPatch(p,overrides){
+  const base=Object.assign({},(p&&p.register)||{});
+  delete base.mini;delete base.pin_pending;
+  if(!overrides||!('emp_id' in overrides))delete base.emp_id;
+  return Object.assign(base,overrides||{});
+}
+// 11/20/26 — every branch now ALSO writes the master record on the mini (patch.rates /
+// patch.paychex_id / patch.register / patch.department), per Jarvis's instruction that
+// register sign-in/access/drawer "keep using /api/employees/*, AND ALSO write the register
+// settings via patch.register." The local mutation stays first where staffPushRegister/
+// staffPushPaychex still need to read it off `p` to know what to push to the register —
+// staffWriteOp's own refresh (inside the await) is what actually settles staffS afterward.
+async function staffEdit(k,f,v){
   const p=staffS.people[k];if(!p)return;
-  if(f==='rate'){const n=parseFloat(v);p.rate=isFinite(n)&&n>0?n:null;}
-  else if(f.startsWith('rate:')){
+  if(f==='rate'){const n=parseFloat(v);p.rate=isFinite(n)&&n>0?n:null;return;}   // dead field, no caller sets it — no write path
+  if(f.startsWith('rate:')){
     // ⚠️ EMPTYING THE BOX MEANS "back to the default", not "remove the job".
     //
     // It used to delete the key, and the key is also what says this person HOLDS the
@@ -14434,18 +14484,36 @@ function staffEdit(k,f,v){
     const job=f.slice(5);p.rates=p.rates||{};
     const n=parseFloat(v);
     p.rates[job]=(isFinite(n)&&n>0)?n:0;
+    staffTouch(p);staffRefresh();
+    await staffWriteOp({op:'update',pid:p.pid,patch:{rates:p.rates}});
+    return;
   }
-  else if(f==='paychex')p.paychex_id=String(v||'').trim()||null;
+  if(f==='paychex'){
+    p.paychex_id=String(v||'').trim()||null;
+    staffTouch(p);staffRefresh();
+    staffPushPaychex(p).then(()=>staffRefresh());
+    await staffWriteOp({op:'update',pid:p.pid,patch:{paychex_id:p.paychex_id}});
+    return;
+  }
   // 'register' (the old Can-sign-in tick) is retired — nothing calls it. Left
   // as a no-op rather than deleted so an old cached page cannot grant access.
-  else if(f==='register'){ /* the Employee class is the gate now */ }
+  if(f==='register')return; /* the Employee class is the gate now */
   // ⚠️ SETTING A CLASS MUST NOT GRANT SIGN-IN. This used to also set access=true, which
   // was harmless only because the dropdown was rendered INSIDE the `reg.access` branch —
   // it could never fire on somebody who could not sign in. Vinny moved it under the
   // payroll id on 10/28, where it shows for everybody, and that line would then quietly
   // hand a register login to anyone he classified. "Can sign in" is its own deliberate
   // tick that pushes /api/employees/active; classifying somebody is not consent to it.
-  else if(f==='role'){p.register=p.register||{};p.register.role=v||null;}
+  if(f==='role'){
+    p.register=p.register||{};p.register.role=v||null;
+    staffTouch(p);staffRefresh();
+    // A tick-box that changes nothing on the mini would be a manager believing somebody
+    // was locked out when they were not. Fire-and-report: the panel shows the register's
+    // own answer, and says so loudly if the change did not land.
+    staffPushRegister(p,'role').then(()=>staffRefresh());
+    await staffWriteOp({op:'update',pid:p.pid,patch:{register:staffRegisterPatch(p,{role:p.register.role})}});
+    return;
+  }
   // ⚠️ STORED AS A REAL true/false, never deleted back to "unset". Un-ticking a manager
   // has to mean "no", not "fall back to the job that says yes" — otherwise taking a
   // manager out of the till would silently do nothing.
@@ -14454,41 +14522,38 @@ function staffEdit(k,f,v){
   // harmless and is not: once ticked, a person could never go back to "by job", so an
   // explicit true would outlive the role that justified it — promote a server to manager
   // and back and they keep the till for ever. The mini stores all three; so do we.
-  else if(f==='drawer'){p.register=p.register||{};p.register.drawer=(v===null?null:!!v);}
-  // Restaurant / events, same as the new-hire sign-up form asks. No push anywhere —
-  // nothing on the register or the mini reads this today; it is a Staff-side fact.
-  else if(f==='department')p.department=v||null;
-  staffTouch(p);
-  staffSave();
-  staffRefresh();
-  // A tick-box that changes nothing on the mini would be a manager believing somebody
-  // was locked out when they were not. Fire-and-report: the panel shows the register's
-  // own answer, and says so loudly if the change did not land.
-  if(f==='register'||f==='role')staffPushRegister(p,f==='role'?'role':'active').then(()=>staffRefresh());
-  if(f==='paychex')staffPushPaychex(p).then(()=>staffRefresh());
-  if(f==='drawer')staffPushRegister(p,'drawer').then(()=>staffRefresh());
+  if(f==='drawer'){
+    p.register=p.register||{};p.register.drawer=(v===null?null:!!v);
+    staffTouch(p);staffRefresh();
+    staffPushRegister(p,'drawer').then(()=>staffRefresh());
+    await staffWriteOp({op:'update',pid:p.pid,patch:{register:staffRegisterPatch(p,{drawer:p.register.drawer})}});
+    return;
+  }
+  // Restaurant / events, same as the new-hire sign-up form asks.
+  if(f==='department'){
+    await staffWriteOp({op:'update',pid:p.pid,patch:{department:v||null}});
+    return;
+  }
 }
 // Taking a job off one person. The override goes with it — it was a rate FOR that
 // job, and leaving it behind would put a number on a job they no longer hold.
-function staffDelPersonJob(k,job){
+async function staffDelPersonJob(k,job){
   const p=staffS.people[k];if(!p)return;
   const kk=staffJobKey(job);
   const own=(p.rates||{})[job];
   if(!confirm('Take "'+job+'" off '+p.name+'?'+(own>0?('\n\nTheir $'+own+' override for it goes too.'):'')))return;
-  if(p.rates)Object.keys(p.rates).forEach(n=>{if(staffJobKey(n)===kk)delete p.rates[n];});
-  if(p.positions)p.positions=p.positions.filter(j=>staffJobKey(j)!==kk);
-  staffTouch(p);
-  staffSave();staffRefresh();
+  const rates=Object.assign({},p.rates||{});Object.keys(rates).forEach(n=>{if(staffJobKey(n)===kk)delete rates[n];});
+  const positions=(p.positions||[]).filter(j=>staffJobKey(j)!==kk);
+  await staffWriteOp({op:'update',pid:p.pid,patch:{rates,positions}});
 }
 
-function staffAddJob(k){
+async function staffAddJob(k){
   const sel=document.getElementById('staff-job-'+k.replace(/[^a-z0-9]/gi,'_'));
   if(!sel||!sel.value)return;
   const p=staffS.people[k];if(!p)return;
-  p.rates=p.rates||{};
-  if(p.rates[sel.value]==null)p.rates[sel.value]=0;
-  staffTouch(p);
-  staffSave();staffRefresh();
+  const rates=Object.assign({},p.rates||{});
+  if(rates[sel.value]==null)rates[sel.value]=0;
+  await staffWriteOp({op:'update',pid:p.pid,patch:{rates}});
 }
 
 // REMOVING SOMEBODY IS A TOMBSTONE, not an erase. The next scheduler pull would
@@ -14577,21 +14642,34 @@ function staffBulkJob(){
         +(withRate.length?('\n\n'+withRate.length+' of them have an override for it, and that goes too:\n'+withRate.slice(0,8).map(x=>'• '+x.name+' $'+x.rates[job]).join('\n')+(withRate.length>8?'\n• …':'')):'')
         +(add.length?('\n\n'+add.length+' will also be given it.'):'')))return;
     }
-    add.forEach(x=>{x.rates=x.rates||{};if(x.rates[job]==null)x.rates[job]=0;staffTouch(x)});
-    rm.forEach(x=>{
-      if(x.rates)Object.keys(x.rates).forEach(n=>{if(staffJobKey(n)===kk)delete x.rates[n]});
-      if(x.positions)x.positions=x.positions.filter(j=>staffJobKey(j)!==kk);
-      staffTouch(x);
-    });
-    staffSave();close();staffRefresh();
-    alert(job+': '+add.length+' given, '+rm.length+' removed.');
+    // ⛔ ONE update OP PER PERSON — the write contract has no bulk shape. Sequential, not
+    // parallel: a burst of N simultaneous writes against one mini is the kind of thing
+    // nobody has load-tested yet, and this is a manager-speed action, not a hot path.
+    close();
+    (async()=>{
+      let done=0;
+      for(const x of add){
+        const rates=Object.assign({},x.rates||{});if(rates[job]==null)rates[job]=0;
+        if(await staffWriteOp({op:'update',pid:x.pid,patch:{rates}}))done++;
+      }
+      for(const x of rm){
+        const rates=Object.assign({},x.rates||{});Object.keys(rates).forEach(n=>{if(staffJobKey(n)===kk)delete rates[n]});
+        const positions=(x.positions||[]).filter(j=>staffJobKey(j)!==kk);
+        if(await staffWriteOp({op:'update',pid:x.pid,patch:{rates,positions}}))done++;
+      }
+      staffRefresh();
+      alert(job+': '+add.length+' given, '+rm.length+' removed.'+(done<add.length+rm.length?' ('+(add.length+rm.length-done)+' refused — check the notes.)':''));
+    })();
   });
   document.addEventListener('keydown',onKey);
   document.body.appendChild(wrap);
   paint();
   wrap.querySelector('#sbj-q').focus();
 }
-function staffAddPerson(){
+// 11/20/26 — the mini mints the pid now (op:'create'); this page never does. A restore
+// is two ops (status back to active, then a rename ONLY if the spelling changed) because
+// the write contract has no single "restore-and-rename" shape.
+async function staffAddPerson(){
   const name=prompt('Add somebody to the staff list\n\nTheir full name, spelled the way the schedule app spells it — that is how a later pull recognises them as the same person.');
   if(name===null)return;
   const nm=String(name).replace(/\s+/g,' ').trim();
@@ -14605,12 +14683,11 @@ function staffAddPerson(){
   }
   if(existing&&existing.removed){
     if(!confirm('“'+existing.name+'” was removed from this list.\n\nPut them back, with whatever was recorded about them before?'))return;
-    delete existing.removed; delete existing.removedAt;
-    existing.name=nm; existing.at=Date.now();
+    if(!await staffWriteOp({op:'status',pid:existing.pid,status:'active'}))return;
+    if(existing.name!==nm&&existing.pid)await staffWriteOp({op:'update',pid:existing.pid,patch:{name:nm}});
   }else{
-    staffS.people[k]={key:k,pid:staffNewPid(),name:nm,sources:{},addedAt:Date.now(),at:Date.now()};
+    if(!await staffWriteOp({op:'create',person:{name:nm}}))return;
   }
-  staffSave();
   staffS.q=nm;                      // land on the new row rather than leaving them to find it
   staffS.filter='';
   renderViewport();
@@ -14653,10 +14730,8 @@ async function staffRemove(k){
     }catch(e){staffS.regNote='✓ '+p.name+' can no longer sign in — the register record was left in place';}
   }
 
-  p.removed={at:Date.now()};
-  delete p.restored;              // a fresh removal supersedes any earlier put-back
-  staffTouch(p);
-  staffSave();staffRedraw();
+  if(!await staffWriteOp({op:'status',pid:p.pid,status:'removed'}))return;
+  staffRedraw();
 }
 // ── FINDING THE DUPLICATES ──────────────────────────────────────────────────
 //
@@ -14798,11 +14873,10 @@ function staffDupesHTML(){
     ${pairs.map(row).join('')||'<div style="padding:10px 0;color:var(--text-dim);font-size:13px">Nothing looks duplicated.</div>'}
   </div>`;
 }
-function staffNotDupe(ka,kb){
+async function staffNotDupe(ka,kb){
   const a=staffS.people[ka],b=staffS.people[kb];if(!a||!b)return;
-  if(!a.distinct)a.distinct={};a.distinct[kb]=Date.now();
-  if(!b.distinct)b.distinct={};b.distinct[ka]=Date.now();
-  staffTouch(a);staffTouch(b);staffSave();staffRedraw();
+  if(!await staffWriteOp({op:'distinct',a:a.pid,b:b.pid}))return;
+  staffRedraw();
 }
 
 // ── MERGE TWO RECORDS INTO ONE PERSON ───────────────────────────────────────
@@ -14820,7 +14894,13 @@ function staffNotDupe(ka,kb){
 //    and it outranks a name that looks similar
 //  · both sides able to sign in at a register — two live credentials means two
 //    humans until somebody says otherwise
-function staffMergeInto(loserKey){
+// 11/20/26 — the MINI now does the actual gap-fill/alias/tombstone work server-side for
+// {op:'merge'} (confirmed by Jarvis: a merged-away person is marked removed on the master
+// and an alias points them at the keeper — no ghost left). This keeps the UI prompts and
+// BOTH money-safety refusals as CLIENT-SIDE pre-checks — they give a far clearer reason
+// than a bare 409 would, and they cost nothing extra since staffS already has both records
+// loaded. The actual persistence is the one `merge` op.
+async function staffMergeInto(loserKey){
   const loser=staffS.people[loserKey];if(!loser)return;
   const others=Object.values(staffS.people)
     .filter(p=>p.key!==loserKey&&!p.removed)
@@ -14850,22 +14930,10 @@ function staffMergeInto(loserKey){
     +'“'+keeper.name+'” is the name that stays. “'+loser.name+'” is kept as an alias, so that spelling still finds this person on a timesheet.\n\n'
     +'Anything on the merged record that '+keeper.name+' is missing — Paychex ID, rates, register — moves across. Nothing already set on '+keeper.name+' is overwritten.'))return;
 
-  // Fill the gaps on the keeper; never overwrite what is already there. A typed
-  // value is usually the only copy — same rule the pull merge follows.
-  const fill=(f)=>{if((keeper[f]==null||keeper[f]==='')&&loser[f]!=null&&loser[f]!=='')keeper[f]=loser[f]};
-  ['paychex_id','micros_num','micros_id','phone','since','nickname','role','empclass','department'].forEach(fill);
-  keeper.rates=Object.assign({},loser.rates||{},keeper.rates||{});
-  keeper.positions=(keeper.positions&&keeper.positions.length)?keeper.positions:(loser.positions||[]);
-  keeper.register=Object.assign({},loser.register||{},keeper.register||{});
-  keeper.sources=Object.assign({},loser.sources||{},keeper.sources||{});
-
-  delete staffS.people[loserKey];
-  if(!staffS.aliases)staffS.aliases={};
-  staffS.aliases[loserKey]=keeper.key;
-  Object.keys(staffS.aliases).forEach(from=>{if(staffS.aliases[from]===loserKey)staffS.aliases[from]=keeper.key});
-  staffTouch(keeper);staffSave();staffRedraw();
-  staffS.regNote='Merged “'+loser.name+'” into “'+keeper.name+'”. The old spelling still resolves to them.';
-  staffRefreshNotes();
+  const loserName=loser.name,keeperName=keeper.name;
+  if(!await staffWriteOp({op:'merge',loser:loser.pid,keeper:keeper.pid}))return;
+  staffS.regNote='Merged “'+loserName+'” into “'+keeperName+'”. The old spelling still resolves to them.';
+  staffRefreshNotes();staffRedraw();
 }
 
 // ── WAITING FOR APPROVAL: new-hire sign-ups from the register QR ──────────────────
@@ -14913,12 +14981,22 @@ function staffPendingMatches(row){
     .map(pid=>({pid,person:staffPidToPerson(pid)}))
     .filter(m=>!!m.person);
 }
+// 11/20/26 — per Jarvis: keep approval on /api/people/decide (it republishes ct_staff once
+// the master-list switch is on); gated behind the SAME read-only check as staffWriteOp, and
+// re-pulls the projection on success the same way, so this device settles on whatever the
+// mini actually ended up holding. Before the switch flips, decide does not republish on its
+// own — the caller's own gap-fill edit (staffPendingNew/staffPendingLinkTo, after this
+// returns) is what keeps ct_staff in step until then; it becomes a harmless no-op overlay
+// once the mini is republishing for real, since it only ever fills what the fresh pull left
+// empty, never overwrites what the mini just gave us.
 async function staffPendingDecide(pid,as,extra){
+  if(staffS.readOnly){alert('Changes can be made at the restaurant.\n\nThis device could not reach the register on the last load, so Staff is read-only here. Nothing was decided.');return false;}
   if(!posS.srv)return alert('No register server set — POS tab → Connections.'),false;
   try{
     const r=await posSrv('/api/people/decide',{method:'POST',body:JSON.stringify(Object.assign({pid,as},extra||{}))});
     if(r.status===401){alert(posAuthNote().replace(/^⚠ /,'')+'\n\nNothing was decided.');return false;}
     if(!r.ok){alert('The register would not take that:\n\n'+((r.body&&r.body.error)||('HTTP '+r.status)));return false;}
+    await staffLoad(true);
     return true;
   }catch(e){alert('Could not reach the register: '+(e&&e.message||e));return false;}
 }
@@ -15189,19 +15267,19 @@ function staffCleanup1Apply(){
 // a later pass runs the same surname-and-initial scan, finds the pair again,
 // and it looks just as suspicious the second time. Kamrin and Kristina Mastrino
 // are the live example — two Paychex IDs, two register sign-ins, one surname.
-function staffMarkDistinct(k){
+async function staffMarkDistinct(k){
   const p=staffS.people[k];if(!p)return;
   const typed=prompt('Who has this person been confused with?\n\nType their name. Both records stay exactly as they are — this just records that you have checked, so nobody merges them later.');
   if(typed===null)return;
-  const other=staffKeyOf(String(typed));
-  if(!other){alert('Type the other person’s name.');return}
-  if(!p.distinct)p.distinct={};
-  p.distinct[other]=Date.now();
-  const o=staffS.people[other];
-  if(o){if(!o.distinct)o.distinct={};o.distinct[k]=Date.now();staffTouch(o);}
-  staffTouch(p);staffSave();staffRedraw();
-  staffS.regNote='Recorded: “'+p.name+'” and “'+String(typed).trim()+'” are two different people.';
-  staffRefreshNotes();
+  const otherKey=staffKeyOf(String(typed));
+  if(!otherKey){alert('Type the other person’s name.');return}
+  const o=staffS.people[otherKey];
+  // ⛔ The distinct op needs a real pid on both sides — unlike the old local-only flag,
+  // it cannot record "not this person" against somebody not on the list yet.
+  if(!o){alert('No “'+typed+'” on the list. Type the name exactly as it appears.');return}
+  if(!await staffWriteOp({op:'distinct',a:p.pid,b:o.pid}))return;
+  staffS.regNote='Recorded: “'+p.name+'” and “'+(o.name||typed)+'” are two different people.';
+  staffRefreshNotes();staffRedraw();
 }
 
 // ── RENAME ──────────────────────────────────────────────────────────────────
@@ -15211,11 +15289,13 @@ function staffMarkDistinct(k){
 // alone: this renames the person on THIS list, it does not reach into their app
 // account.)
 //
-// The whole job is the key. This store is keyed by staffKeyOf(name), so a
-// rename MOVES the record, and the next pull would helpfully recreate the old
-// name as a fresh blank row — a duplicate manufactured by tidying a name up.
-// So the move leaves an alias behind and the pull follows it.
-function staffRename(k){
+// 11/20/26 — the MINI now keeps the old spelling as an alias on a rename (part of the
+// update op's own contract), so this no longer rekeys staffS.people or touches
+// staffS.aliases itself — one update op, then staffWriteOp's own refresh shows whatever
+// the mini actually did. The "that's a merge, not a rename" guard stays as a client-side
+// check: it is a clearer refusal than whatever a same-name collision would read as from
+// the mini, and it costs nothing to ask before the round trip.
+async function staffRename(k){
   const p=staffS.people[k];if(!p)return;
   const typed=prompt('Name for this person:\n\n(It is only a label — their hours, rates, Paychex ID and register access all stay with them.)',p.name||'');
   if(typed===null)return;
@@ -15224,44 +15304,28 @@ function staffRename(k){
   if(name===p.name)return;
   const nk=staffKeyOf(name);
   if(!nk){alert('That name has nothing to key on — it needs at least one word longer than a single letter.');return}
-
-  // Same key: a spelling or capitalisation fix. Nothing moves.
-  if(nk===k){p.name=name;staffTouch(p);staffSave();staffRedraw();return}
-
-  // Different key, and somebody is already there: that is a MERGE of two people,
-  // not a rename, and it is a one-way door across payroll, the schedule and the
-  // register. Refuse rather than silently fold one record into another.
   const other=staffS.people[nk];
-  if(other&&!other.removed){
+  if(nk!==k&&other&&!other.removed){
     alert('There is already a '+(other.name||name)+' on the list.\n\nIf they are the same person, use MERGE — it keeps this spelling as an alias so timesheets with the old name still find them. A rename would just move the record and leave the other one sitting there.');
     return;
   }
-
   const old=p.name;
-  p.name=name;p.key=nk;
-  staffS.people[nk]=p;
-  delete staffS.people[k];
-  if(!staffS.aliases)staffS.aliases={};
-  staffS.aliases[k]=nk;
-  // Point any alias that led to the old key at the new one, so a second rename
-  // doesn't leave a chain that only resolves one hop.
-  Object.keys(staffS.aliases).forEach(from=>{if(staffS.aliases[from]===k)staffS.aliases[from]=nk});
-  staffTouch(p);staffSave();staffRedraw();
+  if(!await staffWriteOp({op:'update',pid:p.pid,patch:{name}}))return;
   staffS.regNote='Renamed “'+old+'” to “'+name+'”. Their hours, rates and Paychex ID stayed with them; the schedule app still has their own spelling.';
-  staffRefreshNotes();
+  staffRefreshNotes();staffRedraw();
 }
-function staffRestore(k){
+async function staffRestore(k){
   const p=staffS.people[k];if(!p)return;
-  delete p.removed;
-  p.restored={at:Date.now()};     // stamped, so another screen's stale tombstone can't re-remove them
   // Access does NOT come back with them. It was switched off on the register when they
   // were removed, and quietly restoring it would be a door reopening because a name
   // reappeared on a list. A manager grants it again deliberately.
-  if(p.register&&p.register.emp_id&&!(p.register.mini&&p.register.mini.active)){
-    p.register.role=null;   // put back WITHOUT a class, so they cannot sign in until somebody classifies them again
+  const needsClassClear=!!(p.register&&p.register.emp_id&&!(p.register.mini&&p.register.mini.active));
+  if(!await staffWriteOp({op:'status',pid:p.pid,status:'active'}))return;
+  if(needsClassClear){
+    await staffWriteOp({op:'update',pid:p.pid,patch:{register:staffRegisterPatch(p,{role:null})}});   // put back WITHOUT a class, so they cannot sign in until somebody classifies them again
     staffS.regNote='Put back — no employee class, so they cannot sign in until you give them one.';
   }
-  staffTouch(p);staffSave();staffRedraw();
+  staffRedraw();
 }
 
 // THE SIGN-IN CODE NEVER TOUCHES THIS BROWSER'S STORE, FOR GOOD THIS TIME.
@@ -15298,7 +15362,9 @@ async function staffSetPin(k,given){
     // nothing reads would leave a second opinion lying around for somebody to
     // find later and believe.
     // ⛔ pin_set ONLY. Never p.register.signin — see the comment above this function.
-    p.register=p.register||{};p.register.pin_set=true;
+    p.register=p.register||{};
+    const wasNewEmpId=p.register.emp_id==null;   // decides whether to carry emp_id in the patch below
+    p.register.pin_set=true;
     delete p.register.pin_pending;
     delete p.register.signin;      // in case this record still carries the retired field
     delete p.register.signin_at;
@@ -15308,6 +15374,12 @@ async function staffSetPin(k,given){
     if(r.body&&r.body.role)p.register.role=r.body.role;
     staffTouch(p);
     staffSave();staffRefresh();
+    // ⚠️ 11/20/26, per Jarvis: the pin itself stays on /api/employees/pin (above — that also
+    // saves the sealed copy). This ALSO tells the master record pin_set is true, carrying
+    // emp_id ONLY if this call just created the employee record (an emp_id already on file
+    // is left out of the patch — the mini's own "omit to keep it" rule). Never signin: the
+    // mini strips it anyway, and staffRegisterPatch never carries it in the first place.
+    await staffWriteOp({op:'update',pid:p.pid,patch:{register:staffRegisterPatch(p,{pin_set:true,...(wasNewEmpId&&p.register.emp_id!=null?{emp_id:p.register.emp_id}:{})})}});
   }catch(e){alert('Could not reach the register: '+(e&&e.message||e));}
 }
 // Ask the mini for the number, live, and show it for 10 seconds. NEVER saved anywhere —
@@ -15701,35 +15773,37 @@ function staffJobRate(job){
   return null;
 }
 
-function staffSetJobRate(job,v){
+async function staffSetJobRate(job,v){
   const n=parseFloat(v);
-  const jobs=staffJobs();
+  const jobs=Object.assign({},staffJobs());
   const k=staffJobKey(job);
   // Every other spelling of this job loses its rate, or the old one would keep being
   // published alongside the new one and which of the two the mini used would be luck.
   Object.keys(jobs).forEach(o=>{
-    if(o!==job&&staffJobKey(o)===k&&jobs[o]){delete jobs[o].rate;jobs[o].at=Date.now();}
+    if(o!==job&&staffJobKey(o)===k&&jobs[o]){jobs[o]=Object.assign({},jobs[o]);delete jobs[o].rate;}
   });
-  if(isFinite(n)&&n>0)jobs[job]=Object.assign(jobs[job]||{},{rate:n,at:Date.now()});
-  else if(jobs[job]){delete jobs[job].rate;jobs[job].at=Date.now();}
-  staffSave();
+  if(isFinite(n)&&n>0)jobs[job]=Object.assign({},jobs[job]||{},{rate:n});
+  else if(jobs[job]){jobs[job]=Object.assign({},jobs[job]);delete jobs[job].rate;}
+  await staffWriteOp({op:'jobs',jobs});
   posJobRatesRefresh();
 }
-function staffAddJobRow(){
+async function staffAddJobRow(){
   const el=document.getElementById('jobrate-new');
   const name=(el&&el.value||'').trim();
   if(!name)return;
-  staffJobs()[name]=staffJobs()[name]||{};
+  const jobs=Object.assign({},staffJobs());
+  if(!jobs[name])jobs[name]={};
   el.value='';
-  staffSave();renderViewport();
+  await staffWriteOp({op:'jobs',jobs});
+  renderViewport();
 }
 // ⚠️ THE × USED TO LIE. It deleted the default rate and nothing else, so a row that
 // existed because PEOPLE hold the job, or because it is one of the standard jobs, came
 // straight back on the next render — and the button looked broken. It now says which
 // of the three it is and does what it says.
-function staffDelJobRow(job){
+async function staffDelJobRow(job){
   const k=staffJobKey(job);
-  const jobs=staffJobs();
+  const jobs=Object.assign({},staffJobs());
   const spellings=Object.keys(jobs).filter(n=>staffJobKey(n)===k);
   const std=STAFF_JOBS.some(j=>staffJobKey(j)===k);
   const held=Object.values(staffS.people||{}).filter(p=>!p.removed&&(
@@ -15738,21 +15812,26 @@ function staffDelJobRow(job){
 
   if(std){
     if(!confirm('"'+job+'" is one of the standard jobs, so the row itself stays.\n\nClear its default rate?'))return;
-    spellings.forEach(n=>{delete jobs[n].rate;jobs[n].at=Date.now();});
+    spellings.forEach(n=>{jobs[n]=Object.assign({},jobs[n]);delete jobs[n].rate;});
+    await staffWriteOp({op:'jobs',jobs});
   }else if(held.length){
     const who=held.length===1?'1 person is':held.length+' people are';
     if(!confirm(who+' on "'+job+'".\n\nRemoving the job takes it off them as well, including any rate they have for it. Clearing only the default would leave the row exactly where it is.\n\nRemove it from everybody?'))return;
-    held.forEach(p=>{
-      if(p.positions)p.positions=p.positions.filter(j=>staffJobKey(j)!==k);
-      if(p.rates)Object.keys(p.rates).forEach(n=>{if(staffJobKey(n)===k)delete p.rates[n];});
-      staffTouch(p);
-    });
+    // ⛔ ONE update OP PER PERSON, THEN the jobs op — same shape as staffBulkJob's removal
+    // half; the write contract has no compound "jobs + everyone who held it" op.
+    for(const p of held){
+      const rates=Object.assign({},p.rates||{});Object.keys(rates).forEach(n=>{if(staffJobKey(n)===k)delete rates[n];});
+      const positions=(p.positions||[]).filter(j=>staffJobKey(j)!==k);
+      await staffWriteOp({op:'update',pid:p.pid,patch:{rates,positions}});
+    }
     spellings.forEach(n=>delete jobs[n]);
+    await staffWriteOp({op:'jobs',jobs});
   }else{
     if(!confirm('Remove the "'+job+'" job rate?\n\nNobody is on it, so nothing else changes.'))return;
     spellings.forEach(n=>delete jobs[n]);
+    await staffWriteOp({op:'jobs',jobs});
   }
-  staffSave();staffPublishJobRates();renderViewport();
+  renderViewport();
 }
 function posJobRatesRefresh(){const el=document.getElementById('jobrates-body');if(el)el.innerHTML=posJobRatesBody();}
 
@@ -15798,9 +15877,16 @@ function posJobRatesBody(){
 
 function posJobRatesHTML(){
   staffLoad();
-  // One-time tidy of whatever spellings are already in the data. Cheap, idempotent,
-  // and it only ever removes duplicates — so running it on every render is fine.
-  if(staffFoldJobNames()){staffSave();staffPublishJobRates();}
+  // ⚠️ 11/20/26 — DISPLAY-ONLY NOW, deliberately. Under the old local-merge model this
+  // fold-then-save was genuinely idempotent (staffSave() just wrote local+cloud immediately).
+  // Under the mini-is-sole-writer model, staffSave() schedules a RESYNC from the mini — and
+  // the mini never heard about this fold, so the resync would overwrite the very spellings
+  // just normalised, and the next render would fold the same drift again, forever. So this
+  // still normalises staffS.jobs/people for THIS render (cheap, harmless, nothing persists),
+  // but no longer saves or republishes. ⛔ FLAG FOR JARVIS: should spelling-drift folding
+  // become the mini's own job server-side, or does this need converting to real `jobs`/
+  // `update` ops (and if so, on every render is too often — needs a real trigger)?
+  staffFoldJobNames();
   const inp='background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 9px;font-family:inherit;font-size:14px';
   return `
   <div style="${posCardCss};margin-bottom:10px;max-width:520px">
@@ -16011,6 +16097,10 @@ function posStaffHTML(){
   const inactive=all.filter(p=>p.active===false||p.gone).length;
   const when=staffS.at?new Date(staffS.at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'never';
   return `
+  ${staffS.readOnly?`<div style="${posCardCss};margin-bottom:14px;border-color:rgba(251,191,36,.4);background:rgba(251,191,36,.06)">
+    <b style="color:#fbbf24;font-size:13.5px">⚠ Changes can be made at the restaurant</b>
+    <div style="color:var(--text-dim);font-size:12.5px;margin-top:3px">This device could not reach the register, so this is the last-known copy — nothing here can be saved until it can. <button onclick="staffLoad(true)" style="background:none;border:none;color:var(--accent);text-decoration:underline;cursor:pointer;font-family:inherit;font-size:12.5px;padding:0">Try again</button></div>
+  </div>`:''}
   ${staffPendingCardHTML()}
   <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
     ${posStat('People',String(all.length),

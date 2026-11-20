@@ -26,11 +26,11 @@ const grab = (name) => {
 
 // A tiny world: every real staffPending* function + staffKeyOf + esc, a swappable
 // posSrv/posS/confirm/prompt/alert, and a recorder for everything that happened.
-function world({ staffPeople = {}, srvSet = true, pendingResponse, decideResponses = {}, confirmAnswer = true, promptAnswer } = {}) {
-  const calls = { posts: [], alerts: [], confirms: [], prompts: [], saves: 0, redraws: 0 };
+function world({ staffPeople = {}, srvSet = true, readOnly = false, pendingResponse, decideResponses = {}, confirmAnswer = true, promptAnswer } = {}) {
+  const calls = { posts: [], alerts: [], confirms: [], prompts: [], saves: 0, redraws: 0, loads: 0 };
   const ctx = {};
   new Function('ctx', `
-    let staffS = { people: ${JSON.stringify(staffPeople)}, aliases: {} };
+    let staffS = { people: ${JSON.stringify(staffPeople)}, aliases: {}, readOnly: ${JSON.stringify(readOnly)} };
     Object.keys(staffS.people).forEach(k=>{if(!staffS.people[k].key)staffS.people[k].key=k;});
     let posS = { srv: ${srvSet ? "'http://fake'" : 'null'} };
     ${grab('staffKeyOf')}
@@ -39,6 +39,10 @@ function world({ staffPeople = {}, srvSet = true, pendingResponse, decideRespons
     function staffSave(){ctx.calls.saves++;}
     function staffRefresh(){}
     function staffRedraw(){ctx.calls.redraws++;}
+    // staffPendingDecide now re-pulls the projection on success — stubbed as a no-op that
+    // just counts calls; staffS.people is already the thing this harness's assertions read,
+    // so a real refresh-and-replace isn't needed to exercise the pending functions' OWN logic.
+    async function staffLoad(force){ctx.calls.loads++;}
     function posAuthNote(){return '⚠ the register refused this browser\\'s back-office key';}
     const posCardCss='';
     async function posSrv(path,opts){
@@ -144,6 +148,16 @@ const pendingRow = (pid, name, extra = {}) => ({ pid, name, phone: '555-0100', d
   ok('…and the source is recorded', !!p.sources && !!p.sources.hireQR);
   ok('the decide POST was sent with as:"new"', w.calls.posts.some((c) => c.path === '/api/people/decide' && JSON.parse(c.opts.body).as === 'new'));
   ok('the row is dropped from the pending list once approved', !w.getPendingS().people.some((r) => r.pid === 'p1'));
+  ok('⛔ a successful decide re-pulls the projection, same as staffWriteOp (not just the local gap-fill)', w.calls.loads === 1);
+}
+
+// ── READ-ONLY GATES APPROVAL TOO, same as staffWriteOp (11/20/26, Jarvis) ──────────
+{
+  const w = world({ readOnly: true, pendingResponse: ok1({ pending: [pendingRow('p1', 'New Hire')] }) });
+  await w.load();
+  await w.new('p1');
+  ok('⛔ while read-only, New person sends no decide POST at all', !w.calls.posts.some((c) => c.path === '/api/people/decide'));
+  ok('…and says plainly that changes happen at the restaurant', w.calls.alerts.some((m) => /Changes can be made at the restaurant/.test(m)));
 }
 
 // ── NEW PERSON refuses a name collision with a DIFFERENT pid — "Same as…" territory ──
@@ -310,12 +324,15 @@ ok('⛔ staffRefresh updates #staff-pending too — it lives outside #staff-body
    /getElementById\('staff-pending'\)/.test(refreshFn) && /staffPendingCardHTML\(\)/.test(refreshFn));
 
 // ── DEPARTMENT: the restaurant/events classification the new-hire flow carries ─────
+// ⚠️ 11/20/26 — staffEdit's department branch now writes through the mini (staffWriteOp),
+// not a plain local field, since the mini is the sole writer. staffMergeInto no longer
+// gap-fills ANY field locally (that moved server-side into the mini's own merge op) — see
+// check-staff-mergeinto.mjs for that assertion now.
 const editFn = grab('staffEdit');
-ok('staffEdit has a department branch, storing it as a plain field (no push anywhere)', /f==='department'\)p\.department=v\|\|null/.test(editFn));
+ok('staffEdit has a department branch, writing it through the mini',
+   /if\(f==='department'\)\{\s*\n\s*await staffWriteOp\(\{op:'update',pid:p\.pid,patch:\{department:v\|\|null\}\}\);/.test(editFn));
 const detailFn = grab('staffDetail');
 ok('staffDetail renders a Department dropdown with Restaurant/Events options', /Department/.test(detailFn) && /value="restaurant"/.test(detailFn) && /value="events"/.test(detailFn));
-const mergeFn = grab('staffMergeInto');
-ok('staffMergeInto gap-fills department like every other fact field', /'empclass','department'\]\.forEach\(fill\)/.test(mergeFn));
 
 console.log(bad ? `\n${bad} FAILED` : '\nall good');
 process.exit(bad ? 1 : 0);

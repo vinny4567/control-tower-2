@@ -128,12 +128,13 @@ ok('and redraws the register note, which lives outside the list',
 ok('both targets it redraws into actually exist',
    src.includes('id="staff-body"') && src.includes('id="staff-notes"'));
 
-// ---- strip on READ, not just on write (11/20/26, Jarvis) ----------------------
-// staffSetPin not writing the field any more does not fix a STALE copy already sitting
-// in local storage or the cloud blob. This page's own "content beats emptiness" merge
-// would read that old plaintext as real content and carry it forward FOREVER past every
-// future clean write, the moment two devices disagree about which copy is newer. RUN,
-// not read: lift the real staffStripSignin + staffMergeOne and exercise them.
+// ---- 11/20/26 — THE MINI IS THE SOLE WRITER NOW. The whole local-merge strip-on-read
+// mechanism this section used to guard (staffMerge/staffMergeJobs/staffPushMerged, and
+// stripping both a local AND a cloud copy before reconciling them) is retired along with
+// it — there is only one copy of the truth, so there is nothing left to reconcile. What
+// still matters: staffStripSignin stays correct (kept, unused, rather than deleted — see
+// [[project_employee_database]]), AND the one place it is still genuinely needed —
+// reading the CLOUD MIRROR when the mini can't be reached — actually calls it.
 const grab = (name) => {
   let i = src.indexOf('async function ' + name + '(');
   if (i === -1) i = src.indexOf('function ' + name + '(');
@@ -145,14 +146,13 @@ const grab = (name) => {
   }
   return src.slice(i, j + 1);
 };
-let STRIP = null, MERGE = null;
+let STRIP = null;
 try {
-  const lifted = new Function(`${grab('staffStripSignin')}\n${grab('staffMergeOne')}\nreturn {staffStripSignin,staffMergeOne};`)();
-  STRIP = lifted.staffStripSignin; MERGE = lifted.staffMergeOne;
-} catch (e) { ok('staffStripSignin + staffMergeOne lift and run: ' + e.message, false); }
+  const lifted = new Function(`${grab('staffStripSignin')}\nreturn {staffStripSignin};`)();
+  STRIP = lifted.staffStripSignin;
+} catch (e) { ok('staffStripSignin lifts and runs: ' + e.message, false); }
 
-if (STRIP && MERGE) {
-  // staffStripSignin itself
+if (STRIP) {
   const people = {
     alice: { name: 'Alice', register: { signin: '1234', signin_at: 999, pin_set: true, emp_id: 5 } },
     bob: { name: 'Bob', register: { pin_set: true } },           // already clean
@@ -164,116 +164,20 @@ if (STRIP && MERGE) {
   ok('…while leaving everything else on that record alone', people.alice.register.pin_set === true && people.alice.register.emp_id === 5);
   ok('a record with no signin to begin with is untouched', people.bob.register.pin_set === true);
   ok('a record with no register object at all does not throw', people.carol.register === undefined);
-
-  // staffMergeOne: THE EXACT CASE ASKED FOR — a cloud copy that still has signin merges
-  // to a record without it, whichever side is newer.
-  const local = { at: 100, name: 'Dana', register: { pin_set: true, emp_id: 9 } };
-  const cloudNewer = { at: 200, name: 'Dana', register: { pin_set: true, emp_id: 9, signin: '5678', signin_at: 150 } };
-  const mergedCloudNewer = MERGE(local, cloudNewer);
-  ok('⛔ a NEWER cloud copy that still carries signin does not survive the merge',
-     mergedCloudNewer.register.signin === undefined && mergedCloudNewer.register.signin_at === undefined);
-  ok('…and the merge still carries the rest of that record through (emp_id)', mergedCloudNewer.register.emp_id === 9);
-
-  const cloudOlder = { at: 50, name: 'Dana', register: { pin_set: true, emp_id: 9, signin: '5678', signin_at: 40 } };
-  const mergedCloudOlder = MERGE(cloudOlder, local);
-  ok('⛔ an OLDER copy that still carries signin ALSO does not survive — "content beats emptiness" must not resurrect it',
-     mergedCloudOlder.register.signin === undefined && mergedCloudOlder.register.signin_at === undefined);
-
-  // Both sides stale at once — the worst case, and the one a two-device disagreement
-  // actually produces.
-  const bothStale = MERGE(
-    { at: 10, register: { signin: '1111', signin_at: 5 } },
-    { at: 20, register: { signin: '2222', signin_at: 15 } },
-  );
-  ok('⛔ both sides carrying the retired field STILL merges clean', bothStale.register.signin === undefined);
 }
 
-// staffLoad / staffPushMerged: strip BEFORE the merge, on every source read, not after.
-const load = src.slice(src.indexOf('async function staffLoad('), src.indexOf('let staffPushTimer'));
-const push = src.slice(src.indexOf('async function staffPushMerged('), src.indexOf('async function staffPull('));
-ok('staffLoad strips the LOCAL copy right after reading it, before anything uses it',
-   /staffS\.people=j\.people[^\n]*\n[^\n]*staffStripSignin\(staffS\.people\)/.test(load));
-ok('⛔ staffLoad strips the CLOUD copy before staffMerge touches it, not after',
-   load.indexOf('staffStripSignin(r.v.people)') >= 0 &&
-   load.indexOf('staffStripSignin(r.v.people)') < load.indexOf('staffMerge(staffS.people,r.v.people)'));
-ok('⛔ staffPushMerged strips its cloud read before merging too, same discipline as staffLoad',
-   push.indexOf('staffStripSignin(r.v.people)') >= 0 &&
-   push.indexOf('staffStripSignin(r.v.people)') < push.indexOf('staffMerge(staffS.people,r.v.people)'));
+const load = src.slice(src.indexOf('async function staffLoad('), src.indexOf('function staffMirrorToCloud'));
+const splitAt = load.indexOf('staffS.readOnly=true;');
+ok('⛔ the MINI-success branch of staffLoad does NOT strip — the mini is trusted not to carry the retired field in its own answers',
+   splitAt > 0 && !load.slice(0, splitAt).includes('staffStripSignin('));
+ok('⛔ the read-only cloud-mirror branch (after staffS.readOnly=true) DOES strip — defensive, since that blob is externally sourced and could pre-date 11/20',
+   splitAt > 0 && /staffStripSignin\(staffS\.people\)/.test(load.slice(splitAt)));
 const mergeOneSrc = src.slice(src.indexOf('function staffMergeOne('), src.indexOf('function staffMerge('));
-ok('staffMergeOne carries an independent backstop (it never emits the field even if a caller forgot to strip)',
+ok('staffMergeOne still carries its own backstop, even though nothing calls it right now',
    /out\.register=Object\.assign\([^)]*\);/.test(mergeOneSrc) &&
    /delete out\.register\.signin;delete out\.register\.signin_at;/.test(mergeOneSrc) &&
    mergeOneSrc.indexOf('out.register=Object.assign') < mergeOneSrc.indexOf('delete out.register.signin;'));
-
-// ---- strip-but-never-save: the 11/20 follow-up Jarvis caught live --------------
-// Vinny opened Staff; the mini mirror didn't move. Cause: staffLoad strips signin from
-// memory on EVERY load, but a load that touches nothing else never used to call
-// staffSave() at all — the clean copy stayed local forever. And staffPushMerged's own
-// "nothing of ours to add" guard independently re-fetches and re-strips the cloud copy,
-// so even calling it directly would silently no-op unless THAT strip is also counted.
-// RUN both real functions, not just grep their source.
-let PUSH = null;
-try {
-  const liftedPush = new Function(`
-    let staffS = {people:{},jobs:{},at:0,syncNote:''};
-    let staffWriteAt = 0;
-    const STAFF_KEY = 'ct_staff';
-    function staffRefreshNotes(){}
-    function staffPublishJobRates(){}
-    const localStorage = { _s:{}, getItem(k){return Object.prototype.hasOwnProperty.call(this._s,k)?this._s[k]:null;}, setItem(k,v){this._s[k]=v;} };
-    localStorage.setItem('ct_kv_key','fake-token');
-    let _kv = null, _pushed = null;
-    function __setRemote(people,at){_kv={v:{people,jobs:{}},at};}
-    function __resetPushed(){_pushed=null;}   // each test case starts with a clean slate, not a leftover from the last
-    function kvPush(k,v,at){_pushed={k,v,at};}
-    function __getPushed(){return _pushed;}
-    async function kvGet(k){ return _kv===null ? {v:null,at:0} : _kv; }
-    ${grab('staffStripSignin')}
-    ${grab('staffMergeOne')}
-    ${grab('staffMerge')}
-    ${grab('staffMergeJobs')}
-    ${grab('staffPushMerged')}
-    return {staffPushMerged, __setRemote, __resetPushed, __getPushed, setLocal:(p)=>{staffS.people=p;}, setJobs:(j)=>{staffS.jobs=j;}};
-  `)();
-  PUSH = liftedPush;
-} catch (e) { ok('staffPushMerged + its deps lift and run: ' + e.message, false); }
-
-if (PUSH) {
-  // The exact case Jarvis described: the local device already believes a clean record;
-  // the cloud's OWN copy still carries the retired field. After stripping, the two sides
-  // read identically — the OLD "same" check would have skipped the write entirely.
-  const clean = { dana: { at: 100, name: 'Dana', register: { pin_set: true, emp_id: 9 } } };
-  const dirtyRemote = { dana: { at: 100, name: 'Dana', register: { pin_set: true, emp_id: 9, signin: '5678', signin_at: 50 } } };
-  PUSH.setLocal(JSON.parse(JSON.stringify(clean)));
-  PUSH.setJobs({});
-  PUSH.__setRemote(JSON.parse(JSON.stringify(dirtyRemote)), 100);
-  await PUSH.staffPushMerged();
-  const pushed1 = PUSH.__getPushed();
-  ok('⛔ a cloud copy that still carries the retired field IS pushed clean, even though content reads identical after stripping',
-     !!pushed1 && pushed1.v.people.dana.register.signin === undefined);
-
-  // The genuine no-op case must still be guarded — two polling devices with an ALREADY
-  // clean remote and nothing of ours to add must not push forever.
-  PUSH.__resetPushed();
-  PUSH.setLocal(JSON.parse(JSON.stringify(clean)));
-  PUSH.setJobs({});
-  PUSH.__setRemote(JSON.parse(JSON.stringify(clean)), 100);
-  await PUSH.staffPushMerged();
-  const pushed2 = PUSH.__getPushed();
-  ok('…but a remote that is ALREADY clean, with nothing of ours to add, still does not push (the original guard survives)',
-     pushed2 === null);
-}
-
-// staffLoad: a strip (local OR cloud) must trigger the save, same as a backfilled pid.
-ok('⛔ staffLoad counts BOTH strips (local and cloud) and saves if either found something',
-   /let strippedAny=staffStripSignin\(staffS\.people\)/.test(load) &&
-   /strippedAny\+=staffStripSignin\(r\.v\.people\)/.test(load) &&
-   /if\(staffBackfillPids\(\)\|\|strippedAny\)staffSave\(\)/.test(load));
-// staffPushMerged: the independent re-strip of ITS OWN cloud read must defeat the
-// "nothing of ours to add" guard, not just staffLoad's.
-ok('⛔ staffPushMerged captures its own strip count and bypasses the no-op guard with it',
-   /const strippedRemote=staffStripSignin\(r\.v\.people\)/.test(push) &&
-   /if\(same&&!strippedRemote\)/.test(push));
+ok('⛔ staffLoad no longer calls staffPushMerged — that function is gone, replaced by staffWriteOp', !/staffPushMerged/.test(src));
 
 console.log(bad ? `\n${bad} FAILED` : '\nall good');
 process.exit(bad ? 1 : 0);

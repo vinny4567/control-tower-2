@@ -719,9 +719,9 @@ const M=[
   ['JRO 4 · the bare-number key is dropped for a job that DOES have a register number','check-job-rate-override.mjs',
     tsub("      out['emp:'+String(empId)+'|'+job]=cents;\n      const num=STAFF_JOB_NUMS[job];\n      if(num!=null)out['emp:'+String(empId)+'|'+String(num)]=cents;",
          "      out['emp:'+String(empId)+'|'+job]=cents;"),true],
-  ['JRO 5 · the rate:<job> field handler in staffEdit returns early, skipping staffSave entirely','check-job-rate-override.mjs',
-    tsub("    const job=f.slice(5);p.rates=p.rates||{};\n    const n=parseFloat(v);\n    p.rates[job]=(isFinite(n)&&n>0)?n:0;\n  }",
-         "    const job=f.slice(5);p.rates=p.rates||{};\n    const n=parseFloat(v);\n    p.rates[job]=(isFinite(n)&&n>0)?n:0;\n    return;\n  }"),true],
+  ['JRO 5 · ⛔ 11/20/26 — the rate:<job> field handler stops sending the update op, so a typed override never reaches the mini','check-job-rate-override.mjs',
+    tsub("    staffTouch(p);staffRefresh();\n    await staffWriteOp({op:'update',pid:p.pid,patch:{rates:p.rates}});\n    return;\n  }\n  if(f==='paychex')",
+         "    staffTouch(p);staffRefresh();\n    return;\n  }\n  if(f==='paychex')"),true],
   ['JRO 6 · BENIGN — the override comment block reworded, no behaviour change','check-job-rate-override.mjs',
     tsub("// has to PUBLISH what each person's own rate is, keyed by their register emp_id so the",
          "// publishes each person's own rate, keyed by their register emp_id, so the"),false],
@@ -781,8 +781,8 @@ const M=[
 
   // ── REGISTER SIGN-IN NUMBER: NEVER LOCAL, FOR GOOD (check-signin-number) ───────────
   ['SIGN 1 · ⛔ the retired plaintext write comes back onto p.register.signin','check-signin-number.mjs',
-    tsub("    p.register=p.register||{};p.register.pin_set=true;\n    delete p.register.pin_pending;\n    delete p.register.signin;      // in case this record still carries the retired field\n    delete p.register.signin_at;",
-         "    p.register=p.register||{};p.register.pin_set=true;p.register.signin=pin;\n    delete p.register.pin_pending;\n    delete p.register.signin_at;"),true],
+    tsub("    p.register=p.register||{};\n    const wasNewEmpId=p.register.emp_id==null;   // decides whether to carry emp_id in the patch below\n    p.register.pin_set=true;\n    delete p.register.pin_pending;\n    delete p.register.signin;      // in case this record still carries the retired field\n    delete p.register.signin_at;",
+         "    p.register=p.register||{};\n    const wasNewEmpId=p.register.emp_id==null;\n    p.register.pin_set=true;p.register.signin=pin;\n    delete p.register.pin_pending;\n    delete p.register.signin_at;"),true],
   ['SIGN 2 · a record that still carries the retired field is no longer cleaned up on the next pin set','check-signin-number.mjs',
     tsub("    delete p.register.signin;      // in case this record still carries the retired field\n",''),true],
   ['SIGN 3 · ⛔ the signin_at timestamp is reintroduced','check-signin-number.mjs',
@@ -803,21 +803,19 @@ const M=[
   ['SIGN 8 · BENIGN — the staffShowNumber top comment reworded, no behaviour change','check-signin-number.mjs',
     tsub('// Ask the mini for the number, live, and show it for 10 seconds. NEVER saved anywhere —\n// not into staffS, not into the cloud KV.',
          '// Asks the mini for the number live and shows it briefly. Never persisted anywhere.'),false],
-  ['SIGN 9 · ⛔ staffMergeOne\'s backstop delete is dropped — a stale signin on either side survives the merge','check-signin-number.mjs',
-    tsub("  out.register=Object.assign({},older.register||{},newer.register||{});\n  // ⛔ BACKSTOP, independent of whether a caller remembered to strip its inputs first\n  // (see staffStripSignin above) — a merge can never emit the retired field, regardless\n  // of what either side carried in.\n  delete out.register.signin;delete out.register.signin_at;",
-         "  out.register=Object.assign({},older.register||{},newer.register||{});"),true],
-  ['SIGN 10 · ⛔ staffLoad stops stripping its LOCAL read — a stale local copy survives untouched','check-signin-number.mjs',
-    tsub("if(j&&j.people){staffS.people=j.people;staffS.jobs=j.jobs||{};staffS.aliases=j.aliases||{};staffS.at=j.at||0}}}catch(e){}\n  let strippedAny=staffStripSignin(staffS.people);      // this device's OWN stored copy, before it touches anything\n  const r=await kvGet(STAFF_KEY);",
-         "if(j&&j.people){staffS.people=j.people;staffS.jobs=j.jobs||{};staffS.aliases=j.aliases||{};staffS.at=j.at||0}}}catch(e){}\n  let strippedAny=0;\n  const r=await kvGet(STAFF_KEY);"),true],
-  ['SIGN 11 · ⛔ staffLoad strips the cloud copy AFTER merging instead of before — the merge already saw the stale field','check-signin-number.mjs',
-    tsub("    strippedAny+=staffStripSignin(r.v.people);        // the cloud's copy, before it ever reaches the merge\n    staffS.people=staffMerge(staffS.people,r.v.people);\n    staffS.jobs=staffMergeJobs(staffS.jobs,r.v.jobs);\n    // Renames made on another screen.",
-         "    staffS.people=staffMerge(staffS.people,r.v.people);\n    strippedAny+=staffStripSignin(r.v.people);\n    staffS.jobs=staffMergeJobs(staffS.jobs,r.v.jobs);\n    // Renames made on another screen."),true],
-  ['SIGN 12 · ⛔ staffPushMerged stops stripping its cloud read before re-merging and republishing','check-signin-number.mjs',
-    tsub("    const strippedRemote=staffStripSignin(r.v.people);\n    staffS.people=staffMerge(staffS.people,r.v.people);\n    staffS.jobs=staffMergeJobs(staffS.jobs,r.v.jobs);\n    // NOTHING OF OURS TO ADD",
-         "    const strippedRemote=0;\n    staffS.people=staffMerge(staffS.people,r.v.people);\n    staffS.jobs=staffMergeJobs(staffS.jobs,r.v.jobs);\n    // NOTHING OF OURS TO ADD"),true],
+  // SIGN 9-19 (the local-merge strip-counting mutants: staffMergeOne's backstop staying
+  // alive is still covered as a source-level assertion in check-signin-number.mjs, but the
+  // COUNTING/save-gating behavior they drilled — staffLoad's local+cloud strip tally,
+  // staffPushMerged's independent re-strip — is gone along with staffPushMerged itself.
+  // The mini is the sole writer now (11/20/26, same day): retired with the code they
+  // targeted. The NEW strip behavior (read-only cloud-mirror fallback only) is covered by
+  // SIGN 20 below.
   ['SIGN 13 · BENIGN — the staffStripSignin top comment reworded, no behaviour change','check-signin-number.mjs',
     tsub('// ⛔ THE RETIRED REGISTER CREDENTIAL FIELD, STRIPPED ON SIGHT. 11/20/26 — Vinny approved',
          '// The register credential field retired 11/20/26, deleted on sight wherever it is read.'),false],
+  ['SIGN 20 · ⛔ the read-only cloud-mirror fallback stops stripping — a stale pre-11/20 cloud blob\'s signin field would survive into staffS','check-signin-number.mjs',
+    tsub("      staffS.people=r.v.people;staffS.jobs=r.v.jobs||{};staffS.aliases=r.v.aliases||{};staffS.at=r.v.at||0;\n      // Defensive only, this branch reads an externally-sourced blob this device does not\n      // control — the mini is trusted not to carry the retired register.signin field in its\n      // own answers, but a stale pre-11/20 cloud copy still might.\n      staffStripSignin(staffS.people);",
+         "      staffS.people=r.v.people;staffS.jobs=r.v.jobs||{};staffS.aliases=r.v.aliases||{};staffS.at=r.v.at||0;"),true],
 
   // ── PRISCILLA'S TIPS-ROSTER SPELLING, ONE-TIME ALIAS FIX (check-tips-priscilla) ────
   ['PRIS 1 · ⛔ the confirm() gate is dropped — the write runs without asking','check-tips-priscilla.mjs',
@@ -844,25 +842,6 @@ const M=[
     tsub("Changes the Bartender section entry and '+Object.keys(aliases).length+' name corrections. No cell, tip or hours figure is touched.",
          "Updates the Bartender entry and '+Object.keys(aliases).length+' aliases. Nothing financial changes."),false],
 
-  // ── STRIP-BUT-NEVER-SAVE, THE 11/20 LIVE FOLLOW-UP (check-signin-number) ──────────
-  ['SIGN 14 · ⛔ staffLoad stops counting the LOCAL strip — a load that only cleans the local copy never saves it','check-signin-number.mjs',
-    tsub("let strippedAny=staffStripSignin(staffS.people);",
-         "staffStripSignin(staffS.people);let strippedAny=0;"),true],
-  ['SIGN 15 · ⛔ staffLoad stops counting the CLOUD strip — only a local strip can trigger a save now','check-signin-number.mjs',
-    tsub("strippedAny+=staffStripSignin(r.v.people);",
-         "staffStripSignin(r.v.people);"),true],
-  ['SIGN 16 · ⛔ the save-on-strip condition is dropped — back to minted-only, the exact bug Jarvis caught live','check-signin-number.mjs',
-    tsub("if(staffBackfillPids()||strippedAny)staffSave();",
-         "if(staffBackfillPids())staffSave();"),true],
-  ['SIGN 17 · ⛔ staffPushMerged stops capturing its own strip count — the independent re-fetch bypass is lost','check-signin-number.mjs',
-    tsub("const strippedRemote=staffStripSignin(r.v.people);",
-         "staffStripSignin(r.v.people);const strippedRemote=0;"),true],
-  ['SIGN 18 · ⛔ the same-check no longer checks strippedRemote — a dirty cloud copy that reads clean after stripping is never pushed','check-signin-number.mjs',
-    tsub("if(same&&!strippedRemote){staffS.at=r.at||staffS.at;return;}",
-         "if(same){staffS.at=r.at||staffS.at;return;}"),true],
-  ['SIGN 19 · BENIGN — the strippedRemote comment reworded, no behaviour change','check-signin-number.mjs',
-    tsub("// Captured, not discarded: stripping MUTATES r.v.people in place, so the `same`",
-         "// Kept, since stripping mutates r.v.people before the comparison below runs."),false],
   // ── TIPS NAMES RESOLVE THROUGH STAFF, DISPLAY ONLY (check-tips-staffnames) ─────────
   ['NAMES 1 · ⛔ staffDisplayName stops following the alias chain — a merged/renamed person\'s old spelling survives on screen','check-tips-staffnames.mjs',
     tsub("  const al=(staffS.aliases||{})[k];\n  if(al&&staffS.people&&staffS.people[al])k=al;\n",''),true],
@@ -903,14 +882,12 @@ const M=[
     tsub("  const bothSignIn=!!(loser.register&&loser.register.emp_id)&&!!(keeper.register&&keeper.register.emp_id);\n  if(bothSignIn){\n    alert('Both of these can sign in at a register, with their own numbers.\\n\\n'\n      +'Two live sign-ins means two people until somebody says otherwise — exactly the Kamrin/Kristina case. Take the sign-in off the one you are merging away first, if it really is a duplicate.');\n    return;\n  }\n",''),true],
   ['MERGE 3 · ⛔ the confirm() gate is dropped — pressing Merge acts immediately with no chance to back out','check-staff-mergeinto.mjs',
     tsub("  if(!confirm('Merge “'+loser.name+'” into “'+keeper.name+'”?\\n\\n'\n    +'“'+keeper.name+'” is the name that stays. “'+loser.name+'” is kept as an alias, so that spelling still finds this person on a timesheet.\\n\\n'\n    +'Anything on the merged record that '+keeper.name+' is missing — Paychex ID, rates, register — moves across. Nothing already set on '+keeper.name+' is overwritten.'))return;\n",''),true],
-  ['MERGE 4 · ⛔ the gap-fill direction is reversed — the keeper\'s own fields get overwritten by the loser\'s','check-staff-mergeinto.mjs',
-    tsub("  // Fill the gaps on the keeper; never overwrite what is already there. A typed\n  // value is usually the only copy — same rule the pull merge follows.\n  const fill=(f)=>{if((keeper[f]==null||keeper[f]==='')&&loser[f]!=null&&loser[f]!=='')keeper[f]=loser[f]};",
-         "  const fill=(f)=>{if(loser[f]!=null&&loser[f]!=='')keeper[f]=loser[f]};"),true],
-  ['MERGE 5 · ⛔ the loser\'s alias is never written — the old spelling stops resolving to anyone the moment the row is deleted','check-staff-mergeinto.mjs',
-    tsub("  if(!staffS.aliases)staffS.aliases={};\n  staffS.aliases[loserKey]=keeper.key;\n",''),true],
-  ['MERGE 6 · ⛔ a prior alias chain pointing at the just-deleted loser is left dangling instead of re-pointed','check-staff-mergeinto.mjs',
-    tsub("  Object.keys(staffS.aliases).forEach(from=>{if(staffS.aliases[from]===loserKey)staffS.aliases[from]=keeper.key});\n",''),true],
-  ['MERGE 7 · ⛔ "merge into the same record" is no longer refused — self-merge deletes the only copy','check-staff-mergeinto.mjs',
+  // MERGE 4-6 (the local gap-fill/alias-write/alias-chain mutants) retired 11/20/26 along
+  // with the code they targeted — staffMergeInto no longer gap-fills or aliases locally at
+  // all; that is the mini's own job for {op:'merge'} now (confirmed by Jarvis). Their
+  // invariants are superseded by check-staff-mergeinto.mjs's "no local gap-fill/delete" and
+  // "exactly one merge op, right pids" assertions against the NEW code.
+  ['MERGE 7 · ⛔ "merge into the same record" is no longer refused — self-merge would send a malformed op','check-staff-mergeinto.mjs',
     tsub("  if(keeper.key===loserKey){alert('That is the same record.');return}\n",''),true],
   ['MERGE 8 · the "Merge into…" button is removed from the duplicates panel (wiring regresses to orphaned again)','check-staff-mergeinto.mjs',
     tsub("${staffRawRows?'':`<button onclick=\"staffMergeInto('${esc(p.key)}')\" title=\"Keep this one as an ALIAS instead of deleting it — their old spelling still finds their hours on a timesheet. staffMergeInto exists but had never been wired to a button until now.\" style=\"background:none;border:1px solid var(--border);color:var(--text-dim);border-radius:6px;padding:3px 10px;font-size:12px;cursor:pointer;font-family:inherit\">Merge into…</button>`}",''),true],
@@ -950,6 +927,40 @@ const M=[
   ['PEND 11 · BENIGN — the staffPendingLoad top comment reworded, no behaviour change','check-staff-pending.mjs',
     tsub("  if(!posS.srv)return;                       // no register configured yet — stay quiet",
          "  if(!posS.srv)return; // nothing to fetch without a server set"),false],
+
+  // ── staffRegisterPatch: patch.register REPLACES THE WHOLE OBJECT (check-register-patch) ──
+  ['REGPATCH 1 · ⛔ emp_id is no longer stripped by default — every patch.register now carries whatever emp_id this device last saw, clobbering it','check-register-patch.mjs',
+    tsub("  if(!overrides||!('emp_id' in overrides))delete base.emp_id;\n",''),true],
+  ['REGPATCH 2 · ⛔ the register-drift comparison cache (`mini`) is sent back to the mini in every patch','check-register-patch.mjs',
+    tsub("  delete base.mini;delete base.pin_pending;",
+         "  delete base.pin_pending;"),true],
+  ['REGPATCH 3 · ⛔ the pin_pending flag is sent back to the mini in every patch','check-register-patch.mjs',
+    tsub("  delete base.mini;delete base.pin_pending;",
+         "  delete base.mini;"),true],
+  ['REGPATCH 4 · ⛔ overrides are applied BEFORE the base copy, so an explicit override can be clobbered by a stale field','check-register-patch.mjs',
+    tsub("  return Object.assign(base,overrides||{});",
+         "  return Object.assign({},overrides||{},base);"),true],
+  ['REGPATCH 5 · staffEdit\'s role branch reverts to a bare partial patch.register','check-register-patch.mjs',
+    tsub("patch:{register:staffRegisterPatch(p,{role:p.register.role})}",
+         "patch:{register:{role:p.register.role}}"),true],
+  ['REGPATCH 6 · staffEdit\'s drawer branch reverts to a bare partial patch.register','check-register-patch.mjs',
+    tsub("patch:{register:staffRegisterPatch(p,{drawer:p.register.drawer})}",
+         "patch:{register:{drawer:p.register.drawer}}"),true],
+  ['REGPATCH 7 · ⛔ staffSetPin stops sending the master-record update at all — the mini only ever hears about the pin through /api/employees/pin','check-register-patch.mjs',
+    tsub("    await staffWriteOp({op:'update',pid:p.pid,patch:{register:staffRegisterPatch(p,{pin_set:true,...(wasNewEmpId&&p.register.emp_id!=null?{emp_id:p.register.emp_id}:{})})}});\n",''),true],
+  ['REGPATCH 8 · ⛔ staffSetPin always carries emp_id in the patch, even when it was already on file — fighting a concurrent edit elsewhere','check-register-patch.mjs',
+    tsub("...(wasNewEmpId&&p.register.emp_id!=null?{emp_id:p.register.emp_id}:{})",
+         "...(p.register.emp_id!=null?{emp_id:p.register.emp_id}:{})"),true],
+  ['REGPATCH 9 · BENIGN — staffRegisterPatch\'s top comment reworded, no behaviour change','check-register-patch.mjs',
+    tsub("// ⚠️ patch.register REPLACES THE WHOLE OBJECT ON THE MINI, confirmed by Jarvis 11/20/26 —",
+         "// patch.register is a full replacement on the mini's side, not a merge —"),false],
+
+  // ── staffPendingDecide: read-only gate + re-pull, same discipline as staffWriteOp ───────
+  ['REGPATCH 10 · ⛔ staffPendingDecide stops gating on staffS.readOnly — an approval can be sent while the register is unreachable/stale','check-staff-pending.mjs',
+    tsub("  if(staffS.readOnly){alert('Changes can be made at the restaurant.\\n\\nThis device could not reach the register on the last load, so Staff is read-only here. Nothing was decided.');return false;}\n",''),true],
+  ['REGPATCH 11 · ⛔ staffPendingDecide stops re-pulling the projection on success — local gap-fill is trusted alone again','check-staff-pending.mjs',
+    tsub("    await staffLoad(true);\n    return true;",
+         "    return true;"),true],
 ];
 
 let wrong=0;

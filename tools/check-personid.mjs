@@ -36,18 +36,18 @@ ok('⚠️ the merge resolves two ids deterministically, not by recency',
 ok('and never drops an id for nothing', /\(pidA \|\| pidB \|\| undefined\)/.test(merge));
 ok('an id is not invented by the merge itself', /if \(!out\.pid\) delete out\.pid/.test(merge));
 
-// ⚠️ ORDER MATTERS ON LOAD. Backfilling before the merge would mint an id here for
-// somebody the cloud already has one for — churn, on the one field that must not churn.
-const load = src.slice(src.indexOf('async function staffLoad('), src.indexOf('let staffPushTimer'));
-ok('⚠️ the backfill runs AFTER the cloud merge',
-   load.indexOf('staffMerge(') < load.indexOf('staffBackfillPids()'));
-// ⚠️ WIDENED 11/20, deliberately — the retired register.signin field being stripped from
-// a record is ALSO something worth saving (Jarvis caught that a load which only stripped
-// never wrote at all, so a stale cloud/mini copy survived no matter how often Staff was
-// opened). Still gated: an ordinary load that minted nothing AND stripped nothing writes
-// nothing.
-ok('and only writes when something was actually minted OR a stale signin was stripped',
-   /if\(staffBackfillPids\(\)\|\|strippedAny\)staffSave\(\)/.test(load));
+// ⚠️ 11/20/26 — THE MINI IS THE SOLE WRITER NOW, so staffLoad has nothing left to backfill
+// OR merge: staffBackfillPids has ZERO callers (the mini mints a pid on create), and
+// staffMerge/staffMergeJobs are unused for the same reason — there is only one copy of the
+// truth any more. Both assertions below are the inverse of what this file asserted before
+// the switch; see [[project_employee_database]] for the full rewrite.
+const load = src.slice(src.indexOf('async function staffLoad('), src.indexOf('function staffMirrorToCloud'));
+ok('⛔ staffLoad no longer calls staffBackfillPids — the mini mints the pid now, this page never does',
+   !/staffBackfillPids\(\)/.test(load));
+ok('⛔ staffLoad no longer calls staffMerge/staffMergeJobs — there is nothing left to reconcile against',
+   !/staffMerge\(|staffMergeJobs\(/.test(load));
+ok('staffBackfillPids itself is left in place, unused, rather than deleted mid-rewrite',
+   /function staffBackfillPids\(\)/.test(src));
 
 // A brand new person gets one at creation, not on some later pass.
 ok('a row created by a scheduler pull is born with an id', /pid:staffNewPid\(\),name:r\.name/.test(src));

@@ -86,19 +86,16 @@ ok('the job-level rate is untouched by this change', out.Server === 1400 && out[
 ok('…and the per-person override still publishes alongside it, under its OWN key',
    out['emp:42|Server'] === 1750);
 
-// ── A SAVE THAT TOUCHES AN OVERRIDE REPUBLISHES ct_job_rates (Jarvis's requirement) ────
-// staffEdit's rate:<job> branch, where an override is actually typed, must fall through
-// to the same staffTouch/staffSave every other field edit uses — not a special early
-// return that skips the republish path staffPublishJobRates rides on.
+// ── A SAVE THAT TOUCHES AN OVERRIDE REACHES THE MINI (11/20/26 rewrite) ────────────────
+// staffEdit's rate:<job> branch now writes straight through staffWriteOp — the mini's
+// own `update` op — rather than the old local-save-then-debounced-push. staffPushMerged
+// (the old thing that used to republish ct_job_rates on every push) is gone entirely;
+// ct_job_rates publishing now rides staffReconcileJobNums, exercised directly below.
 const editFn = grab('staffEdit');
-const rateBranch = editFn.slice(editFn.indexOf("f.startsWith('rate:')"), editFn.indexOf("else if(f==='paychex')"));
-ok('⛔ the rate:<job> branch does not return early — it falls through to staffSave()',
-   !/return\s*;/.test(rateBranch));
-ok('…and staffEdit itself ends in staffTouch + staffSave for every field, override included',
-   /staffTouch\(p\);\s*\n\s*staffSave\(\);/.test(editFn));
-const pushMerged = grab('staffPushMerged');
-ok('⛔ staffPushMerged (what staffSave debounces into) calls staffPublishJobRates on every push',
-   /staffPublishJobRates\(\);/.test(pushMerged.slice(pushMerged.lastIndexOf('kvPush('))));
+const rateBranch = editFn.slice(editFn.indexOf("f.startsWith('rate:')"), editFn.indexOf("if(f==='paychex')"));
+ok('⛔ the rate:<job> branch actually persists — writes the FULL merged rates object through staffWriteOp',
+   /staffWriteOp\(\{op:'update',pid:p\.pid,patch:\{rates:p\.rates\}\}\)/.test(rateBranch));
+ok('⛔ staffPushMerged is gone — nothing in this file still calls it', !/staffPushMerged/.test(src));
 
 // ── ONE WRITER, SAME SHAPE AS THE JOB LOOP ──────────────────────────────────────────────
 const fn = grab('staffJobRatesForMini');
@@ -168,9 +165,12 @@ const bootBlock = (() => {
 ok('⛔ staffLoad() now runs in the SAME unconditional boot block as wedMetaPull — fires on every open, not just a specific POS sub-tab',
    /wedMetaPull\(\);[\s\S]*staffLoad\(\);/.test(bootBlock));
 ok('…staffLoad() self-guards (idempotent), so this is free on every normal boot',
-   grab('staffLoad').includes('if(staffS.loaded)return;'));
-ok('…and staffLoad() itself still ends by calling the reconcile (nothing new to wire there)',
-   /staffReconcileJobNums\(\);\s*\n\}/.test(grab('staffLoad')));
+   grab('staffLoad').includes('if(staffS.loaded&&!force)return;'));
+// ⚠️ 11/20/26 — reconcile now runs ONLY on the mini-success path, deliberately NOT in the
+// read-only cloud-mirror fallback: republishing ct_job_rates from a possibly-stale offline
+// copy could overwrite the mini's own correct rates with outdated ones.
+ok('…and staffLoad() calls the reconcile right after a successful mini read, before returning',
+   /staffReconcileJobNums\(\);\s*\n\s*return;/.test(grab('staffLoad')));
 
 
 console.log(bad ? `\n${bad} FAILED` : '\nall good');

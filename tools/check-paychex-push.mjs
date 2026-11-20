@@ -14,7 +14,7 @@ const ok = (t, c) => { if (!c) bad++; console.log((c ? '  ok  ' : '  FAIL') + ' 
 
 const fn = src.slice(src.indexOf('async function staffPushPaychex('),
                      src.indexOf('// ---- one person, opened up'));
-ok('typing a Paychex id pushes it', /if\(f==='paychex'\)staffPushPaychex\(p\)/.test(src));
+ok('typing a Paychex id pushes it', /staffPushPaychex\(p\)\.then\(\(\)=>staffRefresh\(\)\)/.test(src));
 ok('to the route the mini actually serves', /'\/api\/employees\/paychex'/.test(fn));
 ok('by mini id when there is one', /id\?\{id,paychex_id/.test(fn));
 ok('and by exact name otherwise', /\{name:p\.name,paychex_id/.test(fn));

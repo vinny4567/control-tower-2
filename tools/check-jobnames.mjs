@@ -65,14 +65,20 @@ ok('and an unrelated job is untouched', ctx.staffS.people.b.positions.includes('
 ok('running it again changes nothing', ctx.fold() === false);
 
 // ---- the × tells the truth ----------------------------------------------------
+// 11/20/26 — rewritten against the mini: a person's positions/rates go through
+// staffWriteOp('update', patch:{rates,positions}) now, and the job default itself
+// through staffWriteOp('jobs', jobs). No explicit staffPublishJobRates() call any
+// more — staffWriteOp's own refresh (staffLoad(true)) already runs
+// staffReconcileJobNums(), which republishes ct_job_rates if the computed map
+// actually changed. The self-heal IS the republish path now.
 const del = grab('staffDelJobRow');
 ok('it knows a standard job cannot be removed', /STAFF_JOBS\.some/.test(del));
 ok('it counts who is actually on the job', /staffS\.people/.test(del));
 ok('removing a held job takes it off those people too',
-   /p\.positions=p\.positions\.filter/.test(del) && /delete p\.rates\[n\]/.test(del));
+   /positions=\(p\.positions\|\|\[\]\)\.filter/.test(del) && /delete rates\[n\]/.test(del));
 ok('it clears EVERY spelling, not just the one clicked', /spellings\.forEach/.test(del));
-ok('and republishes, so the mini stops seeing the old key',
-   /staffPublishJobRates\(\)/.test(del));
+ok('⛔ the removal reaches the mini via the jobs op — no local-only mutation left behind',
+   /staffWriteOp\(\{op:'jobs',jobs\}\)/.test(del));
 
 // ---- the override box on a person --------------------------------------------
 // It shows the job's default when empty, and empty has to STAY a normal state.
@@ -87,13 +93,14 @@ ok('⚠️ and NOT as a prefilled value — an override must be distinguishable 
    /value="\$\{own>0\?/.test(row) && !/value="\$\{(own\|\||def)/.test(row));
 ok('the column is labelled OVERRIDE', /">OVERRIDE</.test(src));
 
-const edit = src.slice(src.indexOf("else if(f.startsWith('rate:'))"), src.indexOf("else if(f.startsWith('rate:'))") + 900);
+const edit = src.slice(src.indexOf("if(f.startsWith('rate:'))"), src.indexOf("if(f.startsWith('rate:'))") + 900);
 ok('emptying the box does not delete the job off the person',
    !/delete p\.rates\[job\]/.test(edit));
 ok('it falls back to the default instead', /p\.rates\[job\]=\(isFinite/.test(edit));
-ok('so there is a separate way to take a job away', src.includes('function staffDelPersonJob('));
-const dpj = src.slice(src.indexOf('function staffDelPersonJob('), src.indexOf('function staffAddJob('));
-ok('which removes the override with it', /delete p\.rates\[n\]/.test(dpj));
+ok('so there is a separate way to take a job away', src.includes('async function staffDelPersonJob('));
+const dpj = src.slice(src.indexOf('async function staffDelPersonJob('), src.indexOf('async function staffAddJob('));
+ok('⛔ which removes the override with it, reaching the mini through the update op',
+   /delete rates\[n\]/.test(dpj) && /staffWriteOp\(\{op:'update',pid:p\.pid,patch:\{rates,positions\}\}\)/.test(dpj));
 ok('and every spelling of that job, not just the one shown', /staffJobKey\(n\)===kk/.test(dpj));
 
 console.log(bad ? `\n${bad} FAILED` : '\nall good');

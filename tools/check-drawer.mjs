@@ -36,7 +36,7 @@ ok('⚠️ null means no override — the job decides again',
 ok('and null on a server denies, by the job', d('server', null).on === false);
 
 // ---- the three states have to SURVIVE the edit and the wire ----------------------
-const edit = src.slice(src.indexOf("else if(f==='drawer')"), src.indexOf("else if(f==='drawer')") + 220);
+const edit = src.slice(src.indexOf("if(f==='drawer'){"), src.indexOf("if(f==='drawer'){") + 260);
 ok('⚠️ the editor keeps null as null rather than coercing it to false',
    /v===null\?null:!!v/.test(edit));
 // ONE BOX (Vinny's call 9/24). The role dropdown above it is where privileges get set
