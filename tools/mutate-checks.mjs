@@ -684,6 +684,10 @@ const M=[
   ['ECHO 10 · BENIGN — the debounce delay changed from 400ms to 600ms','check-mini-echo.mjs',
     tsub("posWriteLostTimer=setTimeout(()=>{posDriftCheck(true)},400);",
          "posWriteLostTimer=setTimeout(()=>{posDriftCheck(true)},600);"),false],
+  ['ECHO 11 · ⛔ a granular key quietly drops off POS_SYNC_KEYS (the list and the real kvPush calls drift apart)','check-mini-echo.mjs',
+    tsub("  ['ct_pos_new_discounts','New discounts'],\n","",),true],
+  ['ECHO 12 · BENIGN — a granular key’s label reworded (no key or behaviour change)','check-mini-echo.mjs',
+    tsub("['ct_pos_disc_rates','Discount rates'],","['ct_pos_disc_rates','Discount %/amount'],"),false],
 ];
 
 let wrong=0;

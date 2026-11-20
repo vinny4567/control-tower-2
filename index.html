@@ -8352,12 +8352,53 @@ function posLiveBadgeHTML(){
 // tailnet the mini is unreachable; a cloud read can fail on its own (kvGet hands
 // back KV_FAIL, which is NOT an absent key). Both say "can't tell" out loud.
 // Silence from this card is only ever allowed to mean "compared, and they match".
+// ⚠️ WIDENED 11/19/26 EVENING from just these 5 to every granular ct_pos_* store
+// underneath them. The blob (ct_pos_live) already republishes correctly from THIS
+// device's own in-memory state regardless of whether a granular key's own write
+// landed on the mini — so the register was never the risk these extra rows cover.
+// The risk is the NEXT device that loads the back office and rebuilds its own
+// in-memory state FROM these granular keys: if one silently lost a collision, that
+// device's screen quietly shows something stale. Costs nothing extra in network
+// round-trips — both the cloud and the mini already answer with EVERY key's `at`
+// in one listing call; this only adds rows to loop over and, if they disagree,
+// show. List below is every literal key `kvPush('ct_pos_…')` is actually called
+// with in this file (grepped, not guessed) — re-grep after adding a new one:
+//   grep -oE "kvPush\('ct_pos_[a-z_]+'" index.html | sort -u
+// ct_pos_live is covered separately (posPublishSend calls posWatchMiniEcho itself,
+// since that key bypasses kvPush/kvSend entirely). ct_pos_buttons is deliberately
+// NOT here: it already refuses a collision SYNCHRONOUSLY with its own compare-and-
+// set before a write is even sent (posBtnWrite) — a second, asynchronous warning
+// for the same event would be noise on top of a warning he already saw.
 const POS_SYNC_KEYS=[
   ['ct_pos_live','Menu, prices, routing'],
   ['ct_privs','Privileges'],
   ['ct_staff','Staff'],
   ['ct_job_rates','Job rates'],
   ['ct_calcs','Calculations'],
+  ['ct_pos_prices','Prices'],
+  ['ct_pos_routing','Print routing'],
+  ['ct_pos_group_names','Group names'],
+  ['ct_pos_mod_names','Mod names'],
+  ['ct_pos_disc_rates','Discount rates'],
+  ['ct_pos_mod_letters','Mod letters'],
+  ['ct_pos_group_mods','Group mods'],
+  ['ct_pos_group_attach','Group attachments'],
+  ['ct_pos_group_detach','Group detachments'],
+  ['ct_pos_choice_cuts','Choice cuts'],
+  ['ct_pos_choice_edits','Choice edits'],
+  ['ct_pos_section_adds','Section adds'],
+  ['ct_pos_choice_order','Choice order'],
+  ['ct_pos_item_group_order','Group order per item'],
+  ['ct_pos_item_order','Item order per category'],
+  ['ct_pos_new_items','New items'],
+  ['ct_pos_new_mods','New mods'],
+  ['ct_pos_new_groups','New groups'],
+  ['ct_pos_new_discounts','New discounts'],
+  ['ct_pos_deleted_items','Deleted items'],
+  ['ct_pos_deleted_mods','Deleted mods'],
+  ['ct_pos_deleted_groups','Deleted groups'],
+  ['ct_pos_deleted_discounts','Deleted discounts'],
+  ['ct_pos_print_classes','Print classes'],
 ];
 const posDrift={state:'idle',rows:[],at:0,err:'',checking:false};
 let posDriftSoonTimer=null;   // re-check shortly after a write-through, see posLiveSoon

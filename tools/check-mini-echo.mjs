@@ -30,13 +30,13 @@ const lift = (name) => {
   return src.slice(i, j + 1);
 };
 
-const POS_SYNC_KEYS = [
-  ['ct_pos_live', 'Menu, prices, routing'],
-  ['ct_privs', 'Privileges'],
-  ['ct_staff', 'Staff'],
-  ['ct_job_rates', 'Job rates'],
-  ['ct_calcs', 'Calculations'],
-];
+// The REAL list, lifted out of index.html — not hand-typed — so every test below exercises
+// the actual current scope and goes red the moment the list and the code drift apart.
+const POS_SYNC_KEYS = (() => {
+  const i = src.indexOf('const POS_SYNC_KEYS=[');
+  const j = src.indexOf('];', i);
+  return new Function(src.slice(i, j + 2) + 'return POS_SYNC_KEYS;')();
+})();
 
 // A tiny world: the real kvSendMini + posWatchMiniEcho, a stub fetch, a stub localStorage/KV
 // token, and a recorder for whether the fast recheck fired.
@@ -172,6 +172,34 @@ ok('⛔ kvSend watches the echo of every write it sends to the mini', /posWatchM
 const publishSendSrc = (() => { const i = src.indexOf('async function posPublishSend('); return src.slice(i, src.indexOf('\n}', i) + 2); })();
 ok('⛔ posPublishSend (ct_pos_live\'s OWN path, which bypasses kvSend) is wired too',
    /posWatchMiniEcho\(POS_LIVE_KEY,kvSendMini\(/.test(publishSendSrc));
+
+
+// ── WIDENED 11/19/26 evening: every granular ct_pos_* store, not just the 5 ─────────────
+// Covers the risk ct_pos_live's own republish does NOT cover: the NEXT device that loads
+// the back office and rebuilds its UI state from a granular key whose own write silently
+// lost. Lifted and re-derived from the live file, not hand-typed, so this goes red the
+// moment the real list and this test's expectation drift apart.
+const realKeys = POS_SYNC_KEYS.map(p => p[0]);
+const grepped = Array.from(new Set((src.match(/kvPush\('ct_pos_[a-z_]+'/g) || [])
+  .map(m => m.slice('kvPush(\''.length, -1))));
+ok('⛔ every literal ct_pos_* key this file actually calls kvPush with is in POS_SYNC_KEYS',
+   grepped.every(k => realKeys.includes(k)));
+ok('…and POS_SYNC_KEYS carries no granular key that is NOT really pushed (a stale leftover)',
+   realKeys.filter(k => k.startsWith('ct_pos_') && k !== 'ct_pos_live')
+     .every(k => grepped.includes(k)));
+ok('⛔ ct_pos_buttons is deliberately excluded — it already refuses synchronously, on its own',
+   !realKeys.includes('ct_pos_buttons'));
+ok('ct_pos_live is present exactly once (covered via posPublishSend, not a kvPush grep hit)',
+   realKeys.filter(k => k === 'ct_pos_live').length === 1);
+
+// A granular key's loss is caught the same way a POS_SYNC_KEYS original was — proves the
+// widening actually reaches posWatchMiniEcho, not just the list it reads.
+w = world({ fetchImpl: async () => resOk(700) });
+await w.env.posWatchMiniEcho('ct_pos_new_discounts', w.env.kvSendMini('ct_pos_new_discounts', { v: {}, at: 500 }, false));
+await w.env.flush();
+ok('⛔ a lost write to a newly-watched granular key (ct_pos_new_discounts) triggers the fast recheck',
+   w.calls.timers.length === 1);
+
 
 console.log(bad ? `\n${bad} FAILED` : '\nall good');
 process.exit(bad ? 1 : 0);
