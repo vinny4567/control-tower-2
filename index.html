@@ -15184,6 +15184,21 @@ function staffFoldJobNames(){
 //
 // Both the name and the number are published where the number is known, because a job
 // renamed here would otherwise silently stop matching the punches already recorded.
+//
+// ⛔ PERSON-LEVEL OVERRIDES, ADDED 11/19/26 (Vinny, on cut-roster: "yes the persons
+// overrided rate should win over" the job rate). Every hour used to pay at the JOB's
+// rate no matter what — a rate typed on one person in the back office changed nothing
+// on the floor. The mini decides who wins (its half of this ticket); this half only
+// has to PUBLISH what each person's own rate is, keyed by their register emp_id so the
+// mini can tell "this shift" from "everyone who holds this job". `emp:<id>|<job>` and,
+// where the job has a register number, `emp:<id>|<num>` too — same name+number
+// double-publish as the job-level rates above, same reason: a shift logged by number
+// must still find the override.
+//
+// Same rule as the job-level loop: a missing or non-positive override stays MISSING,
+// never written as 0 — this function's whole contract is "present means a rate was
+// actually set", and the mini is told to fall back to the job rate by the key being
+// absent, not by reading a 0.
 function staffJobRatesForMini(){
   const out={};
   const jobs=staffJobs();
@@ -15194,6 +15209,19 @@ function staffJobRatesForMini(){
     out[job]=cents;
     const num=STAFF_JOB_NUMS[job];
     if(num!=null)out[String(num)]=cents;
+  });
+  Object.values(staffS.people||{}).forEach(p=>{
+    const empId=p.register&&p.register.emp_id;
+    if(empId==null)return;                 // not on the register — no shift to override
+    const rates=p.rates||{};
+    Object.keys(rates).forEach(job=>{
+      const r=rates[job];
+      if(!(r>0))return;                    // a missing override stays missing — never 0
+      const cents=Math.round(r*100);
+      out['emp:'+String(empId)+'|'+job]=cents;
+      const num=STAFF_JOB_NUMS[job];
+      if(num!=null)out['emp:'+String(empId)+'|'+String(num)]=cents;
+    });
   });
   return out;
 }

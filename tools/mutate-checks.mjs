@@ -727,6 +727,27 @@ const M=[
   ['CAS 13 · BENIGN — the “found in review (Jarvis)” comment reworded, no behaviour change','check-discount-refusal.mjs',
     tsub("// warning that means something real elsewhere. Found in review (Jarvis), not by me.",
          "// warning that means something real elsewhere. A review pass caught this before it shipped."),false],
+
+
+  // ── PERSON RATE OVERRIDES REACH THE MINI (check-job-rate-override) ─────────────────
+  ['JRO 1 · the per-person loop is dropped entirely — overrides stop publishing','check-job-rate-override.mjs',
+    tsub("  Object.values(staffS.people||{}).forEach(p=>{\n    const empId=p.register&&p.register.emp_id;\n    if(empId==null)return;                 // not on the register — no shift to override\n    const rates=p.rates||{};\n    Object.keys(rates).forEach(job=>{\n      const r=rates[job];\n      if(!(r>0))return;                    // a missing override stays missing — never 0\n      const cents=Math.round(r*100);\n      out['emp:'+String(empId)+'|'+job]=cents;\n      const num=STAFF_JOB_NUMS[job];\n      if(num!=null)out['emp:'+String(empId)+'|'+String(num)]=cents;\n    });\n  });\n  return out;",
+         "  return out;"),true],
+  ['JRO 2 · a 0/missing override is written as 0 instead of staying absent','check-job-rate-override.mjs',
+    tsub("      if(!(r>0))return;                    // a missing override stays missing — never 0",
+         "      if(r==null)return;"),true],
+  ['JRO 3 · ⛔ the emp_id guard is dropped — a person with no register id publishes anyway, under "emp:undefined|..."','check-job-rate-override.mjs',
+    tsub("    const empId=p.register&&p.register.emp_id;\n    if(empId==null)return;                 // not on the register — no shift to override",
+         "    const empId=p.register&&p.register.emp_id;"),true],
+  ['JRO 4 · the bare-number key is dropped for a job that DOES have a register number','check-job-rate-override.mjs',
+    tsub("      out['emp:'+String(empId)+'|'+job]=cents;\n      const num=STAFF_JOB_NUMS[job];\n      if(num!=null)out['emp:'+String(empId)+'|'+String(num)]=cents;",
+         "      out['emp:'+String(empId)+'|'+job]=cents;"),true],
+  ['JRO 5 · the rate:<job> field handler in staffEdit returns early, skipping staffSave entirely','check-job-rate-override.mjs',
+    tsub("    const job=f.slice(5);p.rates=p.rates||{};\n    const n=parseFloat(v);\n    p.rates[job]=(isFinite(n)&&n>0)?n:0;\n  }",
+         "    const job=f.slice(5);p.rates=p.rates||{};\n    const n=parseFloat(v);\n    p.rates[job]=(isFinite(n)&&n>0)?n:0;\n    return;\n  }"),true],
+  ['JRO 6 · BENIGN — the override comment block reworded, no behaviour change','check-job-rate-override.mjs',
+    tsub("// has to PUBLISH what each person's own rate is, keyed by their register emp_id so the",
+         "// publishes each person's own rate, keyed by their register emp_id, so the"),false],
 ];
 
 let wrong=0;
