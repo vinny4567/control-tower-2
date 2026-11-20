@@ -830,7 +830,13 @@ const BANK='banking';
 const TIPS='tips';
 // Calculations lives in the POS BACK OFFICE rail (posS.sec==='calcs'), with
 // Staff and Job rates — not on the top tab bar. The back office is where the
-// numbers that run the business get set.
+// numbers that run the business get set. 🧾 Tips joined it 11/20/26 (Vinny),
+// moving the same way — TIPS is now a POS_SECTIONS key (posS.sec==='tips'),
+// never a top-level activeTab value on its own. Every place that used to ask
+// "is Tips the active tab?" (activeTab===TIPS) now asks tipsActive() instead —
+// one function, so a missed call site shows up as a grep mismatch, not a bug
+// nobody notices until the sheet silently stops refreshing.
+function tipsActive(){return activeTab===POS&&posS.sec===TIPS;}
 const CMD_API='https://jarvis-voicejarvis-voice.onrender.com/cmd';
 let cmdConsoleTimer=null;
 let cfg=loadCfg(),focused=null,editing=null,activeTab=cfg.activeTab||DASH;
@@ -5735,7 +5741,7 @@ function renderTabs(){const list=document.getElementById('tab-list');
   // FIRST in the DOM. The scroll-into-view below has to skip it, or opening split
   // yanks the bar to the far left and hides the tab you are actually on. That was
   // free while this lived at the end, and it is the only thing the move broke.
-  list.innerHTML=`<div class="tab tab-split ${splitState().on?'active':''}" onclick="splitToggle()" title="Split screen — keep a second tab open beside this one">▥</div>`+`<div class="tab ${activeTab===DASH?'active':''}" onclick="switchTab('${DASH}')">📊 Dashboard</div>`+`<div class="tab ${activeTab===MAIL?'active':''}" onclick="switchTab('${MAIL}')">📧 Email</div>`+`<div class="tab ${activeTab===DOCS?'active':''}" onclick="switchTab('${DOCS}')">📝 Docs</div>`+cfg.panels.map(p=>{const t=`<div class="tab ${activeTab===p.id?'active':''}" onclick="switchTab(${p.id})">${esc(p.name)}</div>`;return p.id===4?t+`<div class="tab ${activeTab===WED?'active':''}" onclick="switchTab('${WED}')">💍 Weddings</div>`:t;}).join('')+`<div class="tab ${activeTab===LIQ?'active':''}" onclick="switchTab('${LIQ}')">🥃 Liquor</div>`+`<div class="tab ${activeTab===BANK?'active':''}" onclick="switchTab('${BANK}')">🏦 Banking</div>`+`<div class="tab ${activeTab===TIPS?'active':''}" onclick="switchTab('${TIPS}')">🧾 Tips</div>`+`<div class="tab ${activeTab===POS?'active':''}" onclick="switchTab('${POS}')">🍽️ POS</div>`+`<div class="tab ${activeTab===ONLINE?'active':''}" onclick="switchTab('${ONLINE}')">🤖 Jarvis</div>`+`<div class="tab tab-add" onclick="openSettings()" title="Add panel">＋</div>`;tabBarInit();
+  list.innerHTML=`<div class="tab tab-split ${splitState().on?'active':''}" onclick="splitToggle()" title="Split screen — keep a second tab open beside this one">▥</div>`+`<div class="tab ${activeTab===DASH?'active':''}" onclick="switchTab('${DASH}')">📊 Dashboard</div>`+`<div class="tab ${activeTab===MAIL?'active':''}" onclick="switchTab('${MAIL}')">📧 Email</div>`+`<div class="tab ${activeTab===DOCS?'active':''}" onclick="switchTab('${DOCS}')">📝 Docs</div>`+cfg.panels.map(p=>{const t=`<div class="tab ${activeTab===p.id?'active':''}" onclick="switchTab(${p.id})">${esc(p.name)}</div>`;return p.id===4?t+`<div class="tab ${activeTab===WED?'active':''}" onclick="switchTab('${WED}')">💍 Weddings</div>`:t;}).join('')+`<div class="tab ${activeTab===LIQ?'active':''}" onclick="switchTab('${LIQ}')">🥃 Liquor</div>`+`<div class="tab ${activeTab===BANK?'active':''}" onclick="switchTab('${BANK}')">🏦 Banking</div>`+`<div class="tab ${activeTab===POS?'active':''}" onclick="switchTab('${POS}')">🍽️ POS</div>`+`<div class="tab ${activeTab===ONLINE?'active':''}" onclick="switchTab('${ONLINE}')">🤖 Jarvis</div>`+`<div class="tab tab-add" onclick="openSettings()" title="Add panel">＋</div>`;tabBarInit();
   // keep the active tab in view for wheel-only mice
   setTimeout(()=>{const a=document.querySelector('#tab-list .tab.active:not(.tab-split)');if(a&&a.scrollIntoView)a.scrollIntoView({block:'nearest',inline:'nearest'});tabNavSync()},30);}
 // ═══ TIPS TAB — private per-period restaurant tip sheet ════════════════
@@ -5911,7 +5917,7 @@ function tipRosterFixPriscillaHTML(){
 }
 let tipsState={start:null,end:null,cells:{},adds:{},moves:{},expanded:{},roster:null,hours:{},hoursOut:{},empIds:{},busserSplit:{},busserSplitByDay:{},view:'tips',loaded:false,loading:false};
 let tipsGen=0;   // bumped on every (re)load; guards against two period-loads racing and crossing data
-function tipsSetView(v){tipsState.view=v;document.getElementById('viewport').innerHTML=tipsHTML();}
+function tipsSetView(v){tipsState.view=v;document.getElementById('pos-body').innerHTML=tipsHTML();}
 function tipsSetHoursFilter(f){tipsState.hoursFilter=f;tipsRerender();}
 // Import the MICROS timesheet PDF: upload it to the cloud for this period (Claude
 // parses it into hours + rates + busser splits; auto-parse backend is coming).
@@ -6044,7 +6050,7 @@ async function tipsImportTimesheet(input){
     const n=tipsMergeMicros(people,split,byDay,nb?undefined:{keepSplit:true});
     tipsSaveHoursSoon();
     tipsSaveEmpIds();
-    if(activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();
+    if(tipsActive())document.getElementById('pos-body').innerHTML=tipsHTML();
     // Say why when there is no split — this failed silently for weeks behind a cheerful
     // "imported 58 employees" and the bussers simply read as zero.
     if(nb){
@@ -6125,7 +6131,7 @@ async function tipsPullFromPos(){
   const n=tipsMergeMicros(people,{},{},{keepRates:true,keepSplit:true});
   tipsSaveHoursSoon();
   tipsSaveEmpIds();
-  if(activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();
+  if(tipsActive())document.getElementById('pos-body').innerHTML=tipsHTML();
   // An unpunched shift is somebody's pay being wrong, and it has to be LOUD — a
   // manager who does not hear about it signs off a period that is short a night.
   const tipNote=posTips?('  ·  register also recorded '+tipMoney(posTips/100)+' in charge tips (not filled in — the tip sheet still owns those)'):'';
@@ -6215,7 +6221,7 @@ async function tipsDownloadCsv(){
 function tipsCsvBtnHTML(){return `<button onclick="tipsDownloadCsv()" title="Save the Paychex CSV into Desktop/Payroll/<period>/ (pick the Payroll folder the first time)" style="background:#34d399;border:none;color:#06281c;font-weight:800;border-radius:8px;padding:6px 14px;cursor:pointer;font-size:12px;white-space:nowrap;margin-left:auto">⬇ Paychex CSV</button>`;}
 // Re-render the Tips/Hours view in place WITHOUT losing the vertical scroll position
 // (a plain innerHTML swap snaps the page back to the top).
-function tipsRerender(){const vp=document.getElementById('viewport');if(!vp)return;const sc=vp.firstElementChild;const top=sc?sc.scrollTop:0;vp.innerHTML=tipsHTML();const sc2=vp.firstElementChild;if(sc2)sc2.scrollTop=top;}
+function tipsRerender(){const vp=document.getElementById('pos-body');if(!vp)return;const sc=vp.firstElementChild;const top=sc?sc.scrollTop:0;vp.innerHTML=tipsHTML();const sc2=vp.firstElementChild;if(sc2)sc2.scrollTop=top;}
 // ── Hours page — per person, hours by POSITION (weddings pull + MICROS import) ──
 // tipsState.hours[name] = { <section>: {h:hours, r:rate, o:ot} }  (a person can work
 // several positions at different rates — e.g. Bar $15 + Servers $25).
@@ -6259,14 +6265,14 @@ function hoursSrc(p){return (p&&p.src)||'wed';}   // legacy positions (no src) d
 function isRestEmp(name){const h=tipsState.hours[name]||{};return Object.keys(h).some(sec=>hoursSrc(h[sec])==='rest');}
 function tipHoursGrandAll(){let reg=0,ot=0,pay=0;Object.keys(tipsState.hours||{}).forEach(n=>{const t=tipHoursPersonTot(n);reg+=t.reg;ot+=t.ot;pay+=t.pay;});const he=document.getElementById('hgrand-hrs'),pe=document.getElementById('hgrand-pay');if(he)he.textContent=(Math.round((reg+ot)*100)/100).toFixed(2);if(pe)pe.textContent=tipMoney(pay);}
 function tipHoursInput(name,sec,field,val){tipHoursSetPos(name,sec,field,val);const id=tipId(name),sid=sec.replace(/[^a-z0-9]/gi,'_');const pe=document.getElementById('hp-'+id+'-'+sid);if(pe){const pp=tipHoursPosPay((tipsState.hours[name]||{})[sec]||{});pe.textContent=pp?tipMoney(pp):'';}const t=tipHoursPersonTot(name);const re=document.getElementById('hreg-'+id);if(re)re.textContent=t.reg||'';const oe=document.getElementById('hot-'+id);if(oe)oe.textContent=t.ot||'';const te=document.getElementById('hpt-'+id);if(te)te.textContent=t.pay?tipMoney(t.pay):'';tipHoursGrandAll();tipsSaveHoursSoon();}
-function tipHoursAddRow(name,src){if(!tipsState.hours)tipsState.hours={};if(!tipsState.hours[name])tipsState.hours[name]={};let base='Extra',nm=base,i=2;while(tipsState.hours[name][nm])nm=base+' '+(i++);tipsState.hours[name][nm]={src:src||'wed',m:1};if(activeTab===TIPS&&(tipsState.view||'tips')==='hours'){tipsRerender();const el=document.getElementById('hn-'+tipId(name)+'-'+nm.replace(/[^a-z0-9]/gi,'_'));if(el){el.focus({preventScroll:true});el.select();}}tipsSaveHoursSoon();}
+function tipHoursAddRow(name,src){if(!tipsState.hours)tipsState.hours={};if(!tipsState.hours[name])tipsState.hours[name]={};let base='Extra',nm=base,i=2;while(tipsState.hours[name][nm])nm=base+' '+(i++);tipsState.hours[name][nm]={src:src||'wed',m:1};if(tipsActive()&&(tipsState.view||'tips')==='hours'){tipsRerender();const el=document.getElementById('hn-'+tipId(name)+'-'+nm.replace(/[^a-z0-9]/gi,'_'));if(el){el.focus({preventScroll:true});el.select();}}tipsSaveHoursSoon();}
 function tipHoursRenamePos(name,oldSec,newSec){newSec=(newSec||'').trim();const H=tipsState.hours&&tipsState.hours[name];if(!H||!(oldSec in H)){return;}if(!newSec||newSec===oldSec){tipsRerender();return;}if(H[newSec]){tipsSetStatus('“'+newSec+'” already exists for '+name,'#f87171');tipsRerender();return;}H[newSec]=H[oldSec];H[newSec].m=1;delete H[oldSec];if(hoursSrc(H[newSec])==='wed')H[oldSec]={src:'wed',m:1,x:1};tipsRerender();tipsSaveHoursSoon();}
 // Deleting a 💍 row has to leave a mark, not a hole. The pull fills holes: it
 // re-created every wedding row the scheduler still knows about, so a row Vinny
 // deleted came straight back on the next refresh. A hidden `x:1` tombstone says
 // "he took this one out" and the pull leaves it alone. Restaurant (MICROS) rows
 // are not re-created by that pull, so those still just go.
-function tipHoursDelPos(name,sec){const H=tipsState.hours&&tipsState.hours[name];if(H){if(hoursSrc(H[sec])==='wed')H[sec]={src:'wed',m:1,x:1};else delete H[sec];if(!Object.keys(H).length)delete tipsState.hours[name];}if(activeTab===TIPS&&(tipsState.view||'tips')==='hours')tipsRerender();tipsSaveHoursSoon();}
+function tipHoursDelPos(name,sec){const H=tipsState.hours&&tipsState.hours[name];if(H){if(hoursSrc(H[sec])==='wed')H[sec]={src:'wed',m:1,x:1};else delete H[sec];if(!Object.keys(H).length)delete tipsState.hours[name];}if(tipsActive()&&(tipsState.view||'tips')==='hours')tipsRerender();tipsSaveHoursSoon();}
 // Put someone taken out of the period back. The removal is now remembered, so
 // it needs a way back — a refresh used to undo it by accident.
 function tipHoursUndoOut(name){if(tipsState.hoursOut)delete tipsState.hoursOut[name];tipsPullWeddingHours(false).then(()=>{tipsRerender();tipsSaveHoursSoon();});}
@@ -6327,7 +6333,7 @@ async function tipsPullWeddingHours(auto){
     }
     if(!Object.keys(H).length)delete tipsState.hours[nm];
   });
-  if(filled){if(activeTab===TIPS&&(tipsState.view||'tips')==='hours')document.getElementById('viewport').innerHTML=tipsHTML();tipsSaveHoursSoon();}
+  if(filled){if(tipsActive()&&(tipsState.view||'tips')==='hours')document.getElementById('pos-body').innerHTML=tipsHTML();tipsSaveHoursSoon();}
   // "in sync" must not be said while rows are deliberately NOT in sync — that
   // exact claim is how stale wedding hours hid before. Count what he holds.
   let held=0;Object.keys(tipsState.hours||{}).forEach(n=>{const H=tipsState.hours[n]||{};Object.keys(H).forEach(j=>{if(H[j]&&H[j].m&&!H[j].x)held++;});});
@@ -6405,7 +6411,7 @@ function tipsSaveEmpIds(){
   try{kvPush('ct_emp_ids',{emp:tipsState.empIds},Date.now());return true;}catch(e){return false;}
 }
 function tipsSaveMoves(){if(tipsSaveBlocked())return;try{kvPush('ct_tips_moves',{moves:tipsState.moves},Date.now());}catch(e){}}
-function tipMovePerson(name,sec){if(!tipsState.moves)tipsState.moves={};if(tipBaseSection(name)===sec)delete tipsState.moves[name];else tipsState.moves[name]=sec;tipsSaveMoves();document.getElementById('viewport').innerHTML=tipsHTML();}
+function tipMovePerson(name,sec){if(!tipsState.moves)tipsState.moves={};if(tipBaseSection(name)===sec)delete tipsState.moves[name];else tipsState.moves[name]=sec;tipsSaveMoves();document.getElementById('pos-body').innerHTML=tipsHTML();}
 
 // Default range = the current 14-day pay period (anchor Mar 23 2026, same as the tip-out app).
 function tipCurrentPeriod(){
@@ -6542,7 +6548,7 @@ function tipSectionPeople(sec){
     return tipStaffLive(n)||tipPersonHasTipsThisPeriod(n);
   }).sort((a,b)=>{const la=a.split(' ').pop(),lb=b.split(' ').pop();return la.localeCompare(lb)||a.localeCompare(b);});
 }
-function tipAddPerson(sec){const inp=document.getElementById('tip-add-'+sec.replace(/ /g,'_'));if(!inp)return;const name=(inp.value||'').trim();if(!name)return;if(!tipsState.adds[sec])tipsState.adds[sec]=[];const all=tipSectionPeople(sec);if(all.indexOf(name)<0){tipsState.adds[sec].push(name);tipsSaveSoon();}document.getElementById('viewport').innerHTML=tipsHTML();}
+function tipAddPerson(sec){const inp=document.getElementById('tip-add-'+sec.replace(/ /g,'_'));if(!inp)return;const name=(inp.value||'').trim();if(!name)return;if(!tipsState.adds[sec])tipsState.adds[sec]=[];const all=tipSectionPeople(sec);if(all.indexOf(name)<0){tipsState.adds[sec].push(name);tipsSaveSoon();}document.getElementById('pos-body').innerHTML=tipsHTML();}
 function tipsSetStatus(s,c){const el=document.getElementById('tips-status');if(el){el.textContent=s;el.style.color=c||'var(--text-dim)';}}
 
 async function tipsInit(){
@@ -6562,7 +6568,7 @@ async function tipsInit(){
   // this on its own, and loadFailed makes every save refuse in the meantime.
   if(kvFailed(remote)||kvFailed(rm)||kvFailed(rh)||kvFailed(ge)||tipsState.rosterFailed){
     tipsState.loading=false;tipsState.loadFailed=true;
-    if(activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();
+    if(tipsActive())document.getElementById('pos-body').innerHTML=tipsHTML();
     tipsSetStatus('⚠ Could not reach the store — this screen is NOT your data, and nothing will be saved.','#f87171');
     return;
   }
@@ -6575,7 +6581,7 @@ tipsState.empIds=Object.assign({},(rh&&rh.v&&rh.v.empIds)?rh.v.empIds:{},globalE
 tipsState.busserSplit=(rh&&rh.v&&rh.v.busserSplit)?rh.v.busserSplit:{};tipsState.busserSplitByDay=(rh&&rh.v&&rh.v.busserSplitByDay)?rh.v.busserSplitByDay:{};tipsState.punches=(rh&&rh.v&&rh.v.punches)?rh.v.punches:[];tipsState.hoursOut=(rh&&rh.v&&rh.v.hoursOut)?rh.v.hoursOut:{};   // per-person + per-night busser pool split, and who he took out by hand
   let _mig=tipMigrateCells();if(tipCleanAdds())_mig=true;if(_mig)tipsSaveSoon();   // upgrade legacy {v,upt,wed} cells + heal stale adds
   tipsState.loaded=true;tipsState.loading=false;
-  if(activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();
+  if(tipsActive())document.getElementById('pos-body').innerHTML=tipsHTML();
   tipsPull(true).then(()=>{ if(g!==tipsGen)return; tipsPullWeddings(true); tipsPullWeddingHours(true); tipsScanTimesheets(true); tipsPulledAt=Date.now(); });   // picking a date range pulls the tip-out log + wedding tips + wedding hours
 }
 // Come back to this tab and pick the numbers up again.
@@ -6600,12 +6606,12 @@ async function tipsRefresh(force){
 }
 // A time sheet is usually edited in the schedule app in another tab — so also re-check
 // the moment this window is looked at again, not only when the tab is clicked.
-document.addEventListener('visibilitychange',()=>{if(!document.hidden&&activeTab===TIPS)tipsRefresh();});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&tipsActive())tipsRefresh();});
 function tipsReload(){tipsGen++;tipsState.loaded=false;tipsState.loading=false;tipsState.cells={};tipsState.adds={};
   // The busser split belongs to a period as much as the cells do. Leaving it behind meant
   // last fortnight's shares sat on the new one until the load finished overwriting them.
   tipsState.hours={};tipsState.busserSplit={};tipsState.busserSplitByDay={};tipsState.punches=[];tipsState.checks=null;tipsState.hoursOut={};
-  document.getElementById('viewport').innerHTML=tipsHTML();tipsInit();}
+  document.getElementById('pos-body').innerHTML=tipsHTML();tipsInit();}
 function tipsSetStart(ds){const d=tipParseISO(ds);if(!d)return;tipsState.start=d;tipsState.end=new Date(d.getFullYear(),d.getMonth(),d.getDate()+13);tipRangeRemember();tipsReload();} // snap to a 14-day period; adjust the end for a custom length
 function tipsSetEnd(ds){const d=tipParseISO(ds);if(!d)return;tipsState.end=d;if(tipsState.start>d)tipsState.start=new Date(d.getFullYear(),d.getMonth(),d.getDate()-13);tipRangeRemember();tipsReload();}
 function tipsThisPeriod(){tipRangeForget();const p=tipCurrentPeriod();tipsState.start=p.start;tipsState.end=p.end;tipsReload();}
@@ -6699,7 +6705,7 @@ async function tipsPull(auto){
     Object.keys(direct).forEach(nm=>{const info=direct[nm];if(!info.amt)return;ensure(nm,ROLE_SEC[info.role]||tipBaseSection(nm)||'Weddings');putC(nm,lb,'p',info.amt);});
   });
   tipsState.loaded=true;
-  if(filled&&activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();
+  if(filled&&tipsActive())document.getElementById('pos-body').innerHTML=tipsHTML();
   if(filled&&!auto)tipsSaveSoon();   // UNDO auto-save: an auto pull (on load) only DISPLAYS the calculator's numbers now — it no longer freezes them into saved data (that's what stuck the early/partial busser pool). Only a manual pull or a hand edit saves.
   tipsSetStatus(filled?('Pulled '+filled+' from calculator ✓'):(auto?'✓ in sync with calculator':'Nothing new to pull'),'var(--text-dim)');
 }
@@ -6756,7 +6762,7 @@ async function tipsPullWeddings(auto){
       tipSetComp(n,lb,'w',0);filled++;
     });
   });
-  if(filled&&activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();
+  if(filled&&tipsActive())document.getElementById('pos-body').innerHTML=tipsHTML();
   // Unlike the tip-out pull, this one SAVES even on an auto pull. That pull fills blanks
   // from a calculator that can still be mid-night, so freezing it was the bug; this one
   // copies a finished event's figures from the app that owns them, and a correction is no
@@ -6854,7 +6860,7 @@ async function tipsScanTimesheets(force){
   const wed=await tsFetchWeddingRows();
   if(g!==tipsGen)return;
   tipsState.checks=tsCheckAll(wed,tsRestaurantRows());
-  if(activeTab===TIPS&&(tipsState.view||'tips')==='hours')document.getElementById('viewport').innerHTML=tipsHTML();
+  if(tipsActive()&&(tipsState.view||'tips')==='hours')document.getElementById('pos-body').innerHTML=tipsHTML();
 }
 function tsChecksHTML(){
   const list=tipsState.checks;
@@ -7080,7 +7086,7 @@ Picking a date range automatically pulls the nightly <b>tip-out log</b> (restaur
 }
 
 function renderViewport(){if(activeTab===WED){document.getElementById('viewport').innerHTML=wedHTML();wedInit();return}if(activeTab===DOCS){docsSetNS('ct_docs');docsPullSync();document.getElementById('viewport').innerHTML=docsHTML();return}if(activeTab===MAIL){document.getElementById('viewport').innerHTML=mailHTML();restoreGmailListScroll();mailAcctsRestore();return}if(activeTab===LIQ){document.getElementById('viewport').innerHTML=liqHTML();return}if(activeTab===BANK){document.getElementById('viewport').innerHTML=bankHTML();return}
-   if(activeTab===TIPS){document.getElementById('viewport').innerHTML=tipsHTML();tipsRefresh();return}if(activeTab===POS){document.getElementById('viewport').innerHTML=posHTML();posDriftCheck();return}if(activeTab===ONLINE){document.getElementById('viewport').innerHTML=onlineHTML();renderChat();if(ordersKey())loadCmdConsole();return}if(activeTab===DASH){const vp=document.getElementById('viewport');
+   if(activeTab===POS){document.getElementById('viewport').innerHTML=posHTML();posDriftCheck();return}if(activeTab===ONLINE){document.getElementById('viewport').innerHTML=onlineHTML();renderChat();if(ordersKey())loadCmdConsole();return}if(activeTab===DASH){const vp=document.getElementById('viewport');
    // EVERY scroller on the dash must be listed here. This rebuilds the whole tab, and the Gmail
    // poll fires it every few seconds, so anything not restored snaps back to the top WHILE VINNY
    // IS READING IT. `.rq-list` (Upcoming Orders) was added after this code and left out, which is
@@ -7114,6 +7120,12 @@ let posS={sec:'items',url:localStorage.getItem(POS_URL_KEY)||'',srv:localStorage
   pts:null,grant:null,rewardCat:null,histAll:false,memberErr:'',
   offers:null,campTab:'campaigns',campEd:null,offerEd:null,prev:null,lastField:'body',
   rep:null,repRange:null,repShow:null,repErr:'',repBusy:false,showConn:false};
+// 🧾 Tips MOVED, 11/20/26 (Vinny) — out of the top tab bar, into this sidebar next to
+// Staff. TIPS is no longer a top-level activeTab value; it's a POS_SECTIONS key, exactly
+// like 'staff'. An old saved/bookmarked activeTab==='tips' (from before this move) would
+// otherwise match nothing in renderViewport's dispatch and render BLANK — land it in its
+// new home instead, the first time the page boots with that stale value.
+if(activeTab===TIPS){activeTab=POS;posS.sec=TIPS;}
 
 // AN ADDRESS CAN BE WRONG AND LOOK PERFECT. A zero-width space, a non-breaking space or a smart
 // dash pasted into the Connections field renders byte-identical to a clean URL, survives .trim()
@@ -7266,6 +7278,7 @@ function posSec(s){posS.sec=s;renderViewport();
   if(s==='tax')posTaxLoad();
   if(s==='reports'){posS.repShow=null;posS.rep=null;posS.repErr=''}
   if(s==='staff'||s==='jobrates')staffLoad();
+  if(s===TIPS)tipsRefresh();
   if(s==='stations')posLoadStations();
   if(s==='grazie')posBoot();
 }
@@ -13743,7 +13756,7 @@ async function staffLoad(force){
         // Tips already shows names resolved through Staff (staffDisplayName) — if Tips was
         // opened before this load finished, catch it up now rather than leaving last-paint's
         // raw/flagged names on screen until something else happens to redraw.
-        if(activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();
+        if(tipsActive())document.getElementById('pos-body').innerHTML=tipsHTML();
         staffReconcileJobNums();
         return;
       }
@@ -13766,7 +13779,7 @@ async function staffLoad(force){
     }
   }catch(e){ /* keep whatever the instant-paint above already showed */ }
   if(activeTab===POS&&(posS.sec==='staff'||posS.sec==='jobrates'))renderViewport();
-  if(activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();
+  if(tipsActive())document.getElementById('pos-body').innerHTML=tipsHTML();
 }
 // One-way: after a successful READ from the mini, copy that projection into the cloud KV
 // as a read-only mirror for off-site viewing (Tips/Staff when nobody is on the tailnet).
@@ -17157,7 +17170,7 @@ function posRegButtonsHTML(){
     posButtons&&posButtons.generated?' (exported '+esc(String(posButtons.generated).slice(0,10))+')':''}.</div>
 </div>`;
 }
-const POS_SECTIONS=[['items','Menu items'],['regbuttons','Register buttons'],['discounts','Discounts'],['printers','Printers'],['reports','Reports'],['grazie','CRM'],['staff','Staff'],['jobrates','Job rates'],['tax','Tax'],['calcs','Calculations'],['stations','Registers']];
+const POS_SECTIONS=[['items','Menu items'],['regbuttons','Register buttons'],['discounts','Discounts'],['printers','Printers'],['reports','Reports'],['grazie','CRM'],['staff','Staff'],['tips','Tips'],['jobrates','Job rates'],['tax','Tax'],['calcs','Calculations'],['stations','Registers']];
 function posConnHTML(){
   return `<div style="${posCardCss};margin-bottom:14px">
     <div style="font-weight:800;font-size:15px;margin-bottom:6px">Connections</div>
@@ -17180,7 +17193,7 @@ function posConnHTML(){
 //
 // The rail collapses to a horizontal strip on a narrow screen (an iPad in portrait, a
 // phone), because a 150px column out of 400 is most of the page spent on navigation.
-const POS_ICONS={items:'🍝',discounts:'%',printers:'🖨',reports:'📊',grazie:'★',staff:'👤',jobrates:'$',calcs:'🧮',stations:'📱'};
+const POS_ICONS={items:'🍝',discounts:'%',printers:'🖨',reports:'📊',grazie:'★',staff:'👤',tips:'🧾',jobrates:'$',calcs:'🧮',stations:'📱'};
 function posHTML(){
   const nav=POS_SECTIONS.map(([k,l])=>{
     const on=posS.sec===k;
@@ -17195,7 +17208,7 @@ function posHTML(){
       <span style="white-space:nowrap">${l}</span></button>`;
   }).join('');
   const who=(posS.me&&posS.health==='ok'&&posS.sec==='grazie')?`<span style="font-size:13px;color:var(--text-dim)">${esc(posS.me.username)}</span><button onclick="posLogout()" style="${posBtn('#3f3f46')};padding:7px 12px;font-size:13px">Sign out</button>`:'';
-  const body=posS.sec==='items'?posItemsHTML():posS.sec==='regbuttons'?posRegButtonsHTML():posS.sec==='discounts'?posDiscountsHTML():posS.sec==='printers'?posPrintersHTML():posS.sec==='reports'?posReportsHTML():posS.sec==='staff'?posStaffHTML():posS.sec==='jobrates'?posJobRatesHTML():posS.sec==='tax'?posTaxHTML():posS.sec==='calcs'?calcHTML():posS.sec==='stations'?posStationsHTML():posGrazieHTML();
+  const body=posS.sec==='items'?posItemsHTML():posS.sec==='regbuttons'?posRegButtonsHTML():posS.sec==='discounts'?posDiscountsHTML():posS.sec==='printers'?posPrintersHTML():posS.sec==='reports'?posReportsHTML():posS.sec==='staff'?posStaffHTML():posS.sec===TIPS?tipsHTML():posS.sec==='jobrates'?posJobRatesHTML():posS.sec==='tax'?posTaxHTML():posS.sec==='calcs'?calcHTML():posS.sec==='stations'?posStationsHTML():posGrazieHTML();
   // #viewport is fixed and overflow:hidden, so every tab brings its own scroller —
   // without one, anything past the fold is simply clipped.
   const here=(POS_SECTIONS.find(([k])=>k===posS.sec)||[])[1]||'';
@@ -17219,7 +17232,10 @@ function posHTML(){
         </div>
         ${posS.showConn?posConnHTML():''}
         ${posDriftCardHTML()}
-        ${body}
+        <!-- id="pos-body" — tipsActive() redraws target THIS, not #viewport, so a Tips
+             autosave/pull/cell-edit redraw never wipes out the sidebar rail around it
+             (the same reason staffRefresh() only ever touches #staff-body, not #viewport). -->
+        <div id="pos-body">${body}</div>
       </div>
     </div></div>`;
 }
@@ -18054,7 +18070,7 @@ function loadTabData(id){
   if(id===DASH){loadCateringOrders();loadLiveOrders();}
   if(id===WED){wed.view='list';wedFetchFeed();wedPullSync();wedMetaPull();}
   if(id===LIQ){liqPull();}
-  if(id===POS){posLoadCatalog();if(posS.sec==='reports')posLoadReports();if(posS.sec==='grazie')posBoot();}
+  if(id===POS){posLoadCatalog();if(posS.sec==='reports')posLoadReports();if(posS.sec==='grazie')posBoot();if(posS.sec===TIPS)tipsRefresh();}
   if(id===BANK){bankPull();}
   if(id===MAIL){if(mailx.accts===null||mailx.accts==='error')loadMailAccounts();else if(mailx.acct)loadMailList();}
   if(gmailValid()){

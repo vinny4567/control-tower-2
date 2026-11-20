@@ -1029,6 +1029,22 @@ const M=[
   ['CONTACT 8 · BENIGN — the CONTACT column top comment reworded, no behaviour change','check-staff-contact.mjs',
     tsub("<!-- CONTACT. Vinny, 11/20/26: email/birthday/home address, collected at sign-up and",
          "<!-- CONTACT. Email/birthday/home address, collected at sign-up and"),false],
+
+  // ── 🧾 TIPS MOVED into the POS sidebar (check-tips-move) ───────────────────────────
+  ['TIPSMOVE 1 · ⛔ tipsActive stops requiring activeTab===POS — a stale posS.sec="tips" from a different tab would redraw Tips on top of it','check-tips-move.mjs',
+    tsub("function tipsActive(){return activeTab===POS&&posS.sec===TIPS;}",
+         "function tipsActive(){return posS.sec===TIPS;}"),true],
+  ['TIPSMOVE 2 · ⛔ the boot migration for an old saved activeTab==="tips" is dropped — that device lands on a blank page again','check-tips-move.mjs',
+    tsub("if(activeTab===TIPS){activeTab=POS;posS.sec=TIPS;}\n",''),true],
+  ['TIPSMOVE 3 · ⛔ posHTML stops rendering Tips inside #pos-body — a Tips redraw would wipe out the sidebar around it','check-tips-move.mjs',
+    tsub('<div id="pos-body">${body}</div>','${body}'),true],
+  ['TIPSMOVE 4 · ⛔ clicking into Tips from elsewhere in POS no longer loads it','check-tips-move.mjs',
+    tsub("  if(s===TIPS)tipsRefresh();\n",''),true],
+  ['TIPSMOVE 5 · ⛔ landing on POS from another tab (or booting) with Tips remembered as the section no longer loads it','check-tips-move.mjs',
+    tsub("if(posS.sec===TIPS)tipsRefresh();",''),true],
+  ['TIPSMOVE 6 · BENIGN — the tipsActive top comment reworded, no behaviour change','check-tips-move.mjs',
+    tsub("function tipsActive(){return activeTab===POS&&posS.sec===TIPS;}",
+         "function tipsActive(){ /* is the Tips section open? */ return activeTab===POS&&posS.sec===TIPS;}"),false],
 ];
 
 let wrong=0;

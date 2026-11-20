@@ -157,7 +157,7 @@ function longRead(name, { bumpDuring }) {
   const fn = new Function('env', 'seen', 'posS', 'posSrv', 'tipsSetStatus', 'tipISO', 'tipsMergeMicros',
     'tipsSaveHoursSoon', 'tipsSaveEmpIds', 'tipsHTML', 'activeTab', 'TIPS', 'document', 'esc', 'tipMoney',
     'tipsState', 'tipsExtractPdfLines', 'tipsParseMicros', 'tipsComputeBusserSplit', 'tipsLoadPdfjs',
-    'fetch', 'TIPS_LOG_URL', 'TIPS_LOG_KEY', 'tipsScanTimesheets', 'tipsRerender',
+    'fetch', 'TIPS_LOG_URL', 'TIPS_LOG_KEY', 'tipsScanTimesheets', 'tipsRerender', 'tipsActive',
     `let tipsGen; Object.defineProperty(this,'x',{});
      ${body.replace(/\btipsGen\b/g, 'env.gen')}
      return ${name};`
@@ -176,7 +176,7 @@ function longRead(name, { bumpDuring }) {
     (x) => x, () => '$0',
     { busserSplit: { x: 1 }, start: new Date(2026, 11, 1), end: new Date(2026, 11, 14) },
     async () => [], () => ({ people: {}, shifts: [], punches: [] }), () => ({}), async () => {},
-    async () => ({ json: async () => ({}) }), '', () => '', () => {}, () => {});
+    async () => ({ json: async () => ({}) }), '', () => '', () => {}, () => {}, () => false);
   return { run: fn, seen, env };
 }
 
@@ -209,7 +209,7 @@ function importRun({ bumpDuring }) {
   const env = { gen: 5 };
   const fn = new Function('env', 'seen', 'tipsSetStatus', 'tipsExtractPdfLines', 'tipsParseMicros',
     'tipsComputeBusserSplit', 'tipsMergeMicros', 'tipsSaveHoursSoon', 'tipsSaveEmpIds', 'tipsHTML',
-    'activeTab', 'TIPS', 'document', 'tipsState', 'fetch', 'TIPS_LOG_URL', 'TIPS_LOG_KEY',
+    'activeTab', 'TIPS', 'document', 'tipsState', 'fetch', 'TIPS_LOG_URL', 'TIPS_LOG_KEY', 'tipsActive',
     `${body.replace(/\btipsGen\b/g, 'env.gen')}
      return tipsImportTimesheet;`
   )(env, seen,
@@ -223,7 +223,7 @@ function importRun({ bumpDuring }) {
     { getElementById: () => ({ set innerHTML(_v) {} }) },
     { punches: [] },
     async () => ({ ok: true, json: async () => ({ log: [{ pool: 40 }] }) }),
-    '', () => 'k');
+    '', () => 'k', () => false);
   return { run: () => fn({ files: [{ name: 't.pdf', arrayBuffer: async () => new ArrayBuffer(8) }], value: '' }), seen };
 }
 const imp = importRun({ bumpDuring: false });
