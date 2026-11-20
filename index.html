@@ -14620,6 +14620,32 @@ function staffRefresh(){
   el.innerHTML=staffBodyHTML();
   if(sc)sc.scrollTop=top;
 }
+// STAFF AND THE SCHEDULE APP ARE ONE LIST NOW (Jarvis, 11/20/26, mini 5a18cda, LIVE):
+// a rename on Staff renames their schedule app account too; remove/restore turns that
+// account off/on (never deleted, so history keeps their name). /api/people/write's reply
+// carries `schedule_app` on an 'update'-with-name or a 'status' op, and this turns it into
+// the one sentence Vinny actually reads on the banner — replacing the old, now-false
+// "the schedule app still has their own spelling" line, which predates this and was never
+// true again after this mini build. Only no_account/ambiguous get their own wording (the
+// two Jarvis gave copy for); anything else (not_employee, unreachable, or a reason added
+// to the mini later) falls back to the server's own `message`, so a new reason is reported
+// honestly instead of silently dropped.
+function staffScheduleAppNote(sa,kind,name){
+  if(!sa)return '';
+  if(kind==='rename'){
+    if(sa.renamed)return 'Renamed in the schedule app too.';
+    if(sa.reason==='no_account')return 'Not in the schedule app — they don’t have an account.';
+    if(sa.reason==='ambiguous')return 'The schedule app has two '+(name||'')+' accounts — nothing changed there.';
+    return sa.message||'';
+  }
+  if(kind==='status'){
+    if(sa.changed)return sa.active?'Their schedule app account is turned back on.':'Their schedule app account is turned off.';
+    if(sa.reason==='no_account')return 'Not in the schedule app — they don’t have an account.';
+    if(sa.reason==='ambiguous')return 'The schedule app has two '+(name||'')+' accounts — nothing changed there.';
+    return sa.message||'';
+  }
+  return sa.message||'';
+}
 // ⚠️ patch.register REPLACES THE WHOLE OBJECT ON THE MINI, confirmed by Jarvis 11/20/26 —
 // never send a partial {role} or {drawer} alone, or every other register field on that
 // person is wiped. The ONE exception is emp_id: omit it to KEEP whatever the mini already
@@ -14913,7 +14939,10 @@ async function staffRemove(k){
     }catch(e){staffS.regNote='✓ '+p.name+' can no longer sign in — the register record was left in place';}
   }
 
-  if(!await staffWriteOp({op:'status',pid:p.pid,status:'removed'}))return;
+  const r=await staffWriteOp({op:'status',pid:p.pid,status:'removed'});
+  if(!r)return;
+  const sa=staffScheduleAppNote(r.schedule_app,'status',p.name);
+  if(sa)staffS.regNote=(staffS.regNote?staffS.regNote+' ':'✓ '+p.name+' removed. ')+sa;
   staffRedraw();
 }
 // ── FINDING THE DUPLICATES ──────────────────────────────────────────────────
@@ -15610,8 +15639,10 @@ async function staffRename(k){
     return;
   }
   const old=p.name;
-  if(!await staffWriteOp({op:'update',pid:p.pid,patch:{name}}))return;
-  staffS.regNote='Renamed “'+old+'” to “'+name+'”. Their hours, rates and Paychex ID stayed with them; the schedule app still has their own spelling.';
+  const r=await staffWriteOp({op:'update',pid:p.pid,patch:{name}});
+  if(!r)return;
+  const sa=staffScheduleAppNote(r.schedule_app,'rename',name);
+  staffS.regNote='Renamed “'+old+'” to “'+name+'”. Their hours, rates and Paychex ID stayed with them.'+(sa?' '+sa:'');
   staffRefreshNotes();staffRedraw();
 }
 async function staffRestore(k){
@@ -15620,10 +15651,14 @@ async function staffRestore(k){
   // were removed, and quietly restoring it would be a door reopening because a name
   // reappeared on a list. A manager grants it again deliberately.
   const needsClassClear=!!(p.register&&p.register.emp_id&&!(p.register.mini&&p.register.mini.active));
-  if(!await staffWriteOp({op:'status',pid:p.pid,status:'active'}))return;
+  const r=await staffWriteOp({op:'status',pid:p.pid,status:'active'});
+  if(!r)return;
+  const sa=staffScheduleAppNote(r.schedule_app,'status',p.name);
   if(needsClassClear){
     await staffWriteOp({op:'update',pid:p.pid,patch:{register:staffRegisterPatch(p,{role:null})}});   // put back WITHOUT a class, so they cannot sign in until somebody classifies them again
-    staffS.regNote='Put back — no employee class, so they cannot sign in until you give them one.';
+    staffS.regNote='Put back — no employee class, so they cannot sign in until you give them one.'+(sa?' '+sa:'');
+  }else{
+    staffS.regNote='Put back.'+(sa?' '+sa:'');
   }
   staffRedraw();
 }

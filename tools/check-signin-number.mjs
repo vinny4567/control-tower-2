@@ -120,7 +120,8 @@ ok('⛔ the "no sign-in yet" filter reads pin_set too',
 const rm = src.slice(src.indexOf('async function staffRemove('), src.indexOf('function staffRestore('));
 ok('removing somebody redraws the list instead of rebuilding the tab',
    /staffRedraw\(\)/.test(rm) && !/renderViewport\(\)/.test(rm));
-const rs = src.slice(src.indexOf('function staffRestore('), src.indexOf('function staffRestore(') + 900);
+const rsStart = src.indexOf('function staffRestore(');
+const rs = (() => { let depth = 0, j = src.indexOf('{', rsStart); for (let k = j; k < src.length; k++) { if (src[k] === '{') depth++; else if (src[k] === '}') { depth--; if (depth === 0) return src.slice(rsStart, k + 1); } } return src.slice(rsStart, rsStart + 900); })();
 ok('and so does putting them back', /staffRedraw\(\)/.test(rs));
 ok('the redraw keeps the scroll position', /const top=sc\?sc\.scrollTop:0/.test(src));
 ok('and redraws the register note, which lives outside the list',
