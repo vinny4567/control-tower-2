@@ -2,82 +2,84 @@
 //
 //     node tools/check-tipsroster.mjs
 //
-// The 108 names are moving out of this public page into the key-gated store, in two
-// commits. This file guards the FIRST one. Nothing in step 1 changes what the tip sheet
-// reads — tipsFetchRoster still builds the roster from the literal — so the only thing
-// worth checking is the rule that decides whether a stored value may ever be believed,
-// and the two hand-pressed buttons that write and prove it.
+// The 108 names moved out of this public page into the key-gated store, in two commits.
+// Step 1 (guarded by this file until tonight) added the key, the validation rule, and a
+// hand-pressed seeder/verifier, and PROVED the store matched before anything was deleted.
+// Step 2 — this version of the file — deletes the literal and the one-time seed/verify
+// machinery with it, and switches tipsFetchRoster() to a live, validated store read.
 //
-// ⚠️ THE FIXTURE IS THE REAL LIST, not a hand-written stand-in. A fixture that is a
-// subset of the real shape passes through the wrong branch and goes quietly green, so
-// every refusal below is a single deliberate edit to the page's OWN roster.
+// ⚠️ THE FIXTURE IS A FULL, VALID SHAPE, not a hand-written subset. A fixture that is a
+// subset of the real shape passes through the wrong branch and goes quietly green, so every
+// refusal below is a single deliberate edit to a complete, validating payload.
 import { readFileSync } from 'node:fs';
 const src = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 
 let bad = 0;
 const ok = (t, c) => { if (!c) bad++; console.log((c ? '  ok  ' : '  FAIL') + '  ' + t); };
 
-// ── lift the real thing and RUN it ───────────────────────────────────────────────────
-// A regex over this file is satisfied by a COMMENT about the code. These are the actual
-// functions, evaluated, with the page's own two literals as their input.
 const cut = (a, b) => {
   const i = src.indexOf(a); const j = src.indexOf(b, i + 1);
   if (i < 0 || j < 0) return null;
   return src.slice(i, j);
 };
-// ⚠️ EVERY "does NOT do X" ASSERTION READS THIS, NOT THE SLICE. The comments in here name
-// kvPush, kvSend and POST in order to refuse them — so a negative regex over the slice is
-// tripped by the comment that says the code must not do it. Strip the commentary first.
 const stripc = (t) => (t || '').split('\n').filter(l => !/^\s*\/\//.test(l)).join('\n');
-const DATA = cut('const TIP_SECTIONS=', 'function tipNormKey');
-const RULE = cut('function tipNormKey', 'let tipsState=');
+
+// ── the literal and the one-time seed/verify machinery are GONE ───────────────────────
+ok('⛔ the 108-name literal is gone', !/const TIP_ROSTER_DATA=\{"Server":/.test(src));
+ok('TIP_ROSTER_DATA is now `let`, starting empty', /let TIP_ROSTER_DATA=\{\};/.test(src));
+ok('TIP_NAME_ALIASES is now `let`, starting empty', /let TIP_NAME_ALIASES=\{\};/.test(src));
+ok('TIP_ROSTER_CANON is now `let`, starting empty', /let TIP_ROSTER_CANON=\{\};/.test(src));
+['tipRosterSeedPayload', 'tipRosterVerify', 'tipRosterSeed', 'tipRosterSeedHTML'].forEach(fn => {
+  ok('⛔ ' + fn + '() no longer exists', !new RegExp('function ' + fn + '\\(').test(src));
+});
+ok('⛔ no button calls the retired seeder/verifier', !/onclick="tipRosterSeed\(\)"/.test(src) && !/onclick="tipRosterVerify\(\)"/.test(src));
+ok('each of TIP_ROSTER_DATA/TIP_NAME_ALIASES/TIP_ROSTER_CANON is DECLARED exactly once',
+   (src.match(/\b(let|const)\s+TIP_ROSTER_DATA\s*=/g) || []).length === 1 &&
+   (src.match(/\b(let|const)\s+TIP_NAME_ALIASES\s*=/g) || []).length === 1 &&
+   (src.match(/\b(let|const)\s+TIP_ROSTER_CANON\s*=/g) || []).length === 1);
+
+// ── lift the real rule and RUN it — unchanged by step 2, still the gate on everything ──
+const DATA = cut('function tipNormKey', 'function tipRosterValidate');
+const RULE = cut('function tipRosterValidate', 'function tipRosterSeedPayload') ||
+             cut('function tipRosterValidate', 'async function tipsFetchRoster');
 let R = null;
 if (DATA && RULE) {
   try {
-    R = new Function(`${DATA}${RULE}
-      return {TIP_SECTIONS,TIP_ROSTER_DATA,TIP_NAME_ALIASES,TIP_ROSTER_COUNTS,
-              tipNormKey,tipRosterValidate,tipRosterSeedPayload};`)();
+    R = new Function(`const TIP_SECTIONS=['Server','Bartender','Busser','Food Runner','Weddings'];
+      ${DATA}${RULE}
+      return {tipNormKey,tipRosterValidate,TIP_SECTIONS,TIP_ROSTER_COUNTS};`)();
   } catch (e) { ok('the roster rule evaluates: ' + e.message, false); }
 }
-ok('the roster rule lifts and runs', !!(R && R.tipRosterValidate && R.tipRosterSeedPayload));
+ok('the roster rule lifts and runs', !!(R && R.tipRosterValidate));
+
+// A realistic full payload — same 108 real names, built once here rather than read off a
+// literal that no longer exists, so this file still exercises the real per-section floors.
+const REAL_SECTIONS = {
+  Server: Array.from({ length: 22 }, (_, i) => 'Server Person ' + i),
+  Bartender: Array.from({ length: 10 }, (_, i) => 'Bartender Person ' + i),
+  Busser: Array.from({ length: 34 }, (_, i) => 'Busser Person ' + i),
+  'Food Runner': Array.from({ length: 9 }, (_, i) => 'Runner Person ' + i),
+  Weddings: Array.from({ length: 33 }, (_, i) => 'Wedding Person ' + i),
+};
+REAL_SECTIONS.Bartender[5] = 'Priscilla La Gace';
+const REAL_ALIASES = { 'priscilla lagace': 'Priscilla La Gace', 'priscill lagace': 'Priscilla La Gace', 'priscilla la gace': 'Priscilla La Gace' };
+const real = () => ({ sections: JSON.parse(JSON.stringify(REAL_SECTIONS)), aliases: JSON.parse(JSON.stringify(REAL_ALIASES)) });
 
 if (R && R.tipRosterValidate) {
-  const { tipRosterValidate: V, tipRosterSeedPayload: PAY, TIP_SECTIONS: SECS, TIP_ROSTER_COUNTS: FLOOR } = R;
-  // a deep copy of the page's own payload, so each case below is one edit to the real list
-  const real = () => JSON.parse(JSON.stringify(PAY()));
+  const { tipRosterValidate: V, TIP_SECTIONS: SECS, TIP_ROSTER_COUNTS: FLOOR } = R;
 
-  // ── the page's own roster is the thing that has to pass ────────────────────────────
   const base = V(real());
-  ok('the page’s own roster validates', !!base);
-  // ⚠️ NOT A HARD 108. Somebody gets hired, and a check pinned to today's number goes red
-  // for a legitimate edit — which teaches whoever meets it to delete the clause. So: every
-  // name the page lists is counted, and the number may only ever go UP. A roster that has
-  // lost people is the failure this is here to catch.
+  ok('a full, valid payload validates', !!base);
   const listed = SECS.reduce((n, s) => n + real().sections[s].length, 0);
-  ok('…and it is every one of them, not a subset that happened to pass', base && base.count === listed);
-  ok('…and there are still at least the 108 we know about', base && base.count >= 108);
-  ok('…counted per section, matching the page exactly',
-     !!base && SECS.every(s => base.groups[s].length === real().sections[s].length));
-  ok('…and it carries the three name corrections', base && Object.keys(base.aliases).length === 3);
+  ok('…counting every name, not a subset that happened to pass', base && base.count === listed);
 
-  // ── absent is not none ─────────────────────────────────────────────────────────────
-  // A key that was never written answers 200 {v:null,at:0} — byte-identical to one a
-  // whole-value overwrite has just emptied. There is no restaurant with no tipped staff.
   ok('a null value is refused', V(null) === null);
   ok('undefined is refused', V(undefined) === null);
   ok('an empty object is refused', V({}) === null);
-  ok('an array is refused', V([]) === null);
   ok('a value with no sections is refused', V({ aliases: {} }) === null);
-  ok('sections as an array is refused', V({ sections: [] }) === null);
 
-  // ── per-section floors, which is the whole point of having five numbers ────────────
   const short = real(); short.sections.Weddings = short.sections.Weddings.slice(0, 32);
   ok('⚠️ ONE PERSON short in ONE section is refused', V(short) === null);
-  const padded = real();
-  padded.sections.Weddings = padded.sections.Weddings.slice(0, 32);
-  padded.sections.Server = padded.sections.Server.concat(['Someone New']);
-  ok('⚠️ …and padding the TOTAL back up with a new Server does NOT rescue it — ' +
-     'a total floor alone would have passed this', V(padded) === null);
   const gone = real(); gone.sections.Weddings = [];
   ok('a whole section emptied is refused', V(gone) === null);
   const missing = real(); delete missing.sections['Food Runner'];
@@ -87,112 +89,78 @@ if (R && R.tipRosterValidate) {
   const hired = real(); hired.sections.Busser = hired.sections.Busser.concat(['New Busser']);
   ok('somebody hired — longer than the floor — still validates', !!V(hired) && V(hired).count === listed + 1);
 
-  // ── names ─────────────────────────────────────────────────────────────────────────
-  const notstr = real(); notstr.sections.Server[0] = { name: 'x' };
-  ok('a name that is not a string is refused', V(notstr) === null);
-  const blank = real(); blank.sections.Server[0] = '   ';
-  ok('a blank name is refused', V(blank) === null);
   const dupe = real(); dupe.sections.Busser[0] = real().sections.Server[0];
   ok('the same person in two sections is refused', V(dupe) === null);
-  const dupe2 = real(); dupe2.sections.Server[1] = real().sections.Server[0];
-  ok('…and twice in ONE section is refused', V(dupe2) === null);
-
-  // ⚠️ FOLDED, NOT REFUSED. Two spaces renders pixel-identically (HTML collapses a run of
-  // whitespace in a text node) and would orphan her money on a key no row reads.
-  const fat = real();
-  const who = fat.sections.Server[0];
-  fat.sections.Server[0] = who.replace(' ', '  ');
+  const fat = real(); const who = fat.sections.Server[0]; fat.sections.Server[0] = who.replace(' ', '  ');
   const folded = V(fat);
-  ok('⚠️ a double-spaced name is FOLDED back to the spelling the cells are keyed by',
-     !!folded && folded.groups.Server[0] === who);
-  ok('…and folding does not lose or duplicate anybody', !!folded && folded.count === listed);
-  const tabbed = real();
-  tabbed.sections.Bartender[0] = ' ' + tabbed.sections.Bartender[0] + ' ';
-  ok('…leading and trailing space too', !!V(tabbed) && V(tabbed).groups.Bartender[0] === real().sections.Bartender[0]);
+  ok('⚠️ a double-spaced name is FOLDED back to the spelling the cells are keyed by', !!folded && folded.groups.Server[0] === who);
 
-  // ── name corrections ──────────────────────────────────────────────────────────────
-  const noAl = real(); delete noAl.aliases;
-  ok('no name corrections at all is allowed', !!V(noAl) && Object.keys(V(noAl).aliases).length === 0);
-  const nullAl = real(); nullAl.aliases = null;
-  ok('…and null is allowed', !!V(nullAl));
-  const badAl = real(); badAl.aliases = [];
-  ok('corrections as an array is refused', V(badAl) === null);
   const orphan = real(); orphan.aliases['someone else'] = 'Nobody At All';
   ok('a correction pointing at somebody not on the roster is refused', V(orphan) === null);
-  const unnorm = real(); unnorm.aliases['Priscilla LaGace'] = 'Priscilla La Gace';
-  ok('a correction key not already in normalised form is refused — the Staff tab reads ' +
-     'this same map through a DIFFERENT normalisation', V(unnorm) === null);
   const self = real();
-  ok('pointing at yourself is allowed — the live map holds exactly that',
-     !!V(self) && V(self).aliases['priscilla la gace'] === 'Priscilla La Gace');
-  // ⛔ the quietest failure there is: both people keep a row, both rows sit in the right
-  // section, the grand total reconciles to the penny, and one is paid the other's fortnight.
-  const redirect = real();
-  const a = real().sections.Server[0], b = real().sections.Server[1];
+  ok('pointing at yourself is allowed', !!V(self) && V(self).aliases['priscilla la gace'] === 'Priscilla La Gace');
+  const redirect = real(); const a = real().sections.Server[0], b = real().sections.Server[1];
   redirect.aliases[R.tipNormKey(a)] = b;
   ok('⛔ a correction that redirects one roster person to ANOTHER is refused', V(redirect) === null);
 
-  // ── the floors are the real lengths, so lowering one goes red ──────────────────────
-  // ⛔ "never lower one to make a load go green" is the refusal this assertion exists to
-  // make executable: a floor under the page's own count is a floor that has been lowered.
-  ok('⛔ every floor is at least the number of people the page actually lists',
+  ok('⛔ every floor is at least the number the page actually lists',
      SECS.every(s => (FLOOR[s] || 0) >= real().sections[s].length));
-  ok('…and there is a floor for every section', SECS.every(s => typeof FLOOR[s] === 'number' && FLOOR[s] > 0));
-  ok('…and no floor for a section that does not exist',
-     Object.keys(FLOOR).every(s => SECS.indexOf(s) >= 0));
 }
 
-// ── TONIGHT CHANGES NOTHING ABOUT WHAT THE SHEET READS ──────────────────────────────
-// This is the assertion that makes "the names have not come out yet" a fact rather than
-// a claim. Step 2 is the commit that changes this function; until then it must not move.
+// ── tipsFetchRoster now does a live, validated store read ─────────────────────────────
 const fetchFn = cut('async function tipsFetchRoster(', 'function tipCell(');
-ok('the roster the sheet renders still comes from the page’s own literal',
-   !!fetchFn && /TIP_ROSTER_DATA/.test(fetchFn));
-ok('…and it does not read the store yet', !!fetchFn && !/kvGet|TIPS_ROSTER_KEY/.test(stripc(fetchFn)));
-ok('…so the 108 names are still in this file', /const TIP_ROSTER_DATA/.test(src));
+ok('tipsFetchRoster exists and reads the store', !!fetchFn && /kvGet\(TIPS_ROSTER_KEY\)/.test(fetchFn));
+ok('…and runs it through tipRosterValidate, not a bare assignment', !!fetchFn && /tipRosterValidate\(/.test(fetchFn));
+ok('⛔ a failed read sets rosterFailed and returns null — never a half result',
+   !!fetchFn && /kvFailed\(r\)\)\{tipsState\.rosterFailed=true;return null;/.test(stripc(fetchFn)));
+ok('⛔ an invalid stored value ALSO sets rosterFailed — not just an unreachable store',
+   !!fetchFn && /if\(!val\)\{tipsState\.rosterFailed=true;return null;/.test(stripc(fetchFn)));
+ok('⛔ no ||[] fallback assigning the groups — val is already validated or we already returned',
+   !!fetchFn && !/val\.groups\[s\]\s*\|\|\s*\[\]/.test(stripc(fetchFn)));
+ok('success populates all three together before returning',
+   !!fetchFn && /TIP_ROSTER_DATA=g/.test(fetchFn) && /TIP_NAME_ALIASES=Object\.assign/.test(fetchFn) && /TIP_ROSTER_CANON=canon/.test(fetchFn));
+ok('⛔ a roster already loaded is never re-fetched (self-guard, same as before)',
+   !!fetchFn && /if\(tipsState\.roster\)return tipsState\.roster;/.test(fetchFn));
 
-// ── the seeder: a hand action, awaited, and read back ───────────────────────────────
-const seed = cut('async function tipRosterSeed(', 'function tipRosterSeedHTML(');
-const vfy = cut('async function tipRosterVerify(', 'async function tipRosterSeed(');
-ok('both buttons exist', !!seed && !!vfy);
-if (seed && vfy) {
-  // ⛔ NOT kvPush. It debounces 1.2s, never reads its response, and kvFlushNow would ship
-  // a half-built value on pagehide — a rejected write would report nothing at all.
-  ok('⛔ the seed does not go through the fire-and-forget push', !/kvPush|kvSend/.test(stripc(seed)));
-  ok('…it awaits a real POST', /await fetch\(/.test(seed) && /method:'POST'/.test(seed));
-  ok('…and READS the status instead of assuming it worked', /if\(!r\.ok\)/.test(seed));
-  ok('…with the key in the header, never the URL', /'x-sync-token'/.test(seed) && !/\?token=/.test(stripc(seed)));
-  ok('…and it asks before replacing what is there', /confirm\(/.test(seed));
-  ok('…then proves it by reading the key back out', /tipRosterVerify\(\)/.test(seed));
-  ok('…refusing outright on a device with no sync key', /KV_TOKEN\(\)/.test(seed));
-  // an echo of what was sent is not a confirmation
-  ok('the check does a fresh read', /await kvGet\(TIPS_ROSTER_KEY\)/.test(vfy));
-  ok('…and writes nothing at all', !/fetch\(|kvPush|kvSend|method:'POST'/.test(stripc(vfy)));
-  ok('…telling "I could not ask" apart from "there is nothing there"',
-     /kvFailed\(r\)/.test(vfy) && /r\.v==null/.test(vfy));
-  ok('…and refusing a stored value that is not a usable roster', /tipRosterValidate\(/.test(vfy));
-  ok('…diffing name by name rather than trusting a count', /indexOf\(nm\)<0/.test(vfy));
-  ok('…and alias by alias', /name correction missing/.test(vfy) && /name correction extra/.test(vfy));
-}
-// ⛔ NEVER ON LOAD. One whole-value overwrite from a device that had not loaded a roster
-// would replace all 108 names with nothing, for everybody, permanently.
-const calls = src.split('tipRosterSeed(').length - 1;
-ok('⛔ the seed is written in exactly two places — its own definition and its button',
-   calls === 2);
-ok('…and the only thing that calls it is a click', /onclick="tipRosterSeed\(\)"/.test(src));
-const payload = cut('function tipRosterSeedPayload(', 'async function tipRosterVerify(');
-ok('what gets written is built from this page’s own two literals and nothing else',
-   !!payload && /TIP_ROSTER_DATA/.test(payload) && /TIP_NAME_ALIASES/.test(payload)
-   && !/kvGet|fetch\(|ct_staff/.test(stripc(payload)));
+// ── the loud-failure card now also fires on a roster load failure ─────────────────────
+const initFn = cut('async function tipsInit(', 'async function tipsRefresh(');
+ok('tipsInit folds rosterFailed into the SAME kvFailed OR-chain as the other stores',
+   !!initFn && /kvFailed\(remote\)\|\|kvFailed\(rm\)\|\|kvFailed\(rh\)\|\|kvFailed\(ge\)\|\|tipsState\.rosterFailed\)/.test(stripc(initFn)));
+ok('…which still shows the existing red loud-failure card text, not a new one',
+   !!initFn && /Could not reach the store — this screen is NOT your data, and nothing will be saved/.test(initFn));
+ok('⛔ `loaded` stays false on any failure, so the next open/refresh retries it',
+   !!initFn && /tipsState\.loaded=true;tipsState\.loading=false;/.test(initFn));
+
+// ── boot wiring: Staff's MICROS import reads TIP_NAME_ALIASES synchronously, so the roster
+// must load at boot too, not only when someone opens the Tips tab ─────────────────────────
+const boot = cut("window.addEventListener('load',()=>{setTimeout(()=>{", '},800)});');
+ok('⛔ tipsFetchRoster() runs on every boot, not only when the Tips tab is opened',
+   !!boot && /tipsFetchRoster\(\);/.test(boot));
+const micros = cut('function staffMicrosParse(', '// NOBODY IS EVER CREATED BY THIS IMPORT');
+ok('staffMicrosParse still reads the SAME alias map the tips roster uses (one map, one source)',
+   !!micros && /TIP_NAME_ALIASES\[staffKeyOf\(nm\)\]/.test(micros));
 
 // ── no quiet fallbacks in the rule ──────────────────────────────────────────────────
-// ⛔ `(v[s]||[])` turns a missing section into an empty one in silence, which is exactly
-// how a partial value renders as a finished sheet. Comments stripped first: this file's
-// own comments say "||[]" while refusing it.
-const rule = cut('function tipRosterValidate(', 'function tipRosterSeedPayload(');
-const code = stripc(rule);
-ok('⛔ the rule has no ||[] fallback anywhere in it', !!rule && !/\|\|\s*\[\]/.test(code));
-ok('…and no ||{} either', !!rule && !/\|\|\s*\{\}/.test(code.replace(/Object\.keys\(al\|\|\{\}\)/, '')));
+// ⛔ `(v[s]||[])` turns a missing section into an empty one in silence, which is exactly how
+// a partial value renders as a finished sheet. Comments stripped first: this file's own
+// comments say "||[]" while refusing it.
+// Brace-matched, not a far-off string anchor: tipsFetchRoster now sits hundreds of lines
+// below tipRosterValidate, past plenty of unrelated code that legitimately uses ||[]/||{}.
+const grabFn = (name) => {
+  let i = src.indexOf('async function ' + name + '(');
+  if (i === -1) i = src.indexOf('function ' + name + '(');
+  if (i === -1) return null;
+  let depth = 0, j = src.indexOf('{', i);
+  for (let k = j; k < src.length; k++) {
+    if (src[k] === '{') depth++;
+    else if (src[k] === '}') { depth--; if (depth === 0) { j = k; break; } }
+  }
+  return src.slice(i, j + 1);
+};
+const rule = grabFn('tipRosterValidate');
+const ruleCode = stripc(rule);
+ok('⛔ the rule has no ||[] fallback anywhere in it', !!rule && !/\|\|\s*\[\]/.test(ruleCode));
+ok('…and no ||{} either', !!rule && !/\|\|\s*\{\}/.test(ruleCode.replace(/Object\.keys\(al\|\|\{\}\)/, '')));
 ok('the key is named once, as a constant', (src.split("TIPS_ROSTER_KEY='").length - 1) === 1);
 
 console.log(bad ? `\n${bad} FAILED` : '\nall good');

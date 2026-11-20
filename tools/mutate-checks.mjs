@@ -548,39 +548,16 @@ const M=[
     tsub("    if(typeof t!=='string'||!seen[tipNormKey(t)])return null;","    if(typeof t!=='string')return null;"),true],
   ['ROST 9 · ⛔ stop counting the sections, so an extra one rides along','check-tipsroster.mjs',
     tsub('  if(Object.keys(g).length!==TIP_SECTIONS.length)return null;',''),true],
-  ['ROST 10 · ⛔ seed through the fire-and-forget push — a rejected write reports nothing','check-tipsroster.mjs',
-    tsub("    const r=await fetch(KV_URL+encodeURIComponent(TIPS_ROSTER_KEY),{method:'POST',\n"
-       + "      headers:{'Content-Type':'application/json','x-sync-token':KV_TOKEN()},\n"
-       + "      body:JSON.stringify({v,at:Date.now()})});",
-         "    kvPush(TIPS_ROSTER_KEY,v,Date.now());const r={ok:true};"),true],
-  ['ROST 11 · ⛔ stop reading the POST status','check-tipsroster.mjs',
-    tsub("    if(!r.ok)throw new Error('HTTP '+r.status);\n  }catch(e){st('⚠ NOT written: ",
-         "  }catch(e){st('⚠ NOT written: "),true],
-  ['ROST 12 · ⛔ seed on load — one overwrite from an unloaded device empties it for everybody','check-tipsroster.mjs',
-    tsub("async function tipsFetchRoster(){","async function tipsFetchRoster(){\n  tipRosterSeed();"),true],
-  ['ROST 13 · ⛔ confirm by echoing the payload instead of reading the key back','check-tipsroster.mjs',
-    tsub('  const r=await kvGet(TIPS_ROSTER_KEY);','  const r={v:tipRosterSeedPayload(),at:0};'),true],
-  ['ROST 14 · ⛔ step 2 done early — the sheet reads the store while the names are still here','check-tipsroster.mjs',
-    tsub("  const g={};TIP_SECTIONS.forEach(s=>g[s]=(TIP_ROSTER_DATA[s]||[]).slice());",
-         "  const r=await kvGet(TIPS_ROSTER_KEY);const g=(tipRosterValidate(r&&r.v)||{}).groups||{};"),true],
-  ['ROST 15 · ⛔ the sync key moved into the URL, where the proxy logs it','check-tipsroster.mjs',
-    tsub("    const r=await fetch(KV_URL+encodeURIComponent(TIPS_ROSTER_KEY),{method:'POST',",
-         "    const r=await fetch(KV_URL+encodeURIComponent(TIPS_ROSTER_KEY)+'?token='+KV_TOKEN(),{method:'POST',"),true],
-  ['ROST 16 · ⛔ somebody hired and the floor left behind — the floor stops tracking the roster','check-tipsroster.mjs',
-    tsub('"Michael Zilm"','"Michael Zilm","New Busser Person"'),true],
-
-  ['ROST B1 · BENIGN — somebody hired AND the floor raised with them','check-tipsroster.mjs',
-    tsubs(['"Michael Zilm"','"Michael Zilm","New Busser Person"'],["'Busser':34","'Busser':35"]),false],
+  // ROST 10-16 and B1-B4 (seed/verify/fetch-the-literal mutants) retired 11/19/26 along with
+  // the functions and literal they targeted — tipRosterSeed, tipRosterVerify,
+  // tipRosterSeedPayload, tipRosterSeedHTML, and the TIP_ROSTER_DATA literal are all gone from
+  // index.html, so an anchor built against them throws "missing" rather than testing anything.
+  // Their invariants are superseded by the TRS mutants below, against the step-2 code that
+  // replaced them.
   ['ROST B2 · BENIGN — the rule’s local list renamed','check-tipsroster.mjs',
     tsubs(['  const groups={},seen={};let n=0;','  const out={},seen={};let n=0;'],
           ['    groups[s]=list;','    out[s]=list;'],
           ['  return {groups,aliases,count:n};','  return {groups:out,aliases,count:n};']),false],
-  ['ROST B3 · BENIGN — the "could not reach the store" wording rewritten','check-tipsroster.mjs',
-    tsub("st('⚠ could not reach the store — nothing was checked.','#f87171');",
-         "st('⚠ the store did not answer, so nothing at all was compared.','#f87171');"),false],
-  ['ROST B4 · BENIGN — the two buttons swapped round','check-tipsroster.mjs',
-    tsubs(['return `<button onclick="tipRosterVerify()"','return `<button onclick="tipRosterSeed()"'],
-          ['+`<button onclick="tipRosterSeed()"','+`<button onclick="tipRosterVerify()"']),false],
 
   // ── THE TIP SHEET'S SAVES (check-tipssaves) ─────────────────────────────────────────
   // Every one of these is a world that existed in this file before 11/18. They are
@@ -750,8 +727,8 @@ const M=[
          "// publishes each person's own rate, keyed by their register emp_id, so the"),false],
 
   ['JRO 7 · ⛔ staffLoad() is removed from the unconditional boot block — the drift fix only fires when someone opens POS → Staff again','check-job-rate-override.mjs',
-    tsub("  // mini holds has actually drifted from what this device would publish now — so this is\n  // free on every normal boot and does the real work only when there is real work to do.\n  staffLoad();\n},800)});",
-         "  // mini holds has actually drifted from what this device would publish now — so this is\n  // free on every normal boot and does the real work only when there is real work to do.\n},800)});"),true],
+    tsub("  // mini holds has actually drifted from what this device would publish now — so this is\n  // free on every normal boot and does the real work only when there is real work to do.\n  staffLoad();\n",
+         "  // mini holds has actually drifted from what this device would publish now — so this is\n  // free on every normal boot and does the real work only when there is real work to do.\n"),true],
   ['JRO 8 · BENIGN — the boot-wiring comment reworded, staffLoad() itself untouched','check-job-rate-override.mjs',
     tsub("A code change nobody's screen ever\n  // visits is not a fix;",
          "A fix nobody's device ever runs is not a fix;"),false],
@@ -775,6 +752,32 @@ const M=[
   ['SC1 6 · BENIGN — a status-line wording tweak, no behaviour change','check-staff-cleanup-1.mjs',
     tsub("note('no position to give (hours were all skip-listed types): '+name);return}",
          "note('no position to give — the hours were all a skip-listed type: '+name);return}"),false],
+
+  // ── TIPS ROSTER STEP 2: LIVE STORE READ, LOUD ON FAILURE (check-tipsroster) ────────
+  ['TRS 1 · ⛔ the store read is dropped — tipsFetchRoster silently returns the (now empty) literal again','check-tipsroster.mjs',
+    tsub("async function tipsFetchRoster(){\n  if(tipsState.roster)return tipsState.roster;\n  const r=await kvGet(TIPS_ROSTER_KEY);\n  if(kvFailed(r)){tipsState.rosterFailed=true;return null;}\n  const val=tipRosterValidate(r&&r.v);\n  if(!val){tipsState.rosterFailed=true;return null;}\n  tipsState.rosterFailed=false;\n  const g={};TIP_SECTIONS.forEach(s=>g[s]=val.groups[s].slice());\n  TIP_ROSTER_DATA=g;\n  TIP_NAME_ALIASES=Object.assign({},val.aliases);\n  const canon={};Object.keys(TIP_ROSTER_DATA).forEach(sec=>TIP_ROSTER_DATA[sec].forEach(n=>{canon[tipNormKey(n)]=n;}));\n  TIP_ROSTER_CANON=canon;\n  tipsState.roster=g;return g;\n}",
+         "async function tipsFetchRoster(){\n  if(tipsState.roster)return tipsState.roster;\n  const g={};TIP_SECTIONS.forEach(s=>g[s]=(TIP_ROSTER_DATA[s]||[]).slice());\n  tipsState.roster=g;return g;\n}"),true],
+  ['TRS 2 · ⛔ an unreachable store is NOT marked failed — tipsInit never shows the red card','check-tipsroster.mjs',
+    tsub("  if(kvFailed(r)){tipsState.rosterFailed=true;return null;}",
+         "  if(kvFailed(r)){return null;}"),true],
+  ['TRS 3 · ⛔ an invalid stored value is NOT marked failed either — same silent-empty hole, different cause','check-tipsroster.mjs',
+    tsub("  if(!val){tipsState.rosterFailed=true;return null;}",
+         "  if(!val){return null;}"),true],
+  ['TRS 4 · the three structures are populated with a ||[] fallback instead of trusting the already-validated groups','check-tipsroster.mjs',
+    tsub("  const g={};TIP_SECTIONS.forEach(s=>g[s]=val.groups[s].slice());",
+         "  const g={};TIP_SECTIONS.forEach(s=>g[s]=(val.groups[s]||[]).slice());"),true],
+  ['TRS 5 · ⛔ rosterFailed drops out of tipsInit\'s OR-chain — a roster failure loads as an empty sheet instead of the red card','check-tipsroster.mjs',
+    tsub("  if(kvFailed(remote)||kvFailed(rm)||kvFailed(rh)||kvFailed(ge)||tipsState.rosterFailed){",
+         "  if(kvFailed(remote)||kvFailed(rm)||kvFailed(rh)||kvFailed(ge)){"),true],
+  ['TRS 6 · ⛔ tipsFetchRoster() is removed from the boot block — Staff\'s MICROS import reads an empty TIP_NAME_ALIASES until someone happens to open Tips first','check-tipsroster.mjs',
+    tsub("  // idempotent (`if(tipsState.roster)return`), so this costs nothing once Tips has loaded it.\n  tipsFetchRoster();",
+         "  // idempotent (`if(tipsState.roster)return`), so this costs nothing once Tips has loaded it.\n"),true],
+  ['TRS 7 · a retired seed button put back, now writing an empty TIP_ROSTER_DATA to the store','check-tipsroster.mjs',
+    tsub('${tipsImportBtnHTML()}\n      <span id="tips-status" style="font-size:12px;color:var(--text-dim)"></span>\n      <span style="margin-left:auto',
+         '${tipsImportBtnHTML()}\n      <button onclick="tipRosterSeed()">Seed roster →</button>\n      <span id="tips-status" style="font-size:12px;color:var(--text-dim)"></span>\n      <span style="margin-left:auto'),true],
+  ['TRS 8 · BENIGN — the STEP 2 comment reworded, tipsFetchRoster itself untouched','check-tipsroster.mjs',
+    tsub('// Loads TIP_ROSTER_DATA/TIP_NAME_ALIASES/TIP_ROSTER_CANON from the store, together, in one\n// atomic step',
+         '// Pulls TIP_ROSTER_DATA, TIP_NAME_ALIASES and TIP_ROSTER_CANON from the store as one unit'),false],
 ];
 
 let wrong=0;
