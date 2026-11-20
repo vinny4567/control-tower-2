@@ -14411,6 +14411,10 @@ function staffRefresh(){
   // flipped, redraw ran, screen unchanged. Refresh it here too.
   const dup=document.getElementById('staff-dupes');
   if(dup)dup.innerHTML=staffDupesHTML();
+  // Same reason, same fix: the "Waiting for approval" card lives outside
+  // #staff-body too (it belongs above the stat row, not in the scrolling list).
+  const pend=document.getElementById('staff-pending');
+  if(pend)pend.innerHTML=staffPendingCardHTML();
   const sc=el.closest('[style*="overflow-y"]')||document.getElementById('viewport');
   const top=sc?sc.scrollTop:0;
   el.innerHTML=staffBodyHTML();
@@ -14451,6 +14455,9 @@ function staffEdit(k,f,v){
   // explicit true would outlive the role that justified it — promote a server to manager
   // and back and they keep the till for ever. The mini stores all three; so do we.
   else if(f==='drawer'){p.register=p.register||{};p.register.drawer=(v===null?null:!!v);}
+  // Restaurant / events, same as the new-hire sign-up form asks. No push anywhere —
+  // nothing on the register or the mini reads this today; it is a Staff-side fact.
+  else if(f==='department')p.department=v||null;
   staffTouch(p);
   staffSave();
   staffRefresh();
@@ -14846,7 +14853,7 @@ function staffMergeInto(loserKey){
   // Fill the gaps on the keeper; never overwrite what is already there. A typed
   // value is usually the only copy — same rule the pull merge follows.
   const fill=(f)=>{if((keeper[f]==null||keeper[f]==='')&&loser[f]!=null&&loser[f]!=='')keeper[f]=loser[f]};
-  ['paychex_id','micros_num','micros_id','phone','since','nickname','role','empclass'].forEach(fill);
+  ['paychex_id','micros_num','micros_id','phone','since','nickname','role','empclass','department'].forEach(fill);
   keeper.rates=Object.assign({},loser.rates||{},keeper.rates||{});
   keeper.positions=(keeper.positions&&keeper.positions.length)?keeper.positions:(loser.positions||[]);
   keeper.register=Object.assign({},loser.register||{},keeper.register||{});
@@ -14859,6 +14866,183 @@ function staffMergeInto(loserKey){
   staffTouch(keeper);staffSave();staffRedraw();
   staffS.regNote='Merged “'+loser.name+'” into “'+keeper.name+'”. The old spelling still resolves to them.';
   staffRefreshNotes();
+}
+
+// ── WAITING FOR APPROVAL: new-hire sign-ups from the register QR ──────────────────
+//
+// 11/20/26 — the register's "New hire" QR → schedule-app sign-up flow is live on the
+// mini. A sign-up lands as PENDING there within ~2 minutes; it never touches ct_staff
+// on its own. This card is the one place that decides what a pending sign-up becomes:
+//  · New person — nobody on Staff is this person. Adds a fresh row.
+//  · Same as… — this IS somebody already on Staff, just signed up under a different
+//    spelling. The sign-up's name becomes an alias; nothing else changes.
+//  · Reject — not a real hire (test row, duplicate tap, wrong number).
+// ⛔ NEVER MERGES ON ITS OWN. Every decision here is Vinny's own click — the card only
+// SUGGESTS possible matches (same phone, from the mini's own flags), it never acts on
+// one without a press.
+let staffPendingS={loaded:false,loading:false,people:null,err:''};
+async function staffPendingLoad(force){
+  if(!posS.srv)return;                       // no register configured yet — stay quiet
+  if(staffPendingS.loading)return;
+  if(staffPendingS.loaded&&!force)return;
+  staffPendingS.loading=true;staffPendingS.err='';
+  staffRefresh();
+  try{
+    const r=await posSrv('/api/people/pending');
+    if(r.status===401){staffPendingS.err=posAuthNote().replace(/^⚠ /,'');staffPendingS.people=null;}
+    else if(!r.ok){throw new Error('HTTP '+r.status);}
+    else{
+      const list=(r.body&&(r.body.pending||r.body.people))||(Array.isArray(r.body)?r.body:[]);
+      staffPendingS.people=Array.isArray(list)?list:[];
+    }
+  }catch(e){staffPendingS.err='Could not reach the register: '+(e&&e.message||e);staffPendingS.people=null;}
+  staffPendingS.loading=false;staffPendingS.loaded=true;
+  staffRefresh();
+}
+// Find the pid a "possible_match:<pid>" flag names, among people ALREADY on this
+// screen — so the suggestion can show a real name ("same phone as Ava Austin")
+// rather than a bare id, and so clicking it has a real local record to alias onto.
+function staffPidToPerson(pid){
+  if(pid==null)return null;
+  return Object.values(staffS.people).find(x=>String(x.pid)===String(pid))||null;
+}
+function staffPendingMatches(row){
+  return (row.flags||[])
+    .filter(f=>/^possible_match:/.test(String(f)))
+    .map(f=>String(f).slice('possible_match:'.length))
+    .map(pid=>({pid,person:staffPidToPerson(pid)}))
+    .filter(m=>!!m.person);
+}
+async function staffPendingDecide(pid,as,extra){
+  if(!posS.srv)return alert('No register server set — POS tab → Connections.'),false;
+  try{
+    const r=await posSrv('/api/people/decide',{method:'POST',body:JSON.stringify(Object.assign({pid,as},extra||{}))});
+    if(r.status===401){alert(posAuthNote().replace(/^⚠ /,'')+'\n\nNothing was decided.');return false;}
+    if(!r.ok){alert('The register would not take that:\n\n'+((r.body&&r.body.error)||('HTTP '+r.status)));return false;}
+    return true;
+  }catch(e){alert('Could not reach the register: '+(e&&e.message||e));return false;}
+}
+function staffPendingRow(pid){return (staffPendingS.people||[]).find(x=>String(x.pid)===String(pid));}
+function staffPendingDrop(pid){staffPendingS.people=(staffPendingS.people||[]).filter(x=>String(x.pid)!==String(pid));}
+
+// NEW PERSON. Refuses rather than silently landing on somebody else's row: if this
+// sign-up's name already resolves (by the same staffKeyOf + alias chain every other
+// matcher here uses) to an EXISTING record that is not this same pid, that is exactly
+// the case "Same as…" exists for — not a guess this button is allowed to make.
+async function staffPendingNew(pid){
+  const row=staffPendingRow(pid);if(!row)return;
+  const name=String(row.name||'').trim();
+  if(!name)return alert('This sign-up has no name on it — nothing to add. Reject it instead.');
+  const k=staffKeyOf(name);
+  const al=k&&(staffS.aliases||{})[k];
+  const landKey=(al&&staffS.people[al])?al:k;
+  const existing=k&&staffS.people[landKey];
+  if(existing&&existing.pid&&String(existing.pid)!==String(row.pid)){
+    alert('“'+name+'” already matches an existing Staff record ('+(existing.name||landKey)+').\n\nUse “Same as…” instead if this is the same person, or Reject if it is not.');
+    return;
+  }
+  const dept=row.department==='events'?'Events':row.department==='restaurant'?'Restaurant':'';
+  if(!confirm('Add “'+name+'” as a brand-new person on Staff?'+(dept||(row.positions&&row.positions.length)?('\n\n'+[dept,(row.positions&&row.positions.length)?row.positions.join(', '):''].filter(Boolean).join(' · ')):'')))return;
+  if(!await staffPendingDecide(row.pid,'new'))return;
+  const p=existing||(staffS.people[landKey]={key:landKey,sources:{},at:0,name});
+  p.pid=row.pid;                              // the mini's own id — never mint a second one
+  if(!p.name)p.name=name;
+  if(!p.phone&&row.phone)p.phone=row.phone;
+  if((!p.positions||!p.positions.length)&&row.positions&&row.positions.length)p.positions=row.positions.slice();
+  if(row.department&&!p.department)p.department=row.department;
+  p.sources=p.sources||{};p.sources.hireQR={at:Date.now(),station:(row.extra&&row.extra.station)||null};
+  staffTouch(p);staffSave();
+  staffPendingDrop(pid);staffRedraw();
+}
+// SAME AS — this sign-up IS an existing Staff person. Aliases the sign-up's own
+// spelling onto them (same mechanism as staffMergeInto's alias step) and re-points
+// any alias chain that pointed at the sign-up's key, so nothing is left dangling.
+async function staffPendingLinkTo(pid,targetKey){
+  const row=staffPendingRow(pid);if(!row)return;
+  const target=staffS.people[targetKey];
+  if(!target)return alert('That person is not on the list any more.');
+  if(!confirm('“'+(row.name||'')+'” is the same person as “'+(target.name||targetKey)+'”?\n\nTheir sign-up spelling becomes an alias — it will still find '+(target.name||targetKey)+' on a timesheet. Nothing else changes.'))return;
+  if(!await staffPendingDecide(row.pid,'link',{target:target.pid}))return;
+  const k=staffKeyOf(row.name);
+  if(k){
+    if(!staffS.aliases)staffS.aliases={};
+    staffS.aliases[k]=target.key;
+    Object.keys(staffS.aliases).forEach(from=>{if(staffS.aliases[from]===k)staffS.aliases[from]=target.key;});
+    staffTouch(target);staffSave();
+  }
+  staffPendingDrop(pid);staffRedraw();
+}
+// Free-text fallback — same typed-name resolution as staffMergeInto, for when the
+// right match is not among the mini's own suggestions. async + returns the chained
+// call so a caller MAY await it (an onclick="" never does, same as every other
+// fire-and-forget handler here — this only makes the function awaitable, not awaited).
+async function staffPendingLinkPrompt(pid){
+  const row=staffPendingRow(pid);if(!row)return;
+  const typed=prompt('“'+(row.name||'')+'” is the same person as who?\n\nType their name exactly as it appears on Staff.');
+  if(typed===null)return;
+  const want=staffKeyOf(String(typed));
+  if(!want)return;
+  const target=staffS.people[want]||Object.values(staffS.people).find(x=>!x.removed&&staffKeyOf(x.name)===want);
+  if(!target)return alert('No “'+typed+'” on the list. Type the name exactly as it appears.');
+  return staffPendingLinkTo(pid,target.key);
+}
+async function staffPendingReject(pid){
+  const row=staffPendingRow(pid);if(!row)return;
+  if(!confirm('Reject the sign-up for “'+(row.name||'')+'”?\n\nThis removes them from the pending list. Nothing is added to Staff.'))return;
+  if(!await staffPendingDecide(row.pid,'reject'))return;
+  staffPendingDrop(pid);staffRedraw();
+}
+function staffPendingAgo(iso){
+  if(!iso)return'';
+  const ms=new Date(iso).getTime();if(!isFinite(ms))return'';
+  const m=Math.round((Date.now()-ms)/60000);
+  if(m<1)return'just now';if(m<60)return m+'m ago';
+  const h=Math.round(m/60);if(h<24)return h+'h ago';
+  return Math.round(h/24)+'d ago';
+}
+function staffPendingRowHTML(row){
+  const pid=row.pid,matches=staffPendingMatches(row);
+  const dept=row.department==='events'?'Events':row.department==='restaurant'?'Restaurant':'';
+  const station=(row.extra&&row.extra.station)?esc(String(row.extra.station)):'';
+  const when=staffPendingAgo(row.extra&&row.extra.signed_up_at);
+  const btn=(bg,label,onclick,title)=>`<button onclick="${onclick}" ${title?`title="${esc(title)}"`:''} style="background:${bg};border:1px solid ${bg==='none'?'var(--border)':'transparent'};color:${bg==='none'?'var(--text-dim)':'#fff'};border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:inherit;font-weight:${bg==='none'?'400':'700'};white-space:nowrap">${label}</button>`;
+  return `<div style="border-top:1px solid var(--border);padding:10px 0;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start">
+    <div style="flex:1;min-width:220px">
+      <div style="font-weight:700;font-size:13.5px">${esc(row.name||'(no name)')}</div>
+      <div style="font-size:12px;color:var(--text-dim);margin-top:2px">
+        ${row.phone?esc(row.phone):'<span style="color:var(--text-muted)">no phone</span>'}
+        ${dept?' · '+dept:''}
+        ${(row.positions&&row.positions.length)?' · '+esc(row.positions.join(', ')):''}
+        ${station?' · '+station:''}${when?' · '+when:''}
+      </div>
+      ${matches.length?`<div style="margin-top:5px;font-size:12px;color:#fbbf24">possible match — same phone as ${matches.map(m=>esc(m.person.name)).join(', ')}</div>`:''}
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+      ${btn('#065f46','New person',`staffPendingNew('${esc(pid)}')`,'Nobody on Staff is this person yet — add them')}
+      ${matches.map(m=>btn('#3f3f46','Same as '+esc(m.person.name),`staffPendingLinkTo('${esc(pid)}','${esc(m.person.key)}')`,'Alias their sign-up spelling onto '+m.person.name)).join('')}
+      ${btn('none','Same as… (search)',`staffPendingLinkPrompt('${esc(pid)}')`)}
+      ${btn('#7f1d1d','Reject',`staffPendingReject('${esc(pid)}')`,'Not a real hire — remove the sign-up')}
+    </div>
+  </div>`;
+}
+function staffPendingCardHTML(){
+  if(staffPendingS.loading&&!staffPendingS.loaded)
+    return `<div id="staff-pending" style="${posCardCss};margin-bottom:14px;font-size:12.5px;color:var(--text-dim)">Checking for new sign-ups…</div>`;
+  if(staffPendingS.err)
+    return `<div id="staff-pending" style="${posCardCss};margin-bottom:14px;border-color:rgba(248,113,113,.4)">
+      <div style="color:#f87171;font-size:13px">⚠ ${esc(staffPendingS.err)}</div>
+      <button onclick="staffPendingLoad(true)" style="margin-top:7px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:inherit">Try again</button>
+    </div>`;
+  const list=staffPendingS.people||[];
+  if(!list.length)return '<div id="staff-pending"></div>';
+  return `<div id="staff-pending" style="${posCardCss};margin-bottom:14px;border-color:rgba(52,211,153,.35)">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <b style="font-size:14px">🆕 Waiting for approval</b>
+      <span style="font-size:12.5px;color:var(--text-dim)">${list.length} sign-up${list.length===1?'':'s'} from the register</span>
+      <button onclick="staffPendingLoad(true)" style="margin-left:auto;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:12px">↻ refresh</button>
+    </div>
+    ${list.map(staffPendingRowHTML).join('')}
+  </div>`;
 }
 
 // ── ONE-TIME CLEANUP, approved by Vinny 11/19/26 on the shared board
@@ -15328,6 +15512,19 @@ function staffDetail(p){
           ${(reg.role&&!POS_ROLES[reg.role])?`<option value="${esc(reg.role)}" selected>${esc(reg.role)} — set on the register</option>`:''}
         </select>
         ${reg.role==='clockonly'?`<div style="font-size:11.5px;color:var(--text-muted);margin-top:3px;max-width:220px">Clock in and out only. Any other class lets them sign in to a register.</div>`:''}
+      </div>
+      <!-- DEPARTMENT. 11/20/26 — the new-hire QR sign-up form on the schedule app now
+           asks restaurant-or-events up front (department:'restaurant'|'events'); this is
+           where that classification lands on an approved person, same placement logic as
+           Employee class (a fact about the person, not their job). Carried through from
+           the "Waiting for approval" card below when a sign-up is approved as new. -->
+      <div style="margin-top:8px">
+        <div style="font-size:13px;margin-bottom:3px">Department</div>
+        <select onchange="staffEdit('${esc(k)}','department',this.value)" style="${inp};width:auto">
+          <option value="" ${!p.department?'selected':''}>— not set —</option>
+          <option value="restaurant" ${p.department==='restaurant'?'selected':''}>Restaurant</option>
+          <option value="events" ${p.department==='events'?'selected':''}>Events</option>
+        </select>
       </div>
       ${(p.micros_num||p.micros_id)?`<div style="display:flex;gap:6px;align-items:center;margin-top:6px">
         <span style="font-size:13px">MICROS</span>
@@ -15807,12 +16004,14 @@ function privRefresh(){
 function posStaffHTML(){
   staffLoad();
   privLoad();
+  staffPendingLoad();
   const all=Object.values(staffS.people);
   const noId=all.filter(p=>!p.paychex_id).length;
   const payrollOnly=all.filter(p=>p.sources&&p.sources.scheduler&&p.sources.scheduler.kind==='payroll').length;
   const inactive=all.filter(p=>p.active===false||p.gone).length;
   const when=staffS.at?new Date(staffS.at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'never';
   return `
+  ${staffPendingCardHTML()}
   <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
     ${posStat('People',String(all.length),
       staffS.filter?'press to show everybody again':'in the database',
