@@ -13424,7 +13424,7 @@ function posDiscountsHTML(){
 // The roster key is never in this file. Same rule as the Orders key: it is pasted
 // once and kept in this browser, because a key in the page is a key in the repo.
 const STAFF_KEY='ct_staff';
-let staffS={people:{},at:0,loaded:false,busy:false,note:'',q:''};
+let staffS={people:{},at:0,loaded:false,busy:false,note:'',q:'',reveal:{}};
 
 const staffRosterKey=()=>localStorage.getItem('ct_roster_key')||'';
 function staffSetKey(){
@@ -13484,6 +13484,22 @@ function staffBackfillPids(){
   return n;
 }
 
+// ⛔ THE RETIRED REGISTER CREDENTIAL FIELD, STRIPPED ON SIGHT. 11/20/26 — Vinny approved
+// taking the plain sign-in number out of ct_staff for good (staffSetPin/staffShowNumber
+// above). staffSetPin alone does not fix a STALE copy already sitting in local storage,
+// the cloud blob, or a cloud response this device hasn't synced in a while — and this
+// page's own "content beats emptiness" merge rule (staffMergeOne, `keep`) would read that
+// old plaintext as real content and carry it FOREVER, the moment two devices disagree
+// about which copy is newer, past every future clean write. So every record this page
+// reads, from every source (local, cloud, merged), has register.signin/signin_at deleted
+// before anything else touches it — not just on the next write through staffSetPin.
+function staffStripSignin(people){
+  if(!people)return;
+  Object.keys(people).forEach(k=>{
+    const reg=people[k]&&people[k].register;
+    if(reg){delete reg.signin;delete reg.signin_at;}
+  });
+}
 function staffMergeOne(a,b){
   if(!a)return b;if(!b)return a;
   const newer=(b.at||0)>(a.at||0)?b:a, older=newer===b?a:b;
@@ -13508,6 +13524,10 @@ function staffMergeOne(a,b){
   // positions come from the scheduler, so the freshest pull wins outright.
   out.positions=(newer.positions&&newer.positions.length)?newer.positions:(older.positions||[]);
   out.register=Object.assign({},older.register||{},newer.register||{});
+  // ⛔ BACKSTOP, independent of whether a caller remembered to strip its inputs first
+  // (see staffStripSignin above) — a merge can never emit the retired field, regardless
+  // of what either side carried in.
+  delete out.register.signin;delete out.register.signin_at;
   out.sources=Object.assign({},older.sources||{},newer.sources||{});
   // ⚠️ A REMOVAL AND A RESTORE ARE THE ONLY TWO THINGS THAT DECIDE THIS, and they
   // are compared against EACH OTHER — never against the row's `at`.
@@ -13551,9 +13571,11 @@ async function staffLoad(){
   staffS.loaded=true;
   try{const local=localStorage.getItem(STAFF_KEY);if(local){const j=JSON.parse(local);
     if(j&&j.people){staffS.people=j.people;staffS.jobs=j.jobs||{};staffS.aliases=j.aliases||{};staffS.at=j.at||0}}}catch(e){}
+  staffStripSignin(staffS.people);      // this device's OWN stored copy, before it touches anything
   const r=await kvGet(STAFF_KEY);
   // MERGED, not replaced: this device may hold edits the cloud has never seen.
   if(r&&r.v&&r.v.people){
+    staffStripSignin(r.v.people);        // the cloud's copy, before it ever reaches the merge
     staffS.people=staffMerge(staffS.people,r.v.people);
     staffS.jobs=staffMergeJobs(staffS.jobs,r.v.jobs);
     // Renames made on another screen. UNION, never replace — losing an alias
@@ -13616,6 +13638,7 @@ async function staffPushMerged(){
   staffS.syncNote='';
   const r=await kvGet(STAFF_KEY);
   if(r&&r.v&&r.v.people){
+    staffStripSignin(r.v.people);        // the cloud's copy, before it ever reaches the merge
     staffS.people=staffMerge(staffS.people,r.v.people);
     staffS.jobs=staffMergeJobs(staffS.jobs,r.v.jobs);
     // NOTHING OF OURS TO ADD → DON'T WRITE.
@@ -14000,7 +14023,7 @@ function staffRows(){
   // Who still needs a number typed in — the people whose class says they sign in and
   // who have none stored. The answer to "is that everyone yet", as a list rather than
   // a belief.
-  if(staffS.filter==='nosignin')rows=rows.filter(p=>staffCanSignIn(p)&&!(p.register&&p.register.signin));
+  if(staffS.filter==='nosignin')rows=rows.filter(p=>staffCanSignIn(p)&&!(p.register&&p.register.pin_set));
   if(q)rows=rows.filter(p=>(p.name||'').toLowerCase().includes(q)
     ||(p.positions||[]).join(' ').toLowerCase().includes(q)
     ||String(p.paychex_id||'').includes(q));
@@ -14940,12 +14963,16 @@ function staffRestore(k){
   staffTouch(p);staffSave();staffRedraw();
 }
 
-// THE SIGN-IN CODE NEVER TOUCHES THIS BROWSER'S STORE.
+// THE SIGN-IN CODE NEVER TOUCHES THIS BROWSER'S STORE, FOR GOOD THIS TIME.
 //
 // Whatever combination somebody picks is a credential. It goes straight to the mini,
-// which hashes it; this page keeps only the fact that one is set. Putting it in the
-// cloud KV that backs every other field here would be writing staff passwords into a
-// store the register does not even own.
+// which hashes it; this page keeps only the fact that one is set (`pin_set`), never the
+// number itself. 11/20/26 — Vinny approved taking the plain number BACK OUT of ct_staff
+// ("mini should hold everything, and watch tower is just a window into it") after it had
+// been kept here, off, and back on again across the last two months. It is not coming
+// back a third time: `staffShowNumber` below is the one way to see it, asking the mini
+// live every time, so there is no local copy to go stale, leak in a cloud KV dump, or
+// drift from whatever the mini actually has hashed.
 async function staffSetPin(k,given){
   const p=staffS.people[k];if(!p)return;
   if(!posS.srv)return alert('No register server set — POS tab → Connections.');
@@ -14953,7 +14980,7 @@ async function staffSetPin(k,given){
   // people are already punching, and he moved it to 3 so the register can reuse each person's
   // MICROS Empl ID#, some of which are 3-digit. Rejecting numbers already in use is a rule that
   // is wrong, not strict. The shape check is repeated on the mini (auth.js hashPin), where it counts.
-  const code=given!=null?given:prompt('Sign-in code for '+p.name+'\n\n4 to 8 digits, typed on the register keypad.\n\nStored hashed on the register for sign-in, AND (Vinny\'s call 10/21) shown in plain on this person\'s row here so you can look it up later.');
+  const code=given!=null?given:prompt('Sign-in code for '+p.name+'\n\n4 to 8 digits, typed on the register keypad.\n\nStored hashed on the register only — use "Show number" on this row to look an existing one up.');
   if(!code)return;
   const pin=String(code).trim();
   if(!/^\d{3,8}$/.test(pin))return alert('A sign-in code must be 3 to 8 digits.\n\nThe register\'s keypad has no letters on it.');
@@ -14969,40 +14996,59 @@ async function staffSetPin(k,given){
     // No `access=true` here any more — the class decides, and writing a flag
     // nothing reads would leave a second opinion lying around for somebody to
     // find later and believe.
-    // The plain number is kept here again (Vinny's call 10/21, reaffirmed 8/11 — he
-    // imported everyone's from MICROS and reads them off this page). It is a register
-    // credential in plaintext in cloud KV; that tradeoff was put to him and is his.
-    p.register=p.register||{};p.register.pin_set=true;p.register.signin=pin;
-    // ⚠️ STAMP WHEN. The office copy and the mini's hash can be changed independently —
-    // Jarvis changed one on the mini and this page went on showing the old number as
-    // fact. Nothing keeps them in step, so the only honest thing a stored number can
-    // carry is its own age: a date lets a stale one be RECOGNISED instead of trusted.
-    p.register.signin_at=Date.now();
+    // ⛔ pin_set ONLY. Never p.register.signin — see the comment above this function.
+    p.register=p.register||{};p.register.pin_set=true;
     delete p.register.pin_pending;
-    // The mini's own id for this person, so a later role change can target the row
-    // rather than re-resolving a name. paychex_id alone would do; this is cheaper.
+    delete p.register.signin;      // in case this record still carries the retired field
+    delete p.register.signin_at;
+    // The mini's own id for this person, so a later role change (or a later "Show
+    // number" lookup) can target the row rather than re-resolving a name.
     if(r.body&&r.body.id!=null)p.register.emp_id=r.body.id;
     if(r.body&&r.body.role)p.register.role=r.body.role;
     staffTouch(p);
     staffSave();staffRefresh();
   }catch(e){alert('Could not reach the register: '+(e&&e.message||e));}
 }
+// Ask the mini for the number, live, and show it for 10 seconds. NEVER saved anywhere —
+// not into staffS, not into the cloud KV. Vinny: "sometimes ill have to look up peoples
+// numbers" — this is the one sanctioned way, and it costs one mini lookup every time
+// rather than one stale copy forever. The mini logs every call (its own audit trail).
+async function staffShowNumber(k){
+  const p=staffS.people[k];if(!p)return;
+  const id=p.register&&p.register.emp_id;
+  if(id==null)return alert('No register id on file for '+p.name+' yet — set a sign-in number first, or ask the mini to look them up by name.');
+  if(!posS.srv)return alert('No register server set — POS tab → Connections.');
+  staffS.reveal[k]={code:null,at:Date.now(),loading:true};staffRefresh();
+  let code=null,err=null;
+  try{
+    const r=await posSrv('/api/employees/code?id='+encodeURIComponent(id));
+    if(r.status===403)err=posAuthNote().replace(/^⚠ /,'');
+    else if(r.status===404)err='Nothing on file for '+p.name+' on the register.';
+    else if(!r.ok)err='The register would not answer: '+((r.body&&r.body.error)||('HTTP '+r.status));
+    else{code=(r.body&&r.body.code)!=null?String(r.body.code):null;if(!code)err='The register answered with no number.';}
+  }catch(e){err='Could not reach the register: '+(e&&e.message||e);}
+  if(!staffS.reveal[k]||!staffS.reveal[k].loading)return;   // hidden, or superseded, while this was in flight
+  if(err){delete staffS.reveal[k];staffRefresh();alert(err);return;}
+  const at=Date.now();
+  staffS.reveal[k]={code,at,loading:false};
+  staffRefresh();
+  setTimeout(()=>{
+    // Only clear OUR reveal — a second press in the meantime owns a newer `at`.
+    if(staffS.reveal[k]&&staffS.reveal[k].at===at){delete staffS.reveal[k];staffRefresh();}
+  },10000);
+}
+function staffHideNumber(k){delete staffS.reveal[k];staffRefresh();}
 
 // TYPE THE NUMBER HERE. Vinny's call 9/19 — the code used to be reachable only from a
 // button that appeared AFTER ticking "Can sign in", so the common act (hire somebody,
 // give them a number) was two steps with a prompt box in the middle.
 //
 // The number box: type a sign-in number and Save. It POSTs to the mini, which stores it
-// HASHED for actual sign-in (register auth unchanged).
-// 10/21–11/8, and back again: for a few weeks the plain number was ALSO kept in
-// ct_staff (`register.signin`) and printed on the row, at Vinny's explicit call, so he
-// could look anyone's code up here. REMOVED 11/8 — his call too, and the reason is the
-// better argument: the copy could only ever be as good as the last time somebody set a
-// code THROUGH THIS BOX, and a pin set anywhere else (the mini, directly) left it
-// behind still displaying as fact. A credential read off a stale source is worse than
-// none shown, because it is the number you would go and type. Back to the original
-// design: hashed on the mini, and this page knows only THAT a code is set.
-// The box still clears after save; the saved number shows as text just below it.
+// HASHED for actual sign-in (register auth unchanged). The box always starts BLANK —
+// this page keeps no local copy of the number any more (11/20/26, see the comment above
+// staffSetPin), so there is nothing honest to prefill it with. It clears after save too,
+// for the same reason: a box holding what you just typed looks exactly like a stored
+// value, and it isn't one. Use "Show number" to look an existing code up instead.
 // ─── KEEP THE PASSWORD MANAGER OUT OF THESE BOXES ────────────────────────────
 //
 // Vinny: "stop this from trying to autofill." Safari was offering his saved
@@ -15035,14 +15081,11 @@ async function staffSaveNumber(k,el){
     alert('A sign-in number is 3 to 8 digits.\n\nThe register\'s keypad has no letters on it.');
     el.focus();el.select();return;
   }
-  // ⚠️ DO NOT CLEAR, and do not re-save an unchanged number. The box IS the field
-  // now, so emptying it after a save would look exactly like the number being lost —
-  // the complaint this whole evening came from. And re-sending a number that has not
-  // changed makes the mini scrypt-hash it again for nothing.
-  const cur=String((staffS.people[k]&&staffS.people[k].register&&staffS.people[k].register.signin)||'');
-  if(v===cur)return;
   el.disabled=true;
   try{ await staffSetPin(k,v); } finally { el.disabled=false; }
+  // No el.value reset needed here: staffSetPin's own staffRefresh() rebuilds this row,
+  // and the box always renders blank now (see staffDetail) — there is no stored value
+  // left on this page to show it holding.
 }
 
 function staffDetail(p){
@@ -15108,13 +15151,27 @@ function staffDetail(p){
                                     : 'No class set — cannot sign in')}
       </div>
       <div style="display:flex;gap:5px;align-items:center;margin-top:10px">
-        <label for="staff-num-${kid}" style="font-size:12.5px;color:var(--text-dim)">Sign in</label>
+        <label for="staff-num-${kid}" style="font-size:12.5px;color:var(--text-dim)">Set</label>
         <input id="staff-num-${kid}" inputmode="numeric" maxlength="8" ${staffNoFill()}
-          value="${esc(reg.signin||'')}" placeholder="—"
+          value="" placeholder="${reg.pin_set?'••••':'—'}"
           onkeydown="if(event.key==='Enter')staffSaveNumber('${esc(k)}',document.getElementById('staff-num-${kid}'))"
           style="${inp};width:104px;letter-spacing:2px">
         <button onclick="staffSaveNumber('${esc(k)}',document.getElementById('staff-num-${kid}'))"
           style="${posBtn('#0ea5e9')};padding:3px 9px;font-size:12px">Save</button>
+      </div>
+      <!-- "Show number" asks the mini LIVE every time — never a locally stored value — and
+           shows the answer for 10 seconds (staffShowNumber/staffHideNumber). Vinny: "sometimes
+           ill have to look up peoples numbers"; "mini should hold everything, and watch tower
+           is just a window into it" (11/20/26). Needs register.emp_id on file, which every
+           pin set through this page already stamps. -->
+      <div style="display:flex;gap:8px;align-items:center;margin-top:6px;min-height:22px">
+        ${(()=>{const rv=staffS.reveal[k];
+          if(rv&&rv.loading)return `<span style="font-size:12px;color:var(--text-dim)">Asking the register…</span>`;
+          if(rv&&rv.code)return `<span style="font-family:ui-monospace,monospace;font-size:14px;letter-spacing:2px;color:#34d399">${esc(rv.code)}</span>`
+            +`<button onclick="staffHideNumber('${esc(k)}')" style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:11.5px;text-decoration:underline">hide</button>`;
+          return `<button onclick="staffShowNumber('${esc(k)}')" ${reg.emp_id==null?'disabled title="No register id on file yet — set a number first"':''}
+            style="${posBtn('#3f3f46')};padding:3px 9px;font-size:12px;${reg.emp_id==null?'opacity:.5;cursor:default':''}">Show number</button>`;
+        })()}
       </div>
       ${reg.access?`
         <!-- The employee class used to sit HERE. Vinny moved it under the payroll id on
@@ -15661,7 +15718,7 @@ function posStaffHTML(){
       // class decides that), not against the whole database, or it would read as short
       // forever because of cooks and the inactive.
       const want=all.filter(p=>!p.removed&&staffCanSignIn(p));
-      const got=want.filter(p=>p.register&&p.register.signin).length;
+      const got=want.filter(p=>p.register&&p.register.pin_set).length;
       const missing=want.length-got;
       return posStat('Sign-in set',got+' of '+want.length,
         staffS.filter==='nosignin'?'showing the '+missing+' without one'

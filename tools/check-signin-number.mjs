@@ -1,4 +1,4 @@
-// THE SIGN-IN NUMBER MUST NOT STAY IN THE BROWSER.
+// THE SIGN-IN NUMBER MUST NOT STAY IN THE BROWSER. FOR GOOD, THIS TIME.
 //
 //     node tools/check-signin-number.mjs
 //
@@ -6,6 +6,14 @@
 // end up somewhere it can be read back: saved onto the person, written to the cloud
 // blob with the rest of the staff record, or simply left sitting in the field. The mini
 // stores it hashed; that is only worth anything if this page keeps nothing.
+//
+// ⚠️ THIS FILE HAS REVERSED TWICE ALREADY (10/21 → 11/8 → back on 8/11 → off again
+// 11/20/26, Vinny: "mini should hold everything, and watch tower is just a window into
+// it"). Both reversals cost an evening each because the display disappearing read as
+// data loss. 11/20 adds `staffShowNumber`, which is meant to make this the LAST
+// reversal: Vinny can still look a number up, it just never sits in this page's own
+// state waiting to go stale or leak in a cloud KV dump — every look-up is a fresh ask to
+// the mini, which logs it.
 import { readFileSync } from 'node:fs';
 const src = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 
@@ -22,44 +30,60 @@ const fn = (name) => {
 
 const save = fn('staffSaveNumber');
 const pin  = fn('staffSetPin');
+const show = fn('staffShowNumber');
+const hide = fn('staffHideNumber');
 ok('the box has a handler at all', !!save);
 ok('and it is wired to a Save button and to Enter',
    src.includes('staffSaveNumber(') && src.includes("event.key==='Enter'"));
+ok('staffShowNumber and staffHideNumber both exist', !!show && !!hide);
 
-// ---- it keeps nothing --------------------------------------------------------
-ok('the typed number is never written onto the person record',
+// ---- it keeps nothing, permanently ---------------------------------------------
+ok('the typed number is never written onto the person record in the save path',
    !/\bp\s*\.\s*(pin|code|number|sign_?in)/i.test(save));
-// staffSetPin DOES call staffSave — it has to, to record that this person now has
-// access. What must never be in that save is the number itself, so the real assertion
-// is that nothing is ever assigned FROM the variables holding it.
-// ⚠️ REVERSED 11/8/26, AND THIS FILE NOW GUARDS THE OPPOSITE. These three lines used
-// to assert that the plain number was never stored or shown. It is both, by Vinny's
-// explicit call (10/21, reaffirmed 8/11) — he reads people's numbers off this page.
-//
-// The reversal is why the guard is worth keeping rather than deleting: on 8/11 the
-// display was removed for a good-looking reason, and 128 numbers disappeared from the
-// back office in a way that read as data loss and cost three sessions an evening. These
-// assertions are what makes that removal fail here first, in a terminal, instead of in
-// front of him.
-ok('the typed number IS stored, so the office can read it back',
-   /p\.register\.signin\s*=\s*pin/.test(pin));
-ok('with the date it was set, so a stale one can be recognised',
-   /p\.register\.signin_at\s*=/.test(pin));
-ok('and the flag saying a code exists is still recorded alongside it',
+// staffSetPin DOES call staffSave — it has to, to record that this person now has a
+// code (pin_set). What must never be stored is the number itself.
+ok('⛔ the plain number is never assigned onto p.register.signin, in staffSetPin or anywhere else',
+   !/p\.register\.signin\s*=\s*pin/.test(pin) && !/register\.signin\s*=\s*[a-zA-Z_$][\w$]*\s*;/.test(src));
+ok('…and a record that still carries the retired field from before this change has it actively deleted',
+   /delete\s+p\.register\.signin\s*;/.test(pin));
+ok('⛔ no signin_at timestamp either — nothing here to date, once there is no stored value to go stale',
+   !/p\.register\.signin_at\s*=\s*Date\.now\(\)/.test(pin));
+ok('the flag saying a code exists is still recorded (pin_set), just never the code itself',
    /p\.register\.pin_set\s*=\s*true/.test(pin));
-ok('⚠️ the field does NOT empty itself — the box IS the number now, and clearing it reads as the number being lost',
-   !/el\.value\s*=\s*''/.test(save));
-ok('an unchanged number is not re-sent to the register',
-   /if\s*\(\s*v\s*===\s*cur\s*\)\s*return/.test(save));
-// Also reversed: the box carries the number. "put their number right in the box"
-// (Vinny, 8/11) — a separate display line under an empty box was the arrangement that
-// made its removal look like deletion.
-ok('the box IS rendered carrying the stored number',
-   /id="staff-num-\$\{kid\}"[^>]*\svalue="\$\{esc\(reg\.signin/.test(src));
-ok('and it is labelled, so the number is not a bare box',
-   /<label for="staff-num-\$\{kid\}"[^>]*>Sign in<\/label>/.test(src));
-ok('nothing reads a number back out of the mini for display — the mini only ever says whether one EXISTS',
+ok('an unchanged-number optimisation is GONE too — this page has nothing left to compare a typed number against',
+   !/register\.signin[^\n]*\n[^\n]*if\s*\(\s*v\s*===\s*cur\s*\)/.test(save) &&
+   !/const cur=.*register\.signin/.test(save));
+ok('the Set box always renders BLANK — no value carried over from a prior render',
+   /id="staff-num-\$\{kid\}"[^>]*\svalue=""/.test(src));
+ok('…and no code renders the Set box prefilled from reg.signin',
+   !/value="\$\{esc\(reg\.signin/.test(src));
+ok('nothing reads a number back out of the mini for the SET flow\'s own display — only staffShowNumber does, and only live',
    !/has_pin[^\n]*\bvalue\b/.test(src));
+
+// ---- staffShowNumber: ask live, show briefly, save nowhere --------------------
+ok('it refuses without a register id on file, rather than guessing or asking by name',
+   /if\s*\(\s*id\s*==\s*null\s*\)\s*return\s+alert/.test(show));
+ok('it asks the mini\'s code endpoint', /\/api\/employees\/code\?id=/.test(show));
+ok('⛔ the revealed code is kept ONLY in staffS.reveal — never assigned onto p / p.register',
+   !new RegExp('p\\.register\\.[a-zA-Z_]+\\s*=\\s*code').test(show) &&
+   !/\bp\.code\s*=/.test(show) && !/\bp\.signin\s*=/.test(show));
+ok('…and staffS.reveal itself never reaches staffSave() — it is never persisted',
+   !/staffSave\(\)/.test(show));
+ok('it self-clears after 10 seconds', /setTimeout\([^,]+,\s*10000\s*\)/.test(show));
+ok('⛔ the 10s timer only clears ITS OWN reveal (checked by `at`), so a second press isn\'t clobbered by an earlier timer',
+   /staffS\.reveal\[k\]\s*&&\s*staffS\.reveal\[k\]\.at\s*===\s*at/.test(show));
+ok('a manual Hide clears the reveal outright', /delete\s+staffS\.reveal\[k\]/.test(hide));
+ok('a 403 from the mini is read as a refusal, not silently empty', /403/.test(show));
+ok('a 404 ("no_copy") is read as "nothing on file", not an error dressed as a number',
+   /404/.test(show) && /Nothing on file/.test(show));
+ok('the lookup goes through posSrv (the mini, with the back-office auth attached), never a bare fetch',
+   /await\s+posSrv\(/.test(show) && !/await\s+fetch\(/.test(show));
+
+// ---- the box is labelled as a SET box now, not a display of the stored value --
+ok('the Set box is labelled "Set", not "Sign in" (it no longer shows what is stored, because nothing is)',
+   /<label for="staff-num-\$\{kid\}"[^>]*>Set<\/label>/.test(src));
+ok('a Show-number control exists next to it', /staffShowNumber\('/.test(src));
+ok('…and a Hide control appears once a number is revealed', /staffHideNumber\('/.test(src));
 
 // ---- the rule is the mini's rule ---------------------------------------------
 // Two entry points now (the box and the prompt), so the shape check has to be the same
@@ -84,6 +108,12 @@ ok('the pin itself is not persisted locally after the post',
 ok('a refusal from the mini stores nothing either',
    /Nothing was stored/.test(pin));
 
+// ---- the people-list count/filter now key off pin_set, not the retired field --
+ok('⛔ the "Sign-in set" count reads pin_set, not the retired signin field',
+   /want\.filter\(p=>p\.register&&p\.register\.pin_set\)\.length/.test(src));
+ok('⛔ the "no sign-in yet" filter reads pin_set too',
+   /staffCanSignIn\(p\)&&!\(p\.register&&p\.register\.pin_set\)/.test(src));
+
 // ---- the list keeps your place -----------------------------------------------
 // Removing somebody rebuilt the whole tab and dropped you at the top of 231 rows —
 // after every removal, and removing people is something you do several in a row.
@@ -97,6 +127,83 @@ ok('and redraws the register note, which lives outside the list',
    /function staffRedraw\(\)\{staffRefresh\(\);staffRefreshNotes\(\);\}/.test(src));
 ok('both targets it redraws into actually exist',
    src.includes('id="staff-body"') && src.includes('id="staff-notes"'));
+
+// ---- strip on READ, not just on write (11/20/26, Jarvis) ----------------------
+// staffSetPin not writing the field any more does not fix a STALE copy already sitting
+// in local storage or the cloud blob. This page's own "content beats emptiness" merge
+// would read that old plaintext as real content and carry it forward FOREVER past every
+// future clean write, the moment two devices disagree about which copy is newer. RUN,
+// not read: lift the real staffStripSignin + staffMergeOne and exercise them.
+const grab = (name) => {
+  let i = src.indexOf('async function ' + name + '(');
+  if (i === -1) i = src.indexOf('function ' + name + '(');
+  if (i === -1) throw new Error('missing ' + name);
+  let depth = 0, j = src.indexOf('{', i);
+  for (let k = j; k < src.length; k++) {
+    if (src[k] === '{') depth++;
+    else if (src[k] === '}') { depth--; if (depth === 0) { j = k; break; } }
+  }
+  return src.slice(i, j + 1);
+};
+let STRIP = null, MERGE = null;
+try {
+  const lifted = new Function(`${grab('staffStripSignin')}\n${grab('staffMergeOne')}\nreturn {staffStripSignin,staffMergeOne};`)();
+  STRIP = lifted.staffStripSignin; MERGE = lifted.staffMergeOne;
+} catch (e) { ok('staffStripSignin + staffMergeOne lift and run: ' + e.message, false); }
+
+if (STRIP && MERGE) {
+  // staffStripSignin itself
+  const people = {
+    alice: { name: 'Alice', register: { signin: '1234', signin_at: 999, pin_set: true, emp_id: 5 } },
+    bob: { name: 'Bob', register: { pin_set: true } },           // already clean
+    carol: { name: 'Carol' },                                    // no register at all — must not throw
+  };
+  STRIP(people);
+  ok('⛔ staffStripSignin deletes register.signin', people.alice.register.signin === undefined);
+  ok('⛔ …and register.signin_at', people.alice.register.signin_at === undefined);
+  ok('…while leaving everything else on that record alone', people.alice.register.pin_set === true && people.alice.register.emp_id === 5);
+  ok('a record with no signin to begin with is untouched', people.bob.register.pin_set === true);
+  ok('a record with no register object at all does not throw', people.carol.register === undefined);
+
+  // staffMergeOne: THE EXACT CASE ASKED FOR — a cloud copy that still has signin merges
+  // to a record without it, whichever side is newer.
+  const local = { at: 100, name: 'Dana', register: { pin_set: true, emp_id: 9 } };
+  const cloudNewer = { at: 200, name: 'Dana', register: { pin_set: true, emp_id: 9, signin: '5678', signin_at: 150 } };
+  const mergedCloudNewer = MERGE(local, cloudNewer);
+  ok('⛔ a NEWER cloud copy that still carries signin does not survive the merge',
+     mergedCloudNewer.register.signin === undefined && mergedCloudNewer.register.signin_at === undefined);
+  ok('…and the merge still carries the rest of that record through (emp_id)', mergedCloudNewer.register.emp_id === 9);
+
+  const cloudOlder = { at: 50, name: 'Dana', register: { pin_set: true, emp_id: 9, signin: '5678', signin_at: 40 } };
+  const mergedCloudOlder = MERGE(cloudOlder, local);
+  ok('⛔ an OLDER copy that still carries signin ALSO does not survive — "content beats emptiness" must not resurrect it',
+     mergedCloudOlder.register.signin === undefined && mergedCloudOlder.register.signin_at === undefined);
+
+  // Both sides stale at once — the worst case, and the one a two-device disagreement
+  // actually produces.
+  const bothStale = MERGE(
+    { at: 10, register: { signin: '1111', signin_at: 5 } },
+    { at: 20, register: { signin: '2222', signin_at: 15 } },
+  );
+  ok('⛔ both sides carrying the retired field STILL merges clean', bothStale.register.signin === undefined);
+}
+
+// staffLoad / staffPushMerged: strip BEFORE the merge, on every source read, not after.
+const load = src.slice(src.indexOf('async function staffLoad('), src.indexOf('let staffPushTimer'));
+const push = src.slice(src.indexOf('async function staffPushMerged('), src.indexOf('async function staffPull('));
+ok('staffLoad strips the LOCAL copy right after reading it, before anything uses it',
+   /staffS\.people=j\.people[^\n]*\n[^\n]*staffStripSignin\(staffS\.people\)/.test(load));
+ok('⛔ staffLoad strips the CLOUD copy before staffMerge touches it, not after',
+   load.indexOf('staffStripSignin(r.v.people)') >= 0 &&
+   load.indexOf('staffStripSignin(r.v.people)') < load.indexOf('staffMerge(staffS.people,r.v.people)'));
+ok('⛔ staffPushMerged strips its cloud read before merging too, same discipline as staffLoad',
+   push.indexOf('staffStripSignin(r.v.people)') >= 0 &&
+   push.indexOf('staffStripSignin(r.v.people)') < push.indexOf('staffMerge(staffS.people,r.v.people)'));
+const mergeOneSrc = src.slice(src.indexOf('function staffMergeOne('), src.indexOf('function staffMerge('));
+ok('staffMergeOne carries an independent backstop (it never emits the field even if a caller forgot to strip)',
+   /out\.register=Object\.assign\([^)]*\);/.test(mergeOneSrc) &&
+   /delete out\.register\.signin;delete out\.register\.signin_at;/.test(mergeOneSrc) &&
+   mergeOneSrc.indexOf('out.register=Object.assign') < mergeOneSrc.indexOf('delete out.register.signin;'));
 
 console.log(bad ? `\n${bad} FAILED` : '\nall good');
 process.exit(bad ? 1 : 0);
