@@ -5859,6 +5859,56 @@ function tipRosterValidate(v){
 // Loading now happens in tipsFetchRoster() below. If the store ever needs reseeding, that is a
 // deliberate hand write against the TIPS_ROSTER_KEY key, built fresh — not a rerun of code whose
 // source of truth no longer exists.
+//
+// 11/20/26 — exactly that deliberate hand write, once, for one person. Vinny: the official
+// spelling is "Lagace" (Priscilla Lagace), everywhere — matching Staff (already merged this
+// way, STAFF_CLEANUP_1_MERGES) and payroll. The stored Tips roster still has the Bartender
+// section's own copy as "Priscilla La Gace", with every variant aliasing TO it — backwards
+// now. ⛔ ALIAS-ONLY, same boundary as the Sophia Evans case: this touches no money, no cell,
+// no tip or hours figure — only which spelling a pulled name canonicalizes to.
+async function tipRosterFixPriscilla(){
+  const st=(s,c)=>tipsSetStatus(s,c||'var(--text-dim)');
+  if(!KV_TOKEN()){st('⚠ No sync key on this device — paste it in Settings first.','#f87171');return;}
+  st('Reading the roster…');
+  const r=await kvGet(TIPS_ROSTER_KEY);
+  if(kvFailed(r)){st('⚠ could not reach the store — nothing was changed.','#f87171');return;}
+  const val=tipRosterValidate(r&&r.v);
+  if(!val){st('⚠ the store holds something that is NOT a usable roster — nothing was changed.','#f87171');return;}
+  const FROM='Priscilla La Gace', TO='Priscilla Lagace';
+  const i=(val.groups.Bartender||[]).indexOf(FROM);
+  if(i<0&&val.aliases[tipNormKey(TO)]===TO){st('Already "'+TO+'" — nothing to do.','var(--text-dim)');return;}
+  const sections={};TIP_SECTIONS.forEach(s=>{sections[s]=(val.groups[s]||[]).slice();});
+  if(i>=0)sections.Bartender[i]=TO;
+  const aliases={};
+  Object.keys(val.aliases).forEach(k=>{aliases[k]=val.aliases[k]===FROM?TO:val.aliases[k];});
+  aliases[tipNormKey(TO)]=TO;   // identity entry for the new canonical spelling itself
+  const v={sections,aliases};
+  const chk=tipRosterValidate(v);
+  if(!chk){st('⚠ the fixed-up roster did not validate — nothing was written.','#f87171');return;}
+  if(!confirm('Re-point every "La Gace"/"Lagace" spelling to canonical "Priscilla Lagace"?\n\nChanges the Bartender section entry and '+Object.keys(aliases).length+' name corrections. No cell, tip or hours figure is touched.'))return;
+  st('Writing…');
+  try{
+    const resp=await fetch(KV_URL+encodeURIComponent(TIPS_ROSTER_KEY),{method:'POST',
+      headers:{'Content-Type':'application/json','x-sync-token':KV_TOKEN()},
+      body:JSON.stringify({v,at:Date.now()})});
+    if(!resp.ok)throw new Error('HTTP '+resp.status);
+  }catch(e){st('⚠ NOT written: '+((e&&e.message)||e),'#f87171');return;}
+  // Read back and diff, same discipline as the retired tipRosterSeed — an echo of what was
+  // sent is not a confirmation.
+  const back=await kvGet(TIPS_ROSTER_KEY);
+  const backVal=!kvFailed(back)&&tipRosterValidate(back&&back.v);
+  if(!backVal||(backVal.groups.Bartender||[]).indexOf(TO)<0||backVal.aliases[tipNormKey(TO)]!==TO){
+    st('⚠ wrote, but the read-back does not show the fix — check by hand.','#f87171');return;
+  }
+  tipsState.roster=null;tipsState.rosterFailed=false;   // force the next load to re-fetch, not reuse the stale cached copy
+  st('Done — Priscilla Lagace is now canonical, '+Object.keys(backVal.aliases).length+' name corrections, read back and matches ✓','#34d399');
+}
+// ONE-TIME BUTTON, same treatment as every other migration button in this file (the
+// schedule-pull, the MICROS import, staff-cleanup-1): comment it out once Vinny has
+// pressed it and Jarvis has verified the mini mirror, leave the function in place.
+function tipRosterFixPriscillaHTML(){
+  return `<button onclick="tipRosterFixPriscilla()" title="One-time: re-point every La Gace/Lagace spelling to canonical Priscilla Lagace. Alias only — touches no money." style="background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:12px;white-space:nowrap">Fix Priscilla's spelling →</button>`;
+}
 let tipsState={start:null,end:null,cells:{},adds:{},moves:{},expanded:{},roster:null,hours:{},hoursOut:{},empIds:{},busserSplit:{},busserSplitByDay:{},view:'tips',loaded:false,loading:false};
 let tipsGen=0;   // bumped on every (re)load; guards against two period-loads racing and crossing data
 function tipsSetView(v){tipsState.view=v;document.getElementById('viewport').innerHTML=tipsHTML();}
@@ -6947,6 +6997,7 @@ function tipsHTML(){
         <button onclick="tipsThisPeriod()" title="Jump to the current pay period" style="background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:12px">This period</button>
       </div>
       ${tipsImportBtnHTML()}
+      ${tipRosterFixPriscillaHTML()}
       <span id="tips-status" style="font-size:12px;color:var(--text-dim)"></span>
       <span style="margin-left:auto;font-size:12px;color:var(--text-dim)">picking dates pulls the tip-out log + weddings automatically · click a cell to edit</span>
     </div>
