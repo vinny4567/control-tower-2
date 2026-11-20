@@ -14,7 +14,12 @@ let bad = 0;
 const ok = (t, c) => { if (!c) bad++; console.log((c ? '  ok  ' : '  FAIL') + '  ' + t); };
 
 const grab = (name) => {
-  const i = src.indexOf('function ' + name + '(');
+  // Prefer the `async function NAME(` form when it exists — searching for the bare
+  // `function NAME(` alone matches partway INTO an async declaration (right after the
+  // `async ` keyword) and silently drops `async`, which then makes every `await` inside
+  // a SyntaxError in the lifted copy. staffReconcileJobNums is async; this bit once.
+  let i = src.indexOf('async function ' + name + '(');
+  if (i === -1) i = src.indexOf('function ' + name + '(');
   if (i === -1) throw new Error('missing ' + name);
   return src.slice(i, src.indexOf('\n}', i) + 2);
 };
@@ -101,6 +106,72 @@ ok('⛔ exactly one function publishes ct_job_rates',
    (src.match(/function staffJobRatesForMini\(/g) || []).length === 1);
 ok('the per-person loop reuses STAFF_JOB_NUMS, not a second copy of the job-number map',
    (fn.match(/STAFF_JOB_NUMS\[/g) || []).length === 2);
+
+
+// ── Jarvis, 11/19 late: does the drift check actually fire, and does it count the new
+// emp: keys as drift? ────────────────────────────────────────────────────────────────
+// Answered by RUNNING staffReconcileJobNums against a mini blob shaped exactly like the
+// real one he reported (292 bytes, no emp: keys, last write 11/17) and a device that has
+// person overrides to publish.
+const reconcile = grab('staffReconcileJobNums');
+const runReconcile = (people, jobs, miniHas) => {
+  const ctx = {};
+  new Function('ctx', `
+    const STAFF_JOB_NUMS = ${JSON.stringify(STAFF_JOB_NUMS)};
+    const staffS = { people: ${JSON.stringify(people)}, jobs: ${JSON.stringify(jobs)} };
+    function staffJobs(){return staffS.jobs||(staffS.jobs={})}
+    ${grab('staffJobRatesForMini')}
+    let kvFailed = () => false;
+    let published = null;
+    function staffPublishJobRates(){ published = staffJobRatesForMini(); }
+    async function kvGet(key){ ctx.read = key; return ${JSON.stringify(miniHas)}; }
+    ${reconcile}
+    ctx.run = staffReconcileJobNums;
+    ctx.getPublished = () => published;
+  `)(ctx);
+  return ctx;
+};
+
+// The exact shape Jarvis reported: a stale blob with no emp: keys, only job-level rates.
+const staleMini = { v: { Server: 1400, '200': 1400 }, at: 1794958645453 };
+let rc = runReconcile(
+  { p1: { register: { emp_id: 42 }, rates: { Server: 17.5 } } },
+  { Server: { rate: 14 } },
+  staleMini,
+);
+await rc.run();
+ok('⛔ a mini blob missing the new emp: keys IS counted as drift', rc.getPublished() !== null);
+ok('…and republishing actually includes the override', rc.getPublished()['emp:42|Server'] === 1750);
+
+// The OTHER direction — don't republish a mini that already agrees, including on the
+// emp: keys (proves this isn't just "always republish once overrides exist").
+const freshMini = { v: { Server: 1400, '200': 1400, 'emp:42|Server': 1750, 'emp:42|200': 1750 }, at: 999 };
+rc = runReconcile(
+  { p1: { register: { emp_id: 42 }, rates: { Server: 17.5 } } },
+  { Server: { rate: 14 } },
+  freshMini,
+);
+await rc.run();
+ok('a mini that already matches, emp: keys included, is left alone', rc.getPublished() === null);
+
+// ── Does it fire WITHOUT a save click — on ordinary page load? ─────────────────────────
+// staffLoad() is the only caller of staffReconcileJobNums(), and until this fix it ran
+// ONLY when someone navigated into POS → Staff or POS → Job rates (posSec/posJobRatesHTML/
+// posStaffHTML) — not on an ordinary boot landing on, say, the Dashboard. Fixed by adding
+// it to the SAME unconditional boot block wedMetaPull() already uses for exactly this
+// reason ("tiny + holds the customer-email links — always sync at boot").
+const bootBlock = (() => {
+  const i = src.indexOf("window.addEventListener('load',()=>{setTimeout(()=>{");
+  const j = src.indexOf('},800)});', i);
+  return src.slice(i, j);
+})();
+ok('⛔ staffLoad() now runs in the SAME unconditional boot block as wedMetaPull — fires on every open, not just a specific POS sub-tab',
+   /wedMetaPull\(\);[\s\S]*staffLoad\(\);/.test(bootBlock));
+ok('…staffLoad() self-guards (idempotent), so this is free on every normal boot',
+   grab('staffLoad').includes('if(staffS.loaded)return;'));
+ok('…and staffLoad() itself still ends by calling the reconcile (nothing new to wire there)',
+   /staffReconcileJobNums\(\);\s*\n\}/.test(grab('staffLoad')));
+
 
 console.log(bad ? `\n${bad} FAILED` : '\nall good');
 process.exit(bad ? 1 : 0);

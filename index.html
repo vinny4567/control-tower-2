@@ -17543,6 +17543,16 @@ window.addEventListener('load',()=>{setTimeout(()=>{
   if(activeTab===BANK)bankPull();
   if(activeTab===DOCS)docsPullSync();
   wedMetaPull(); // tiny + holds the customer-email links — always sync at boot
+  // ⛔ ALSO always at boot, same reasoning as wedMetaPull above, added 11/19/26: a fixed
+  // STAFF_JOB_NUMS or a new field in staffJobRatesForMini (e.g. the emp:<id>|<job> person
+  // overrides) changes nothing on the floor until something calls staffPublishJobRates —
+  // and until now that only happened from staffLoad(), which only ran when someone
+  // actually opened POS → Staff or POS → Job rates. A code change nobody's screen ever
+  // visits is not a fix; staffLoad() already self-guards (`if(staffS.loaded)return`) and
+  // already ends by calling staffReconcileJobNums(), which republishes ONLY if what the
+  // mini holds has actually drifted from what this device would publish now — so this is
+  // free on every normal boot and does the real work only when there is real work to do.
+  staffLoad();
 },800)});
 // Keep the open inbox fresh (only when the Email tab is showing and nothing is open/being composed)
 // Auto-refresh ALL inboxes while the Email tab is open: the viewed folder updates in place (list pane

@@ -748,6 +748,13 @@ const M=[
   ['JRO 6 · BENIGN — the override comment block reworded, no behaviour change','check-job-rate-override.mjs',
     tsub("// has to PUBLISH what each person's own rate is, keyed by their register emp_id so the",
          "// publishes each person's own rate, keyed by their register emp_id, so the"),false],
+
+  ['JRO 7 · ⛔ staffLoad() is removed from the unconditional boot block — the drift fix only fires when someone opens POS → Staff again','check-job-rate-override.mjs',
+    tsub("  // mini holds has actually drifted from what this device would publish now — so this is\n  // free on every normal boot and does the real work only when there is real work to do.\n  staffLoad();\n},800)});",
+         "  // mini holds has actually drifted from what this device would publish now — so this is\n  // free on every normal boot and does the real work only when there is real work to do.\n},800)});"),true],
+  ['JRO 8 · BENIGN — the boot-wiring comment reworded, staffLoad() itself untouched','check-job-rate-override.mjs',
+    tsub("A code change nobody's screen ever\n  // visits is not a fix;",
+         "A fix nobody's device ever runs is not a fix;"),false],
 ];
 
 let wrong=0;
