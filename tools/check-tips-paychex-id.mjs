@@ -35,7 +35,7 @@ const grabLast = (name) => {
   return src.slice(i, j + 1);
 };
 
-function world({ people = {}, aliases = {}, empIds = {}, cells = {}, hours = {}, busserSplit = {} } = {}) {
+function world({ people = {}, aliases = {}, empIds = {}, cells = {}, hours = {}, busserSplit = {}, answer = null, blocked = false } = {}) {
   const ctx = { status: [] };
   new Function('ctx', `
     let staffS={people:${JSON.stringify(people)},aliases:${JSON.stringify(aliases)}};
@@ -67,6 +67,13 @@ function world({ people = {}, aliases = {}, empIds = {}, cells = {}, hours = {},
     ${grab('tipsDownloadCsv')}
     ctx.nav={};function posSec(x){ctx.nav.posSec=x;} function staffFlagOpen(n){ctx.nav.flag=n;}
     ${grab('tipOpenInStaff')}
+    ctx.asked=[];ctx.saves=[];ctx.redraws=0;
+    async function tipIdConflictAsk(n,a,b){ctx.asked.push([n,a,b]);return ${JSON.stringify(answer)};}
+    function tipsSaveBlocked(){return ${JSON.stringify(blocked)};}
+    function tipsSaveEmpIds(){if(tipsSaveBlocked())return false;ctx.saves.push(JSON.parse(JSON.stringify(tipsState.empIds)));return true;}
+    function tipsRedraw(){ctx.redraws++;}
+    ${grab('tipResolveIdConflict')}
+    ctx.resolveConflict=tipResolveIdConflict;ctx.ids=()=>tipsState.empIds;
     ctx.openInStaff=tipOpenInStaff;ctx.staffS=()=>staffS;
     ctx.id=tipPaychexId;ctx.badge=tipIdBadgeHTML;ctx.csv=tipsPaychexCsv;ctx.download=tipsDownloadCsv;
   `)(ctx);
@@ -172,7 +179,7 @@ const csvRow = (csv, name) => csv.split('\n').find(l => l.includes(',' + name + 
 {
   const w = world({ people: P('cal conflict', 'Cal Conflict', { paychex_id: '412' }), empIds: { 'Cal Conflict': '409' } });
   const b = w.badge('Cal Conflict');
-  ok('⛔ a conflict shows both ids in red, tap-to-fix, never an editable box', b.includes('412≠409') && b.includes('#f87171') && !b.includes('<input') && b.includes('tipOpenInStaff('));
+  ok('⛔ a conflict shows both ids in red, tap-to-fix (the conflict resolver), never an editable box', b.includes('412≠409') && b.includes('#f87171') && !b.includes('<input') && b.includes('tipResolveIdConflict('));
 }
 {
   const w = world({ people: P('bob bar', 'Bob Bar', {}), empIds: { 'Bob Bar': '377' } });
@@ -192,6 +199,52 @@ const csvRow = (csv, name) => csv.split('\n').find(l => l.includes(',' + name + 
   const w = world({ people: {} });
   w.openInStaff('Ghost Person');
   ok('⛔ a name Staff can\'t resolve opens the ⚑ picker instead (Add to Staff / Same person as…)', w.nav.flag === 'Ghost Person' && !w.nav.posSec);
+}
+
+// ── a RED CONFLICT settled from the badge: "Staff is right" (Lydia Freeborn, 648≠16) ─────────
+const lydia = P('lydia freeborn', 'Lydia Freeborn', { pid: 'L1', paychex_id: '648' });
+{
+  const w = world({ people: lydia, empIds: { 'Lydia Freeborn': '16', 'Amy Server': '412' }, cells: { 'Lydia Freeborn': { '11/17': { p: 90 } } }, answer: 'staff' });
+  ok('fixture: Lydia is a conflict and is left OFF the CSV', w.id('Lydia Freeborn').src === 'conflict' && w.csv().conflicts.length === 1);
+  await w.resolveConflict('Lydia Freeborn');
+  ok('the tap asks first, naming both IDs', w.asked.length === 1 && w.asked[0][0] === 'Lydia Freeborn' && w.asked[0][1] === '648' && w.asked[0][2] === '16');
+  ok('⛔ "Staff is right" removes HER old-list 16 — nobody else\'s entry is touched', !('Lydia Freeborn' in w.ids()) && w.ids()['Amy Server'] === '412');
+  ok('⛔ …through the ONE guarded saver, once', w.saves.length === 1 && !('Lydia Freeborn' in w.saves[0]));
+  ok('the badge is blue now (Staff\'s 648), and the screen redraws (keeping the scroll)', w.id('Lydia Freeborn').src === 'staff' && w.id('Lydia Freeborn').id === '648' && w.redraws === 1);
+  const out = w.csv();
+  ok('⛔ she is back in the CSV under 648', out.conflicts.length === 0 && /^11048355,648,Lydia Freeborn,hourly/m.test(out.csv));
+  ok('⛔ Staff is never written from here (still 648, nothing else on her record changed)', JSON.stringify(w.staffS().people['lydia freeborn']) === JSON.stringify(lydia['lydia freeborn']));
+}
+{
+  // a second spelling of the same person holding the old value goes too; a spelling that AGREES stays
+  const w = world({ people: lydia, aliases: { 'lydia free born': 'lydia freeborn' }, empIds: { 'Lydia Freeborn': '16', 'Lydia Free Born': '16', 'lydia freeborn ': '0648' }, answer: 'staff' });
+  await w.resolveConflict('Lydia Freeborn');
+  ok('every stored spelling of HER holding the disagreeing ID is removed', !('Lydia Freeborn' in w.ids()) && !('Lydia Free Born' in w.ids()));
+  ok('…while a spelling that agrees with Staff (0648 = 648) is left alone', w.ids()['lydia freeborn '] === '0648');
+}
+{
+  const w = world({ people: lydia, empIds: { 'Lydia Freeborn': '16' }, answer: 'open' });
+  await w.resolveConflict('Lydia Freeborn');
+  ok('⛔ "the old one is right" opens her in Staff and removes NOTHING', w.nav.posSec === 'staff' && w.staffS().open === 'lydia freeborn' && w.ids()['Lydia Freeborn'] === '16' && w.saves.length === 0);
+}
+{
+  const w = world({ people: lydia, empIds: { 'Lydia Freeborn': '16' }, answer: null });
+  await w.resolveConflict('Lydia Freeborn');
+  ok('"Not now" / Escape changes nothing and goes nowhere', w.ids()['Lydia Freeborn'] === '16' && w.saves.length === 0 && !w.nav.posSec);
+}
+{
+  const w = world({ people: lydia, empIds: { 'Lydia Freeborn': '16' }, answer: 'staff', blocked: true });
+  await w.resolveConflict('Lydia Freeborn');
+  ok('⛔ on a screen that failed to load, "Staff is right" removes nothing (not even in memory)', w.ids()['Lydia Freeborn'] === '16' && w.saves.length === 0);
+}
+{
+  const w = world({ people: P('dee none', 'Dee None', {}), answer: 'staff' });
+  await w.resolveConflict('Dee None');
+  ok('a tap on a non-conflict just opens Staff, no question asked', w.asked.length === 0 && w.nav.posSec === 'staff');
+}
+{
+  const fn = grab('tipResolveIdConflict');
+  ok('⛔ the resolver never writes Staff (no staffWriteOp / staffSave in it)', !/staffWriteOp|staffSave\(/.test(fn));
 }
 
 // ── the sheet has NO way to write an ID any more ────────────────────────────────────────

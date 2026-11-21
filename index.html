@@ -6094,10 +6094,52 @@ function tipIdBadgeHTML(name){
   const base='font-weight:700;font-size:11px;margin-right:6px;font-variant-numeric:tabular-nums;white-space:nowrap';
   if(r.src==='staff')return `<span title="Paychex ID, from Staff" style="${base};color:var(--accent2,#38bdf8)">${esc(r.id)}</span>`;
   const en=esc(name).replace(/'/g,"\\'");
-  const tap=(label,color,title)=>`<button onclick="event.stopPropagation();tipOpenInStaff('${en}')" title="${title} — tap to fix it on Staff" style="${base};color:${color};background:none;border:none;padding:0;cursor:pointer;font-family:inherit;text-decoration:underline dotted">${label}</button>`;
-  if(r.src==='conflict')return tap(`${esc(r.staff)}≠${esc(r.sheet)}`,'#f87171',`Paychex ID differs — Staff says ${esc(r.staff)}, the old sheet says ${esc(r.sheet)}. Left off the Paychex CSV until it's settled on Staff`);
+  const tap=(label,color,title,fn)=>`<button onclick="event.stopPropagation();${fn||'tipOpenInStaff'}('${en}')" title="${title} — tap to fix it" style="${base};color:${color};background:none;border:none;padding:0;cursor:pointer;font-family:inherit;text-decoration:underline dotted">${label}</button>`;
+  if(r.src==='conflict')return tap(`${esc(r.staff)}≠${esc(r.sheet)}`,'#f87171',`Paychex ID differs — Staff says ${esc(r.staff)}, the old sheet says ${esc(r.sheet)}. Left off the Paychex CSV until it's settled`,'tipResolveIdConflict');
   if(r.src==='sheet')return tap(`${esc(r.id)}*`,'#fbbf24','Paychex ID from the old sheet — not on Staff yet');
   return tap('no ID','#f87171','No Paychex ID on Staff');
+}
+// A RED CONFLICT (Staff and the old sheet disagree), settled from the badge — Jarvis/Vinny,
+// 11/20/26, Lydia Freeborn 648≠16, "648 (Staff is right)". Two answers on one tap:
+//   · Staff is right → remove the person's old-list value(s) that disagree. Every stored
+//     spelling of that Staff person holding a different ID goes, through the ONE guarded
+//     saver (a screen that failed to load refuses, and says so). The badge turns blue and
+//     the person is back in the CSV under Staff's ID.
+//   · the old one is right → open the person in Staff to type it there.
+// ⛔ Never writes Staff from here — Staff is the master, so the only thing this page may
+// do on its own is DROP the losing copy, never pick a winner on Staff's behalf.
+function tipIdConflictAsk(name,staff,sheet){
+  return new Promise((resolve)=>{
+    const wrap=document.createElement('div');
+    wrap.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:20px';
+    const btn=(a,l,primary)=>`<button data-a="${a}" style="padding:9px 14px;border-radius:8px;border:1px solid ${primary?'var(--accent)':'var(--border)'};background:${primary?'var(--accent)':'var(--surface2)'};color:${primary?'#000':'var(--text)'};font-size:14px;font-weight:700;cursor:pointer;text-align:left">${l}</button>`;
+    wrap.innerHTML=`<div style="background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:12px;max-width:440px;width:100%;padding:20px;box-shadow:0 18px 50px rgba(0,0,0,.5)">
+      <div style="font-size:15px;line-height:1.45;margin-bottom:16px"><b>${esc(name)}</b> has two Paychex IDs: Staff says <b>${esc(staff)}</b>, the old sheet says <b>${esc(sheet)}</b>. They're left off the Paychex CSV until it's settled.</div>
+      <div style="display:flex;flex-direction:column;gap:8px">${btn('staff',`Staff is right: use ${esc(staff)} (removes ${esc(sheet)} from the old list)`,true)}${btn('open',`The old one is right: open ${esc(name)} in Staff`)}${btn('cancel','Not now')}</div></div>`;
+    const done=(v)=>{wrap.remove();document.removeEventListener('keydown',onKey);resolve(v);};
+    const onKey=(e)=>{if(e.key==='Escape')done(null);};
+    wrap.addEventListener('click',(e)=>{const b=e.target.closest('button[data-a]');if(b)done(b.dataset.a==='cancel'?null:b.dataset.a);else if(e.target===wrap)done(null);});
+    document.addEventListener('keydown',onKey);
+    document.body.appendChild(wrap);
+  });
+}
+async function tipResolveIdConflict(rawName){
+  const r=tipPaychexId(rawName);
+  if(r.src!=='conflict'){tipOpenInStaff(rawName);return;}
+  const p=staffResolveForTips(rawName);
+  const who=p?p.name:rawName;
+  const choice=await tipIdConflictAsk(who,r.staff,r.sheet);
+  if(choice==='open'){tipOpenInStaff(rawName);return;}
+  if(choice!=='staff')return;
+  if(tipsSaveBlocked())return;   // a screen that failed to load must not rewrite the ID map
+  // every stored spelling of THIS Staff person whose old-list ID disagrees with Staff's
+  const ids=tipsState.empIds||{},want=tipIdNorm(r.staff);
+  const gone=Object.keys(ids).filter(k=>{const q=staffResolveForTips(k);return q&&p&&q.pid===p.pid&&ids[k]&&tipIdNorm(ids[k])!==want;});
+  if(!gone.length&&ids[rawName]&&tipIdNorm(ids[rawName])!==want)gone.push(rawName);
+  gone.forEach(k=>{delete ids[k];});
+  if(!tipsSaveEmpIds())return;
+  tipsSetStatus(who+': using Staff\'s Paychex ID '+r.staff+' — removed '+r.sheet+' from the old list','var(--text-dim)');
+  tipsRedraw();
 }
 // Open the person a Tips/Hours name resolves to in Staff, row expanded, so the ID is typed on
 // the master record. A name Staff can't resolve goes to the ⚑ picker instead ("Add to Staff"
