@@ -1000,6 +1000,19 @@ const M=[
     tsub("// ⚠️ STAFF IS THE MASTER FOR PAYCHEX IDs — Vinny, 11/20/26:",
          "// Staff owns the Paychex ID — Vinny, 11/20/26:"),false],
 
+  // ── THE ORDER AN ITEM ASKS ITS GROUPS (check-pos-prompt-order) ────────────────────────────
+  ['PROMPT 1 · ⛔ promptOrder never leaves the page — the drag reorders the back office and the register keeps asking Liquor Mods first','check-pos-prompt-order.mjs',
+    tsub("    promptOrder:posBuildPromptOrder(),   // the order each item asks its groups (see posBuildPromptOrder)\n",""),true],
+  ['PROMPT 2 · ⛔ a group title is resolved to the FIRST group with that name, not the one on this item — the wrong Liquor Mods is ordered','check-pos-prompt-order.mjs',
+    tsub("const g=cat.find(x=>x.name===n&&(x.used_by||[]).includes(r.name))||cat.find(x=>x.name===n);",
+         "const g=cat.find(x=>x.name===n);"),true],
+  ['PROMPT 3 · ⛔ only the dragged groups are listed — a group attached after the drag drops out of the order','check-pos-prompt-order.mjs',
+    tsub("    out[r.key]=cur.map((x,i)=>[x,i])","    out[r.key]=cur.filter(x=>ord.includes(x.n)).map((x,i)=>[x,i])"),true],
+  ['PROMPT 4 · ⛔ a detached group is still listed','check-pos-prompt-order.mjs',
+    tsub("  for(const n of live){\n    if(off.has(n))continue;","  for(const n of live){"),true],
+  ['PROMPT 5 · BENIGN — the prompt-order comment reworded, no behaviour change','check-pos-prompt-order.mjs',
+    tsub("// ── THE ORDER AN ITEM ASKS ITS GROUPS — Vinny, 11/20/26:","// ── Which group an item asks first — Vinny, 11/20/26:"),false],
+
   // ── NO SCROLL JUMPS IN TIPS / STAFF (check-scroll-guard) ─────────────────────────────────
   ['SCROLLG 1 · ⛔ the keep-scroll helper stops putting the scroll back — every redraw snaps to the top','check-scroll-guard.mjs',
     tsub("  posScrollers().forEach(([k,el])=>{if(before[k]!=null&&el.scrollTop!==before[k])el.scrollTop=before[k];});\n",""),true],

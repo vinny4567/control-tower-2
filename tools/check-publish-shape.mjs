@@ -40,6 +40,7 @@ const state = {
   deletedMods: [], choiceCuts: {},
   groups: { groups: {}, attach: {}, detach: {}, gone: [] },
   itemOrder: {},
+  promptOrder: {},
   // draft and live deliberately DIFFERENT, so a check that confuses them cannot pass.
   buttons: {
     draft: { food: [{ cat: 'DRAFT ONLY' }], bar: [], off: [] },
@@ -53,6 +54,8 @@ const ctx = {
   posModNames: state.modNames,
   posDeletedItems: state.deleted, posNewItems: state.added,
   posBuildGroups: () => state.groups,
+  // the order each item asks its groups (11/20/26) — built by its own tested function
+  posBuildPromptOrder: () => state.promptOrder,
   get posDiscRates() { return state.discRates; },
   get posNewMods() { return state.newMods; },
   get posModLetters() { return state.modLetters; },

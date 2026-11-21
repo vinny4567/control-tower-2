@@ -8284,6 +8284,49 @@ function posClassTogglePrinter(enc,printer){
 // The resolvers are REUSED, never reimplemented (posPriceOf, posRoutedTo). A second copy of
 // that logic is exactly how the two drift apart, which is the problem being fixed here.
 const POS_LIVE_KEY='ct_pos_live';
+// ── THE ORDER AN ITEM ASKS ITS GROUPS — Vinny, 11/20/26: "if i hit jose it brings up liqour
+// mods first but i want it to bring up the tequlia mod group first … let me click drag and
+// drop." The drag on an item's group line has stored that order (ct_pos_item_group_order, by
+// group NAME) since 9/4 — but it only ever reordered THIS page; nothing published it, so the
+// register kept asking in its own order. It travels now as
+//     promptOrder: { '<item key>': ['<group key>', …] }
+// with the SAME item key as `items` and the SAME group key posGroupKey gives ('130', or
+// 'n:<title>'), every one of the item's current groups listed, in the dragged order. Contract
+// agreed with POS-UI (the register half): listed prompts first, in that order; anything not
+// listed keeps its old order after them; a detached group's key simply stops matching.
+// A NAME is resolved against the item it sits on: one title can belong to several numbered
+// groups ("Liquor Mods"), so the one whose used_by holds THIS item wins.
+function posItemGroupKeys(r){
+  const cat=(posS.cat&&posS.cat.mod_groups)||[];
+  const live=r.groups||[],off=new Set(),out=[];
+  for(const [k,items] of Object.entries(posGroupDetach)){
+    if(!items.includes(r.name))continue;
+    const g=posNewGroups.find(x=>x.key===k)||cat.find(x=>String(x.num)===k||('n:'+x.name)===k);
+    if(g)off.add(g.name);
+  }
+  for(const n of live){
+    if(off.has(n))continue;
+    const g=cat.find(x=>x.name===n&&(x.used_by||[]).includes(r.name))||cat.find(x=>x.name===n);
+    out.push({n,k:g?String(posGroupKey(g)):'n:'+n});
+  }
+  for(const [k,a] of Object.entries(posGroupAttach)){
+    if(!(a.cats||[]).includes(r.cat)&&!(a.items||[]).includes(r.name))continue;
+    const g=posNewGroups.find(x=>x.key===k)||cat.find(x=>String(x.num)===k);
+    if(g&&!live.includes(g.name)&&!off.has(g.name))out.push({n:g.name,k:String(k)});
+  }
+  return out;
+}
+function posBuildPromptOrder(){
+  const out={};
+  for(const r of posAllRows()){
+    if(!r||!r.key)continue;
+    const ord=posItemGroupOrder[r.key];if(!ord||!ord.length)continue;
+    const cur=posItemGroupKeys(r);if(cur.length<2)continue;   // one group has no order to keep
+    const at=(x)=>{const i=ord.indexOf(x.n);return i<0?9999:i;};
+    out[r.key]=cur.map((x,i)=>[x,i]).sort((a,b)=>at(a[0])-at(b[0])||a[1]-b[1]).map(([x])=>x.k);
+  }
+  return out;
+}
 function posBuildLive(){
   const rows=posAllRows(), items={};
   for(const r of rows){
@@ -8359,6 +8402,7 @@ function posBuildLive(){
     // Mod groups travel now — their choices, their names, and what they are attached
     // to. The register applies them over its built-in menu the same way it does a price.
     ...posBuildGroups(),
+    promptOrder:posBuildPromptOrder(),   // the order each item asks its groups (see posBuildPromptOrder)
     // Discount rates, by the discount's stable id. Money coming off a bill, so it
     // travels the same audited path as a price rather than a second one of its own.
     discounts:{...posDiscRates},
@@ -10205,7 +10249,8 @@ function posPublishableCount(){
   return Object.keys(b.items).length+b.deleted.length+b.added.length
     +Object.keys(b.groups||{}).length+Object.keys(b.attach||{}).length
     +Object.keys(b.detach||{}).length+(b.gone||[]).length
-    +(b.newDiscounts||[]).length;
+    +(b.newDiscounts||[]).length
+    +Object.keys(b.promptOrder||{}).length;
 }
 
 // Getting everything typed here into the build. No token changes hands — the page
