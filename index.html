@@ -6611,7 +6611,11 @@ async function tipsPull(auto){
   const inPeriod={};tipDays().forEach(d=>inPeriod[tipDayLabel(d)]=true);
   // collapse to one entry per date (prefer finalized over draft, newest)
   const byDate={};
-  log.forEach(e=>{if(!e||!e.date)return;const p=e.date.split('/');if(p.length!==3)return;const lb=parseInt(p[0])+'/'+parseInt(p[1]);if(!inPeriod[lb])return;const cur=byDate[lb];const better=!cur||(!e.draft&&cur.draft)||((!!e.draft===!!cur.draft)&&String(e.savedAt||'')>String(cur.savedAt||''));if(better)byDate[lb]=e;});
+  // ⚠️ PRACTICE entries are skipped outright, never merely out-aged by a newer real one —
+  // Vinny 11/20/26: the register will start saving practice nights into this same log (mini
+  // held until this ships). A practice night typically has no bussers/runners clocked in, so
+  // letting "prefer the newest" pick it would REPLACE a real night's pay with an empty one.
+  log.forEach(e=>{if(!e||!e.date||e.practice)return;const p=e.date.split('/');if(p.length!==3)return;const lb=parseInt(p[0])+'/'+parseInt(p[1]);if(!inPeriod[lb])return;const cur=byDate[lb];const better=!cur||(!e.draft&&cur.draft)||((!!e.draft===!!cur.draft)&&String(e.savedAt||'')>String(cur.savedAt||''));if(better)byDate[lb]=e;});
   let filled=0;
   // fill a single component (p=paid, u=unpaid) only if that component is empty — never clobber
   const putC=(name,lb,comp,v)=>{if(!v)return;const c=tipCell(name,lb);if(c&&c[comp])return;tipSetComp(name,lb,comp,v);filled++;};

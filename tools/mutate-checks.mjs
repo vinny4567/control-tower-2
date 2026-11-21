@@ -939,6 +939,14 @@ const M=[
     tsub("  Object.keys(tipsState.hours||{}).forEach(n=>{if(tipPersonHasHoursThisPeriod(n))add(n);});\n",
          ""),true],
 
+  // ── tipsPull SKIPS PRACTICE-MODE LOG ENTRIES (check-tips-pull-practice) ─────────────────
+  ['PRACTICE 1 · ⛔ tipsPull stops skipping practice entries entirely — a newer practice night can replace a real one again','check-tips-pull-practice.mjs',
+    tsub("log.forEach(e=>{if(!e||!e.date||e.practice)return;",
+         "log.forEach(e=>{if(!e||!e.date)return;"),true],
+  ['PRACTICE 2 · BENIGN — just rewording the practice-skip comment, no behaviour change','check-tips-pull-practice.mjs',
+    tsub("  // ⚠️ PRACTICE entries are skipped outright, never merely out-aged by a newer real one —",
+         "  // Practice entries are dropped before they can ever compete for a date —"),false],
+
   // ── REPEATED SECTION HEADERS + THICKER PAID DIVIDER (check-tips-headers) ───────────────
   ['HEAD 1 · ⛔ sectionHeadRow is never called in the section loop — the repeated date headers Vinny asked for are gone','check-tips-headers.mjs',
     tsub("    body+=sectionHeadRow(sec);\n",''),true],
