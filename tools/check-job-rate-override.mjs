@@ -28,6 +28,8 @@ const STAFF_JOB_NUMS = JSON.parse(
     .replace(/(\w[\w ]*|'[^']+')\s*:/g, (_, k) => JSON.stringify(k.replace(/^'|'$/g, '')) + ':')
 );
 ok('STAFF_JOB_NUMS was actually parsed (sanity on the regex above)', STAFF_JOB_NUMS.Server === 200);
+const STAFF_JOBS = JSON.parse(src.match(/const STAFF_JOBS=(\[[^\]]+\])/)[1].replace(/'/g, '"'));
+const JOBKEY = src.match(/const staffJobCanon=[^\n]+/)[0] + '\n' + src.match(/const staffJobKey=[^\n]+/)[0];
 
 // Lifted with the real STAFF_JOB_NUMS and a swappable staffS, same pattern as
 // check-jobnames.mjs.
@@ -35,6 +37,8 @@ const run = (people, jobs = {}) => {
   const ctx = {};
   new Function('ctx', `
     const STAFF_JOB_NUMS = ${JSON.stringify(STAFF_JOB_NUMS)};
+    const STAFF_JOBS = ${JSON.stringify(STAFF_JOBS)};
+    ${JOBKEY}
     const staffS = { people: ${JSON.stringify(people)}, jobs: ${JSON.stringify(jobs)} };
     function staffJobs(){return staffS.jobs||(staffS.jobs={})}
     ${grab('staffJobRatesForMini')}
@@ -115,6 +119,8 @@ const runReconcile = (people, jobs, miniHas) => {
   const ctx = {};
   new Function('ctx', `
     const STAFF_JOB_NUMS = ${JSON.stringify(STAFF_JOB_NUMS)};
+    const STAFF_JOBS = ${JSON.stringify(STAFF_JOBS)};
+    ${JOBKEY}
     const staffS = { people: ${JSON.stringify(people)}, jobs: ${JSON.stringify(jobs)} };
     function staffJobs(){return staffS.jobs||(staffS.jobs={})}
     ${grab('staffJobRatesForMini')}
@@ -150,6 +156,27 @@ rc = runReconcile(
 );
 await rc.run();
 ok('a mini that already matches, emp: keys included, is left alone', rc.getPublished() === null);
+
+// ── CUTOVER #2 (Jarvis, 11/20/26): Day Party / Wedding Setup / Training ─────────────────────
+// The register's clock-in picker punches these exact names; the mini's rateOf matches the job
+// NAME exactly. So the standard spelling must be published even when the rate was typed under
+// another one (the live store has 'training').
+ok('⛔ the three jobs are standard jobs, spelled exactly "Day Party", "Wedding Setup", "Training"',
+   ['Day Party', 'Wedding Setup', 'Training'].every(j => STAFF_JOBS.includes(j)) && !STAFF_JOBS.includes('training') && !STAFF_JOBS.includes('WeddingSetup'));
+out = run({}, { training: { rate: 12 }, 'Day Party': { rate: 18 } });
+ok('⛔ a rate stored as "training" is published as "Training" too — the spelling the register punches', out.Training === 1200);
+ok('…and the stored "training" key stays published (nothing that matched it stops matching)', out.training === 1200);
+ok('"Day Party" publishes under its own spelling, once', out['Day Party'] === 1800 && Object.keys(out).filter(k => /day party/i.test(k)).length === 1);
+out = run({}, { training: { rate: 12 }, Training: { rate: 14 } });
+ok('⛔ an exact "Training" rate wins over a variant\'s — never overwritten by the lowercase one', out.Training === 1400 && out.training === 1200);
+out = run({}, { training: {} });
+ok('a variant with NO rate publishes nothing under either spelling (missing stays missing, never 0)', !('Training' in out) && !('training' in out));
+out = run({ p1: { register: { emp_id: 42 }, rates: { training: 13 } } });
+ok('⛔ a person\'s override under "training" is published as emp:42|Training too', out['emp:42|Training'] === 1300 && out['emp:42|training'] === 1300);
+out = run({ p1: { register: { emp_id: 42 }, rates: { training: 13, Training: 15 } } });
+ok('…and the person\'s exact "Training" override wins', out['emp:42|Training'] === 1500);
+out = run({}, { 'Server ': { rate: 20 } });
+ok('the standard-spelling publish is generic: a stray-space "Server " also reaches the mini as "Server"', out.Server === 2000);
 
 // ── Does it fire WITHOUT a save click — on ordinary page load? ─────────────────────────
 // staffLoad() is the only caller of staffReconcileJobNums(), and until this fix it ran

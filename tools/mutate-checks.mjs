@@ -670,7 +670,7 @@ const M=[
 
   // ── PERSON RATE OVERRIDES REACH THE MINI (check-job-rate-override) ─────────────────
   ['JRO 1 · the per-person loop is dropped entirely — overrides stop publishing','check-job-rate-override.mjs',
-    tsub("  Object.values(staffS.people||{}).forEach(p=>{\n    const empId=p.register&&p.register.emp_id;\n    if(empId==null)return;                 // not on the register — no shift to override\n    const rates=p.rates||{};\n    Object.keys(rates).forEach(job=>{\n      const r=rates[job];\n      if(!(r>0))return;                    // a missing override stays missing — never 0\n      const cents=Math.round(r*100);\n      out['emp:'+String(empId)+'|'+job]=cents;\n      const num=STAFF_JOB_NUMS[job];\n      if(num!=null)out['emp:'+String(empId)+'|'+String(num)]=cents;\n    });\n  });\n  return out;",
+    tsub("  Object.values(staffS.people||{}).forEach(p=>{\n    const empId=p.register&&p.register.emp_id;\n    if(empId==null)return;                 // not on the register — no shift to override\n    const rates=p.rates||{};\n    Object.keys(rates).forEach(job=>{\n      const r=rates[job];\n      if(!(r>0))return;                    // a missing override stays missing — never 0\n      const cents=Math.round(r*100);\n      out['emp:'+String(empId)+'|'+job]=cents;\n      const num=STAFF_JOB_NUMS[job];\n      if(num!=null)out['emp:'+String(empId)+'|'+String(num)]=cents;\n    });\n    alsoStd(rates,'emp:'+String(empId)+'|');\n  });\n  return out;",
          "  return out;"),true],
   ['JRO 2 · a 0/missing override is written as 0 instead of staying absent','check-job-rate-override.mjs',
     tsub("      if(!(r>0))return;                    // a missing override stays missing — never 0",
@@ -694,6 +694,19 @@ const M=[
   ['JRO 8 · BENIGN — the boot-wiring comment reworded, staffLoad() itself untouched','check-job-rate-override.mjs',
     tsub("A code change nobody's screen ever\n  // visits is not a fix;",
          "A fix nobody's device ever runs is not a fix;"),false],
+  // ── CUTOVER #2: Day Party / Wedding Setup / Training (check-job-rate-override) ─────────
+  ['JOB3 1 · ⛔ "Training" is dropped from the standard jobs — never selectable on a person, never published under the register\'s spelling','check-job-rate-override.mjs',
+    tsub(",'Day Party','Wedding Setup','Training'];",",'Day Party','Wedding Setup'];"),true],
+  ['JOB3 2 · ⛔ "Wedding Setup" spelled the register-unfriendly way ("WeddingSetup")','check-job-rate-override.mjs',
+    tsub(",'Day Party','Wedding Setup','Training'];",",'Day Party','WeddingSetup','Training'];"),true],
+  ['JOB3 3 · ⛔ the job-level standard-spelling publish is gone — the "training" rate never reaches a "Training" punch','check-job-rate-override.mjs',
+    tsub("  alsoStd(Object.fromEntries(Object.keys(jobs).map(j=>[j,jobs[j]&&jobs[j].rate])),'');\n",""),true],
+  ['JOB3 4 · ⛔ the person-level standard-spelling publish is gone','check-job-rate-override.mjs',
+    tsub("    alsoStd(rates,'emp:'+String(empId)+'|');\n",""),true],
+  ['JOB3 5 · ⛔ a variant\'s rate overwrites the exact standard one','check-job-rate-override.mjs',
+    tsub("    if(out[prefix+s]==null)out[prefix+s]=Math.round(r*100);","    out[prefix+s]=Math.round(r*100);"),true],
+  ['JOB3 6 · ⛔ a variant with no rate is published as 0','check-job-rate-override.mjs',
+    tsub("    if(!s||s===job||!(r>0))return;","    if(!s||s===job)return;"),true],
 
   // ── STAFF CLEANUP 1: PLAN BEFORE APPLY (check-staff-cleanup-1) ─────────────────────
   ['SC1 1 · ⛔ the mutations move back INTO the plan pass — Cancel no longer undoes anything','check-staff-cleanup-1.mjs',

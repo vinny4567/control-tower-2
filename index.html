@@ -14843,7 +14843,12 @@ async function staffPushPaychex(p){
 // Rates, register access and a sign-in code. Everything here is per-person and
 // typed by a manager, which makes it the data a scheduler pull must never touch —
 // see the merge rules in staffPull.
-const STAFF_JOBS=['Server','Bartender','Busser','Food Runner','Host','Cook','Dishwasher','Manager','Setup'];
+// ⛔ 'Day Party', 'Wedding Setup' and 'Training' added 11/20/26 (Jarvis, cutover #2) — the
+// register's clock-in picker carries the SAME three names, spelled exactly so: the mini costs
+// a shift by matching its job name against ct_job_rates keys EXACTLY (server/labor.js
+// rateOf — case and spaces count). staffJobRatesForMini publishes this spelling even when the
+// rate was stored under another one (the old 'training'), so the two always meet.
+const STAFF_JOBS=['Server','Bartender','Busser','Food Runner','Host','Cook','Dishwasher','Manager','Setup','Day Party','Wedding Setup','Training'];
 
 // DEPARTMENT. Vinny's 11/20/26 rebuild: one per person, decides which Tips sheet section
 // they land in. 'restaurant' is retired — the mini refuses it on write, and null means not
@@ -16524,6 +16529,18 @@ function staffJobRatesForMini(){
     const num=STAFF_JOB_NUMS[job];
     if(num!=null)out[String(num)]=cents;
   });
+  // ⛔ THE STANDARD SPELLING TOO (cutover #2, 11/20/26). A rate stored under a variant
+  // spelling ('training') is ALSO published under the STAFF_JOBS one ('Training') — the name
+  // the register's picker punches — because the mini's match is exact. The stored key stays
+  // published as well (harmless, and nothing that matched it before stops matching). An
+  // exact standard-spelling rate always wins over a variant's.
+  const stdOf=(job)=>STAFF_JOBS.find(j=>staffJobKey(j)===staffJobKey(job));
+  const alsoStd=(map,prefix)=>Object.keys(map).forEach(job=>{
+    const s=stdOf(job),r=map[job];
+    if(!s||s===job||!(r>0))return;           // no standard twin, or no rate to carry
+    if(out[prefix+s]==null)out[prefix+s]=Math.round(r*100);   // the exact spelling's own rate was published first, and wins
+  });
+  alsoStd(Object.fromEntries(Object.keys(jobs).map(j=>[j,jobs[j]&&jobs[j].rate])),'');
   Object.values(staffS.people||{}).forEach(p=>{
     const empId=p.register&&p.register.emp_id;
     if(empId==null)return;                 // not on the register — no shift to override
@@ -16536,6 +16553,7 @@ function staffJobRatesForMini(){
       const num=STAFF_JOB_NUMS[job];
       if(num!=null)out['emp:'+String(empId)+'|'+String(num)]=cents;
     });
+    alsoStd(rates,'emp:'+String(empId)+'|');
   });
   return out;
 }
