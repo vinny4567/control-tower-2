@@ -5758,9 +5758,9 @@ const EVENTS_TIPS_URL='https://restaurant-scheduler-hh5e.onrender.com/api/events
 // set lands, so they're visible (not silently dropped) and Vinny can see who still needs
 // one. Deliberately last in the list (Jarvis: "at the bottom"). No "+ add" box makes sense
 // for it (see tipsHTML) — the fix is giving them a department, not moving their row.
-const TIP_SECTIONS=['Server','Bartender','Busser','Food Runner','Weddings','NoDept'];
-const TIP_SEC_LABEL={'Server':'Servers','Bartender':'Bartenders','Busser':'Bussers','Food Runner':'Food Runners','Weddings':'Weddings (event-only)','NoDept':'No department yet'};
-const TIP_SEC_SHORT={'Server':'Srv','Bartender':'Bar','Busser':'Bus','Food Runner':'Run','Weddings':'Wed','NoDept':'—'};
+const TIP_SECTIONS=['Server','Bartender','Busser','Food Runner','Weddings','NoDept','Kitchen'];
+const TIP_SEC_LABEL={'Server':'Servers','Bartender':'Bartenders','Busser':'Bussers','Food Runner':'Food Runners','Weddings':'Weddings (event-only)','NoDept':'No department yet','Kitchen':'Kitchen'};
+const TIP_SEC_SHORT={'Server':'Srv','Bartender':'Bar','Busser':'Bus','Food Runner':'Run','Weddings':'Wed','NoDept':'—','Kitchen':'Kit'};
 function tipBusserSplit(name){return (tipsState.busserSplit&&tipsState.busserSplit[name])||0;}   // period-total busser pool share
 // busserSplitByDay is stored DATE first, then name — {"9/8":{"Anna Kinsella":20.93,…}} — which
 // is what tipsComputeBusserSplit produces and what the rename/remove helpers already assume.
@@ -6235,21 +6235,15 @@ async function tipsPullWeddingHours(auto){
 // Which section a person really belongs to = a manual move (global, sticks across
 // periods) if set, else where their Staff department puts them. DEPARTMENT DECIDES THE
 // SECTION (Vinny, 11/20/26) — one department, one Tips section: Server/Bartender/Busser/
-// Food Runner (=runner)/Weddings (=events). Kitchen is a real, deliberate department that
-// simply has no Tips section (kitchen staff were never on this sheet). The tip roster is
-// RETIRED as a source entirely — see the comment above TIPS_ROSTER_KEY.
-const TIP_SECTION_FROM_DEPT={server:'Server',bartender:'Bartender',busser:'Busser',runner:'Food Runner',events:'Weddings'};
-// NoDept, refined 11/20/26 per Vinny: "the department is really only for the tip sheet,
-// for tipped employees with no department set... then i can go and set them when i feel
-// like it." So it is NOT "every live person with no department" (that would pull kitchen
-// and hosts onto a tip sheet they were never on) — only someone the sheet already has
-// reason to believe IS tipped: a tipped position on Staff, or actual tips/hours entered
-// this period. Sits directly under Weddings (TIP_SECTIONS order), never nags, never
-// blocks anything — it is just a worklist he clears at his own pace.
-const TIP_TIPPED_POSITIONS=['server','bartender','busser','food runner'];
-function tipHasTippedPosition(p){
-  return !!(p&&(p.positions||[]).some(pos=>TIP_TIPPED_POSITIONS.includes(staffJobKey(pos))));
-}
+// Food Runner (=runner)/Weddings (=events)/Kitchen. The tip roster is RETIRED as a source
+// entirely — see the comment above TIPS_ROSTER_KEY.
+// ⚠️ THE SHEET COVERS THE WHOLE STAFF LIST (Vinny, 11/20/26, reversing the tipped-only rule
+// the same day): "in case i ever have to record someones tips manually", and for kitchen
+// "i actually want everyone listed, that way we cover the entire staff list." So every live
+// person has a row somewhere: no department, or a value this map doesn't know, lands in
+// NO DEPARTMENT YET; kitchen has its own KITCHEN section under it. Removed/former people
+// still show only in a period where they have money (tipSectionPeople's filter).
+const TIP_SECTION_FROM_DEPT={server:'Server',bartender:'Bartender',busser:'Busser',runner:'Food Runner',events:'Weddings',kitchen:'Kitchen'};
 function tipPersonHasHoursThisPeriod(name){
   const H=tipsState.hours&&tipsState.hours[name];
   if(!H)return false;
@@ -6271,12 +6265,7 @@ function staffResolveForTips(rawName){
 function tipBaseSection(name){
   const p=staffResolveForTips(name);
   if(p){
-    const sec=TIP_SECTION_FROM_DEPT[p.department];
-    if(sec)return sec;
-    // No department: only a TIPPED person lands in NoDept — kitchen, hosts, and
-    // anyone else with no signal at all stay off the tip sheet entirely, same as before.
-    if(!p.department&&(tipHasTippedPosition(p)||tipPersonHasTipsThisPeriod(name)||tipPersonHasHoursThisPeriod(name)))return 'NoDept';
-    return null;
+    return TIP_SECTION_FROM_DEPT[p.department]||'NoDept';   // no department (or an unknown one) still gets a row
   }
   // Not a Staff match at all — the one surviving manual override, for someone genuinely
   // not on Staff (or not yet linked — the ⚑ picker's "Same person as…" is the real fix).
@@ -7088,9 +7077,9 @@ function tipsHTML(){
       if(unsplit)body+=`<tr><td colspan="${days.length+3}" style="position:sticky;left:0;background:rgba(251,191,36,.08);border-left:3px solid #fbbf24;padding:8px 12px;font-size:12px;color:var(--text-dim);line-height:1.5">⚠ <b style="color:#fbbf24">${tipMoney(unsplit)}</b> of busser pool is collected but <b>not split between anyone yet</b>, so every busser below reads empty. The share is worked out from each busser's hours after 3:30, which only come with the <b>📄 Import timesheet</b> PDF — pulling hours from the register gives totals per job, not clock-in times, so it can't divide the pool.</td></tr>`;
     }
     ordered.forEach(n=>{body+=rowFor(n,false);});
-    // No "+ add" box for NoDept — the fix for somebody sitting here is giving them a
-    // department on Staff, not typing their name into this one bucket by hand.
-    if(sec!=='NoDept')body+=`<tr><td colspan="${days.length+3}" style="position:sticky;left:0;background:var(--surface);padding:4px 12px"><input id="tip-add-${sec.replace(/ /g,'_')}" placeholder="+ add ${TIP_SEC_LABEL[sec].toLowerCase().replace(/s$/,'')}…" onkeydown="if(event.key==='Enter')tipAddPerson('${sec}')" style="width:180px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 9px;font-size:12px;font-family:inherit"></td></tr>`;
+    // No "+ add" box for NoDept or Kitchen — both already list everyone on Staff who
+    // belongs there; the fix for a missing person is their department on Staff.
+    if(sec!=='NoDept'&&sec!=='Kitchen')body+=`<tr><td colspan="${days.length+3}" style="position:sticky;left:0;background:var(--surface);padding:4px 12px"><input id="tip-add-${sec.replace(/ /g,'_')}" placeholder="+ add ${TIP_SEC_LABEL[sec].toLowerCase().replace(/s$/,'')}…" onkeydown="if(event.key==='Enter')tipAddPerson('${sec}')" style="width:180px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 9px;font-size:12px;font-family:inherit"></td></tr>`;
   });
   const _grand=tipsGrandTotals();   // same arithmetic as the live recalc, so they cannot drift
   const di='background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:5px 8px;font-family:inherit;font-size:13px;color-scheme:dark;cursor:pointer';

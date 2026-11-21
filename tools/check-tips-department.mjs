@@ -7,10 +7,9 @@
 // roster (ct_tips_roster/TIP_ROSTER_DATA) is RETIRED entirely as a section source — Vinny,
 // seeing "Mike Fornero" on Tips while Staff has "Michael Fornero": "that is why i said
 // wipe the other lists... the staff list in the back office trumps any other version of
-// someones name." A live staff person with NO department lands in a visible 'NoDept'
-// ("No department yet") bucket instead of silently vanishing. Kitchen is a real, deliberate
-// department with no Tips section — different from null, which just means nobody's looked
-// yet. A former/removed Staff person shows in a period ONLY if they actually have tips
+// someones name." ⚠️ SAME DAY AGAIN: the sheet covers the WHOLE staff list — every live person
+// with no department (tipped or not) lands in NO DEPARTMENT YET, and kitchen has its own KITCHEN
+// section listing everyone in it. A former/removed Staff person shows in a period ONLY if they actually have tips
 // that period (history), never a blank row after they've left. The one surviving manual
 // path for someone NOT on Staff at all is `tipsState.adds` (the "+ add" box).
 //
@@ -42,17 +41,13 @@ const grab = (name) => {
 function world({ people = {}, aliases = {}, adds = {}, moves = {}, cells = {}, busserSplit = {}, busserSplitByDay = {}, hours = {}, ignore = {} } = {}) {
   const ctx = {};
   new Function('ctx', `
-    const TIP_SECTIONS=['Server','Bartender','Busser','Food Runner','Weddings','NoDept'];
+    ${grabConst('TIP_SECTIONS')}
     ${grabConst('TIP_SECTION_FROM_DEPT')}
-    ${grabConst('TIP_TIPPED_POSITIONS')}
     let staffS={people:${JSON.stringify(people)},aliases:${JSON.stringify(aliases)}};
     let tipsState={adds:${JSON.stringify(adds)},moves:${JSON.stringify(moves)},cells:${JSON.stringify(cells)},busserSplit:${JSON.stringify(busserSplit)},busserSplitByDay:${JSON.stringify(busserSplitByDay)},hours:${JSON.stringify(hours)},ignoreSet:${JSON.stringify(ignore)},start:new Date(2026,10,2),end:new Date(2026,10,15)};
     ${grab('staffKeyOf')}
     ${grab('staffEmployed')}
-    ${grabConst('staffJobCanon')}
-    ${grabConst('staffJobKey')}
     ${grab('staffResolveForTips')}
-    ${grab('tipHasTippedPosition')}
     ${grab('tipPersonHasHoursThisPeriod')}
     ${grab('staffFlagIgnored')}
     ${grab('tipNotAPerson')}
@@ -72,7 +67,7 @@ function world({ people = {}, aliases = {}, adds = {}, moves = {}, cells = {}, b
     ${grab('tipsGrandTotals')}
     ctx.resolve=staffResolveForTips;ctx.baseSection=tipBaseSection;ctx.effSection=tipEffSection;
     ctx.sectionPeople=tipSectionPeople;ctx.staffLive=tipStaffLive;ctx.hasTips=tipPersonHasTipsThisPeriod;
-    ctx.hasTippedPosition=tipHasTippedPosition;ctx.hasHours=tipPersonHasHoursThisPeriod;
+    ctx.hasHours=tipPersonHasHoursThisPeriod;
     ctx.grand=tipsGrandTotals;
   `)(ctx);
   return ctx;
@@ -101,58 +96,32 @@ const person = (key, name, extra = {}) => ({ [key]: { key, name, sources: {}, at
   ok('events → Weddings', w.baseSection('Eve Event') === 'Weddings');
 }
 
-// ── KITCHEN (real dept, no section) vs NULL (needs attention) are DIFFERENT outcomes ──
+// ── THE WHOLE STAFF LIST HAS A ROW: KITCHEN gets its own section, no department → NoDept ──
 {
   const w = world({ people: { ...person('finn kit', 'Finn Kit', { department: 'kitchen' }) } });
-  ok('⛔ kitchen is a real department that simply has no Tips section — excluded entirely, not "no department yet"', w.baseSection('Finn Kit') === null);
+  ok('⛔ kitchen → its own KITCHEN section (Vinny: "i actually want everyone listed")', w.baseSection('Finn Kit') === 'Kitchen');
 }
 {
-  // 11/20/26 refinement, Vinny: "the department is really only for the tip sheet, for
-  // tipped employees with no department set" — NoDept now needs a TIPPED SIGNAL (a
-  // tipped position, or tips/hours this period), not just "no department".
   const w = world({ people: { ...person('gus null', 'Gus Null', { department: null, active: true, positions: ['Server'] }) } });
-  ok('⛔ a LIVE staff person with no department AND a tipped position lands in the visible NoDept bucket — never silently dropped', w.baseSection('Gus Null') === 'NoDept');
+  ok('⛔ a LIVE staff person with no department lands in NO DEPARTMENT YET', w.baseSection('Gus Null') === 'NoDept');
 }
 {
-  const w = world({ people: { ...person('nod unset', 'Nod Unset', { positions: ['Bartender'] }) } });   // department key absent entirely
+  const w = world({ people: { ...person('nod unset', 'Nod Unset', {}) } });   // department key absent entirely
   ok('…same when department is simply absent from the record, not explicitly null', w.baseSection('Nod Unset') === 'NoDept');
 }
 {
-  // a Host has no department AND no tipped signal at all — stays off the tip sheet entirely
+  // 11/20/26 reversal: no tipped signal needed any more ("in case i ever have to record someones tips manually")
   const w = world({ people: { ...person('hal host', 'Hal Host', { department: null, active: true, positions: ['Host'] }) } });
-  ok('⛔ no department and NO tipped signal (a Host) → excluded entirely, not NoDept', w.baseSection('Hal Host') === null);
+  ok('⛔ no department and NO tipped signal (a Host) → STILL listed in NO DEPARTMENT YET, the whole staff list is covered', w.baseSection('Hal Host') === 'NoDept');
 }
 {
-  // no department, no tipped position, but actual tips this period → still NoDept
-  const w = world({
-    people: { ...person('tess tips', 'Tess Tips', { department: null, active: true, positions: ['Host'] }) },
-    cells: { 'Tess Tips': { '11/1': { p: 40 } } },
-  });
-  ok('no tipped position, but real tips this period → still NoDept, not excluded', w.baseSection('Tess Tips') === 'NoDept');
+  const w = world({ people: { ...person('odd dept', 'Odd Dept', { department: 'management', active: true }) } });
+  ok('⛔ a department value the sheet has no section for lands in NO DEPARTMENT YET, never silently off the sheet', w.baseSection('Odd Dept') === 'NoDept');
 }
 {
-  // no department, no tipped position, but hours logged this period (not tombstoned) → NoDept
-  const w = world({
-    people: { ...person('hank hours', 'Hank Hours', { department: null, active: true, positions: ['Host'] }) },
-    hours: { 'Hank Hours': { '11/1': { h: 6 } } },
-  });
-  ok('no tipped position, but real (non-tombstoned) hours this period → still NoDept', w.baseSection('Hank Hours') === 'NoDept');
-}
-{
-  // a tombstoned ("taken out") hours row is not a real signal
-  const w = world({
-    people: { ...person('ivy ghost', 'Ivy Ghost', { department: null, active: true, positions: ['Host'] }) },
-    hours: { 'Ivy Ghost': { '11/1': { x: true } } },
-  });
-  ok('⛔ a tombstoned hours row is not a real signal — excluded, not NoDept', w.baseSection('Ivy Ghost') === null);
-}
-{
-  const w = world({ people: { ...person('wes bus', 'Wes Bus', { department: null, active: true, positions: ['Busser'] }) } });
-  ok('tipHasTippedPosition recognizes Busser', w.hasTippedPosition(w.resolve('Wes Bus')) === true);
-}
-{
-  const w = world({ people: { ...person('cook here', 'Cook Here', { department: null, active: true, positions: ['Cook'] }) } });
-  ok('⛔ tipHasTippedPosition does not recognize kitchen positions', w.hasTippedPosition(w.resolve('Cook Here')) === false);
+  // tombstoned hours only matter now for a name Staff doesn't know: not a real signal
+  const w = world({ hours: { 'Ivy Ghost': { '11/1': { x: true } } } });
+  ok('⛔ an unmatched name with only a tombstoned hours row is not surfaced — "taken out" is not a signal', w.baseSection('Ivy Ghost') === null);
 }
 {
   const w = world({ hours: { 'Some Name': { '11/1': { h: 5 } } } });
@@ -270,10 +239,10 @@ ok('no match at all → null, not a throw', world({}).resolve('Totally Unknown')
   ok('…and nowhere else', w.sectionPeople('Server').indexOf('Needs One') < 0 && w.sectionPeople('Busser').indexOf('Needs One') < 0);
 }
 {
-  // kitchen staff never show in NoDept either — they have a real department, it's just not a tip one
+  // kitchen: everyone listed, in KITCHEN, money or not (Vinny: "cover the entire staff list")
   const w = world({ people: { ...person('cook here', 'Cook Here', { department: 'kitchen', active: true }) } });
-  ok('⛔ a kitchen department does NOT land in NoDept — it is a decided answer, not a pending one', w.sectionPeople('NoDept').indexOf('Cook Here') < 0);
-  ok('…kitchen staff appear in NO Tips section at all', TIP_SECTIONS_ALL(w).every(sec => w.sectionPeople(sec).indexOf('Cook Here') < 0));
+  ok('⛔ a live kitchen person with no money at all is listed in KITCHEN', w.sectionPeople('Kitchen').indexOf('Cook Here') >= 0);
+  ok('…and nowhere else, NoDept included', TIP_SECTIONS_ALL(w).filter(sec => sec !== 'Kitchen').every(sec => w.sectionPeople(sec).indexOf('Cook Here') < 0));
 }
 {
   // a REMOVED person with no department and no tips never shows in NoDept either —
@@ -282,12 +251,20 @@ ok('no match at all → null, not a throw', world({}).resolve('Totally Unknown')
   ok('⛔ a removed person with no department AND no tips this period does not show in NoDept', w.sectionPeople('NoDept').indexOf('Left Blank') < 0);
 }
 {
-  // a Host (no department, no tipped signal at all) never shows in NoDept, or anywhere else
-  const w = world({ people: { ...person('hal host2', 'Hal Host2', { department: null, active: true, positions: ['Host'] }) } });
-  ok('⛔ a live Host with no tipped signal does not show in NoDept — the tip sheet is not a staff roster', w.sectionPeople('NoDept').indexOf('Hal Host2') < 0);
-  ok('…or anywhere else', TIP_SECTIONS_ALL(w).every(sec => w.sectionPeople(sec).indexOf('Hal Host2') < 0));
+  // …and a removed kitchen person shows in KITCHEN only in a period they have money
+  const gone = world({ people: { ...person('old cook', 'Old Cook', { department: 'kitchen', removed: { at: 1 } }) } });
+  ok('⛔ a removed kitchen person with no money this period is not listed in KITCHEN', gone.sectionPeople('Kitchen').indexOf('Old Cook') < 0);
+  const paid = world({ people: { ...person('old cook', 'Old Cook', { department: 'kitchen', removed: { at: 1 } }) }, cells: { 'Old Cook': { '11/3': { p: 25 } } } });
+  ok('…but IS listed in a period where they have tips — history', paid.sectionPeople('Kitchen').indexOf('Old Cook') >= 0);
+  ok('…and that money reaches the grand total', paid.grand().paid === 25);
 }
-function TIP_SECTIONS_ALL(w) { return ['Server', 'Bartender', 'Busser', 'Food Runner', 'Weddings', 'NoDept']; }
+{
+  // a live Host (no department, no tipped signal) IS listed now — reversed 11/20/26
+  const w = world({ people: { ...person('hal host2', 'Hal Host2', { department: null, active: true, positions: ['Host'] }) } });
+  ok('⛔ a live Host with no tipped signal is listed in NO DEPARTMENT YET', w.sectionPeople('NoDept').indexOf('Hal Host2') >= 0);
+  ok('…and only there', TIP_SECTIONS_ALL(w).filter(sec => sec !== 'NoDept').every(sec => w.sectionPeople(sec).indexOf('Hal Host2') < 0));
+}
+function TIP_SECTIONS_ALL(w) { return ['Server', 'Bartender', 'Busser', 'Food Runner', 'Weddings', 'NoDept', 'Kitchen']; }
 
 // ── MONEY MUST NEVER GO INVISIBLE (Jarvis's review catch, 11/20/26) ─────────────────
 // The exact "Mike Fornero" case: a raw name that doesn't resolve to any Staff record (not
@@ -297,7 +274,7 @@ function TIP_SECTIONS_ALL(w) { return ['Server', 'Bartender', 'Busser', 'Food Ru
 {
   const w = world({ cells: { 'Mike Fornero': { '11/3': { p: 212.5 } } } });
   ok('⛔ an unmatched name with real PAID tips this period still renders, in NoDept', w.sectionPeople('NoDept').indexOf('Mike Fornero') >= 0);
-  ok('…and nowhere else', ['Server', 'Bartender', 'Busser', 'Food Runner', 'Weddings'].every(sec => w.sectionPeople(sec).indexOf('Mike Fornero') < 0));
+  ok('…and nowhere else', TIP_SECTIONS_ALL(w).filter(sec => sec !== 'NoDept').every(sec => w.sectionPeople(sec).indexOf('Mike Fornero') < 0));
   ok('⛔ his dollars reach tipsGrandTotals too — not just a visible row with money that never gets summed', w.grand().paid === 212.5);
 }
 {
@@ -327,7 +304,7 @@ function TIP_SECTIONS_ALL(w) { return ['Server', 'Bartender', 'Busser', 'Food Ru
   // the lumped pool has money in cells exactly like a person would — that's what fooled it
   const w = world({ cells: { 'Busser Pool': { '11/3': { u: 300 } }, 'Mike Fornero': { '11/3': { p: 50 } } } });
   ok('⛔ "Busser Pool" never lands in NO DEPARTMENT YET, despite having money in cells', w.sectionPeople('NoDept').indexOf('Busser Pool') < 0);
-  ok('…nor in any other section via tipSectionPeople (its own row is drawn separately in Busser)', ['Server', 'Bartender', 'Busser', 'Food Runner', 'Weddings', 'NoDept'].every(sec => w.sectionPeople(sec).indexOf('Busser Pool') < 0));
+  ok('…nor in any other section via tipSectionPeople (its own row is drawn separately in Busser)', TIP_SECTIONS_ALL(w).every(sec => w.sectionPeople(sec).indexOf('Busser Pool') < 0));
   ok('⛔ the grand total counts the unsplit pool EXACTLY once, not twice ($300 pool + $50 Mike)', w.grand().upt === 300 && w.grand().paid === 50);
   ok('…while a real unmatched name with money still surfaces right beside it', w.sectionPeople('NoDept').indexOf('Mike Fornero') >= 0);
 }

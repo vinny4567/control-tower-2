@@ -49,7 +49,6 @@ function world({ people = {}, cells = {}, busserSplitByDay = {}, busserSplit = {
     ${grabConst('TIP_SEC_LABEL')}
     ${grabConst('TIP_SEC_SHORT')}
     ${grabConst('TIP_SECTION_FROM_DEPT')}
-    ${grabConst('TIP_TIPPED_POSITIONS')}
     let staffS={people:${JSON.stringify(people)},aliases:{}};
     let tipsState={
       loaded:true,view:'tips',
@@ -69,7 +68,6 @@ function world({ people = {}, cells = {}, busserSplitByDay = {}, busserSplit = {
     ${grabConst('staffJobCanon')}
     ${grabConst('staffJobKey')}
     ${grab('staffResolveForTips')}
-    ${grab('tipHasTippedPosition')}
     ${grab('tipPersonHasHoursThisPeriod')}
     let _ign={}; Object.defineProperty(tipsState,'ignoreSet',{value:_ign,writable:true});
     ${grab('staffFlagIgnored')}
@@ -111,13 +109,15 @@ const PAID_DIV = 'border-left:4px solid var(--border)';
 
   // ── every section header row repeats the date columns ──────────────────────────────
   const headerRows = [...html.matchAll(/<tr style="background:var\(--surface2\)">\s*<th[^>]*>([^<]+)<\/th>/g)].map(m => m[1].trim());
-  ok('⛔ all 6 sections get a repeated header row (SERVERS, BARTENDERS, BUSSERS, FOOD RUNNERS, WEDDINGS, NoDept)',
-     ['SERVERS', 'BARTENDERS', 'BUSSERS', 'FOOD RUNNERS', 'WEDDINGS', 'NO DEPARTMENT YET'].every(label => headerRows.some(h => h.toUpperCase().startsWith(label))) && headerRows.length === 6);
+  ok('⛔ all 7 sections get a repeated header row (SERVERS, BARTENDERS, BUSSERS, FOOD RUNNERS, WEDDINGS, NoDept, KITCHEN)',
+     ['SERVERS', 'BARTENDERS', 'BUSSERS', 'FOOD RUNNERS', 'WEDDINGS', 'NO DEPARTMENT YET', 'KITCHEN'].every(label => headerRows.some(h => h.toUpperCase().startsWith(label))) && headerRows.length === 7);
+  ok('⛔ KITCHEN sits directly under NO DEPARTMENT YET', headerRows.indexOf('KITCHEN') === headerRows.indexOf('NO DEPARTMENT YET') + 1);
+  ok('⛔ no "+ add" box on KITCHEN or NO DEPARTMENT YET (both list everyone already)', !html.includes('id="tip-add-Kitchen"') && !html.includes('id="tip-add-NoDept"'));
 
   // each repeated header row carries its own Paid/Unpaid <th> pair
   const sectionBlocks = html.split('<tr style="background:var(--surface2)">').slice(1);
   ok('⛔ every repeated section header row carries its own Paid and Unpaid <th> labels',
-     sectionBlocks.length === 6 &&
+     sectionBlocks.length === 7 &&
      sectionBlocks.every(b => { const row = b.split('</tr>')[0]; return row.includes('>Paid<') && row.includes('>Unpaid<'); }));
 
   // the repeated header's day columns must be the SAME markup as the main thead's —
@@ -125,7 +125,7 @@ const PAID_DIV = 'border-left:4px solid var(--border)';
   const theadDayThCount = (html.split('<thead>')[1].split('</thead>')[0].match(/<th[^>]*>(Su|M|Tu|W|Th|F|Sa)<br>/g) || []).length;
   ok('⛔ the main thead has the expected 14 day-of-week <th> columns for this fixture (sanity check on the fixture itself)', theadDayThCount === 14);
   ok('⛔ every repeated section header row carries the SAME day-of-week/date columns as the main thead — dropping them breaks column alignment with the rows below',
-     sectionBlocks.length === 6 &&
+     sectionBlocks.length === 7 &&
      sectionBlocks.every(b => { const row = b.split('</tr>')[0]; return (row.match(/<th[^>]*>(Su|M|Tu|W|Th|F|Sa)<br>/g) || []).length === theadDayThCount; }));
 }
 
@@ -178,6 +178,24 @@ const PAID_DIV = 'border-left:4px solid var(--border)';
   ok('⛔ …and keeps every pulled figure, paid and unpaid', rowTotal(html, 'Trinette Notarangeli') === beforeTotals);
   ok('⛔ …and appears exactly once (not left behind in NO DEPARTMENT YET as well)', html.split('>Trinette Notarangeli<').length - 1 === 1);
   ok('⛔ the grand total is unchanged by the move', JSON.stringify(w.grand()) === beforeGrand);
+}
+
+
+// ── KITCHEN: a real row, same as every other section (Vinny: "just in case i ever have to
+// put a tip in for a kitchen employee") — editable cells, the thick Paid line, in the total ──
+{
+  const sectionOf = (html, name) => { const i = html.indexOf('>' + name + '<'); if (i < 0) return null; const m = [...html.slice(0, i).matchAll(/<tr style="background:var\(--surface2\)">\s*<th[^>]*>([^<]+)<\/th>/g)]; return m.length ? m[m.length - 1][1] : null; };
+  const w = world({
+    people: { 'cody cook': { key: 'cody cook', name: 'Cody Cook', department: 'kitchen', active: true }, 'kim cook': { key: 'kim cook', name: 'Kim Cook', department: 'kitchen', active: true } },
+    cells: { 'Cody Cook': { '11/3': { p: 40 } } },
+  });
+  const html = w.html();
+  ok('⛔ a kitchen person with money renders under KITCHEN', sectionOf(html, 'Cody Cook') === 'KITCHEN');
+  ok('⛔ a kitchen person with NO money is listed under KITCHEN too (everyone, not just the paid)', sectionOf(html, 'Kim Cook') === 'KITCHEN');
+  const tr = html.slice(html.indexOf('>Cody Cook<'), html.indexOf('</tr>', html.indexOf('>Cody Cook<')));
+  ok('their day cells are editable like everyone else\'s (data-tipcell, click to edit)', /data-tipcell onclick="tipCellEdit\('Cody Cook'/.test(tr));
+  ok('their Paid cell carries the thicker divider', /id="tp-[^"]+" style="[^"]*border-left:4px solid var\(--border\)/.test(tr));
+  ok('⛔ their money counts in the grand total', w.grand().paid === 40);
 }
 
 console.log(bad ? `\n${bad} FAILED` : '\nall good');
