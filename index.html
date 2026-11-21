@@ -5754,9 +5754,13 @@ const TIPS_LOG_URL='https://restaurant-scheduler-hh5e.onrender.com/api/tipout-lo
 const TIPS_LOG_KEY=()=>localStorage.getItem('ct_sched_key')||'';       // same scheduler key
 const TIPS_ROSTER_URL='https://restaurant-scheduler-hh5e.onrender.com/api/roster/employees';
 const EVENTS_TIPS_URL='https://restaurant-scheduler-hh5e.onrender.com/api/events-tips';
-const TIP_SECTIONS=['Server','Bartender','Busser','Food Runner','Weddings'];
-const TIP_SEC_LABEL={'Server':'Servers','Bartender':'Bartenders','Busser':'Bussers','Food Runner':'Food Runners','Weddings':'Weddings (event-only)'};
-const TIP_SEC_SHORT={'Server':'Srv','Bartender':'Bar','Busser':'Bus','Food Runner':'Run','Weddings':'Wed'};
+// 'NoDept' is not a real department — it's where a LIVE staff person with no department
+// set lands, so they're visible (not silently dropped) and Vinny can see who still needs
+// one. Deliberately last in the list (Jarvis: "at the bottom"). No "+ add" box makes sense
+// for it (see tipsHTML) — the fix is giving them a department, not moving their row.
+const TIP_SECTIONS=['Server','Bartender','Busser','Food Runner','Weddings','NoDept'];
+const TIP_SEC_LABEL={'Server':'Servers','Bartender':'Bartenders','Busser':'Bussers','Food Runner':'Food Runners','Weddings':'Weddings (event-only)','NoDept':'No department yet'};
+const TIP_SEC_SHORT={'Server':'Srv','Bartender':'Bar','Busser':'Bus','Food Runner':'Run','Weddings':'Wed','NoDept':'—'};
 function tipBusserSplit(name){return (tipsState.busserSplit&&tipsState.busserSplit[name])||0;}   // period-total busser pool share
 // busserSplitByDay is stored DATE first, then name — {"9/8":{"Anna Kinsella":20.93,…}} — which
 // is what tipsComputeBusserSplit produces and what the rename/remove helpers already assume.
@@ -5786,136 +5790,21 @@ function tipCanon(name){const k=tipNormKey(name);if(!k)return String(name||'').t
 // be populated and PROVEN to match before this commit deleted the literal. Vinny ran both: Seed
 // self-checked on the Mac, Check matched on Dad's iPad.
 //
-// TIP_ROSTER_DATA / TIP_NAME_ALIASES / TIP_ROSTER_CANON are now `let`, not `const`, and start
-// EMPTY — tipsFetchRoster() (below) populates all three together, in one atomic step, the first
-// time anything asks for the roster. "Together" is load-bearing: the aliases are real names too,
-// and a canon map loaded against a roster that did not load (or the reverse) is a half-loaded
-// canon — and a half-loaded canon spends money, because tipCanon falls through to the raw feed
-// spelling. See tipRosterValidate's own comment for what "loud, never silently empty" means here.
-let TIP_ROSTER_DATA={};
+// ⚠️ 11/20/26 — THE TIP ROSTER IS RETIRED AS A NAME/SECTION SOURCE (Vinny: "the staff
+// list in the back office trumps any other version of someones name and that version is
+// what should be displayed everywhere else"; on seeing "Mike Fornero" on Tips while Staff
+// has "Michael Fornero": "that is why i said wipe the other lists"). TIP_ROSTER_DATA,
+// TIP_NAME_ALIASES's own roster-sourced half, TIP_ROSTER_CANON, TIP_ROSTER_COUNTS and
+// tipRosterValidate are GONE — tipsFetchRoster() (deleted) was the only thing that ever
+// populated them. TIP_NAME_ALIASES/TIP_ROSTER_CANON are kept as perpetually-empty `let`s
+// below because tipCanon() still reads them defensively (falls straight through to the
+// trimmed raw spelling now — the ⚑ picker's "Same person as…" alias is the replacement
+// for what the roster's canon map used to do automatically). ct_tips_roster the KV VALUE
+// is left untouched as history — nothing reads it, and tipRosterFixPriscilla (which used
+// to WRITE to it) is retired too, for the same reason: fixing a spelling nobody reads
+// from any more is a no-op dressed as a button.
 const TIPS_ROSTER_KEY='ct_tips_roster';
-// ⚠️ PER-SECTION COUNTS, NOT ONE TOTAL. Run against a total floor, a stored value of 104 Servers
-// and one of everything else is accepted — the whole Weddings section gone, no warning — and so
-// is 100 of the 108, which renders a confident sheet whose footer is short by the hidden people
-// and whose grand total nobody can reconcile against the deposit. A count is not personal data:
-// these five numbers leak nothing about anybody, and they are the only thing that makes "short"
-// expressible at all. ⛔ RAISE ONE WHEN SOMEBODY IS HIRED. NEVER LOWER ONE TO MAKE A LOAD GO
-// GREEN — that is the helpful edit this comment exists to refuse.
-const TIP_ROSTER_COUNTS={'Server':22,'Bartender':10,'Busser':34,'Food Runner':9,'Weddings':33};
-// The ONLY thing allowed to become the roster. Everything else returns null, which step 2 turns
-// into the existing "⚠ Could not reach the store — this screen is NOT your data" red card rather
-// than an empty sheet.
-// ⛔ ABSENT IS NOT NONE. A key that was never written answers 200 {v:null,at:0}, byte-identical
-// to one a whole-value overwrite has just emptied, and there is no such thing as a restaurant
-// with no tipped staff — so both have to refuse.
-// ⛔ AND NO (v[s]||[]) FALLBACK ANYWHERE IN HERE. That idiom turns a missing section into an
-// empty one in silence, which is exactly how a partial value renders as a finished sheet.
-function tipRosterValidate(v){
-  if(!v||typeof v!=='object'||Array.isArray(v))return null;
-  const g=v.sections;
-  if(!g||typeof g!=='object'||Array.isArray(g))return null;
-  if(Object.keys(g).length!==TIP_SECTIONS.length)return null;         // a missing OR an extra section refuses
-  const groups={},seen={};let n=0;
-  for(const s of TIP_SECTIONS){
-    const a=g[s];
-    if(!Array.isArray(a))return null;
-    const list=[];
-    for(const x of a){
-      if(typeof x!=='string')return null;
-      // FOLDED, not merely trimmed. "Emma  Dawson" with two spaces passes every count, renders
-      // pixel-identically (HTML collapses a run of whitespace in a text node) and orphans her
-      // money on a key no row reads — and then the canon map points the feeds at the bad key,
-      // so nothing ever heals it. Fold it back to the spelling the cells are keyed by.
-      const nm=x.trim().replace(/\s+/g,' ');
-      if(!nm)return null;
-      const k=tipNormKey(nm);
-      if(!k||seen[k])return null;                                     // each person exactly once, in exactly one section
-      seen[k]=1;list.push(nm);n++;
-    }
-    if(list.length<(TIP_ROSTER_COUNTS[s]||1))return null;             // no section is legitimately empty, and none is legitimately SHORT
-    groups[s]=list;
-  }
-  const al=v.aliases;
-  if(al!=null&&(typeof al!=='object'||Array.isArray(al)))return null;
-  const aliases={};
-  for(const k of Object.keys(al||{})){
-    const t=al[k];
-    // An alias whose target is not on the roster has quietly stopped correcting anything, which
-    // is how a feed misspelling becomes a second person. Refuse it rather than carry it.
-    if(typeof t!=='string'||!seen[tipNormKey(t)])return null;
-    // ⛔ AND AN ALIAS KEY THAT IS ITSELF A ROSTER PERSON, POINTING AT SOMEBODY ELSE, IS THE
-    // QUIETEST FAILURE THERE IS: both people keep a row, both rows sit in the right section, the
-    // grand total reconciles to the penny — and one of them is paid the other's fortnight. The
-    // live map deliberately holds an identity entry ('priscilla la gace' → 'Priscilla La Gace'),
-    // so pointing at YOURSELF is allowed and pointing at anybody else is not.
-    if(seen[k]&&tipNormKey(t)!==k)return null;
-    // Stored verbatim, and a key that is not already in normalised form is refused rather than
-    // quietly normalised here: the Staff tab's MICROS import reads this same map through
-    // staffKeyOf, which is a DIFFERENT normalisation (it strips full stops and drops one-letter
-    // tokens). Today's three keys satisfy both. Rewriting one here would make the two consumers
-    // disagree in silence.
-    if(k!==tipNormKey(k))return null;
-    aliases[k]=t;
-  }
-  return {groups,aliases,count:n};
-}
-// STEP 2 OF 2, DONE 11/19/26 — tipRosterSeedPayload/tipRosterVerify/tipRosterSeed/
-// tipRosterSeedHTML are gone, exactly as their own comments said they would be: they existed
-// only to populate and prove ct_tips_roster FROM this page's literal, and the literal is gone.
-// Loading now happens in tipsFetchRoster() below. If the store ever needs reseeding, that is a
-// deliberate hand write against the TIPS_ROSTER_KEY key, built fresh — not a rerun of code whose
-// source of truth no longer exists.
-//
-// 11/20/26 — exactly that deliberate hand write, once, for one person. Vinny: the official
-// spelling is "Lagace" (Priscilla Lagace), everywhere — matching Staff (already merged this
-// way, STAFF_CLEANUP_1_MERGES) and payroll. The stored Tips roster still has the Bartender
-// section's own copy as "Priscilla La Gace", with every variant aliasing TO it — backwards
-// now. ⛔ ALIAS-ONLY, same boundary as the Sophia Evans case: this touches no money, no cell,
-// no tip or hours figure — only which spelling a pulled name canonicalizes to.
-async function tipRosterFixPriscilla(){
-  const st=(s,c)=>tipsSetStatus(s,c||'var(--text-dim)');
-  if(!KV_TOKEN()){st('⚠ No sync key on this device — paste it in Settings first.','#f87171');return;}
-  st('Reading the roster…');
-  const r=await kvGet(TIPS_ROSTER_KEY);
-  if(kvFailed(r)){st('⚠ could not reach the store — nothing was changed.','#f87171');return;}
-  const val=tipRosterValidate(r&&r.v);
-  if(!val){st('⚠ the store holds something that is NOT a usable roster — nothing was changed.','#f87171');return;}
-  const FROM='Priscilla La Gace', TO='Priscilla Lagace';
-  const i=(val.groups.Bartender||[]).indexOf(FROM);
-  if(i<0&&val.aliases[tipNormKey(TO)]===TO){st('Already "'+TO+'" — nothing to do.','var(--text-dim)');return;}
-  const sections={};TIP_SECTIONS.forEach(s=>{sections[s]=(val.groups[s]||[]).slice();});
-  if(i>=0)sections.Bartender[i]=TO;
-  const aliases={};
-  Object.keys(val.aliases).forEach(k=>{aliases[k]=val.aliases[k]===FROM?TO:val.aliases[k];});
-  aliases[tipNormKey(TO)]=TO;   // identity entry for the new canonical spelling itself
-  const v={sections,aliases};
-  const chk=tipRosterValidate(v);
-  if(!chk){st('⚠ the fixed-up roster did not validate — nothing was written.','#f87171');return;}
-  if(!confirm('Re-point every "La Gace"/"Lagace" spelling to canonical "Priscilla Lagace"?\n\nChanges the Bartender section entry and '+Object.keys(aliases).length+' name corrections. No cell, tip or hours figure is touched.'))return;
-  st('Writing…');
-  try{
-    const resp=await fetch(KV_URL+encodeURIComponent(TIPS_ROSTER_KEY),{method:'POST',
-      headers:{'Content-Type':'application/json','x-sync-token':KV_TOKEN()},
-      body:JSON.stringify({v,at:Date.now()})});
-    if(!resp.ok)throw new Error('HTTP '+resp.status);
-  }catch(e){st('⚠ NOT written: '+((e&&e.message)||e),'#f87171');return;}
-  // Read back and diff, same discipline as the retired tipRosterSeed — an echo of what was
-  // sent is not a confirmation.
-  const back=await kvGet(TIPS_ROSTER_KEY);
-  const backVal=!kvFailed(back)&&tipRosterValidate(back&&back.v);
-  if(!backVal||(backVal.groups.Bartender||[]).indexOf(TO)<0||backVal.aliases[tipNormKey(TO)]!==TO){
-    st('⚠ wrote, but the read-back does not show the fix — check by hand.','#f87171');return;
-  }
-  tipsState.roster=null;tipsState.rosterFailed=false;   // force the next load to re-fetch, not reuse the stale cached copy
-  st('Done — Priscilla Lagace is now canonical, '+Object.keys(backVal.aliases).length+' name corrections, read back and matches ✓','#34d399');
-}
-// ONE-TIME BUTTON, same treatment as every other migration button in this file (the
-// schedule-pull, the MICROS import, staff-cleanup-1): comment it out once Vinny has
-// pressed it and Jarvis has verified the mini mirror, leave the function in place.
-function tipRosterFixPriscillaHTML(){
-  return `<button onclick="tipRosterFixPriscilla()" title="One-time: re-point every La Gace/Lagace spelling to canonical Priscilla Lagace. Alias only — touches no money." style="background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:12px;white-space:nowrap">Fix Priscilla's spelling →</button>`;
-}
-let tipsState={start:null,end:null,cells:{},adds:{},moves:{},expanded:{},roster:null,hours:{},hoursOut:{},empIds:{},busserSplit:{},busserSplitByDay:{},view:'tips',loaded:false,loading:false};
+let tipsState={start:null,end:null,cells:{},adds:{},moves:{},expanded:{},hours:{},hoursOut:{},empIds:{},busserSplit:{},busserSplitByDay:{},view:'tips',loaded:false,loading:false};
 let tipsGen=0;   // bumped on every (re)load; guards against two period-loads racing and crossing data
 function tipsSetView(v){tipsState.view=v;document.getElementById('pos-body').innerHTML=tipsHTML();}
 function tipsSetHoursFilter(f){tipsState.hoursFilter=f;tipsRerender();}
@@ -6340,44 +6229,51 @@ async function tipsPullWeddingHours(auto){
   const heldTxt=held?(' · '+held+' row'+(held>1?'s':'')+' you set by hand'):'';
   if(!auto||filled)tipsSetStatus((filled?('Pulled '+filled+' wedding hour line'+(filled>1?'s':'')+' ✓'):'✓ in sync')+heldTxt,'var(--text-dim)');
 }
-// Which section a person really belongs to = a manual move (global, sticks
-// across periods) if set, else where their Staff department puts them, else
-// where the embedded roster puts them.
-function tipRosterHas(name){return TIP_SECTIONS.some(s=>((tipsState.roster&&tipsState.roster[s])||[]).indexOf(name)>=0);}
-// DEPARTMENT DECIDES THE SECTION NOW (Vinny, 11/20/26) — one department, one Tips
-// section: Server/Bartender/Busser/Food Runner (=runner)/Weddings (=events). Kitchen
-// and null never resolve here. TRANSITION: while a person's department is null (not
-// filled in yet — see "Fill departments"), they fall through to the roster/adds lookup
-// below exactly as before, so nobody drops off a section mid-migration.
+// Which section a person really belongs to = a manual move (global, sticks across
+// periods) if set, else where their Staff department puts them. DEPARTMENT DECIDES THE
+// SECTION (Vinny, 11/20/26) — one department, one Tips section: Server/Bartender/Busser/
+// Food Runner (=runner)/Weddings (=events). Kitchen is a real, deliberate department that
+// simply has no Tips section (kitchen staff were never on this sheet); null/unset is
+// DIFFERENT — that means "nobody's looked at this person yet," so they land in the
+// visible 'NoDept' bucket instead of silently vanishing. The tip roster is RETIRED as a
+// source entirely — see the comment above TIPS_ROSTER_KEY.
 const TIP_SECTION_FROM_DEPT={server:'Server',bartender:'Bartender',busser:'Busser',runner:'Food Runner',events:'Weddings'};
-// Same alias-chain resolution staffDisplayName uses — a Tips name resolves to the
-// Staff record it would land on, not just an exact-spelling hit.
-function tipDeptSection(name){
-  const k0=staffKeyOf(name);if(!k0)return null;
+// Resolves a Tips name to the Staff record it should be driven by: the alias chain
+// staffDisplayName uses, OR — for a removed person whose projection key the mini mangled
+// (suffixed with their pid, so a new hire can reuse the plain spelling) — a name scan
+// among removed records only, same fallback the ⚑ picker's Restore button already uses.
+// Never falls back to a live person by name alone: a live person is always at their own
+// plain key, so a name-scan match there would only ever mean a coincidence, not an identity.
+function staffResolveForTips(rawName){
+  const k0=staffKeyOf(rawName);if(!k0)return null;
   const al=(staffS.aliases||{})[k0];
-  const key=(al&&staffS.people&&staffS.people[al])?al:k0;
-  const p=staffS.people&&staffS.people[key];
-  if(!p||!p.department)return null;
-  return TIP_SECTION_FROM_DEPT[p.department]||null;
+  if(al&&staffS.people&&staffS.people[al])return staffS.people[al];
+  if(staffS.people&&staffS.people[k0])return staffS.people[k0];
+  return Object.values(staffS.people||{}).find(p=>p&&p.removed&&staffKeyOf(p.name)===k0)||null;
 }
-// Roster placement ALWAYS wins over a stray `adds` entry, so someone in the
-// canonical roster (e.g. Emma Dawson = Bartender) can never be dragged into
-// another section by a stale add left over from an old pull.
 function tipBaseSection(name){
-  const d=tipDeptSection(name);if(d)return d;
-  for(const s of TIP_SECTIONS){if(((tipsState.roster&&tipsState.roster[s])||[]).indexOf(name)>=0)return s;}
+  const p=staffResolveForTips(name);
+  if(p){
+    const sec=TIP_SECTION_FROM_DEPT[p.department];
+    if(sec)return sec;
+    return p.department?null:'NoDept';   // kitchen (or any future non-tip dept) excludes; no dept at all needs attention
+  }
+  // Not a Staff match at all — the one surviving manual override, for someone genuinely
+  // not on Staff (or not yet linked — the ⚑ picker's "Same person as…" is the real fix).
   for(const s of TIP_SECTIONS){if(((tipsState.adds&&tipsState.adds[s])||[]).indexOf(name)>=0)return s;}
   return null;
 }
-// Sanitize saved adds: canonicalize spellings, drop anyone already in the roster,
-// and de-duplicate. Heals period data corrupted by pre-canon pulls.
+// Sanitize saved adds: canonicalize spellings, drop anyone a department already places
+// (so an add can never shadow the Staff-driven row for the same person), de-duplicate.
 function tipCleanAdds(){
   const adds=tipsState.adds||{};let changed=false;
   Object.keys(adds).forEach(sec=>{
     const seen={},out=[],orig=adds[sec]||[];
     orig.forEach(raw=>{
       const n=tipCanon(raw);
-      if(!n||tipRosterHas(n)||seen[n]){changed=true;return;}
+      const p=n&&staffResolveForTips(n);
+      const depted=!!(p&&TIP_SECTION_FROM_DEPT[p.department]);
+      if(!n||depted||seen[n]){changed=true;return;}
       seen[n]=1;if(n!==raw)changed=true;out.push(n);
     });
     if(out.length!==orig.length)changed=true;
@@ -6462,25 +6358,6 @@ function tipPeriodKey(){tipEnsureRange();const s=tipsState.start;return 'ct_tips
 function tipMoney(n){return '$'+(Math.round(n*100)/100).toFixed(2);}
 function tipId(name){return name.replace(/[^a-z0-9]/gi,'_');}
 
-// Loads TIP_ROSTER_DATA/TIP_NAME_ALIASES/TIP_ROSTER_CANON from the store, together, in one
-// atomic step — see the STEP 2 comment above tipRosterValidate for why "together" matters.
-// Returns the roster on success, null on any failure, and NEVER assigns a half result: a key
-// that fails validation leaves the three empty rather than letting tipCanon fall through to the
-// raw feed spelling.
-async function tipsFetchRoster(){
-  if(tipsState.roster)return tipsState.roster;
-  const r=await kvGet(TIPS_ROSTER_KEY);
-  if(kvFailed(r)){tipsState.rosterFailed=true;return null;}
-  const val=tipRosterValidate(r&&r.v);
-  if(!val){tipsState.rosterFailed=true;return null;}
-  tipsState.rosterFailed=false;
-  const g={};TIP_SECTIONS.forEach(s=>g[s]=val.groups[s].slice());
-  TIP_ROSTER_DATA=g;
-  TIP_NAME_ALIASES=Object.assign({},val.aliases);
-  const canon={};Object.keys(TIP_ROSTER_DATA).forEach(sec=>TIP_ROSTER_DATA[sec].forEach(n=>{canon[tipNormKey(n)]=n;}));
-  TIP_ROSTER_CANON=canon;
-  tipsState.roster=g;return g;
-}
 function tipCell(name,label){const p=tipsState.cells[name];return p&&p[label]?p[label]:null;}
 // A day cell holds up to three components: p=paid $, u=unpaid $, w=wedding $ (w shows "W", counts as unpaid).
 // One day can carry BOTH a paid tip (own/direct party) AND an unpaid tip (tip-out) — e.g. a bartender who
@@ -6512,24 +6389,27 @@ function tipsSaveSoon(){
   },600);
   tipsSetStatus('Saving…','var(--text-dim)');
 }
-// Resolves a Tips name to its Staff record (same alias chain as staffDisplayName) and
-// answers whether that person is still employed. Unknown-to-Staff names (a roster entry
-// that's never been matched) have no removal signal at all, so they always count as live
-// — "live" here never means "visible", only "not known to have left".
+// Answers whether a Tips name is still employed, using staffResolveForTips (so a
+// removed person at a mangled key is actually found, not just the ones reachable through
+// an alias). A name this page can't match to ANY Staff record at all has no removal
+// signal — "live" here never means "visible", only "not known to have left".
 function tipStaffLive(name){
-  const k0=staffKeyOf(name);if(!k0)return true;
-  const al=(staffS.aliases||{})[k0];
-  const key=(al&&staffS.people&&staffS.people[al])?al:k0;
-  const p=staffS.people&&staffS.people[key];
+  const p=staffResolveForTips(name);
   if(!p)return true;
   return staffEmployed(p);
 }
 function tipPersonHasTipsThisPeriod(name){const t=tipRowTotals(name);return t.paid>0||t.upt>0||tipBusserSplit(name)>0;}
 function tipSectionPeople(sec){
   const all=[],seen={},add=n=>{if(n&&!seen[n]){seen[n]=1;all.push(n);}};
-  Object.keys(tipsState.roster||{}).forEach(s=>((tipsState.roster[s])||[]).forEach(add));
+  // Every LIVE staff person, unconditionally — so someone with no tips yet still shows
+  // (in their department's section, or 'NoDept' if they don't have one) rather than
+  // silently waiting for their first dollar to appear at all.
+  Object.values(staffS.people||{}).forEach(p=>{if(staffEmployed(p)&&p.name)add(p.name);});
   Object.keys(tipsState.adds||{}).forEach(s=>((tipsState.adds[s])||[]).forEach(add));
-  if(sec==='Busser')tipBusserSplitPeople().forEach(add);   // paid by the pool ⇒ has a row, roster or not
+  // Former/removed people who still have tips THIS period (history) — the roster used to
+  // hand these to us; now the only source left is the money itself, same as hoursHTML.
+  Object.keys(tipsState.cells||{}).forEach(n=>{const t=tipRowTotals(n);if(t.paid>0||t.upt>0)add(n);});
+  if(sec==='Busser')tipBusserSplitPeople().forEach(add);   // paid by the pool ⇒ has a row regardless
   return all.filter(n=>{
     // ⚠️ A busser-pool share ALWAYS shows in Busser for the period it was paid in, even
     // when department now puts this person somewhere else (a busser later promoted to
@@ -6554,7 +6434,6 @@ function tipsSetStatus(s,c){const el=document.getElementById('tips-status');if(e
 async function tipsInit(){
   if(tipsState.loaded)return;
   const g=++tipsGen;tipsState.loading=true;   // any newer reload bumps tipsGen and supersedes this load
-  await tipsFetchRoster();if(g!==tipsGen)return;
   // Fetch EVERYTHING first, then decide whether the answer can be trusted.
   // Nothing is assigned into tipsState until we know the store actually
   // answered — an empty default written into state is one autosave away from
@@ -6566,7 +6445,7 @@ async function tipsInit(){
   // ⛔ Could not reach the store. STOP — do not fall through to empty defaults.
   // `loaded` deliberately stays false, so tipsRefresh/visibilitychange retries
   // this on its own, and loadFailed makes every save refuse in the meantime.
-  if(kvFailed(remote)||kvFailed(rm)||kvFailed(rh)||kvFailed(ge)||tipsState.rosterFailed){
+  if(kvFailed(remote)||kvFailed(rm)||kvFailed(rh)||kvFailed(ge)){
     tipsState.loading=false;tipsState.loadFailed=true;
     if(tipsActive())document.getElementById('pos-body').innerHTML=tipsHTML();
     tipsSetStatus('⚠ Could not reach the store — this screen is NOT your data, and nothing will be saved.','#f87171');
@@ -6995,7 +6874,7 @@ function hoursHTML(){
 function tipsHTML(){
   if(!tipsState.loaded)return '<div style="padding:48px;text-align:center;color:var(--text-dim)">Loading tips…</div>';
   if((tipsState.view||'tips')==='hours')return hoursHTML();
-  const days=tipDays(),roster=tipsState.roster||{};
+  const days=tipDays();
   let gp=0,gu=0;
   const rowFor=(name,isPool)=>{
     const t=tipRowTotals(name),upt=Math.round((t.upt+tipBusserSplit(name))*100)/100;gp+=t.paid;gu+=upt;const id=tipId(name);
@@ -7042,7 +6921,9 @@ function tipsHTML(){
       }
     }
     ordered.forEach(n=>{body+=rowFor(n,false);});
-    body+=`<tr><td colspan="${days.length+3}" style="position:sticky;left:0;background:var(--surface);padding:4px 12px"><input id="tip-add-${sec.replace(/ /g,'_')}" placeholder="+ add ${TIP_SEC_LABEL[sec].toLowerCase().replace(/s$/,'')}…" onkeydown="if(event.key==='Enter')tipAddPerson('${sec}')" style="width:180px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 9px;font-size:12px;font-family:inherit"></td></tr>`;
+    // No "+ add" box for NoDept — the fix for somebody sitting here is giving them a
+    // department on Staff, not typing their name into this one bucket by hand.
+    if(sec!=='NoDept')body+=`<tr><td colspan="${days.length+3}" style="position:sticky;left:0;background:var(--surface);padding:4px 12px"><input id="tip-add-${sec.replace(/ /g,'_')}" placeholder="+ add ${TIP_SEC_LABEL[sec].toLowerCase().replace(/s$/,'')}…" onkeydown="if(event.key==='Enter')tipAddPerson('${sec}')" style="width:180px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 9px;font-size:12px;font-family:inherit"></td></tr>`;
   });
   const _grand=tipsGrandTotals();   // same arithmetic as the live recalc, so they cannot drift
   const dayHead=days.map(d=>{const wd=d.getDay();const closed=(wd===1);return `<th style="padding:6px ${closed?'2px':'4px'};font-size:${closed?'9px':'11px'};color:${closed?'var(--text-muted)':'var(--text-dim)'};font-weight:600;border-right:1px solid var(--border);white-space:nowrap;min-width:${closed?'20px':'auto'}">${['Su','M','Tu','W','Th','F','Sa'][wd]}<br>${d.getMonth()+1}/${d.getDate()}</th>`;}).join('');
@@ -7058,7 +6939,6 @@ function tipsHTML(){
         <button onclick="tipsThisPeriod()" title="Jump to the current pay period" style="background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:12px">This period</button>
       </div>
       ${tipsImportBtnHTML()}
-      ${tipRosterFixPriscillaHTML()}
       <span id="tips-status" style="font-size:12px;color:var(--text-dim)"></span>
       <span style="margin-left:auto;font-size:12px;color:var(--text-dim)">picking dates pulls the tip-out log + weddings automatically · click a cell to edit</span>
     </div>
@@ -14006,10 +13886,13 @@ function staffMicrosParse(text){
     const r=rows[i], g=(f)=>at[f]==null?'':String(r[at[f]]||'').trim();
     let nm=at.name!=null?g('name'):(g('first')+' '+g('last'));
     nm=nm.trim().replace(/\s+/g,' ');
-    // The SAME alias map the tips roster uses, and for the same reason: MICROS spells
-    // Priscilla "Priscill Lagace", and a second record for her is the failure to avoid.
-    const alias=TIP_NAME_ALIASES[staffKeyOf(nm)];
-    if(alias)nm=alias;
+    // 11/20/26 — switched from the (now-retired) tips-roster alias map to Staff's own
+    // staffS.aliases, same resolution staffDisplayName uses: MICROS spells Priscilla
+    // "Priscill Lagace", and a second record for her is the failure to avoid. The target
+    // is a KEY, not a display name — resolve it to the person's own .name for the import.
+    const aliasKey=(staffS.aliases||{})[staffKeyOf(nm)];
+    const aliasTarget=aliasKey&&staffS.people&&staffS.people[aliasKey];
+    if(aliasTarget&&aliasTarget.name)nm=aliasTarget.name;
     const key=staffKeyOf(nm);
     if(!key)continue;
     out.push({key,name:nm,micros_num:g('micros_num')||null,micros_id:g('micros_id')||null});
@@ -14979,39 +14862,25 @@ async function staffNotDupe(ka,kb){
 
 // ── FILL DEPARTMENTS — one-time pass, Vinny's call 11/20/26 ────────────────
 //
-// For everyone LIVE (staffEmployed) with no department set, propose one from two
-// signals that already exist and never touches anyone who already has a value:
-//  1. which Tips-roster section they're already placed in (Server/Bartender/
-//     Busser/Food Runner/Weddings → server/bartender/busser/runner/events)
-//  2. their Staff positions, when they point at a single department (Server/
-//     Bartender/Busser/Food Runner the same as above; Dishwasher/Cook/Salads → kitchen)
-// More than one candidate (the two signals disagree, or positions imply two
-// different departments) is a CONFLICT — left for Vinny to pick, never guessed.
-// A Host, or anyone with no signal at all, is "you pick" too — there's nothing
-// here that says what they are.
-const STAFF_FILLDEPT_SECTION={'Server':'server','Bartender':'bartender','Busser':'busser','Food Runner':'runner','Weddings':'events'};
+// For everyone LIVE (staffEmployed) with no department set, propose one from their
+// Staff positions, when they point at a single department (Server/Bartender/Busser/
+// Food Runner → server/bartender/busser/runner; Dishwasher/Cook/Salads → kitchen).
+// More than one candidate (positions imply two different departments) is a CONFLICT
+// — left for Vinny to pick, never guessed. A Host, or anyone with no signal at all,
+// is "you pick" too — there's nothing here that says what they are.
+//
+// ⚠️ 11/20/26 — this used to ALSO read which Tips-roster section a person was already
+// placed in, as a second signal. The roster is retired as a name/section source
+// (Vinny: "the staff list... trumps any other version"), so that signal is gone —
+// department is the one source of truth now, not something to infer from the sheet.
 const STAFF_FILLDEPT_POSITION={server:'server',bartender:'bartender',busser:'busser','food runner':'runner',dishwasher:'kitchen',cook:'kitchen',salads:'kitchen'};
-// Same alias-chain resolution staffDisplayName uses, in reverse: given a roster
-// name, land on the Staff key it would resolve to (or its own staffKeyOf if
-// nothing aliases it) — so a roster entry matches whichever key this person
-// is actually filed under, not just an exact-spelling hit.
-function staffFillDeptRosterKey(rawName){
-  const k0=staffKeyOf(rawName);if(!k0)return null;
-  const al=(staffS.aliases||{})[k0];
-  return (al&&staffS.people&&staffS.people[al])?al:k0;
-}
 async function staffFillDeptBuild(){
   staffS.fillDept={loading:true,rows:null,err:null};
   try{
-    await tipsFetchRoster();
-    if(tipsState.rosterFailed){staffS.fillDept={loading:false,rows:null,err:'Could not read the Tips roster — try again in a moment.'};staffRefresh();return;}
     const rows=[];
     Object.values(staffS.people).forEach(p=>{
       if(!staffEmployed(p)||p.department)return;        // never touch somebody who already has one
       const cands=new Set();
-      TIP_SECTIONS.forEach(s=>{
-        if((TIP_ROSTER_DATA[s]||[]).some(n=>staffFillDeptRosterKey(n)===p.key))cands.add(STAFF_FILLDEPT_SECTION[s]);
-      });
       (p.positions||[]).forEach(pos=>{
         const d=STAFF_FILLDEPT_POSITION[staffJobKey(pos)];
         if(d)cands.add(d);
@@ -15021,7 +14890,7 @@ async function staffFillDeptBuild(){
     });
     rows.sort(staffByFirst);
     staffS.fillDept={loading:false,rows,err:null};
-  }catch(e){staffS.fillDept={loading:false,rows:null,err:'Could not reach the register: '+(e&&e.message||e)};}
+  }catch(e){staffS.fillDept={loading:false,rows:null,err:'Could not build the list: '+(e&&e.message||e)};}
   staffRefresh();
 }
 function staffFillDeptSetRow(key,v){
@@ -18397,14 +18266,10 @@ window.addEventListener('load',()=>{setTimeout(()=>{
   // mini holds has actually drifted from what this device would publish now — so this is
   // free on every normal boot and does the real work only when there is real work to do.
   staffLoad();
-  // ⛔ ALSO always at boot, added 11/19/26 with the roster's move out of the page: Staff's
-  // MICROS import (staffMicrosParse) reads TIP_NAME_ALIASES directly, synchronously, and used
-  // to be safe doing that because the map was a parse-time literal. Now it's populated by a
-  // store read, and the only existing caller of that read (tipsInit) only runs when someone
-  // opens the Tips tab — importing a MICROS file from Staff without ever opening Tips first
-  // would silently import against an empty alias map. tipsFetchRoster() self-guards and is
-  // idempotent (`if(tipsState.roster)return`), so this costs nothing once Tips has loaded it.
-  tipsFetchRoster();
+  // ⛔ 11/20/26 — the tipsFetchRoster() preload that used to live here is gone with the
+  // roster: staffMicrosParse now reads staffS.aliases directly (see staffMicrosParse),
+  // and staffLoad() right above is what populates that — already called at every boot,
+  // nothing extra needed for the MICROS import to see real aliases.
 },800)});
 // Keep the open inbox fresh (only when the Email tab is showing and nothing is open/being composed)
 // Auto-refresh ALL inboxes while the Email tab is open: the viewed folder updates in place (list pane

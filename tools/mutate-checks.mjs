@@ -525,40 +525,6 @@ const M=[
          "const overlaps = (a, b) => !(a[0] + a[2] <= b[0] || b[0] + b[2] <= a[0] || a[1] + a[3] <= b[1] || b[1] + b[3] <= a[1]);"),false,'screens-core.js'],
 
 
-  // ── THE STAFF ROSTER'S ONE RULE — what may ever become 108 real people ──────────────
-  // Step 1 of taking the names out of this public page writes nothing on load and changes
-  // nothing the sheet reads, so the only thing standing between the store and payroll is
-  // tipRosterValidate. Every mutant here is a world somebody would propose as a tidy-up.
-  ['ROST 1 · ⛔ a ||[] fallback, so a missing section becomes an empty one in silence','check-tipsroster.mjs',
-    tsub('    const a=g[s];','    const a=g[s]||[];'),true],
-  ['ROST 2 · ⛔ lower a floor to make a short load go green','check-tipsroster.mjs',
-    tsub("'Weddings':33","'Weddings':1"),true],
-  ['ROST 3 · ⛔ a floor of one per section — any section down to a single person passes','check-tipsroster.mjs',
-    tsub('    if(list.length<(TIP_ROSTER_COUNTS[s]||1))return null;','    if(list.length<1)return null;'),true],
-  ['ROST 4 · ⛔ absent treated as none — an empty roster is a usable roster','check-tipsroster.mjs',
-    tsub("  if(!v||typeof v!=='object'||Array.isArray(v))return null;",
-         "  if(v==null)return {groups:{},aliases:{},count:0};\n  if(typeof v!=='object'||Array.isArray(v))return null;"),true],
-  ['ROST 5 · ⛔ drop the one-person-once guard','check-tipsroster.mjs',
-    tsub('      if(!k||seen[k])return null;','      if(!k)return null;seen[k]=1;'),true],
-  ['ROST 6 · ⛔ trim but do not FOLD, so "Emma  Dawson" keeps her orphan key',"check-tipsroster.mjs",
-    tsub("      const nm=x.trim().replace(/\\s+/g,' ');",'      const nm=x.trim();'),true],
-  ['ROST 7 · ⛔ allow a correction that redirects one roster person to another','check-tipsroster.mjs',
-    tsub('    if(seen[k]&&tipNormKey(t)!==k)return null;',''),true],
-  ['ROST 8 · ⛔ allow a correction aimed at somebody not on the roster','check-tipsroster.mjs',
-    tsub("    if(typeof t!=='string'||!seen[tipNormKey(t)])return null;","    if(typeof t!=='string')return null;"),true],
-  ['ROST 9 · ⛔ stop counting the sections, so an extra one rides along','check-tipsroster.mjs',
-    tsub('  if(Object.keys(g).length!==TIP_SECTIONS.length)return null;',''),true],
-  // ROST 10-16 and B1-B4 (seed/verify/fetch-the-literal mutants) retired 11/19/26 along with
-  // the functions and literal they targeted — tipRosterSeed, tipRosterVerify,
-  // tipRosterSeedPayload, tipRosterSeedHTML, and the TIP_ROSTER_DATA literal are all gone from
-  // index.html, so an anchor built against them throws "missing" rather than testing anything.
-  // Their invariants are superseded by the TRS mutants below, against the step-2 code that
-  // replaced them.
-  ['ROST B2 · BENIGN — the rule’s local list renamed','check-tipsroster.mjs',
-    tsubs(['  const groups={},seen={};let n=0;','  const out={},seen={};let n=0;'],
-          ['    groups[s]=list;','    out[s]=list;'],
-          ['  return {groups,aliases,count:n};','  return {groups:out,aliases,count:n};']),false],
-
   // ── THE TIP SHEET'S SAVES (check-tipssaves) ─────────────────────────────────────────
   // Every one of these is a world that existed in this file before 11/18. They are
   // behavioural: the check lifts the real functions and RUNS them, so a mutant has to
@@ -615,8 +581,8 @@ const M=[
     tsubs(["'⚠ not saved — the store could not be reached. Reload before typing.'","'⚠ not saved — no connection to the store. Reload first.'"],
           ["'⚠ not saved — still loading this fortnight. Try again in a moment.'","'⚠ not saved — this fortnight is still opening.'"]),false],
   ['TIPS 13 · lengthen the save delay to a second (harmless)','check-tipssaves.mjs',
-    tsub("  },600);\n  tipsSetStatus('Saving…','var(--text-dim)');\n}\n// Resolves a Tips name",
-         "  },1000);\n  tipsSetStatus('Saving…','var(--text-dim)');\n}\n// Resolves a Tips name"),false],
+    tsub("  },600);\n  tipsSetStatus('Saving…','var(--text-dim)');\n}\n// Answers whether a Tips name",
+         "  },1000);\n  tipsSetStatus('Saving…','var(--text-dim)');\n}\n// Answers whether a Tips name"),false],
 
   // ── A PAGE THAT NO LONGER PARSES MUST FAIL BY NAME, NOT THROW ────────────────────────
   // These two are not about the page's behaviour; they are about the CHECK. Half of
@@ -753,32 +719,6 @@ const M=[
     tsub("note('no position to give (hours were all skip-listed types): '+name);return}",
          "note('no position to give — the hours were all a skip-listed type: '+name);return}"),false],
 
-  // ── TIPS ROSTER STEP 2: LIVE STORE READ, LOUD ON FAILURE (check-tipsroster) ────────
-  ['TRS 1 · ⛔ the store read is dropped — tipsFetchRoster silently returns the (now empty) literal again','check-tipsroster.mjs',
-    tsub("async function tipsFetchRoster(){\n  if(tipsState.roster)return tipsState.roster;\n  const r=await kvGet(TIPS_ROSTER_KEY);\n  if(kvFailed(r)){tipsState.rosterFailed=true;return null;}\n  const val=tipRosterValidate(r&&r.v);\n  if(!val){tipsState.rosterFailed=true;return null;}\n  tipsState.rosterFailed=false;\n  const g={};TIP_SECTIONS.forEach(s=>g[s]=val.groups[s].slice());\n  TIP_ROSTER_DATA=g;\n  TIP_NAME_ALIASES=Object.assign({},val.aliases);\n  const canon={};Object.keys(TIP_ROSTER_DATA).forEach(sec=>TIP_ROSTER_DATA[sec].forEach(n=>{canon[tipNormKey(n)]=n;}));\n  TIP_ROSTER_CANON=canon;\n  tipsState.roster=g;return g;\n}",
-         "async function tipsFetchRoster(){\n  if(tipsState.roster)return tipsState.roster;\n  const g={};TIP_SECTIONS.forEach(s=>g[s]=(TIP_ROSTER_DATA[s]||[]).slice());\n  tipsState.roster=g;return g;\n}"),true],
-  ['TRS 2 · ⛔ an unreachable store is NOT marked failed — tipsInit never shows the red card','check-tipsroster.mjs',
-    tsub("  if(kvFailed(r)){tipsState.rosterFailed=true;return null;}",
-         "  if(kvFailed(r)){return null;}"),true],
-  ['TRS 3 · ⛔ an invalid stored value is NOT marked failed either — same silent-empty hole, different cause','check-tipsroster.mjs',
-    tsub("  if(!val){tipsState.rosterFailed=true;return null;}",
-         "  if(!val){return null;}"),true],
-  ['TRS 4 · the three structures are populated with a ||[] fallback instead of trusting the already-validated groups','check-tipsroster.mjs',
-    tsub("  const g={};TIP_SECTIONS.forEach(s=>g[s]=val.groups[s].slice());",
-         "  const g={};TIP_SECTIONS.forEach(s=>g[s]=(val.groups[s]||[]).slice());"),true],
-  ['TRS 5 · ⛔ rosterFailed drops out of tipsInit\'s OR-chain — a roster failure loads as an empty sheet instead of the red card','check-tipsroster.mjs',
-    tsub("  if(kvFailed(remote)||kvFailed(rm)||kvFailed(rh)||kvFailed(ge)||tipsState.rosterFailed){",
-         "  if(kvFailed(remote)||kvFailed(rm)||kvFailed(rh)||kvFailed(ge)){"),true],
-  ['TRS 6 · ⛔ tipsFetchRoster() is removed from the boot block — Staff\'s MICROS import reads an empty TIP_NAME_ALIASES until someone happens to open Tips first','check-tipsroster.mjs',
-    tsub("  // idempotent (`if(tipsState.roster)return`), so this costs nothing once Tips has loaded it.\n  tipsFetchRoster();",
-         "  // idempotent (`if(tipsState.roster)return`), so this costs nothing once Tips has loaded it.\n"),true],
-  ['TRS 7 · a retired seed button put back, now writing an empty TIP_ROSTER_DATA to the store','check-tipsroster.mjs',
-    tsub('${tipRosterFixPriscillaHTML()}\n      <span id="tips-status" style="font-size:12px;color:var(--text-dim)"></span>\n      <span style="margin-left:auto',
-         '${tipRosterFixPriscillaHTML()}\n      <button onclick="tipRosterSeed()">Seed roster →</button>\n      <span id="tips-status" style="font-size:12px;color:var(--text-dim)"></span>\n      <span style="margin-left:auto'),true],
-  ['TRS 8 · BENIGN — the STEP 2 comment reworded, tipsFetchRoster itself untouched','check-tipsroster.mjs',
-    tsub('// Loads TIP_ROSTER_DATA/TIP_NAME_ALIASES/TIP_ROSTER_CANON from the store, together, in one\n// atomic step',
-         '// Pulls TIP_ROSTER_DATA, TIP_NAME_ALIASES and TIP_ROSTER_CANON from the store as one unit'),false],
-
   // ── REGISTER SIGN-IN NUMBER: NEVER LOCAL, FOR GOOD (check-signin-number) ───────────
   ['SIGN 1 · ⛔ the retired plaintext write comes back onto p.register.signin','check-signin-number.mjs',
     tsub("    p.register=p.register||{};\n    const wasNewEmpId=p.register.emp_id==null;   // decides whether to carry emp_id in the patch below\n    p.register.pin_set=true;\n    delete p.register.pin_pending;\n    delete p.register.signin;      // in case this record still carries the retired field\n    delete p.register.signin_at;",
@@ -816,31 +756,6 @@ const M=[
   ['SIGN 20 · ⛔ the read-only cloud-mirror fallback stops stripping — a stale pre-11/20 cloud blob\'s signin field would survive into staffS','check-signin-number.mjs',
     tsub("      staffS.people=r.v.people;staffS.jobs=r.v.jobs||{};staffS.aliases=r.v.aliases||{};staffS.at=r.v.at||0;\n      // Defensive only, this branch reads an externally-sourced blob this device does not\n      // control — the mini is trusted not to carry the retired register.signin field in its\n      // own answers, but a stale pre-11/20 cloud copy still might.\n      staffStripSignin(staffS.people);",
          "      staffS.people=r.v.people;staffS.jobs=r.v.jobs||{};staffS.aliases=r.v.aliases||{};staffS.at=r.v.at||0;"),true],
-
-  // ── PRISCILLA'S TIPS-ROSTER SPELLING, ONE-TIME ALIAS FIX (check-tips-priscilla) ────
-  ['PRIS 1 · ⛔ the confirm() gate is dropped — the write runs without asking','check-tips-priscilla.mjs',
-    tsub("  if(!confirm('Re-point every \"La Gace\"/\"Lagace\" spelling to canonical \"Priscilla Lagace\"?\\n\\nChanges the Bartender section entry and '+Object.keys(aliases).length+' name corrections. No cell, tip or hours figure is touched.'))return;\n  st('Writing…');",
-         "  st('Writing…');"),true],
-  ['PRIS 2 · ⛔ the already-fixed short-circuit is removed — a second press re-writes and re-confirms for nothing','check-tips-priscilla.mjs',
-    tsub("  if(i<0&&val.aliases[tipNormKey(TO)]===TO){st('Already \"'+TO+'\" — nothing to do.','var(--text-dim)');return;}\n",''),true],
-  ['PRIS 3 · ⛔ a stale alias pointing at the OLD spelling is left alone instead of flipped','check-tips-priscilla.mjs',
-    tsub("  Object.keys(val.aliases).forEach(k=>{aliases[k]=val.aliases[k]===FROM?TO:val.aliases[k];});",
-         "  Object.keys(val.aliases).forEach(k=>{aliases[k]=val.aliases[k];});"),true],
-  ['PRIS 4 · the identity entry for the new spelling is never added','check-tips-priscilla.mjs',
-    tsub("  aliases[tipNormKey(TO)]=TO;   // identity entry for the new canonical spelling itself\n",''),true],
-  ['PRIS 5 · ⛔ the fixed-up payload is never validated before writing — a malformed result could ship','check-tips-priscilla.mjs',
-    tsub("  const chk=tipRosterValidate(v);\n  if(!chk){st('⚠ the fixed-up roster did not validate — nothing was written.','#f87171');return;}\n",''),true],
-  ['PRIS 6 · ⛔ a failed HTTP status is not checked — a rejected write is treated as success','check-tips-priscilla.mjs',
-    tsub("    if(!resp.ok)throw new Error('HTTP '+resp.status);\n  }catch(e){st('⚠ NOT written: '+((e&&e.message)||e),'#f87171');return;}",
-         "  }catch(e){st('⚠ NOT written: '+((e&&e.message)||e),'#f87171');return;}"),true],
-  ['PRIS 7 · ⛔ the read-back check is dropped — a write that silently did not land is reported as Done','check-tips-priscilla.mjs',
-    tsub("  const back=await kvGet(TIPS_ROSTER_KEY);\n  const backVal=!kvFailed(back)&&tipRosterValidate(back&&back.v);\n  if(!backVal||(backVal.groups.Bartender||[]).indexOf(TO)<0||backVal.aliases[tipNormKey(TO)]!==TO){\n    st('⚠ wrote, but the read-back does not show the fix — check by hand.','#f87171');return;\n  }\n",''),true],
-  ['PRIS 8 · ⛔ a different section is edited instead of Bartender — e.g. it touches Weddings','check-tips-priscilla.mjs',
-    tsub("  const i=(val.groups.Bartender||[]).indexOf(FROM);",
-         "  const i=(val.groups.Weddings||[]).indexOf(FROM);"),true],
-  ['PRIS 9 · BENIGN — the confirm() wording reworded, no behaviour change','check-tips-priscilla.mjs',
-    tsub("Changes the Bartender section entry and '+Object.keys(aliases).length+' name corrections. No cell, tip or hours figure is touched.",
-         "Updates the Bartender entry and '+Object.keys(aliases).length+' aliases. Nothing financial changes."),false],
 
   // ── TIPS NAMES RESOLVE THROUGH STAFF, DISPLAY ONLY (check-tips-staffnames) ─────────
   ['NAMES 1 · ⛔ staffDisplayName stops following the alias chain — a merged/renamed person\'s old spelling survives on screen','check-tips-staffnames.mjs',
@@ -963,30 +878,39 @@ const M=[
          "    return true;"),true],
 
   // ── DEPARTMENT DECIDES THE TIPS SECTION (check-tips-department) ────────────────────────
-  ['DEPT 1 · ⛔ tipBaseSection stops consulting department at all — the roster/adds decide again, reverting the whole rebuild','check-tips-department.mjs',
-    tsub("function tipBaseSection(name){\n  const d=tipDeptSection(name);if(d)return d;\n",
+  ['DEPT 1 · ⛔ tipBaseSection stops consulting department at all — only adds decide, reverting the whole rebuild','check-tips-department.mjs',
+    tsub("function tipBaseSection(name){\n  const p=staffResolveForTips(name);\n  if(p){\n    const sec=TIP_SECTION_FROM_DEPT[p.department];\n    if(sec)return sec;\n    return p.department?null:'NoDept';   // kitchen (or any future non-tip dept) excludes; no dept at all needs attention\n  }\n",
          "function tipBaseSection(name){\n"),true],
-  ['DEPT 2 · BENIGN — dropping the explicit !p.department check is equivalent, since TIP_SECTION_FROM_DEPT[undefined]||null still returns null','check-tips-department.mjs',
-    tsub("  if(!p||!p.department)return null;\n",
-         "  if(!p)return null;\n"),false],
+  ['DEPT 2 · ⛔ null-department and a real-non-tip-department (kitchen) are swapped — kitchen lands in NoDept, no-department-at-all is silently excluded','check-tips-department.mjs',
+    tsub("    return p.department?null:'NoDept';   // kitchen (or any future non-tip dept) excludes; no dept at all needs attention\n",
+         "    return p.department?'NoDept':null;\n"),true],
   ['DEPT 3 · ⛔ kitchen is given a Tips section — it should never resolve to one','check-tips-department.mjs',
     tsub("const TIP_SECTION_FROM_DEPT={server:'Server',bartender:'Bartender',busser:'Busser',runner:'Food Runner',events:'Weddings'};",
          "const TIP_SECTION_FROM_DEPT={server:'Server',bartender:'Bartender',busser:'Busser',runner:'Food Runner',events:'Weddings',kitchen:'Server'};"),true],
-  ['DEPT 4 · BENIGN — the tipDeptSection top comment reworded, no behaviour change','check-tips-department.mjs',
-    tsub("// Which section a person really belongs to = a manual move (global, sticks\n// across periods) if set, else where their Staff department puts them, else\n// where the embedded roster puts them.",
-         "// Section order: a manual move first, then department, then the roster."),false],
+  ['DEPT 4 · BENIGN — the department/section top comment reworded, no behaviour change','check-tips-department.mjs',
+    tsub("// Which section a person really belongs to = a manual move (global, sticks across\n// periods) if set, else where their Staff department puts them. DEPARTMENT DECIDES THE",
+         "// Section order: a manual move first, then department. DEPARTMENT DECIDES THE"),false],
   ['DEPT 5 · ⛔ the former/removed history filter is dropped from tipSectionPeople — a removed person shows every period forever, blank row included','check-tips-department.mjs',
     tsub("    return tipStaffLive(n)||tipPersonHasTipsThisPeriod(n);\n",
          "    return true;\n"),true],
   ['DEPT 6 · ⛔ a busser pool share no longer counts as "has tips" for a removed busser — they vanish from a period they were actually paid in','check-tips-department.mjs',
     tsub("function tipPersonHasTipsThisPeriod(name){const t=tipRowTotals(name);return t.paid>0||t.upt>0||tipBusserSplit(name)>0;}",
          "function tipPersonHasTipsThisPeriod(name){const t=tipRowTotals(name);return t.paid>0||t.upt>0;}"),true],
-  ['DEPT 7 · ⛔ tipStaffLive stops matching through the alias chain — a renamed/merged person reads as "unknown" and is never suppressed after leaving','check-tips-department.mjs',
-    tsub("function tipStaffLive(name){\n  const k0=staffKeyOf(name);if(!k0)return true;\n  const al=(staffS.aliases||{})[k0];\n  const key=(al&&staffS.people&&staffS.people[al])?al:k0;\n  const p=staffS.people&&staffS.people[key];",
-         "function tipStaffLive(name){\n  const key=staffKeyOf(name);if(!key)return true;\n  const p=staffS.people&&staffS.people[key];"),true],
+  ['DEPT 7 · ⛔ staffResolveForTips stops following the alias chain — a renamed/merged person reads as "unknown" everywhere that depends on it (tipStaffLive, tipBaseSection)','check-tips-department.mjs',
+    tsub("  const al=(staffS.aliases||{})[k0];\n  if(al&&staffS.people&&staffS.people[al])return staffS.people[al];\n  if(staffS.people&&staffS.people[k0])return staffS.people[k0];",
+         "  if(staffS.people&&staffS.people[k0])return staffS.people[k0];"),true],
   ['DEPT 8 · ⛔ a busser-pool share no longer shows in Busser once department moves the person elsewhere — the old !tipEffSection(n) guard comes back, Jarvis\'s 11/20 review catch','check-tips-department.mjs',
     tsub("if(!(tipEffSection(n)===sec||(sec==='Busser'&&tipBusserSplit(n)>0)))return false;",
          "if(!(tipEffSection(n)===sec||(sec==='Busser'&&!tipEffSection(n)&&tipBusserSplit(n)>0)))return false;"),true],
+  ['DEPT 9 · ⛔ staffResolveForTips drops the mangled-removed-key name-scan fallback — a removed person is never found again, never suppressed from a Tips section they have no tips in','check-tips-department.mjs',
+    tsub("  return Object.values(staffS.people||{}).find(p=>p&&p.removed&&staffKeyOf(p.name)===k0)||null;",
+         "  return null;"),true],
+  ['DEPT 10 · BENIGN — a roster fallback is wired back into tipBaseSection, but tipsState.roster is never set anywhere any more (tipsFetchRoster is gone), so the check can never match — inert, not a real revert','check-tips-department.mjs',
+    tsub("  for(const s of TIP_SECTIONS){if(((tipsState.adds&&tipsState.adds[s])||[]).indexOf(name)>=0)return s;}\n  return null;\n}",
+         "  for(const s of TIP_SECTIONS){if(((tipsState.roster&&tipsState.roster[s])||[]).indexOf(name)>=0)return s;}\n  for(const s of TIP_SECTIONS){if(((tipsState.adds&&tipsState.adds[s])||[]).indexOf(name)>=0)return s;}\n  return null;\n}"),false],
+  ['DEPT 11 · ⛔ tipSectionPeople stops including every LIVE staff person unconditionally — someone with no tips yet, and no department, just silently never appears','check-tips-department.mjs',
+    tsub("  Object.values(staffS.people||{}).forEach(p=>{if(staffEmployed(p)&&p.name)add(p.name);});\n",
+         ""),true],
 
   // ── FILL DEPARTMENTS: never touch a set value, never guess a conflict (check-staff-filldept) ──
   ['FILLDEPT 1 · ⛔ a person who already has a department is proposed anyway — the one-time tool stops being one-time-safe','check-staff-filldept.mjs',

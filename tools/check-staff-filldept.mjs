@@ -2,9 +2,14 @@
 //
 //     node tools/check-staff-filldept.mjs
 //
-// Proposes a department for everyone LIVE with no department set, from two signals
-// (which Tips-roster section they're already in; which Staff positions they hold), never
-// touches anyone who already has one, and never guesses on a conflict — RUN, not read.
+// Proposes a department for everyone LIVE with no department set, from their Staff
+// positions, when they point at a single department. Never touches anyone who already
+// has one, and never guesses on a conflict — RUN, not read.
+//
+// ⚠️ 11/20/26 — this used to ALSO propose from which Tips-roster section a person was
+// already in (Source 1). The roster is retired as a name/section source entirely (Vinny:
+// "the staff list... trumps any other version"), so that source — and every test of it —
+// is gone. Positions (Source 2, now the only source) are unaffected.
 import { readFileSync } from 'node:fs';
 const src = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 
@@ -29,21 +34,15 @@ const grabConst = (name) => {
   return src.slice(i, j + 1);
 };
 
-function world({ people = {}, aliases = {}, roster = {}, rosterFailed = false, writeOpResults = {}, confirmAnswer = true } = {}) {
+function world({ people = {}, writeOpResults = {}, confirmAnswer = true } = {}) {
   const calls = { writeOps: [], refreshes: 0, alerts: [], confirms: [] };
   const ctx = {};
   new Function('ctx', `
-    const TIP_SECTIONS=['Server','Bartender','Busser','Food Runner','Weddings'];
-    let TIP_ROSTER_DATA=${JSON.stringify(roster)};
-    let tipsState={roster:TIP_ROSTER_DATA,rosterFailed:${JSON.stringify(rosterFailed)}};
-    async function tipsFetchRoster(){return TIP_ROSTER_DATA;}
-    let staffS={people:${JSON.stringify(people)},aliases:${JSON.stringify(aliases)},showFillDept:true,fillDept:null};
+    let staffS={people:${JSON.stringify(people)},showFillDept:true,fillDept:null};
     Object.keys(staffS.people).forEach(k=>{if(!staffS.people[k].key)staffS.people[k].key=k;});
     ${grabConst('STAFF_DEPARTMENTS')}
     ${grabConst('STAFF_DEPARTMENT_LABELS')}
-    ${grabConst('STAFF_FILLDEPT_SECTION')}
     ${grabConst('STAFF_FILLDEPT_POSITION')}
-    ${grab('staffKeyOf')}
     ${grab('staffEmployed')}
     const staffJobCanon=(n)=>String(n||'').replace(/\\s+/g,' ').trim();
     const staffJobKey=(n)=>staffJobCanon(n).toLowerCase();
@@ -60,7 +59,6 @@ function world({ people = {}, aliases = {}, roster = {}, rosterFailed = false, w
       if(op.pid in key)return key[op.pid];
       return {};
     }
-    ${grab('staffFillDeptRosterKey')}
     ${grab('staffFillDeptBuild')}
     ${grab('staffFillDeptSetRow')}
     ${grab('staffFillDeptApply')}
@@ -80,36 +78,19 @@ const person = (name, extra = {}) => ({ name, sources: {}, at: 0, ...extra });
   ok('⛔ a person who already has a department is not even listed, let alone proposed', w.getStaffS().fillDept.rows.length === 0);
 }
 
-// ── SOURCE 1: ROSTER SECTION MEMBERSHIP PROPOSES A DEPARTMENT ──────────────────────
+// ── A SINGLE-DEPARTMENT POSITION PROPOSES ONE ───────────────────────────────────────
 {
-  const w = world({
-    people: { 'amy server': person('Amy Server', { pid: 'p1' }) },
-    roster: { Server: ['Amy Server'] },
-  });
+  const w = world({ people: { 'amy server': person('Amy Server', { pid: 'p1', positions: ['Server'] }) } });
   await w.build();
   const r = w.getStaffS().fillDept.rows.find(x => x.key === 'amy server');
-  ok('on the Server roster section → proposes server', !!r && r.pick === 'server' && !r.conflict);
+  ok('Server position → proposes server', !!r && r.pick === 'server' && !r.conflict);
 }
 {
-  const w = world({
-    people: { 'wes wed': person('Wes Wed', { pid: 'p1' }) },
-    roster: { Weddings: ['Wes Wed'] },
-  });
+  const w = world({ people: { 'wes wed': person('Wes Wed', { pid: 'p1', positions: ['Food Runner'] }) } });
   await w.build();
   const r = w.getStaffS().fillDept.rows.find(x => x.key === 'wes wed');
-  ok('Weddings roster section → proposes events', !!r && r.pick === 'events');
+  ok('Food Runner position → proposes runner', !!r && r.pick === 'runner');
 }
-{
-  const w = world({
-    people: { 'fran run': person('Fran Run', { pid: 'p1' }) },
-    roster: { 'Food Runner': ['Fran Run'] },
-  });
-  await w.build();
-  const r = w.getStaffS().fillDept.rows.find(x => x.key === 'fran run');
-  ok('Food Runner roster section → proposes runner', !!r && r.pick === 'runner');
-}
-
-// ── SOURCE 2: A SINGLE-DEPARTMENT POSITION PROPOSES ONE ─────────────────────────────
 {
   const w = world({ people: { 'dana dish': person('Dana Dish', { pid: 'p1', positions: ['Dishwasher'] }) } });
   await w.build();
@@ -126,18 +107,15 @@ const person = (name, extra = {}) => ({ name, sources: {}, at: 0, ...extra });
   const w = world({ people: { 'bea bus': person('Bea Bus', { pid: 'p1', positions: ['Busser'] }) } });
   await w.build();
   const r = w.getStaffS().fillDept.rows.find(x => x.key === 'bea bus');
-  ok('Busser position alone (no roster entry) → proposes busser', !!r && r.pick === 'busser');
+  ok('Busser position alone → proposes busser', !!r && r.pick === 'busser');
 }
 
 // ── CONFLICTS: more than one candidate is NEVER guessed ─────────────────────────────
 {
-  const w = world({
-    people: { 'con flict': person('Con Flict', { pid: 'p1', positions: ['Server'] }) },
-    roster: { Bartender: ['Con Flict'] },   // roster says bartender, position says server
-  });
+  const w = world({ people: { 'con flict': person('Con Flict', { pid: 'p1', positions: ['Server', 'Bartender'] }) } });
   await w.build();
   const r = w.getStaffS().fillDept.rows.find(x => x.key === 'con flict');
-  ok('⛔ roster and position disagree → flagged a conflict, nothing picked', !!r && r.conflict === true && r.pick === '');
+  ok('⛔ two different implied departments → flagged a conflict, nothing picked', !!r && r.conflict === true && r.pick === '');
   ok('…but both candidates are still offered, marked, for Vinny to choose from', r.options.includes('server') && r.options.includes('bartender'));
 }
 {
@@ -150,7 +128,7 @@ const person = (name, extra = {}) => ({ name, sources: {}, at: 0, ...extra });
   const w = world({ people: { 'nada nobody': person('Nada Nobody', { pid: 'p1' }) } });
   await w.build();
   const r = w.getStaffS().fillDept.rows.find(x => x.key === 'nada nobody');
-  ok('no roster entry, no positions at all → no signal, left for a pick', !!r && r.pick === '');
+  ok('no positions at all → no signal, left for a pick', !!r && r.pick === '');
 }
 
 // ── NEVER PROPOSES FOR SOMEBODY NOT LIVE ────────────────────────────────────────────
@@ -171,7 +149,7 @@ const person = (name, extra = {}) => ({ name, sources: {}, at: 0, ...extra });
 
 // ── A PICK CAN BE CHANGED BEFORE APPLY, AND ONLY A VALID DEPARTMENT STICKS ──────────
 {
-  const w = world({ people: { 'amy server': person('Amy Server', { pid: 'p1' }) }, roster: { Server: ['Amy Server'] } });
+  const w = world({ people: { 'amy server': person('Amy Server', { pid: 'p1', positions: ['Server'] }) } });
   await w.build();
   w.setRow('amy server', 'bartender');
   ok('Vinny can override the proposed pick', w.getStaffS().fillDept.rows[0].pick === 'bartender');
@@ -183,10 +161,9 @@ const person = (name, extra = {}) => ({ name, sources: {}, at: 0, ...extra });
 {
   const w = world({
     people: {
-      'amy server': person('Amy Server', { pid: 'p1' }),
+      'amy server': person('Amy Server', { pid: 'p1', positions: ['Server'] }),
       'host only': person('Host Only', { pid: 'p2', positions: ['Host'] }),
     },
-    roster: { Server: ['Amy Server'] },
   });
   await w.build();
   await w.apply();
@@ -202,21 +179,14 @@ const person = (name, extra = {}) => ({ name, sources: {}, at: 0, ...extra });
 }
 {
   // declining the confirm sends nothing
-  const w = world({
-    people: { 'amy server': person('Amy Server', { pid: 'p1' }) },
-    roster: { Server: ['Amy Server'] },
-    confirmAnswer: false,
-  });
+  const w = world({ people: { 'amy server': person('Amy Server', { pid: 'p1', positions: ['Server'] }) }, confirmAnswer: false });
   await w.build();
   await w.apply();
   ok('⛔ declining the confirm sends no write op', w.calls.writeOps.length === 0);
 }
 {
   // a department set on this person by another screen in the meantime is never overwritten
-  const w = world({
-    people: { 'amy server': person('Amy Server', { pid: 'p1' }) },
-    roster: { Server: ['Amy Server'] },
-  });
+  const w = world({ people: { 'amy server': person('Amy Server', { pid: 'p1', positions: ['Server'] }) } });
   await w.build();
   w.getStaffS().people['amy server'].department = 'events';   // changed elsewhere between build and apply
   await w.apply();
@@ -227,6 +197,7 @@ const person = (name, extra = {}) => ({ name, sources: {}, at: 0, ...extra });
 {
   const buildFn = grab('staffFillDeptBuild');
   ok('never proposes for anyone who already has a department', /if\(!staffEmployed\(p\)\|\|p\.department\)return;/.test(buildFn));
+  ok('⛔ no longer reads the (retired) Tips roster at all', !/TIP_ROSTER_DATA|tipsFetchRoster/.test(buildFn));
   const htmlFn = grab('staffFillDeptHTML');
   ok('renders nothing when the panel is closed', /if\(!staffS\.showFillDept\)return/.test(htmlFn));
   ok('marks a conflict row and a no-signal row distinctly, in the text Vinny actually reads', /multiple possible/.test(htmlFn) && /no signal/.test(htmlFn));
