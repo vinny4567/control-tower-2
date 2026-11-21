@@ -71,6 +71,9 @@ function world({ people = {}, cells = {}, busserSplitByDay = {}, busserSplit = {
     ${grab('staffResolveForTips')}
     ${grab('tipHasTippedPosition')}
     ${grab('tipPersonHasHoursThisPeriod')}
+    let _ign={}; Object.defineProperty(tipsState,'ignoreSet',{value:_ign,writable:true});
+    ${grab('staffFlagIgnored')}
+    ${grab('tipNotAPerson')}
     ${grab('tipBaseSection')}
     ${grab('tipEffSection')}
     ${grab('tipBusserSplit')}

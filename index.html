@@ -6283,8 +6283,16 @@ function tipBaseSection(name){
   // resolve, it isn't linked yet) used to be handed a section by the roster; now nothing
   // else will ever place it. Surface it in NoDept — with its ⚑, so Vinny can tap-link it
   // right there — rather than silently dropping the dollars off the grid.
-  if(tipPersonHasTipsThisPeriod(name)||tipPersonHasHoursThisPeriod(name))return 'NoDept';
+  if(!tipNotAPerson(name)&&(tipPersonHasTipsThisPeriod(name)||tipPersonHasHoursThisPeriod(name)))return 'NoDept';
   return null;
+}
+// Rows that carry money but are NOT people: the lumped "Busser Pool" (rendered as its own
+// row in Busser, and counted on its own in tipsGrandTotals) and "Private Party" — the same
+// rule hoursHTML's isPoolRow uses — plus any spelling Vinny marked "not a person" on the ⚑.
+// Without this the money fallback above put Busser Pool in NO DEPARTMENT YET too, and the
+// grand total counted the pool twice.
+function tipNotAPerson(name){
+  return /\bpool\b/i.test(name)||/private\s*party/i.test(name)||staffFlagIgnored(name);
 }
 // Sanitize saved adds: canonicalize spellings, drop anyone a department already places
 // (so an add can never shadow the Staff-driven row for the same person), de-duplicate.
@@ -6453,10 +6461,10 @@ function tipSectionPeople(sec){
   Object.keys(tipsState.adds||{}).forEach(s=>((tipsState.adds[s])||[]).forEach(add));
   // Former/removed people who still have tips THIS period (history) — the roster used to
   // hand these to us; now the only source left is the money itself, same as hoursHTML.
-  Object.keys(tipsState.cells||{}).forEach(n=>{const t=tipRowTotals(n);if(t.paid>0||t.upt>0)add(n);});
+  Object.keys(tipsState.cells||{}).forEach(n=>{if(tipNotAPerson(n))return;const t=tipRowTotals(n);if(t.paid>0||t.upt>0)add(n);});
   // Same for an unmatched name whose ONLY signal is hours on the sheet (no cells money at
   // all) — money must never go invisible just because it happens to be hours, not tips.
-  Object.keys(tipsState.hours||{}).forEach(n=>{if(tipPersonHasHoursThisPeriod(n))add(n);});
+  Object.keys(tipsState.hours||{}).forEach(n=>{if(!tipNotAPerson(n)&&tipPersonHasHoursThisPeriod(n))add(n);});
   if(sec==='Busser')tipBusserSplitPeople().forEach(add);   // paid by the pool ⇒ has a row regardless
   return all.filter(n=>{
     // ⚠️ A busser-pool share ALWAYS shows in Busser for the period it was paid in, even

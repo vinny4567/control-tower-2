@@ -39,14 +39,14 @@ const grab = (name) => {
   return src.slice(i, j + 1);
 };
 
-function world({ people = {}, aliases = {}, adds = {}, moves = {}, cells = {}, busserSplit = {}, busserSplitByDay = {}, hours = {} } = {}) {
+function world({ people = {}, aliases = {}, adds = {}, moves = {}, cells = {}, busserSplit = {}, busserSplitByDay = {}, hours = {}, ignore = {} } = {}) {
   const ctx = {};
   new Function('ctx', `
     const TIP_SECTIONS=['Server','Bartender','Busser','Food Runner','Weddings','NoDept'];
     ${grabConst('TIP_SECTION_FROM_DEPT')}
     ${grabConst('TIP_TIPPED_POSITIONS')}
     let staffS={people:${JSON.stringify(people)},aliases:${JSON.stringify(aliases)}};
-    let tipsState={adds:${JSON.stringify(adds)},moves:${JSON.stringify(moves)},cells:${JSON.stringify(cells)},busserSplit:${JSON.stringify(busserSplit)},busserSplitByDay:${JSON.stringify(busserSplitByDay)},hours:${JSON.stringify(hours)},start:new Date(2026,10,2),end:new Date(2026,10,15)};
+    let tipsState={adds:${JSON.stringify(adds)},moves:${JSON.stringify(moves)},cells:${JSON.stringify(cells)},busserSplit:${JSON.stringify(busserSplit)},busserSplitByDay:${JSON.stringify(busserSplitByDay)},hours:${JSON.stringify(hours)},ignoreSet:${JSON.stringify(ignore)},start:new Date(2026,10,2),end:new Date(2026,10,15)};
     ${grab('staffKeyOf')}
     ${grab('staffEmployed')}
     ${grabConst('staffJobCanon')}
@@ -54,6 +54,8 @@ function world({ people = {}, aliases = {}, adds = {}, moves = {}, cells = {}, b
     ${grab('staffResolveForTips')}
     ${grab('tipHasTippedPosition')}
     ${grab('tipPersonHasHoursThisPeriod')}
+    ${grab('staffFlagIgnored')}
+    ${grab('tipNotAPerson')}
     ${grab('tipBaseSection')}
     ${grab('tipEffSection')}
     ${grab('tipBusserSplit')}
@@ -318,6 +320,34 @@ function TIP_SECTIONS_ALL(w) { return ['Server', 'Bartender', 'Busser', 'Food Ru
   // an add still places someone even with zero money — unaffected by this fix
   const w = world({ adds: { Weddings: ['June Added'] }, cells: { 'June Added': { '11/3': { p: 75 } } } });
   ok('an added name with money still places via the add path (Weddings), not pulled into NoDept by the money fallback', w.sectionPeople('Weddings').indexOf('June Added') >= 0 && w.sectionPeople('NoDept').indexOf('June Added') < 0);
+}
+
+// ── NOT-A-PERSON ROWS STAY OUT OF NO DEPARTMENT YET (Vinny saw "Busser Pool" there) ──
+{
+  // the lumped pool has money in cells exactly like a person would — that's what fooled it
+  const w = world({ cells: { 'Busser Pool': { '11/3': { u: 300 } }, 'Mike Fornero': { '11/3': { p: 50 } } } });
+  ok('⛔ "Busser Pool" never lands in NO DEPARTMENT YET, despite having money in cells', w.sectionPeople('NoDept').indexOf('Busser Pool') < 0);
+  ok('…nor in any other section via tipSectionPeople (its own row is drawn separately in Busser)', ['Server', 'Bartender', 'Busser', 'Food Runner', 'Weddings', 'NoDept'].every(sec => w.sectionPeople(sec).indexOf('Busser Pool') < 0));
+  ok('⛔ the grand total counts the unsplit pool EXACTLY once, not twice ($300 pool + $50 Mike)', w.grand().upt === 300 && w.grand().paid === 50);
+  ok('…while a real unmatched name with money still surfaces right beside it', w.sectionPeople('NoDept').indexOf('Mike Fornero') >= 0);
+}
+{
+  const w = world({ cells: { 'Private Party': { '11/3': { p: 200 } } } });
+  ok('⛔ "Private Party" (a tracking row, same rule as the Hours sheet) stays out of NO DEPARTMENT YET', w.sectionPeople('NoDept').indexOf('Private Party') < 0);
+}
+{
+  const w = world({ hours: { 'Busser Pool': { '11/3': { h: 4 } } } });
+  ok('⛔ a pool row with hours is not pulled in by the hours scan either', w.sectionPeople('NoDept').indexOf('Busser Pool') < 0);
+}
+{
+  // a spelling Vinny marked "not a person" on the ⚑ picker
+  const w = world({ cells: { 'Cash Drawer': { '11/3': { p: 20 } } }, ignore: { 'cash drawer': 1 } });
+  ok('⛔ a spelling on the ignore list ("not a person") stays out of NO DEPARTMENT YET', w.sectionPeople('NoDept').indexOf('Cash Drawer') < 0);
+}
+{
+  // a real person whose surname merely contains "pool" as part of a word is NOT excluded
+  const w = world({ cells: { 'Ann Poole': { '11/3': { p: 30 } } } });
+  ok('a real name like "Ann Poole" is not mistaken for a pool row (whole-word match only)', w.sectionPeople('NoDept').indexOf('Ann Poole') >= 0);
 }
 
 // ── A BUSSER-POOL SHARE SURVIVES BEING PROMOTED OUT OF BUSSER (kept from 11/20 review) ──
