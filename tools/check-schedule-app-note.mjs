@@ -36,7 +36,12 @@ const note = liftNote();
 ok('⛔ no schedule_app in the reply at all (op not eligible) → nothing to say', note(undefined, 'rename', 'Diego Campos') === '');
 ok('rename: renamed:true → the bespoke confirmation line', note({ renamed: true, before: 'Diego', after: 'Diego Campos' }, 'rename', 'Diego Campos') === 'Renamed in the schedule app too.');
 ok('rename: no_account → the bespoke "no account" line, exactly as Jarvis wrote it', note({ renamed: false, reason: 'no_account', message: 'whatever the mini said' }, 'rename', 'Diego Campos') === 'Not in the schedule app — they don’t have an account.');
-ok('rename: ambiguous → names the person, matching Jarvis\'s own example', note({ renamed: false, reason: 'ambiguous', message: 'x' }, 'rename', 'Diego Campos') === 'The schedule app has two Diego Campos accounts — nothing changed there.');
+// ⚠️ 11/20/26, Jarvis's review catch: on a RENAME, "ambiguous" means the schedule app
+// found two accounts under the OLD name (still on file there) — `name` passed in here is
+// the NEW spelling, so building a sentence out of it named the wrong person entirely.
+// Fix: use the server's own `message`, which already says it correctly.
+ok('⛔ rename: ambiguous uses the server\'s own message, NEVER the (new) name this call was passed — that name is the wrong person for an ambiguous OLD-name match', note({ renamed: false, reason: 'ambiguous', message: 'The schedule app has two Diego accounts — nothing changed there.' }, 'rename', 'Diego Campos') === 'The schedule app has two Diego accounts — nothing changed there.');
+ok('…and never falls back to empty if the server message is missing', note({ renamed: false, reason: 'ambiguous' }, 'rename', 'Diego Campos') === 'The schedule app has two matching accounts — nothing changed there.');
 ok('⛔ rename: an unlisted reason (not_employee/unreachable/anything future) falls back to the server\'s own message, never silently blank', note({ renamed: false, reason: 'unreachable', message: 'Could not reach the schedule app.' }, 'rename', 'Diego Campos') === 'Could not reach the schedule app.');
 ok('…same for not_employee', note({ renamed: false, reason: 'not_employee', message: 'Not an employee record.' }, 'rename', 'Diego') === 'Not an employee record.');
 
@@ -50,7 +55,7 @@ ok('⛔ status: an unlisted reason also falls back to the server message', note(
 const renameFn = grab('staffRename');
 ok('⛔ the old "the schedule app still has their own spelling" line is gone — it stopped being true the moment this mini build shipped', !/still has their own spelling/.test(renameFn));
 ok('⛔ staffRename captures the write result (not discarding it with a bare if(!await...)) so schedule_app is reachable', /const r=await staffWriteOp\(\{op:'update',pid:p\.pid,patch:\{name\}\}\);\s*\n\s*if\(!r\)return;/.test(renameFn));
-ok('…and feeds it through staffScheduleAppNote with the NEW name (for the ambiguous case to name correctly)', /staffScheduleAppNote\(r\.schedule_app,'rename',name\)/.test(renameFn));
+ok('…and feeds it through staffScheduleAppNote (the new name is passed but no longer used to build the ambiguous sentence — see the fix above)', /staffScheduleAppNote\(r\.schedule_app,'rename',name\)/.test(renameFn));
 
 // ── staffRestore: result captured, note shown on BOTH branches (class-clear and not) ──
 const restoreFn = grab('staffRestore');

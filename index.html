@@ -14635,7 +14635,12 @@ function staffScheduleAppNote(sa,kind,name){
   if(kind==='rename'){
     if(sa.renamed)return 'Renamed in the schedule app too.';
     if(sa.reason==='no_account')return 'Not in the schedule app — they don’t have an account.';
-    if(sa.reason==='ambiguous')return 'The schedule app has two '+(name||'')+' accounts — nothing changed there.';
+    // ⚠️ Jarvis's review catch, 11/20/26: an "ambiguous" rename means the schedule app
+    // found two accounts under the OLD name (the one still on file there), not the new
+    // one this call is renaming TO — `name` here is the new spelling, so building a
+    // sentence out of it named the wrong person. The server's own `message` already says
+    // it correctly; just use that instead of reconstructing it.
+    if(sa.reason==='ambiguous')return sa.message||'The schedule app has two matching accounts — nothing changed there.';
     return sa.message||'';
   }
   if(kind==='status'){
