@@ -955,6 +955,27 @@ const M=[
     tsub("  return /\\bpool\\b/i.test(name)||/private\\s*party/i.test(name)||staffFlagIgnored(name);",
          "  return /pool/i.test(name)||/private\\s*party/i.test(name)||staffFlagIgnored(name);"),true],
 
+  // ── CARRY OVER OLD SPELLINGS (check-staff-carry) ──────────────────────────────────────────
+  ['CARRY 1 · ⛔ a spelling that already reaches SOMEBODY ELSE is applied anyway — re-points it to the wrong person','check-staff-carry.mjs',
+    tsub("      else if(now)status='clash';\n",""),true],
+  ['CARRY 2 · ⛔ a one-word key ("amy s" → "amy") is linked — every bare "Amy" would land on this person','check-staff-carry.mjs',
+    tsub("      if(!/ /.test(staffKeyOf(sp)))status='short';\n      else if(!target)status='nostaff';",
+         "      if(!target)status='nostaff';"),true],
+  ['CARRY 3 · ⛔ a former staff member is linked like a live one','check-staff-carry.mjs',
+    tsub("      else if(!staffEmployed(target))status='former';\n",""),true],
+  ['CARRY 4 · ⛔ Apply stops re-checking right before sending — a spelling linked elsewhere meanwhile is sent again','check-staff-carry.mjs',
+    tsub("    const now=staffResolveForTips(r.spelling);\n    if(now){changed++;continue;}\n",""),true],
+  ['CARRY 5 · ⛔ Apply drops its confirm — one tap writes every alias','check-staff-carry.mjs',
+    tsub("  if(!confirm('Add '+todo.length+' old spelling'+(todo.length===1?'':'s')+' to Staff?",
+         "  if(false&&!confirm('Add '+todo.length+' old spelling'+(todo.length===1?'':'s')+' to Staff?"),true],
+  ['CARRY 6 · ⛔ an already-carried spelling is listed again instead of counted as done','check-staff-carry.mjs',
+    tsub("      if(target&&now&&now.pid===target.pid){done++;return;}   // already carried over\n",""),true],
+  ['CARRY 7 · ⛔ an unreachable store reads as "nothing to do" instead of an error','check-staff-carry.mjs',
+    tsub("    if(kvFailed(r))throw new Error('the cloud store could not be reached (this device needs the sync key)');\n",""),true],
+  ['CARRY 8 · BENIGN — the carry-over top comment reworded, no behaviour change','check-staff-carry.mjs',
+    tsub("// ── CARRY OVER OLD SPELLINGS — Jarvis, 11/20/26 ──────────────────────────────────────",
+         "// ── Carry the old tip sheet's spellings into Staff — Jarvis, 11/20/26 ─────────────────"),false],
+
   // ── tipsPull SKIPS PRACTICE-MODE LOG ENTRIES (check-tips-pull-practice) ─────────────────
   ['PRACTICE 1 · ⛔ tipsPull stops skipping practice entries entirely — a newer practice night can replace a real one again','check-tips-pull-practice.mjs',
     tsub("log.forEach(e=>{if(!e||!e.date||e.practice)return;",
@@ -1047,8 +1068,8 @@ const M=[
     tsub("  const todo=st.rows.filter(r=>r.pick);",
          "  const todo=st.rows;"),true],
   ['FILLDEPT 5 · BENIGN — the Fill departments panel title reworded, no behaviour change','check-staff-filldept.mjs',
-    tsub("<b style=\"font-size:14px\">Fill departments</b>${close}</div>\n    <div style=\"color:var(--text-dim);font-size:12.5px;margin-top:4px\">Reading the Tips roster and positions…</div>",
-         "<b style=\"font-size:14px\">Fill in departments</b>${close}</div>\n    <div style=\"color:var(--text-dim);font-size:12.5px;margin-top:4px\">Reading the Tips roster and positions…</div>"),false],
+    tsub("<b style=\"font-size:14px\">Fill departments</b>${close}</div>\n    <div style=\"color:var(--text-dim);font-size:12.5px;margin-top:4px\">Reading positions…</div>",
+         "<b style=\"font-size:14px\">Fill in departments</b>${close}</div>\n    <div style=\"color:var(--text-dim);font-size:12.5px;margin-top:4px\">Reading positions…</div>"),false],
 
   // ── CONTACT: email/birthday/address, live only on the mini (check-staff-contact) ───────
   ['CONTACT 1 · ⛔ an emptied email box no longer clears it — the empty string is sent instead of null','check-staff-contact.mjs',

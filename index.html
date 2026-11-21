@@ -5800,9 +5800,10 @@ function tipCanon(name){const k=tipNormKey(name);if(!k)return String(name||'').t
 // below because tipCanon() still reads them defensively (falls straight through to the
 // trimmed raw spelling now — the ⚑ picker's "Same person as…" alias is the replacement
 // for what the roster's canon map used to do automatically). ct_tips_roster the KV VALUE
-// is left untouched as history — nothing reads it, and tipRosterFixPriscilla (which used
-// to WRITE to it) is retired too, for the same reason: fixing a spelling nobody reads
-// from any more is a no-op dressed as a button.
+// is left untouched as history — and is now READ in exactly one place, READ-ONLY:
+// staffCarryBuild ("Carry over old spellings" on Staff) lifts its old alias map into Staff
+// aliases once, so MICROS spellings like "Priscill Lagace" keep landing on the right
+// person. Nothing writes it; tipRosterFixPriscilla (which used to) is retired.
 const TIPS_ROSTER_KEY='ct_tips_roster';
 let tipsState={start:null,end:null,cells:{},adds:{},moves:{},expanded:{},hours:{},hoursOut:{},empIds:{},busserSplit:{},busserSplitByDay:{},view:'tips',loaded:false,loading:false,logOpen:false,logEntries:null,logExpanded:{}};
 let tipsGen=0;   // bumped on every (re)load; guards against two period-loads racing and crossing data
@@ -14720,6 +14721,8 @@ function staffRefresh(){
   if(pend)pend.innerHTML=staffPendingCardHTML();
   const fd=document.getElementById('staff-filldept');
   if(fd)fd.innerHTML=staffFillDeptHTML();
+  const cv=document.getElementById('staff-carry');
+  if(cv)cv.innerHTML=staffCarryHTML();
   const sc=el.closest('[style*="overflow-y"]')||document.getElementById('viewport');
   const top=sc?sc.scrollTop:0;
   el.innerHTML=staffBodyHTML();
@@ -15261,13 +15264,96 @@ async function staffFillDeptApply(){
   staffRefresh();
   alert(ok+' set'+(skipped?(', '+skipped+' already had one by then — left alone'):'')+(failed?(', '+failed+' failed — reopen Fill departments to retry'):'')+'.');
 }
+// ── CARRY OVER OLD SPELLINGS — Jarvis, 11/20/26 ──────────────────────────────────────
+// The retired tip roster's alias map (cloud KV ct_tips_roster → .aliases: old spelling, in
+// the roster's lower-case key form → the roster's name for that person) did the import-time
+// canonicalising — e.g. the MICROS spelling "priscill lagace" → Priscilla. Staff aliases do
+// that job now, but not every old spelling made it across, so until this runs a MICROS
+// import files those people under a SECOND name. One-time and read-only until Apply: every
+// old spelling that does not already reach the right Staff person is listed beside who it
+// would link to; Apply sends one op:'alias' per row through staffWriteOp.
+// ⛔ Never applied (listed only): a target that isn't a live Staff person, and a spelling
+// that already reaches SOMEBODY ELSE — guessing between two people is how pay goes wrong.
+async function staffCarryBuild(){
+  staffS.carry={loading:true,rows:null,err:null,done:0};staffRefresh();
+  try{
+    const r=await kvGet(TIPS_ROSTER_KEY);
+    if(kvFailed(r))throw new Error('the cloud store could not be reached (this device needs the sync key)');
+    const aliases=r&&r.v&&r.v.aliases;
+    if(!aliases||typeof aliases!=='object')throw new Error('the retired roster holds no old spellings');
+    const rows=[];let done=0;
+    Object.keys(aliases).forEach(spell=>{
+      const sp=String(spell||'').replace(/\s+/g,' ').trim(),canon=String(aliases[spell]||'').trim();
+      if(!sp||!canon)return;
+      const target=staffResolveForTips(canon);   // who the old map meant
+      const now=staffResolveForTips(sp);         // who that spelling reaches today
+      if(target&&now&&now.pid===target.pid){done++;return;}   // already carried over
+      let status;
+      // A spelling whose Staff key is ONE word ("amy s" keys as just "amy") would make every
+      // bare "Amy" on any sheet resolve to this person — too broad to link without a human.
+      if(!/ /.test(staffKeyOf(sp)))status='short';
+      else if(!target)status='nostaff';
+      else if(!staffEmployed(target))status='former';
+      else if(now)status='clash';
+      else status='todo';
+      rows.push({spelling:sp,canon,status,pid:target?target.pid:null,targetName:target?target.name:'',nowName:now?now.name:''});
+    });
+    const order={todo:0,clash:1,short:2,former:3,nostaff:4};
+    rows.sort((a,b)=>order[a.status]-order[b.status]||a.spelling.localeCompare(b.spelling));
+    staffS.carry={loading:false,rows,err:null,done};
+  }catch(e){staffS.carry={loading:false,rows:null,err:(e&&e.message)||String(e),done:0};}
+  staffRefresh();
+}
+async function staffCarryApply(){
+  const st=staffS.carry;if(!st||!st.rows)return;
+  const todo=st.rows.filter(r=>r.status==='todo');
+  if(!todo.length){alert('Nothing to carry over — every old spelling either already reaches the right person or needs a look by hand.');return;}
+  if(!confirm('Add '+todo.length+' old spelling'+(todo.length===1?'':'s')+' to Staff?\n\nEach one is added as an "other spelling" of the person shown beside it, so the MICROS timesheet and the tip sheet find them by that spelling too. Nobody is renamed.'))return;
+  st.applying=true;staffRefresh();
+  let ok=0,failed=0,changed=0;
+  for(const r of todo){
+    // re-check right before sending: a spelling linked from another screen meanwhile is left alone
+    const now=staffResolveForTips(r.spelling);
+    if(now){changed++;continue;}
+    const res=await staffWriteOp({op:'alias',pid:r.pid,spelling:r.spelling});
+    if(res)ok++;else failed++;
+  }
+  staffS.carry=null;staffS.showCarry=false;staffRefresh();
+  alert(ok+' carried over'+(changed?(', '+changed+' already linked by then — left alone'):'')+(failed?(', '+failed+' failed — reopen Carry over old spellings to retry'):'')+'.');
+}
+function staffCarryHTML(){
+  if(!staffS.showCarry)return '';
+  const st=staffS.carry;
+  const close=`<button onclick="staffS.showCarry=false;staffRedraw()" style="margin-left:auto;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:13px">✕</button>`;
+  const head=`<div style="display:flex;align-items:center;gap:10px"><b style="font-size:14px">Carry over old spellings</b>${close}</div>`;
+  if(!st||st.loading)return `<div style="${posCardCss};margin-bottom:14px">${head}<div style="color:var(--text-dim);font-size:12.5px;margin-top:4px">Reading the old tip-sheet spellings…</div></div>`;
+  if(st.err)return `<div style="${posCardCss};margin-bottom:14px">${head}<div style="color:#f87171;font-size:12.5px;margin-top:4px">⚠ ${esc(st.err)} <button onclick="staffCarryBuild()" style="background:none;border:none;color:var(--accent);text-decoration:underline;cursor:pointer;font-family:inherit;font-size:12.5px">Try again</button></div></div>`;
+  const rows=st.rows||[];
+  const n=k=>rows.filter(r=>r.status===k).length;
+  const why={
+    todo:r=>`→ <b>${esc(r.targetName)}</b>`,
+    clash:r=>`<span style="color:#f87171">already reaches <b>${esc(r.nowName)}</b>, but the old sheet meant <b>${esc(r.targetName)}</b> — not applied, check by hand</span>`,
+    short:r=>`<span style="color:#fbbf24">too short to link safely — it would catch every "${esc(staffKeyOf(r.spelling))}"${r.targetName?' (meant '+esc(r.targetName)+')':''} — not applied, add it by hand if right</span>`,
+    former:r=>`<span style="color:var(--text-muted)">→ ${esc(r.targetName)} (no longer on staff) — not applied</span>`,
+    nostaff:r=>`<span style="color:#fbbf24">the old sheet's name "${esc(r.canon)}" isn't on Staff — link it with ⚑ on Tips, then reopen this — not applied</span>`,
+  };
+  const row=r=>`<div style="border-top:1px solid var(--border);padding:6px 0;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;font-size:13px">
+    <span style="min-width:170px;font-family:ui-monospace,monospace;font-size:12.5px">${esc(r.spelling)}</span><span>${why[r.status](r)}</span></div>`;
+  return `<div style="${posCardCss};margin-bottom:14px">
+    ${head}
+    <div style="font-size:12px;color:var(--text-muted);margin-top:3px">One-time: spellings the old tip sheet knew (e.g. the MICROS "Priscill Lagace") that Staff doesn't yet. Apply adds each as an "other spelling" of the person beside it — nobody is renamed. ${st.done} already carried over.</div>
+    <div style="font-size:12.5px;color:var(--text-dim);margin-top:6px">${n('todo')} to add${n('clash')?' · '+n('clash')+' clash':''}${n('short')?' · '+n('short')+' too short':''}${n('former')?' · '+n('former')+' former staff':''}${n('nostaff')?' · '+n('nostaff')+' not on Staff':''}</div>
+    ${rows.map(row).join('')}
+    ${n('todo')?`<div style="margin-top:9px"><button onclick="staffCarryApply()" ${st.applying?'disabled':''} style="${posBtn('#22c55e')};padding:6px 14px;font-size:13px">${st.applying?'Applying…':'Apply '+n('todo')}</button></div>`:''}
+  </div>`;
+}
 function staffFillDeptHTML(){
   if(!staffS.showFillDept)return '';
   const st=staffS.fillDept;
   const close=`<button onclick="staffS.showFillDept=false;staffRedraw()" style="margin-left:auto;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:13px">✕</button>`;
   if(!st||st.loading)return `<div style="${posCardCss};margin-bottom:14px">
     <div style="display:flex;align-items:center;gap:10px"><b style="font-size:14px">Fill departments</b>${close}</div>
-    <div style="color:var(--text-dim);font-size:12.5px;margin-top:4px">Reading the Tips roster and positions…</div>
+    <div style="color:var(--text-dim);font-size:12.5px;margin-top:4px">Reading positions…</div>
   </div>`;
   if(st.err)return `<div style="${posCardCss};margin-bottom:14px">
     <div style="display:flex;align-items:center;gap:10px"><b style="font-size:14px">Fill departments</b>${close}</div>
@@ -15288,7 +15374,7 @@ function staffFillDeptHTML(){
       <span style="font-size:12.5px;color:var(--text-dim)">${rows.length?rows.length+' with no department — '+(rows.length-needsPick)+' proposed, '+needsPick+' need a pick':'everybody already has one'}</span>
       ${close}
     </div>
-    <div style="font-size:12px;color:var(--text-muted);margin-top:3px">One-time pass, from the Tips roster and positions. Never touches anyone who already has a department. Review each row, change any pick, then Apply.</div>
+    <div style="font-size:12px;color:var(--text-muted);margin-top:3px">One-time pass, from each person's positions. Never touches anyone who already has a department. Review each row, change any pick, then Apply.</div>
     ${rows.map(row).join('')}
     ${rows.length?`<div style="margin-top:9px"><button onclick="staffFillDeptApply()" ${st.applying?'disabled':''} style="${posBtn('#22c55e')};padding:6px 14px;font-size:13px">${st.applying?'Applying…':'Apply'}</button></div>`:''}
   </div>`;
@@ -16681,11 +16767,14 @@ function posStaffHTML(){
       style="background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:6px 12px;font-size:12.5px;cursor:pointer;font-family:inherit;white-space:nowrap">Find duplicates</button>
     <button onclick="staffS.showFillDept=!staffS.showFillDept;if(staffS.showFillDept&&!staffS.fillDept)staffFillDeptBuild();staffRedraw()" title="One-time: propose a department for everyone who doesn't have one yet"
       style="background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:6px 12px;font-size:12.5px;cursor:pointer;font-family:inherit;white-space:nowrap">Fill departments</button>
+    <button onclick="staffS.showCarry=!staffS.showCarry;if(staffS.showCarry&&!staffS.carry)staffCarryBuild();staffRedraw()" title="One-time: add the old tip sheet's spellings (e.g. MICROS 'Priscill Lagace') to Staff"
+      style="background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:6px 12px;font-size:12.5px;cursor:pointer;font-family:inherit;white-space:nowrap">Carry over old spellings</button>
     </div>
     ${staffMicrosHTML()}
     <div id="staff-notes">${staffNotesHTML()}</div>
     <div id="staff-dupes">${staffDupesHTML()}</div>
     <div id="staff-filldept">${staffFillDeptHTML()}</div>
+    <div id="staff-carry">${staffCarryHTML()}</div>
     <div style="display:flex;gap:10px;padding:4px 0;font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px">
       <span style="flex:1;min-width:150px">Name</span><span style="width:78px">Paychex</span></div>
     <div id="staff-body">${staffBodyHTML()}</div>
