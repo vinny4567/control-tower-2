@@ -105,7 +105,7 @@ ok('hoursHTML resolves the per-person row label through staffDisplayName', /staf
 // rule this guards is unchanged — the old map (tipsState.empIds) is keyed by the RAW name.
 const idFn = grab('tipPaychexId');
 ok('⛔ the ID badge is handed the RAW name (tipsState.empIds is a LEAVE-IT store)',
-   /\$\{tipIdBadgeHTML\(name,true\)\}/.test(hoursHTMLFn));
+   /\$\{tipIdBadgeHTML\(name\)\}/.test(hoursHTMLFn));
 ok('⛔ …and the fallback lookup inside it reads the old map by that RAW name',
    /\(tipsState\.empIds\|\|\{\}\)\[name\]/.test(idFn));
 ok('⛔ tipHoursInput/tipHoursDelPos/tipHoursRenamePos/tipHoursAddRow/tipHoursDelPerson are all still called with the RAW name',

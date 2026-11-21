@@ -65,6 +65,9 @@ function world({ people = {}, aliases = {}, empIds = {}, cells = {}, hours = {},
     const document={createElement(){return {click(){},remove(){}};},body:{appendChild(){}}};
     const setTimeout=()=>{};
     ${grab('tipsDownloadCsv')}
+    ctx.nav={};function posSec(x){ctx.nav.posSec=x;} function staffFlagOpen(n){ctx.nav.flag=n;}
+    ${grab('tipOpenInStaff')}
+    ctx.openInStaff=tipOpenInStaff;ctx.staffS=()=>staffS;
     ctx.id=tipPaychexId;ctx.badge=tipIdBadgeHTML;ctx.csv=tipsPaychexCsv;ctx.download=tipsDownloadCsv;
   `)(ctx);
   return ctx;
@@ -152,26 +155,50 @@ const csvRow = (csv, name) => csv.split('\n').find(l => l.includes(',' + name + 
   ok('⛔ a conflict colours the status RED, not the amber of a plain skip', last.c === '#f87171');
 }
 
-// ── the badge beside a name (Tips read-only; Hours editable only when Staff has none) ───
+// ── the badge beside a name: READ-ONLY on Tips AND Hours — the sheet never takes an ID ──
+// (Jarvis/Vinny 11/20/26: "wipe the other lists" — a typed fallback would keep ct_emp_ids
+// alive as a second ID list.) Anything to fix is a tap that opens the person in Staff.
 {
   const w = world({ people: P('amy server', 'Amy Server', { paychex_id: '412' }) });
-  const b = w.badge('Amy Server', true);
-  ok('⛔ a Staff ID shows read-only even on Hours — the master isn\'t edited from the sheet', b.includes('>412<') && !b.includes('<input'));
+  const b = w.badge('Amy Server');
+  ok('a Staff ID shows plainly, nothing to tap', b.includes('>412<') && !b.includes('<input') && !b.includes('onclick'));
 }
 {
   const w = world({ people: P('dee none', 'Dee None', {}) });
-  ok('no ID on Tips reads a small red "no ID"', /color:#f87171">no ID</.test(w.badge('Dee None', false)));
-  ok('…and on Hours it is the fallback box, placeholder "no ID"', /<input[^>]*placeholder="no ID"/.test(w.badge('Dee None', true)));
+  const b = w.badge('Dee None');
+  ok('⛔ no ID reads a small red "no ID" — and is NOT a box to type into', />no ID</.test(b) && b.includes('#f87171') && !b.includes('<input'));
+  ok('…tapping it opens the person in Staff', /onclick="event\.stopPropagation\(\);tipOpenInStaff\('Dee None'\)"/.test(b));
 }
 {
   const w = world({ people: P('cal conflict', 'Cal Conflict', { paychex_id: '412' }), empIds: { 'Cal Conflict': '409' } });
-  const b = w.badge('Cal Conflict', true);
-  ok('⛔ a conflict shows both ids in red, and is NOT an editable box', b.includes('412≠409') && b.includes('#f87171') && !b.includes('<input'));
+  const b = w.badge('Cal Conflict');
+  ok('⛔ a conflict shows both ids in red, tap-to-fix, never an editable box', b.includes('412≠409') && b.includes('#f87171') && !b.includes('<input') && b.includes('tipOpenInStaff('));
 }
 {
   const w = world({ people: P('bob bar', 'Bob Bar', {}), empIds: { 'Bob Bar': '377' } });
-  ok('a fallback ID on Tips is marked (amber, with *)', /#fbbf24">377\*</.test(w.badge('Bob Bar', false)));
+  const b = w.badge('Bob Bar');
+  ok('an existing old-sheet ID still works as the flagged amber fallback (377*), tap to move it onto Staff', /377\*</.test(b) && b.includes('#fbbf24') && b.includes('tipOpenInStaff('));
 }
+
+// ── tapping opens the RIGHT place ───────────────────────────────────────────────────────
+{
+  const w = world({ people: P('michael fornero', 'Michael Fornero', { pid: 'm1' }), aliases: { 'mike fornero': 'michael fornero' } });
+  w.staffS().filter = 'noid'; w.staffS().open = null;
+  w.openInStaff('Mike Fornero');
+  ok('⛔ a raw spelling that resolves opens THAT Staff person, row expanded, search on their name', w.nav.posSec === 'staff' && w.staffS().open === 'michael fornero' && w.staffS().q === 'Michael Fornero');
+  ok('…with any Staff filter cleared, so a filter can\'t hide them', w.staffS().filter === null);
+}
+{
+  const w = world({ people: {} });
+  w.openInStaff('Ghost Person');
+  ok('⛔ a name Staff can\'t resolve opens the ⚑ picker instead (Add to Staff / Same person as…)', w.nav.flag === 'Ghost Person' && !w.nav.posSec);
+}
+
+// ── the sheet has NO way to write an ID any more ────────────────────────────────────────
+ok('⛔ the sheet\'s ID writer (tipEmpIdSet) is gone', !/function tipEmpIdSet\(|tipEmpIdSet\(/.test(src));
+ok('⛔ the badge never renders an input, on any path', !/<input/.test(grab('tipIdBadgeHTML')));
+ok('…and ct_emp_ids is written ONLY by the guarded saver (the MICROS import / wedding pull still fill the fallback through it)',
+   (src.match(/kvPush\('ct_emp_ids'/g) || []).length === 1 && /function tipsSaveEmpIds\(\)\{\s*if\(tipsSaveBlocked\(\)\)return false;\s*try\{kvPush\('ct_emp_ids'/.test(src));
 
 console.log(bad ? `\n${bad} FAILED` : '\nall good');
 process.exit(bad ? 1 : 0);

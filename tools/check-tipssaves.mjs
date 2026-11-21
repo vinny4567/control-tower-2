@@ -31,9 +31,8 @@ function world(state, periodKey = 'ct_tips_2026_12_1') {
      ${lift('tipsSaveEmpIds').replace(/tipsState/g, 'env.tipsState')}
      ${lift('tipsSaveMoves').replace(/tipsState/g, 'env.tipsState')}
      ${lift('tipsSaveSoon').replace(/tipsState/g, 'env.tipsState').replace(/tipsGen/g, 'env.gen')}
-     ${lift('tipEmpIdSet').replace(/tipsState/g, 'env.tipsState')}
      ${lift('tipsSaveHoursSoon').replace(/tipsState/g, 'env.tipsState').replace(/tipsGen/g, 'env.gen')}
-     return { tipsSaveBlocked, tipsSaveEmpIds, tipsSaveMoves, tipsSaveSoon, tipEmpIdSet, tipsSaveHoursSoon };`
+     return { tipsSaveBlocked, tipsSaveEmpIds, tipsSaveMoves, tipsSaveSoon, tipsSaveHoursSoon };`
   )(env,
     (k, v) => env.writes.push({ key: k, v }),
     (s) => env.status.push(s),
@@ -83,14 +82,13 @@ w = world(failed());
 w.tipsSaveMoves();
 ok('⛔ nor do the moves', w.env.writes.length === 0);
 
-// ⛔ THE PAYCHEX ONE. On a screen that failed to load, empIds is empty — typing one ID used
-// to write a map containing ONLY that ID over every worker in the business, after which
-// every row is quietly left out of the payroll file.
+// ⛔ THE PAYCHEX ONE. On a screen that failed to load, empIds is empty — saving it would write
+// a map containing ONLY what is in memory over every worker in the business. (11/20/26: the
+// sheet no longer takes typed IDs at all — Staff is the master — but the MICROS import and
+// wedding pull still save the fallback map through this one guarded saver.)
 w = world(failed());
-w.tipEmpIdSet('Ann', '456');
-ok('⛔ typing a Paychex ID on a screen that failed to load writes nothing', w.env.writes.length === 0);
-ok('…and does not even change what is in memory',
-   Object.keys(w.env.tipsState.empIds).length === 0);
+w.tipsSaveEmpIds();
+ok('⛔ saving the worker IDs on a screen that failed to load writes nothing', w.env.writes.length === 0);
 ok('…and says so', w.env.status.join('|').includes('not saved'));
 
 // ── half-loaded is not loaded ───────────────────────────────────────────────
@@ -104,8 +102,7 @@ ok('…and the refusal is visible, not silent', w.env.status.join('|').includes(
 
 // ── the normal path still works ─────────────────────────────────────────────
 w = world(good());
-ok('typing an ID on a good screen saves it', (w.tipEmpIdSet('Bob', '789'), w.env.writes.length === 1));
-ok('…and keeps everyone else', w.env.tipsState.empIds.Ann === '123' && w.env.tipsState.empIds.Bob === '789');
+ok('saving the IDs on a good screen writes them, everyone kept', (w.tipsSaveEmpIds(), w.env.writes.length === 1 && w.env.writes[0].key === 'ct_emp_ids' && w.env.writes[0].v.emp.Ann === '123'));
 w = world(good());
 w.tipsSaveMoves();
 ok('moves still save on a good screen', w.env.writes.length === 1 && w.env.writes[0].key === 'ct_tips_moves');
