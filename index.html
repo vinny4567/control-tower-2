@@ -6184,79 +6184,25 @@ function tipsPosBtnHTML(){
 function tipsImportBtnHTML(){return `<label title="Import the MICROS timesheet PDF" style="background:#7c3aed;border:none;color:#fff;font-weight:700;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px;display:inline-flex;align-items:center;gap:5px;white-space:nowrap">📄 Import timesheet<input type="file" accept="application/pdf,.pdf" onchange="tipsImportTimesheet(this)" style="display:none"></label>`;}
 // ── Paychex wide CSV (the format from ~/Desktop/Payroll/*/PAYCHEX COMBINED…WITH NAMES.csv) ──
 function csvEsc(s){s=String(s==null?'':s);return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}
-// ⚠️ STAFF IS THE MASTER FOR PAYCHEX IDs — Vinny, 11/20/26: "i want the emp number aka paychex
-// id listed here. Remember this sheet gets turned into the paychex csv file import." The old
-// per-sheet map (tipsState.empIds = ct_emp_ids, filled by the MICROS import and the wedding
-// pull) is only a FALLBACK for someone Staff has no ID for, and it is flagged when used.
-// ⛔ When Staff and the old map DISAGREE nobody is guessed: a wrong Worker ID pays the wrong
-// person, so that person is left OUT of the CSV and named until it's fixed on Staff.
-// Compared with leading zeros ignored ("0412" is 412); the Staff spelling is what's exported.
-function tipIdNorm(v){const s=String(v==null?'':v).trim();return /^\d+$/.test(s)?String(parseInt(s,10)):s;}
+// ⚠️ A PAYCHEX ID COMES ONLY FROM STAFF — Vinny, 11/20/26 ("lets finish this"). The old per-sheet
+// list (ct_emp_ids) is RETIRED: never read, never written, left alone as history. It was filled
+// with MICROS EMPLOYEE NUMBERS, not Paychex IDs — the 11/2–11/15 CSV paid Ethan Browning as
+// Worker 13 while Staff has 647, and Lydia's 16 was the same. With one source there is nothing
+// to fall back to and nothing to conflict with: a person has Staff's ID, or none.
 function tipPaychexId(name){
   const p=staffResolveForTips(name);
   const staff=String((p&&p.paychex_id)||'').trim();
-  const sheet=String((tipsState.empIds||{})[name]||'').trim();
-  if(staff&&sheet&&tipIdNorm(staff)!==tipIdNorm(sheet))return {id:'',src:'conflict',staff,sheet};
-  if(staff)return {id:staff,src:'staff'};
-  if(sheet)return {id:sheet,src:'sheet'};
-  return {id:'',src:'none'};
+  return staff?{id:staff,src:'staff'}:{id:'',src:'none'};
 }
-// The ID beside a name, on Tips and Hours — READ-ONLY on both (Jarvis/Vinny 11/20/26: "wipe
-// the other lists", Staff trumps). The sheet never takes an ID: a typed fallback would keep
-// ct_emp_ids alive as a second ID list. Anything that needs fixing — no ID, an old-sheet
-// fallback, a conflict — is a tap that opens the person in Staff (or, for a name Staff can't
-// resolve, the ⚑ picker), and the ID is typed THERE.
+// The ID beside a name, on Tips and Hours — read-only; the sheet never takes an ID. A missing
+// one is a tap that opens the person in Staff (or the ⚑ picker for a name Staff can't
+// resolve), and the ID is typed THERE.
 function tipIdBadgeHTML(name){
   const r=tipPaychexId(name);
   const base='font-weight:700;font-size:11px;margin-right:6px;font-variant-numeric:tabular-nums;white-space:nowrap';
   if(r.src==='staff')return `<span title="Paychex ID, from Staff" style="${base};color:var(--accent2,#38bdf8)">${esc(r.id)}</span>`;
   const en=esc(name).replace(/'/g,"\\'");
-  const tap=(label,color,title,fn)=>`<button onclick="event.stopPropagation();${fn||'tipOpenInStaff'}('${en}')" title="${title} — tap to fix it" style="${base};color:${color};background:none;border:none;padding:0;cursor:pointer;font-family:inherit;text-decoration:underline dotted">${label}</button>`;
-  if(r.src==='conflict')return tap(`${esc(r.staff)}≠${esc(r.sheet)}`,'#f87171',`Paychex ID differs — Staff says ${esc(r.staff)}, the old sheet says ${esc(r.sheet)}. Left off the Paychex CSV until it's settled`,'tipResolveIdConflict');
-  if(r.src==='sheet')return tap(`${esc(r.id)}*`,'#fbbf24','Paychex ID from the old sheet — not on Staff yet');
-  return tap('no ID','#f87171','No Paychex ID on Staff');
-}
-// A RED CONFLICT (Staff and the old sheet disagree), settled from the badge — Jarvis/Vinny,
-// 11/20/26, Lydia Freeborn 648≠16, "648 (Staff is right)". Two answers on one tap:
-//   · Staff is right → remove the person's old-list value(s) that disagree. Every stored
-//     spelling of that Staff person holding a different ID goes, through the ONE guarded
-//     saver (a screen that failed to load refuses, and says so). The badge turns blue and
-//     the person is back in the CSV under Staff's ID.
-//   · the old one is right → open the person in Staff to type it there.
-// ⛔ Never writes Staff from here — Staff is the master, so the only thing this page may
-// do on its own is DROP the losing copy, never pick a winner on Staff's behalf.
-function tipIdConflictAsk(name,staff,sheet){
-  return new Promise((resolve)=>{
-    const wrap=document.createElement('div');
-    wrap.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:20px';
-    const btn=(a,l,primary)=>`<button data-a="${a}" style="padding:9px 14px;border-radius:8px;border:1px solid ${primary?'var(--accent)':'var(--border)'};background:${primary?'var(--accent)':'var(--surface2)'};color:${primary?'#000':'var(--text)'};font-size:14px;font-weight:700;cursor:pointer;text-align:left">${l}</button>`;
-    wrap.innerHTML=`<div style="background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:12px;max-width:440px;width:100%;padding:20px;box-shadow:0 18px 50px rgba(0,0,0,.5)">
-      <div style="font-size:15px;line-height:1.45;margin-bottom:16px"><b>${esc(name)}</b> has two Paychex IDs: Staff says <b>${esc(staff)}</b>, the old sheet says <b>${esc(sheet)}</b>. They're left off the Paychex CSV until it's settled.</div>
-      <div style="display:flex;flex-direction:column;gap:8px">${btn('staff',`Staff is right: use ${esc(staff)} (removes ${esc(sheet)} from the old list)`,true)}${btn('open',`The old one is right: open ${esc(name)} in Staff`)}${btn('cancel','Not now')}</div></div>`;
-    const done=(v)=>{wrap.remove();document.removeEventListener('keydown',onKey);resolve(v);};
-    const onKey=(e)=>{if(e.key==='Escape')done(null);};
-    wrap.addEventListener('click',(e)=>{const b=e.target.closest('button[data-a]');if(b)done(b.dataset.a==='cancel'?null:b.dataset.a);else if(e.target===wrap)done(null);});
-    document.addEventListener('keydown',onKey);
-    document.body.appendChild(wrap);
-  });
-}
-async function tipResolveIdConflict(rawName){
-  const r=tipPaychexId(rawName);
-  if(r.src!=='conflict'){tipOpenInStaff(rawName);return;}
-  const p=staffResolveForTips(rawName);
-  const who=p?p.name:rawName;
-  const choice=await tipIdConflictAsk(who,r.staff,r.sheet);
-  if(choice==='open'){tipOpenInStaff(rawName);return;}
-  if(choice!=='staff')return;
-  if(tipsSaveBlocked())return;   // a screen that failed to load must not rewrite the ID map
-  // every stored spelling of THIS Staff person whose old-list ID disagrees with Staff's
-  const ids=tipsState.empIds||{},want=tipIdNorm(r.staff);
-  const gone=Object.keys(ids).filter(k=>{const q=staffResolveForTips(k);return q&&p&&q.pid===p.pid&&ids[k]&&tipIdNorm(ids[k])!==want;});
-  if(!gone.length&&ids[rawName]&&tipIdNorm(ids[rawName])!==want)gone.push(rawName);
-  gone.forEach(k=>{delete ids[k];});
-  if(!tipsSaveEmpIds())return;
-  tipsSetStatus(who+': using Staff\'s Paychex ID '+r.staff+' — removed '+r.sheet+' from the old list','var(--text-dim)');
-  tipsRedraw();
+  return `<button onclick="event.stopPropagation();tipOpenInStaff('${en}')" title="No Paychex ID on Staff — tap to add it there" style="${base};color:#f87171;background:none;border:none;padding:0;cursor:pointer;font-family:inherit;text-decoration:underline dotted">no ID</button>`;
 }
 // Open the person a Tips/Hours name resolves to in Staff, row expanded, so the ID is typed on
 // the master record. A name Staff can't resolve goes to the ⚑ picker instead ("Add to Staff"
@@ -6274,27 +6220,19 @@ function tipsPaychexCsv(){
   tipBusserSplitPeople().forEach(n=>{if(!isPool(n))set[n]=1;});   // a pool share is pay: it puts you on the export on its own
   const ids={};Object.keys(set).forEach(n=>ids[n]=tipPaychexId(n));
   // ONE PERSON, ONE SET OF LINES (Jarvis/Vinny 11/20/26): every stored spelling of the same
-  // Staff person is summed under ONE Worker ID. The spellings must agree on that ID — two
-  // different IDs between them is a conflict, left off and named, exactly like Staff vs sheet.
+  // Staff person is summed under ONE Worker ID — Staff's, the only source there is.
   const groups=tipGroupNames(Object.keys(set)).map(g=>{
-    const rs=g.members.map(m=>ids[m]);
-    const c=rs.find(r=>r.src==='conflict');if(c)return {g,r:c};
-    const got=rs.filter(r=>r.id),st=got.find(r=>r.src==='staff');
-    const distinct=[...new Set(got.map(r=>tipIdNorm(r.id)))];
-    if(distinct.length>1){const a=st||got[0];return {g,r:{id:'',src:'conflict',staff:st?st.id:'—',sheet:got.filter(r=>tipIdNorm(r.id)!==tipIdNorm(a.id)||!st).map(r=>r.id).join(' / ')}};}
-    if(!got.length)return {g,r:{id:'',src:'none'}};
-    return {g,r:st||got[0]};
+    const r=g.members.map(m=>ids[m]).find(x=>x.id)||{id:'',src:'none'};
+    return {g,r};
   }).sort((a,b)=>(parseInt(a.r.id)||999999)-(parseInt(b.r.id)||999999)||a.g.primary.localeCompare(b.g.primary));
   const lines=['Company ID,Worker ID,Name,Pay Component,Hours,Rate,Tips,Unpaid Tips,Overtime Hours,Training Hours,Training Rate,Bonus Amount'];
   const f=n=>{n=Math.round((+n||0)*100)/100;return n?n.toFixed(2):'';};
   const rn=r=>{r=Math.round((+r||0)*100)/100;return r?(r%1===0?String(r):String(r)):'';};
-  const people=[],skipped=[],conflicts=[],fallback=[];
+  const people=[],skipped=[];
   groups.forEach(({g,r})=>{
     const name=g.primary;
-    if(r.src==='conflict'){conflicts.push({name,staff:r.staff,sheet:r.sheet});return;}   // ⛔ never guess between two IDs
     const wid=r.id;
-    if(!wid){skipped.push(name);return;}   // no Paychex Worker ID → can't import; leave them off (Amanda etc.)
-    if(r.src==='sheet')fallback.push(name);
+    if(!wid){skipped.push(name);return;}   // no Paychex ID on Staff → can't import; left off, and named
     people.push(name);
     let tips=0,unpaid=0;const byRate={};let trainH=0,trainR=0;
     g.members.forEach(m=>{
@@ -6315,7 +6253,7 @@ function tipsPaychexCsv(){
     rows.forEach((row,i)=>{const base=i===0;
       lines.push([COMPANY,wid,csvEsc(dispName),'hourly',f(row.hours),rn(row.rate),base?f(tips):'',base?f(unpaid):'',f(row.ot),base?f(trainH):'',base&&trainR?rn(trainR):'',''].join(','));});
   });
-  return {csv:lines.join('\n'),people,skipped,conflicts,fallback};
+  return {csv:lines.join('\n'),people,skipped};
 }
 // Save the Paychex CSV straight into ~/Desktop/Payroll/<period>/ via the File System
 // Access API (Chrome/Edge). Pick the Payroll folder ONCE — the browser remembers it,
@@ -6336,11 +6274,9 @@ async function tipsPayrollDir(){
 async function tipsDownloadCsv(){
   let out;try{out=tipsPaychexCsv();}catch(e){tipsSetStatus('⚠ CSV failed: '+e.message,'#f87171');return;}
   const fname='Paychex '+tipISO(tipsState.start)+' to '+tipISO(tipsState.end)+'.csv',folder=tipsPeriodFolder();
-  const dn=n=>staffDisplayName(n).name;
-  const note=(out.conflicts.length?(' — ⚠ left off, Paychex ID differs: '+out.conflicts.map(c=>dn(c.name)+' (Staff '+c.staff+', old sheet '+c.sheet+')').join('; ')):'')
-    +(out.skipped.length?(' — left off (no Paychex ID): '+out.skipped.map(dn).join(', ')):'')
-    +(out.fallback.length?(' — ID from the old sheet, not Staff: '+out.fallback.map(dn).join(', ')):'');
-  const col=out.conflicts.length?'#f87171':((out.skipped.length||out.fallback.length)?'#fbbf24':'#34d399');
+  const note=out.skipped.length?(' — left off, no Paychex ID on Staff: '+out.skipped.map(n=>staffDisplayName(n).name).join(', ')):'';
+  const col=out.skipped.length?'#fbbf24':'#34d399';
+  tipsCsvLeftOff(out.skipped);
   if(window.showDirectoryPicker){
     try{
       const base=await tipsPayrollDir();
@@ -6353,6 +6289,14 @@ async function tipsDownloadCsv(){
   const blob=new Blob([out.csv],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);
   const a=document.createElement('a');a.href=url;a.download=fname;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);
   tipsSetStatus('CSV downloaded to Downloads'+note+(window.showDirectoryPicker?'':' — (open the Watch Tower in Chrome to save straight into Payroll/'+folder+'/)'),col);
+}
+// Who the CSV left off for having no Paychex ID on Staff, as names you can TAP — each opens that
+// person in Staff (or the ⚑ picker), where the ID is typed. The status line is plain text, so
+// the names live in their own span beside it.
+function tipsCsvLeftOff(names){
+  const el=document.getElementById('tips-csv-left');if(!el)return;
+  if(!names||!names.length){el.innerHTML='';return;}
+  el.innerHTML='Type their ID on Staff: '+names.map(n=>`<button onclick="tipOpenInStaff('${esc(n).replace(/'/g,"\\'")}')" style="background:none;border:none;padding:0 3px;color:#f87171;cursor:pointer;font:inherit;text-decoration:underline">${esc(staffDisplayName(n).name)}</button>`).join(', ');
 }
 function tipsCsvBtnHTML(){return `<button onclick="tipsDownloadCsv()" title="Save the Paychex CSV into Desktop/Payroll/<period>/ (pick the Payroll folder the first time)" style="background:#34d399;border:none;color:#06281c;font-weight:800;border-radius:8px;padding:6px 14px;cursor:pointer;font-size:12px;white-space:nowrap;margin-left:auto">⬇ Paychex CSV</button>`;}
 // Re-render the Tips/Hours view in place WITHOUT losing the vertical scroll position
@@ -6579,15 +6523,6 @@ function tipsSaveBlocked(){
   if(tipsState.loading){tipsSetStatus('⚠ not saved — still loading this fortnight. Try again in a moment.','#fbbf24');return true;}
   return false;
 }
-// ⛔ ONE PLACE WRITES THE PAYCHEX IDs. It used to be written from three, and the one that
-// mattered — typing an ID — had no guard at all: on a screen that failed to load,
-// tipsState.empIds is empty, so typing one ID wrote a map containing ONLY that ID over
-// every worker in the business. After that every row is quietly left out of the payroll
-// file. Three copies of a rule is how one of them ends up missing it.
-function tipsSaveEmpIds(){
-  if(tipsSaveBlocked())return false;
-  try{kvPush('ct_emp_ids',{emp:tipsState.empIds},Date.now());return true;}catch(e){return false;}
-}
 
 // Default range = the current 14-day pay period (anchor Mar 23 2026, same as the tip-out app).
 function tipCurrentPeriod(){
@@ -6788,11 +6723,10 @@ async function tipsInit(){
   // being written back over a real fortnight.
   const remote=await kvGetOrLegacy(tipPeriodKey(),tipLegacyKey('ct_tips_'));if(g!==tipsGen)return;   // period changed mid-load — abort so cells never cross periods
   const rh=await kvGetOrLegacy(tipHoursKey(),tipLegacyKey('ct_hours_'));if(g!==tipsGen)return;
-  const ge=await kvGet('ct_emp_ids');if(g!==tipsGen)return;
   // ⛔ Could not reach the store. STOP — do not fall through to empty defaults.
   // `loaded` deliberately stays false, so tipsRefresh/visibilitychange retries
   // this on its own, and loadFailed makes every save refuse in the meantime.
-  if(kvFailed(remote)||kvFailed(rh)||kvFailed(ge)){
+  if(kvFailed(remote)||kvFailed(rh)){
     tipsState.loading=false;tipsState.loadFailed=true;
     if(tipsActive())tipsRedraw();
     tipsSetStatus('⚠ Could not reach the store — this screen is NOT your data, and nothing will be saved.','#f87171');
@@ -6801,8 +6735,8 @@ async function tipsInit(){
   tipsState.loadFailed=false;
   tipsState.cells=(remote&&remote.v&&remote.v.cells)?remote.v.cells:{};
   tipsState.adds=(remote&&remote.v&&remote.v.adds)?remote.v.adds:{};
-  tipsState.hours=(rh&&rh.v&&rh.v.hours)?rh.v.hours:{};const globalEmp=(ge&&ge.v&&ge.v.emp)?ge.v.emp:{};   // emp-IDs never change → remembered globally across periods
-tipsState.empIds=Object.assign({},(rh&&rh.v&&rh.v.empIds)?rh.v.empIds:{},globalEmp);   // global wins
+  tipsState.hours=(rh&&rh.v&&rh.v.hours)?rh.v.hours:{};   // emp-IDs never change → remembered globally across periods
+tipsState.empIds=(rh&&rh.v&&rh.v.empIds)?rh.v.empIds:{};   // carried through the period's hours save untouched — NEVER read as an ID (Staff is the only source)
 tipsState.busserSplit=(rh&&rh.v&&rh.v.busserSplit)?rh.v.busserSplit:{};tipsState.busserSplitByDay=(rh&&rh.v&&rh.v.busserSplitByDay)?rh.v.busserSplitByDay:{};tipsState.punches=(rh&&rh.v&&rh.v.punches)?rh.v.punches:[];tipsState.hoursOut=(rh&&rh.v&&rh.v.hoursOut)?rh.v.hoursOut:{};   // per-person + per-night busser pool split, and who he took out by hand
   let _mig=tipMigrateCells();if(tipCleanAdds())_mig=true;if(_mig)tipsSaveSoon();   // upgrade legacy {v,upt,wed} cells + heal stale adds
   tipsState.loaded=true;tipsState.loading=false;
@@ -7207,6 +7141,7 @@ function hoursHTML(){
       ${tipsPosBtnHTML()}
       ${tipsImportBtnHTML()}
       <span id="tips-status" style="font-size:12px;color:var(--text-dim)"></span>
+      <span id="tips-csv-left" style="font-size:12px"></span>
       ${tipsCsvBtnHTML()}
     </div>
     <div style="overflow-x:auto;border:1px solid var(--border);border-radius:12px;width:860px;max-width:100%">

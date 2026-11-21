@@ -60,7 +60,7 @@ function world({ people = {}, aliases = {}, cells = {}, hours = {}, empIds = {},
     ${grab('tipBaseSection')}${grab('tipEffSection')}${grab('tipBusserSplit')}${grab('tipBusserDay')}${grab('tipBusserSplitPeople')}${grab('tipBusserPoolDay')}
     ${grab('tipRowTotals')}${grab('tipStaffLive')}${grab('tipPersonHasTipsThisPeriod')}${grab('tipSectionPeople')}${grab('tipHasTips')}${grab('tipsGrandTotals')}
     ${grab('tipEnsureRange')}${grab('tipDays')}${grab('tipDayLabel')}${grab('tipISO')}${grab('tipId')}${grab('tipCell')}${grab('tipSetComp')}${grab('tipCellComps')}${grab('tipNum')}${grab('tipCompsHTML')}${grabLast('tipMoney')}
-    ${grab('tipIdNorm')}${grab('tipPaychexId')}${grab('tipIdBadgeHTML')}${grab('csvEsc')}${grab('tipHours')}
+    ${grab('tipPaychexId')}${grab('tipIdBadgeHTML')}${grab('csvEsc')}${grab('tipHours')}
     ${grab('tipPersonKey')}${grab('tipGroupNames')}${grab('tipGroupFor')}${grab('tipRegisterGroups')}${grab('tipGroupDayCell')}${grab('tipGroupTotals')}${grab('tipEditTarget')}${grab('tipCellEditGroup')}${grab('tipSetDept')}
     ${grab('tipsHTML')}${grab('tipsPaychexCsv')}${grab('tipCellEdit')}${grab('tipEditSet')}${grab('tipRefreshCell')}${grab('tipRefreshRow')}${grab('tipsUpdateGrand')}
     ${grab('hoursSrc')}${grab('isRestEmp')}${grab('tipHoursPosPay')}${grab('tipHoursPersonTot')}${grab('tipHoursGroupTot')}${grab('hoursHTML')}
@@ -220,18 +220,18 @@ const deptSection = (html, label) => { const i = html.indexOf('>' + label + '<')
   ok('an unmatched name stays its own row, beside the merged one', rowsNamed(html, 'Mike Fornero') === 1 && rowsNamed(html, 'Priscilla Lagace') === 1);
 }
 
-// ── one person, one Worker ID — the spellings must agree on it ─────────────────────────────
+// ── one person, one Worker ID — and it comes ONLY from Staff ──────────────────────────────
 {
-  // no Staff ID; the two spellings carry DIFFERENT old-sheet IDs → nobody guessed
+  // no Staff ID; the old list had IDs for the spellings (MICROS numbers) → ignored, person left off, named once
   const w = world({ people: { ...P('priscilla lagace', 'Priscilla Lagace', { pid: 'p1', department: 'server' }) }, aliases, cells, empIds: { 'Priscill Lagace': '455', 'Priscilla La Gace': '409' } });
   const out = w.csv();
-  ok('⛔ two spellings with different IDs (no Staff ID) → the person is LEFT OFF, not exported twice or guessed', out.people.length === 0 && out.conflicts.length === 1 && /455/.test(out.conflicts[0].sheet) && /409/.test(out.conflicts[0].sheet));
+  ok('⛔ no Staff ID → the person is LEFT OFF (old-list 455/409 never used), and named ONCE, not once per spelling', out.people.length === 0 && !/,455,|,409,/.test(out.csv) && out.skipped.length === 1);
 }
 {
-  // one spelling has an old-sheet ID, Staff has none → that one ID covers the whole person, flagged
-  const w = world({ people: { ...P('priscilla lagace', 'Priscilla Lagace', { pid: 'p1', department: 'server' }) }, aliases, cells, empIds: { 'Priscill Lagace': '455' } });
+  // Staff has the ID → every spelling exports under it, as one person
+  const w = world({ people: { ...P('priscilla lagace', 'Priscilla Lagace', { pid: 'p1', department: 'server', paychex_id: '455' }) }, aliases, cells, empIds: { 'Priscill Lagace': '13' } });
   const out = w.csv(), lines = out.csv.split('\n').slice(1);
-  ok('one fallback ID on one spelling covers the whole person (one Worker ID, flagged)', out.people.length === 1 && lines.every(l => l.split(',')[1] === '455') && out.fallback.length === 1);
+  ok('Staff\'s ID covers every spelling (one person, one Worker ID — the old 13 never appears)', out.people.length === 1 && lines.length > 0 && lines.every(l => l.split(',')[1] === '455'));
 }
 
 console.log(bad ? `\n${bad} FAILED` : '\nall good');
