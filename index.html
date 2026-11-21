@@ -5947,7 +5947,11 @@ function tipsMergeMicros(people,split,byDay,opt){
       const rate=(d.rate!=null&&d.rate!=='')?d.rate:kept;
       const e={h:d.reg,src:'rest'};if(rate!=null&&rate!=='')e.r=rate;if(d.ot)e.o=d.ot;
       tipsState.hours[fname][job]=e;});
-    if(eid&&!tipsState.empIds[fname])tipsState.empIds[fname]=String(eid);});
+    // ⛔ NO LONGER WRITES A PAYCHEX ID (Jarvis/Vinny, 11/20/26). `eid` is the MICROS (or register)
+    // EMPLOYEE NUMBER, not a Paychex Worker ID — writing it into ct_emp_ids is how the 11/2–11/15
+    // CSV paid Ethan Browning as Worker 13 while Staff has 647 (Lydia's 16 was the same). A
+    // Paychex ID comes only from Staff now; ct_emp_ids is left alone as history.
+  });
   // A pull that carries no busser split must LEAVE ALONE the one already there —
   // overwriting it with {} would quietly erase every busser's unpaid tips.
   if(!opt.keepSplit){
@@ -5989,8 +5993,7 @@ async function tipsImportTimesheet(input){
     // empty split through is how a good period gets wiped by a bad read.
     if(gen!==tipsGen){tipsSetStatus('⚠ nothing filled in — the dates changed while the timesheet was being read. Import it again.','#fbbf24');return;}
     const n=tipsMergeMicros(people,split,byDay,nb?undefined:{keepSplit:true});
-    tipsSaveHoursSoon();
-    tipsSaveEmpIds();
+    tipsSaveHoursSoon();   // (no tipsSaveEmpIds — the import no longer touches the old ID list)
     if(tipsActive())tipsRedraw();
     // Say why when there is no split — this failed silently for weeks behind a cheerful
     // "imported 58 employees" and the bussers simply read as zero.
@@ -6070,8 +6073,7 @@ async function tipsPullFromPos(){
   const posShifts=(r.body&&Array.isArray(r.body.shifts))?r.body.shifts:[];
   if(gen!==tipsGen){tipsSetStatus('⚠ nothing filled in — the dates changed while the register was being read. Press it again.','#fbbf24');return;}
   const n=tipsMergeMicros(people,{},{},{keepRates:true,keepSplit:true});
-  tipsSaveHoursSoon();
-  tipsSaveEmpIds();
+  tipsSaveHoursSoon();   // (no tipsSaveEmpIds — the register's employee number is not a Paychex ID)
   if(tipsActive())tipsRedraw();
   // An unpunched shift is somebody's pay being wrong, and it has to be LOUD — a
   // manager who does not hear about it signs off a period that is short a night.
@@ -6366,7 +6368,7 @@ async function tipsPullWeddingHours(auto){
   people.forEach(p=>{
     const nm=tipCanon(p.name);if(!nm)return;
     if((tipsState.hoursOut||{})[nm])return;   // he took this person out of the period by hand
-    if(p.workerId){if(!tipsState.empIds)tipsState.empIds={};if(!tipsState.empIds[nm])tipsState.empIds[nm]=String(p.workerId);}
+    // (the scheduler's workerId is no longer copied into ct_emp_ids — a Paychex ID comes only from Staff)
     // Scheduler = source of truth: REPLACE this person's wedding (💍) positions with the
     // scheduler's current numbers for EVERY event in the period, so a later-added event
     // date (or a rate change) always flows through instead of freezing on an early partial

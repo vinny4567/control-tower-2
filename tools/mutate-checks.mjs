@@ -970,6 +970,17 @@ const M=[
   ['CARRY 8 · BENIGN — the carry-over top comment reworded, no behaviour change','check-staff-carry.mjs',
     tsub("// ── CARRY OVER OLD SPELLINGS — Jarvis, 11/20/26 ──────────────────────────────────────",
          "// ── Carry the old tip sheet's spellings into Staff — Jarvis, 11/20/26 ─────────────────"),false],
+  // ── NO IMPORTER WRITES A PAYCHEX ID (check-tipssaves) ───────────────────────────────────
+  ['OLDID 1 · ⛔ the MICROS import writes the employee number into ct_emp_ids again — Ethan Browning paid as Worker 13','check-tipssaves.mjs',
+    tsub("    // Paychex ID comes only from Staff now; ct_emp_ids is left alone as history.\n  });",
+         "    // Paychex ID comes only from Staff now; ct_emp_ids is left alone as history.\n    if(eid&&!tipsState.empIds[fname])tipsState.empIds[fname]=String(eid);\n  });"),true],
+  ['OLDID 2 · ⛔ the wedding pull copies the scheduler workerId into ct_emp_ids again','check-tipssaves.mjs',
+    tsub("    // (the scheduler's workerId is no longer copied into ct_emp_ids — a Paychex ID comes only from Staff)\n",
+         "    if(p.workerId){if(!tipsState.empIds)tipsState.empIds={};if(!tipsState.empIds[nm])tipsState.empIds[nm]=String(p.workerId);}\n"),true],
+  ['OLDID 3 · ⛔ the timesheet import saves the old ID list again','check-tipssaves.mjs',
+    tsub("    tipsSaveHoursSoon();   // (no tipsSaveEmpIds — the import no longer touches the old ID list)",
+         "    tipsSaveHoursSoon();tipsSaveEmpIds();"),true],
+
   // ── PAYCHEX ID FROM STAFF (check-tips-paychex-id) ─────────────────────────────────────────
   ['PAYID 1 · ⛔ the old sheet map wins over Staff again — Staff is no longer the master','check-tips-paychex-id.mjs',
     tsub("  if(staff)return {id:staff,src:'staff'};\n  if(sheet)return {id:sheet,src:'sheet'};",

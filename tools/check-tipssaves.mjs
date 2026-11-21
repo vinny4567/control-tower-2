@@ -175,7 +175,7 @@ function longRead(name, { bumpDuring }) {
 const quiet = longRead('tipsPullFromPos', { bumpDuring: false });
 await quiet.run();
 ok('a register pull on a sheet that did not move fills the grid', quiet.seen.merged === 1);
-ok('…and saves', quiet.seen.saved === 2);
+ok('…and saves the HOURS (only — 11/20/26: the register\'s employee number is not a Paychex ID, so the old ID list is no longer written)', quiet.seen.saved === 1);
 
 const moved = longRead('tipsPullFromPos', { bumpDuring: true });
 await moved.run();
@@ -221,7 +221,16 @@ function importRun({ bumpDuring }) {
 const imp = importRun({ bumpDuring: false });
 await imp.run();
 ok('a timesheet import on a sheet that did not move fills the grid', imp.seen.merged === 1);
-ok('…and saves', imp.seen.saved === 2);
+ok('…and saves the HOURS (only — the MICROS employee number never becomes a Paychex ID)', imp.seen.saved === 1);
+// ⛔ 11/20/26 (Jarvis/Vinny): the 11/2–11/15 CSV sent Ethan Browning as Worker 13 (his MICROS
+// number) while Staff has 647. No importer may write a Paychex ID any more.
+{
+  const strip = (t) => t.split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n');
+  for (const f of ['tipsMergeMicros', 'tipsImportTimesheet', 'tipsPullFromPos', 'tipsPullWeddingHours']) {
+    const body = strip(lift(f));
+    ok(`⛔ ${f} never writes a Paychex ID into the old list (no empIds assignment, no tipsSaveEmpIds)`, !/empIds\[[^\]]*\]\s*=/.test(body) && !/tipsSaveEmpIds\(/.test(body));
+  }
+}
 ok('…and says it imported (if this is red the stubs below prove nothing)',
    imp.seen.status.join('|').includes('imported'));
 
