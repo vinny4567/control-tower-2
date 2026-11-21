@@ -39,16 +39,21 @@ const grab = (name) => {
   return src.slice(i, j + 1);
 };
 
-function world({ people = {}, aliases = {}, adds = {}, moves = {}, cells = {}, busserSplit = {} } = {}) {
+function world({ people = {}, aliases = {}, adds = {}, moves = {}, cells = {}, busserSplit = {}, hours = {} } = {}) {
   const ctx = {};
   new Function('ctx', `
     const TIP_SECTIONS=['Server','Bartender','Busser','Food Runner','Weddings','NoDept'];
     ${grabConst('TIP_SECTION_FROM_DEPT')}
+    ${grabConst('TIP_TIPPED_POSITIONS')}
     let staffS={people:${JSON.stringify(people)},aliases:${JSON.stringify(aliases)}};
-    let tipsState={adds:${JSON.stringify(adds)},moves:${JSON.stringify(moves)},cells:${JSON.stringify(cells)},busserSplit:${JSON.stringify(busserSplit)}};
+    let tipsState={adds:${JSON.stringify(adds)},moves:${JSON.stringify(moves)},cells:${JSON.stringify(cells)},busserSplit:${JSON.stringify(busserSplit)},hours:${JSON.stringify(hours)}};
     ${grab('staffKeyOf')}
     ${grab('staffEmployed')}
+    ${grabConst('staffJobCanon')}
+    ${grabConst('staffJobKey')}
     ${grab('staffResolveForTips')}
+    ${grab('tipHasTippedPosition')}
+    ${grab('tipPersonHasHoursThisPeriod')}
     ${grab('tipBaseSection')}
     ${grab('tipEffSection')}
     ${grab('tipBusserSplit')}
@@ -59,6 +64,7 @@ function world({ people = {}, aliases = {}, adds = {}, moves = {}, cells = {}, b
     ${grab('tipSectionPeople')}
     ctx.resolve=staffResolveForTips;ctx.baseSection=tipBaseSection;ctx.effSection=tipEffSection;
     ctx.sectionPeople=tipSectionPeople;ctx.staffLive=tipStaffLive;ctx.hasTips=tipPersonHasTipsThisPeriod;
+    ctx.hasTippedPosition=tipHasTippedPosition;ctx.hasHours=tipPersonHasHoursThisPeriod;
   `)(ctx);
   return ctx;
 }
@@ -92,12 +98,64 @@ const person = (key, name, extra = {}) => ({ [key]: { key, name, sources: {}, at
   ok('⛔ kitchen is a real department that simply has no Tips section — excluded entirely, not "no department yet"', w.baseSection('Finn Kit') === null);
 }
 {
-  const w = world({ people: { ...person('gus null', 'Gus Null', { department: null, active: true }) } });
-  ok('⛔ a LIVE staff person with no department lands in the visible NoDept bucket — never silently dropped', w.baseSection('Gus Null') === 'NoDept');
+  // 11/20/26 refinement, Vinny: "the department is really only for the tip sheet, for
+  // tipped employees with no department set" — NoDept now needs a TIPPED SIGNAL (a
+  // tipped position, or tips/hours this period), not just "no department".
+  const w = world({ people: { ...person('gus null', 'Gus Null', { department: null, active: true, positions: ['Server'] }) } });
+  ok('⛔ a LIVE staff person with no department AND a tipped position lands in the visible NoDept bucket — never silently dropped', w.baseSection('Gus Null') === 'NoDept');
 }
 {
-  const w = world({ people: { ...person('nod unset', 'Nod Unset', {}) } });   // department key absent entirely
+  const w = world({ people: { ...person('nod unset', 'Nod Unset', { positions: ['Bartender'] }) } });   // department key absent entirely
   ok('…same when department is simply absent from the record, not explicitly null', w.baseSection('Nod Unset') === 'NoDept');
+}
+{
+  // a Host has no department AND no tipped signal at all — stays off the tip sheet entirely
+  const w = world({ people: { ...person('hal host', 'Hal Host', { department: null, active: true, positions: ['Host'] }) } });
+  ok('⛔ no department and NO tipped signal (a Host) → excluded entirely, not NoDept', w.baseSection('Hal Host') === null);
+}
+{
+  // no department, no tipped position, but actual tips this period → still NoDept
+  const w = world({
+    people: { ...person('tess tips', 'Tess Tips', { department: null, active: true, positions: ['Host'] }) },
+    cells: { 'Tess Tips': { '11/1': { p: 40 } } },
+  });
+  ok('no tipped position, but real tips this period → still NoDept, not excluded', w.baseSection('Tess Tips') === 'NoDept');
+}
+{
+  // no department, no tipped position, but hours logged this period (not tombstoned) → NoDept
+  const w = world({
+    people: { ...person('hank hours', 'Hank Hours', { department: null, active: true, positions: ['Host'] }) },
+    hours: { 'Hank Hours': { '11/1': { h: 6 } } },
+  });
+  ok('no tipped position, but real (non-tombstoned) hours this period → still NoDept', w.baseSection('Hank Hours') === 'NoDept');
+}
+{
+  // a tombstoned ("taken out") hours row is not a real signal
+  const w = world({
+    people: { ...person('ivy ghost', 'Ivy Ghost', { department: null, active: true, positions: ['Host'] }) },
+    hours: { 'Ivy Ghost': { '11/1': { x: true } } },
+  });
+  ok('⛔ a tombstoned hours row is not a real signal — excluded, not NoDept', w.baseSection('Ivy Ghost') === null);
+}
+{
+  const w = world({ people: { ...person('wes bus', 'Wes Bus', { department: null, active: true, positions: ['Busser'] }) } });
+  ok('tipHasTippedPosition recognizes Busser', w.hasTippedPosition(w.resolve('Wes Bus')) === true);
+}
+{
+  const w = world({ people: { ...person('cook here', 'Cook Here', { department: null, active: true, positions: ['Cook'] }) } });
+  ok('⛔ tipHasTippedPosition does not recognize kitchen positions', w.hasTippedPosition(w.resolve('Cook Here')) === false);
+}
+{
+  const w = world({ hours: { 'Some Name': { '11/1': { h: 5 } } } });
+  ok('tipPersonHasHoursThisPeriod sees a real row', w.hasHours('Some Name') === true);
+}
+{
+  const w = world({ hours: { 'Some Name': { '11/1': { x: true } } } });
+  ok('⛔ tipPersonHasHoursThisPeriod ignores a tombstoned-only row', w.hasHours('Some Name') === false);
+}
+{
+  const w = world({});
+  ok('tipPersonHasHoursThisPeriod on nobody at all → false, not a throw', w.hasHours('Nobody Here') === false);
 }
 ok('⛔ a person not matched to any Staff record and not in adds resolves to no section at all',
    world({}).baseSection('Nobody Known') === null);
@@ -198,7 +256,7 @@ ok('no match at all → null, not a throw', world({}).resolve('Totally Unknown')
 
 // ── NoDept, end to end through tipSectionPeople ─────────────────────────────────────
 {
-  const w = world({ people: { ...person('needs one', 'Needs One', { department: null, active: true }) } });
+  const w = world({ people: { ...person('needs one', 'Needs One', { department: null, active: true, positions: ['Server'] }) } });
   ok('⛔ shows up in the NoDept bucket, with zero tips, so Vinny can see who still needs one', w.sectionPeople('NoDept').indexOf('Needs One') >= 0);
   ok('…and nowhere else', w.sectionPeople('Server').indexOf('Needs One') < 0 && w.sectionPeople('Busser').indexOf('Needs One') < 0);
 }
@@ -213,6 +271,12 @@ ok('no match at all → null, not a throw', world({}).resolve('Totally Unknown')
   // same history rule as every other section
   const w = world({ people: { ...person('left blank', 'Left Blank', { department: null, removed: { at: 1 } }) } });
   ok('⛔ a removed person with no department AND no tips this period does not show in NoDept', w.sectionPeople('NoDept').indexOf('Left Blank') < 0);
+}
+{
+  // a Host (no department, no tipped signal at all) never shows in NoDept, or anywhere else
+  const w = world({ people: { ...person('hal host2', 'Hal Host2', { department: null, active: true, positions: ['Host'] }) } });
+  ok('⛔ a live Host with no tipped signal does not show in NoDept — the tip sheet is not a staff roster', w.sectionPeople('NoDept').indexOf('Hal Host2') < 0);
+  ok('…or anywhere else', TIP_SECTIONS_ALL(w).every(sec => w.sectionPeople(sec).indexOf('Hal Host2') < 0));
 }
 function TIP_SECTIONS_ALL(w) { return ['Server', 'Bartender', 'Busser', 'Food Runner', 'Weddings', 'NoDept']; }
 

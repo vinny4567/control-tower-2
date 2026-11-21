@@ -6233,11 +6233,25 @@ async function tipsPullWeddingHours(auto){
 // periods) if set, else where their Staff department puts them. DEPARTMENT DECIDES THE
 // SECTION (Vinny, 11/20/26) — one department, one Tips section: Server/Bartender/Busser/
 // Food Runner (=runner)/Weddings (=events). Kitchen is a real, deliberate department that
-// simply has no Tips section (kitchen staff were never on this sheet); null/unset is
-// DIFFERENT — that means "nobody's looked at this person yet," so they land in the
-// visible 'NoDept' bucket instead of silently vanishing. The tip roster is RETIRED as a
-// source entirely — see the comment above TIPS_ROSTER_KEY.
+// simply has no Tips section (kitchen staff were never on this sheet). The tip roster is
+// RETIRED as a source entirely — see the comment above TIPS_ROSTER_KEY.
 const TIP_SECTION_FROM_DEPT={server:'Server',bartender:'Bartender',busser:'Busser',runner:'Food Runner',events:'Weddings'};
+// NoDept, refined 11/20/26 per Vinny: "the department is really only for the tip sheet,
+// for tipped employees with no department set... then i can go and set them when i feel
+// like it." So it is NOT "every live person with no department" (that would pull kitchen
+// and hosts onto a tip sheet they were never on) — only someone the sheet already has
+// reason to believe IS tipped: a tipped position on Staff, or actual tips/hours entered
+// this period. Sits directly under Weddings (TIP_SECTIONS order), never nags, never
+// blocks anything — it is just a worklist he clears at his own pace.
+const TIP_TIPPED_POSITIONS=['server','bartender','busser','food runner'];
+function tipHasTippedPosition(p){
+  return !!(p&&(p.positions||[]).some(pos=>TIP_TIPPED_POSITIONS.includes(staffJobKey(pos))));
+}
+function tipPersonHasHoursThisPeriod(name){
+  const H=tipsState.hours&&tipsState.hours[name];
+  if(!H)return false;
+  return Object.keys(H).some(k=>!(H[k]&&H[k].x));   // .x = tombstoned ("taken out"), not a real row
+}
 // Resolves a Tips name to the Staff record it should be driven by: the alias chain
 // staffDisplayName uses, OR — for a removed person whose projection key the mini mangled
 // (suffixed with their pid, so a new hire can reuse the plain spelling) — a name scan
@@ -6256,7 +6270,10 @@ function tipBaseSection(name){
   if(p){
     const sec=TIP_SECTION_FROM_DEPT[p.department];
     if(sec)return sec;
-    return p.department?null:'NoDept';   // kitchen (or any future non-tip dept) excludes; no dept at all needs attention
+    // No department: only a TIPPED person lands in NoDept — kitchen, hosts, and
+    // anyone else with no signal at all stay off the tip sheet entirely, same as before.
+    if(!p.department&&(tipHasTippedPosition(p)||tipPersonHasTipsThisPeriod(name)||tipPersonHasHoursThisPeriod(name)))return 'NoDept';
+    return null;
   }
   // Not a Staff match at all — the one surviving manual override, for someone genuinely
   // not on Staff (or not yet linked — the ⚑ picker's "Same person as…" is the real fix).
@@ -6898,6 +6915,14 @@ function tipsHTML(){
   if(!tipsState.loaded)return '<div style="padding:48px;text-align:center;color:var(--text-dim)">Loading tips…</div>';
   if((tipsState.view||'tips')==='hours')return hoursHTML()+staffFlagHTML();
   const days=tipDays();
+  // ⚠️ A CLEARLY THICKER divider, Vinny 11/20/26: "give me a thicker line separating the
+  // last sunday and the paid column" — every period is a Monday-start fortnight, so the
+  // LAST day column is always that Sunday; this just marks where the day grid ends and
+  // the summary begins. Only Paid's own left edge — Unpaid's divider from Paid is
+  // unchanged (1px, a different, lighter boundary). Applied everywhere that edge exists:
+  // the thead, every repeated section header, every data row, the busser-pool-per-night
+  // row, and the footer total.
+  const PAID_DIV='border-left:4px solid var(--border)';
   let gp=0,gu=0;
   const rowFor=(name,isPool)=>{
     const t=tipRowTotals(name),upt=Math.round((t.upt+tipBusserSplit(name))*100)/100;gp+=t.paid;gu+=upt;const id=tipId(name);
@@ -6911,10 +6936,21 @@ function tipsHTML(){
     return `<tr style="${isPool?'background:rgba(251,191,36,0.06)':''}">
       <td style="position:sticky;left:0;z-index:1;background:var(--surface);padding:7px 12px;font-weight:${isPool?'800':'600'};white-space:nowrap;border-right:2px solid var(--border);${bb};${isPool?'color:#fbbf24':''}"><span style="display:inline-flex;align-items:center;gap:6px">${esc(disp.name)}${staffDisplayMark(disp.matched,name)}${isPool?'':`<select title="Move to another section" onchange="tipMovePerson('${esc(name).replace(/'/g,"\\'")}',this.value)" style="background:transparent;border:none;color:var(--text-muted);font-size:11px;font-family:inherit;cursor:pointer;-webkit-appearance:none;appearance:none;padding:0 2px">${TIP_SECTIONS.map(s=>`<option value="${s}" ${tipEffSection(name)===s?'selected':''} style="color:#000">${TIP_SEC_SHORT[s]}</option>`).join('')}</select>`}</span></td>
       ${tds}
-      <td id="tp-${id}" style="padding:7px 8px;text-align:right;font-weight:700;color:#34d399;white-space:nowrap;border-left:2px solid var(--border);${bb}">${t.paid?tipMoney(t.paid):''}</td>
+      <td id="tp-${id}" style="padding:7px 8px;text-align:right;font-weight:700;color:#34d399;white-space:nowrap;${PAID_DIV};${bb}">${t.paid?tipMoney(t.paid):''}</td>
       <td id="tu-${id}" style="padding:7px 8px;text-align:right;font-weight:700;color:#fbbf24;white-space:nowrap;border-left:2px solid var(--border);${bb}">${upt?tipMoney(upt):''}</td>
     </tr>`;
   };
+  // Built once, reused as the header AND repeated at the top of every section — Vinny,
+  // 11/20/26: "give me the dates of the week at the top of each section... theyre only
+  // at the top [today]." Same labels, same widths, so the columns stay aligned with the
+  // data below on the iPad width too (it's the literal same markup, not a re-derived copy).
+  const dayHead=days.map(d=>{const wd=d.getDay();const closed=(wd===1);return `<th style="padding:6px ${closed?'2px':'4px'};font-size:${closed?'9px':'11px'};color:${closed?'var(--text-muted)':'var(--text-dim)'};font-weight:600;border-right:1px solid var(--border);white-space:nowrap;min-width:${closed?'20px':'auto'}">${['Su','M','Tu','W','Th','F','Sa'][wd]}<br>${d.getMonth()+1}/${d.getDate()}</th>`;}).join('');
+  const sectionHeadRow=(sec)=>`<tr style="background:var(--surface2)">
+      <th style="position:sticky;left:0;z-index:1;background:var(--surface2);color:var(--accent);font-weight:800;padding:6px 12px;letter-spacing:.5px;text-align:left;border-top:1px solid var(--border);border-right:2px solid var(--border);white-space:nowrap">${TIP_SEC_LABEL[sec].toUpperCase()}</th>
+      ${dayHead}
+      <th style="padding:6px 8px;color:#34d399;${PAID_DIV};border-top:1px solid var(--border);white-space:nowrap">Paid</th>
+      <th style="padding:6px 8px;color:#fbbf24;border-left:1px solid var(--border);border-top:1px solid var(--border);white-space:nowrap">Unpaid</th>
+    </tr>`;
   let body='';
   TIP_SECTIONS.forEach(sec=>{
     const people=tipSectionPeople(sec);
@@ -6925,23 +6961,24 @@ function tipsHTML(){
     // Gate on the nights being SHOWN. Gating on "the map has any date" meant that a split
     // saved for other dates opened this branch and then filled nothing — no night cells, no
     // total, and, since it is an if/else, no section header and no explanation either.
+    // Repeated date header on every section, Vinny's own ask (see `sectionHeadRow`
+    // above) — always emitted first, even for Busser-with-pool, which used to skip
+    // the header row entirely by being the "if" side of this same branch.
+    body+=sectionHeadRow(sec);
     if(sec==='Busser'&&poolDays.some(x=>x>0)){
       const ptds=days.map((d,di)=>{const mon=(d.getDay()===1);const p=poolDays[di];return `<td style="text-align:right;padding:5px ${mon?'2px':'6px'};color:#fbbf24;font-weight:700;font-size:11px;border-right:1px solid var(--border);border-top:1px solid var(--border);white-space:nowrap">${p?tipMoney(p):''}</td>`;}).join('');
       const ptot=Math.round(poolDays.reduce((s,x)=>s+x,0)*100)/100;
-      body+=`<tr style="background:var(--surface2)"><td style="position:sticky;left:0;z-index:1;background:var(--surface2);color:var(--accent);font-weight:800;padding:6px 12px;letter-spacing:.5px;border-top:1px solid var(--border);border-right:2px solid var(--border);white-space:nowrap">BUSSERS <span style="color:var(--text-muted);font-weight:600;font-size:9px;letter-spacing:0">pool / night</span></td>${ptds}<td style="border-top:1px solid var(--border)"></td><td style="text-align:right;color:#fbbf24;font-weight:800;padding:6px 8px;border-top:1px solid var(--border);border-left:2px solid var(--border);white-space:nowrap">${ptot?tipMoney(ptot):''}</td></tr>`;
-    }else{
-      body+=`<tr><td colspan="${days.length+3}" style="position:sticky;left:0;background:var(--surface2);color:var(--accent);font-weight:800;padding:8px 12px;letter-spacing:.5px;border-top:1px solid var(--border)">${TIP_SEC_LABEL[sec].toUpperCase()}</td></tr>`;
-      if(sec==='Busser'){
-        body+=rowFor('Busser Pool',true);   // no timesheet yet → show the lumped pool row
-        // Say WHY every busser's row is empty. The pool is collected nightly by the
-        // calculator, but dividing it needs each busser's after-3:30 clock times, and those
-        // only arrive with the MICROS timesheet PDF — "Pull hours from POS" brings hours
-        // per job for the whole period and no punches, so it cannot split anything.
-        // Without this line the sheet just looks like the bussers earned nothing.
-        const poolCells=(tipsState.cells||{})['Busser Pool']||{};
-        const unsplit=Math.round(Object.values(poolCells).reduce((s,c)=>s+((c&&c.u)||0),0)*100)/100;
-        if(unsplit)body+=`<tr><td colspan="${days.length+3}" style="position:sticky;left:0;background:rgba(251,191,36,.08);border-left:3px solid #fbbf24;padding:8px 12px;font-size:12px;color:var(--text-dim);line-height:1.5">⚠ <b style="color:#fbbf24">${tipMoney(unsplit)}</b> of busser pool is collected but <b>not split between anyone yet</b>, so every busser below reads empty. The share is worked out from each busser's hours after 3:30, which only come with the <b>📄 Import timesheet</b> PDF — pulling hours from the register gives totals per job, not clock-in times, so it can't divide the pool.</td></tr>`;
-      }
+      body+=`<tr style="background:var(--surface2)"><td style="position:sticky;left:0;z-index:1;background:var(--surface2);color:var(--accent);font-weight:800;padding:6px 12px;letter-spacing:.5px;border-top:1px solid var(--border);border-right:2px solid var(--border);white-space:nowrap">BUSSERS <span style="color:var(--text-muted);font-weight:600;font-size:9px;letter-spacing:0">pool / night</span></td>${ptds}<td style="border-top:1px solid var(--border);${PAID_DIV}"></td><td style="text-align:right;color:#fbbf24;font-weight:800;padding:6px 8px;border-top:1px solid var(--border);border-left:1px solid var(--border);white-space:nowrap">${ptot?tipMoney(ptot):''}</td></tr>`;
+    }else if(sec==='Busser'){
+      body+=rowFor('Busser Pool',true);   // no timesheet yet → show the lumped pool row
+      // Say WHY every busser's row is empty. The pool is collected nightly by the
+      // calculator, but dividing it needs each busser's after-3:30 clock times, and those
+      // only arrive with the MICROS timesheet PDF — "Pull hours from POS" brings hours
+      // per job for the whole period and no punches, so it cannot split anything.
+      // Without this line the sheet just looks like the bussers earned nothing.
+      const poolCells=(tipsState.cells||{})['Busser Pool']||{};
+      const unsplit=Math.round(Object.values(poolCells).reduce((s,c)=>s+((c&&c.u)||0),0)*100)/100;
+      if(unsplit)body+=`<tr><td colspan="${days.length+3}" style="position:sticky;left:0;background:rgba(251,191,36,.08);border-left:3px solid #fbbf24;padding:8px 12px;font-size:12px;color:var(--text-dim);line-height:1.5">⚠ <b style="color:#fbbf24">${tipMoney(unsplit)}</b> of busser pool is collected but <b>not split between anyone yet</b>, so every busser below reads empty. The share is worked out from each busser's hours after 3:30, which only come with the <b>📄 Import timesheet</b> PDF — pulling hours from the register gives totals per job, not clock-in times, so it can't divide the pool.</td></tr>`;
     }
     ordered.forEach(n=>{body+=rowFor(n,false);});
     // No "+ add" box for NoDept — the fix for somebody sitting here is giving them a
@@ -6949,7 +6986,6 @@ function tipsHTML(){
     if(sec!=='NoDept')body+=`<tr><td colspan="${days.length+3}" style="position:sticky;left:0;background:var(--surface);padding:4px 12px"><input id="tip-add-${sec.replace(/ /g,'_')}" placeholder="+ add ${TIP_SEC_LABEL[sec].toLowerCase().replace(/s$/,'')}…" onkeydown="if(event.key==='Enter')tipAddPerson('${sec}')" style="width:180px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 9px;font-size:12px;font-family:inherit"></td></tr>`;
   });
   const _grand=tipsGrandTotals();   // same arithmetic as the live recalc, so they cannot drift
-  const dayHead=days.map(d=>{const wd=d.getDay();const closed=(wd===1);return `<th style="padding:6px ${closed?'2px':'4px'};font-size:${closed?'9px':'11px'};color:${closed?'var(--text-muted)':'var(--text-dim)'};font-weight:600;border-right:1px solid var(--border);white-space:nowrap;min-width:${closed?'20px':'auto'}">${['Su','M','Tu','W','Th','F','Sa'][wd]}<br>${d.getMonth()+1}/${d.getDate()}</th>`;}).join('');
   const di='background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:5px 8px;font-family:inherit;font-size:13px;color-scheme:dark;cursor:pointer';
   return `
   <div style="height:100%;overflow-y:auto;padding:2px 2px 56px">
@@ -6970,14 +7006,14 @@ function tipsHTML(){
         <thead><tr style="background:var(--surface)">
           <th style="position:sticky;left:0;z-index:2;background:var(--surface);padding:6px 10px;text-align:left;border-right:2px solid var(--border);border-bottom:1px solid var(--border)">Name</th>
           ${dayHead}
-          <th style="padding:6px 8px;color:#34d399;border-left:2px solid var(--border);border-bottom:1px solid var(--border);white-space:nowrap">Paid</th>
+          <th style="padding:6px 8px;color:#34d399;${PAID_DIV};border-bottom:1px solid var(--border);white-space:nowrap">Paid</th>
           <th style="padding:6px 8px;color:#fbbf24;border-bottom:1px solid var(--border);border-left:2px solid var(--border);white-space:nowrap">Unpaid</th>
         </tr></thead>
         <tbody>${body}</tbody>
         <tfoot><tr style="background:var(--surface2);font-weight:800">
           <td style="position:sticky;left:0;background:var(--surface2);padding:9px 12px;border-right:2px solid var(--border);border-top:2px solid var(--border)">TOTAL</td>
           <td colspan="${days.length}" style="border-top:2px solid var(--border)"></td>
-          <td id="tips-grand-paid" style="padding:9px 8px;text-align:right;color:#34d399;border-left:2px solid var(--border);border-top:2px solid var(--border)">${tipMoney(_grand.paid)}</td>
+          <td id="tips-grand-paid" style="padding:9px 8px;text-align:right;color:#34d399;${PAID_DIV};border-top:2px solid var(--border)">${tipMoney(_grand.paid)}</td>
           <td id="tips-grand-upt" style="padding:9px 8px;text-align:right;color:#fbbf24;border-top:2px solid var(--border);border-left:2px solid var(--border)">${tipMoney(_grand.upt)}</td>
         </tr></tfoot>
       </table>
