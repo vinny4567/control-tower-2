@@ -51,6 +51,10 @@ function world({ people = {}, aliases = {}, empIds = {}, cells = {}, hours = {},
     ${grab('tipIdNorm')}
     ${grab('tipPaychexId')}
     ${grab('tipIdBadgeHTML')}
+    ${grab('tipPersonKey')}
+    ${grab('tipGroupNames')}
+    ${grab('tipGroupFor')}
+    ${grab('tipRegisterGroups')}
     ${grab('tipsPaychexCsv')}
     ${grab('tipISO')}
     const tipsPeriodFolder=()=>'11-16 to 11-29';

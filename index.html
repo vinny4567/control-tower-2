@@ -6079,25 +6079,38 @@ function tipsPaychexCsv(){
   const set={};Object.keys(tipsState.hours||{}).forEach(n=>{if(!isPool(n))set[n]=1;});Object.keys(tipsState.cells||{}).forEach(n=>{if(isPool(n))return;const t=tipRowTotals(n);if(t.paid>0||t.upt>0)set[n]=1;});
   tipBusserSplitPeople().forEach(n=>{if(!isPool(n))set[n]=1;});   // a pool share is pay: it puts you on the export on its own
   const ids={};Object.keys(set).forEach(n=>ids[n]=tipPaychexId(n));
-  const names=Object.keys(set).sort((a,b)=>{const wa=parseInt(ids[a].id)||999999,wb=parseInt(ids[b].id)||999999;return wa-wb||a.localeCompare(b);});
+  // ONE PERSON, ONE SET OF LINES (Jarvis/Vinny 11/20/26): every stored spelling of the same
+  // Staff person is summed under ONE Worker ID. The spellings must agree on that ID — two
+  // different IDs between them is a conflict, left off and named, exactly like Staff vs sheet.
+  const groups=tipGroupNames(Object.keys(set)).map(g=>{
+    const rs=g.members.map(m=>ids[m]);
+    const c=rs.find(r=>r.src==='conflict');if(c)return {g,r:c};
+    const got=rs.filter(r=>r.id),st=got.find(r=>r.src==='staff');
+    const distinct=[...new Set(got.map(r=>tipIdNorm(r.id)))];
+    if(distinct.length>1){const a=st||got[0];return {g,r:{id:'',src:'conflict',staff:st?st.id:'—',sheet:got.filter(r=>tipIdNorm(r.id)!==tipIdNorm(a.id)||!st).map(r=>r.id).join(' / ')}};}
+    if(!got.length)return {g,r:{id:'',src:'none'}};
+    return {g,r:st||got[0]};
+  }).sort((a,b)=>(parseInt(a.r.id)||999999)-(parseInt(b.r.id)||999999)||a.g.primary.localeCompare(b.g.primary));
   const lines=['Company ID,Worker ID,Name,Pay Component,Hours,Rate,Tips,Unpaid Tips,Overtime Hours,Training Hours,Training Rate,Bonus Amount'];
   const f=n=>{n=Math.round((+n||0)*100)/100;return n?n.toFixed(2):'';};
   const rn=r=>{r=Math.round((+r||0)*100)/100;return r?(r%1===0?String(r):String(r)):'';};
   const people=[],skipped=[],conflicts=[],fallback=[];
-  names.forEach(name=>{
-    const r=ids[name];
+  groups.forEach(({g,r})=>{
+    const name=g.primary;
     if(r.src==='conflict'){conflicts.push({name,staff:r.staff,sheet:r.sheet});return;}   // ⛔ never guess between two IDs
     const wid=r.id;
     if(!wid){skipped.push(name);return;}   // no Paychex Worker ID → can't import; leave them off (Amanda etc.)
     if(r.src==='sheet')fallback.push(name);
     people.push(name);
-    const tt=tipRowTotals(name);
-    const tips=tt.paid, unpaid=Math.round((tt.upt+((tipsState.busserSplit||{})[name]||0))*100)/100;
-    const h=tipHours(name);
-    const byRate={};let trainH=0,trainR=0;
-    Object.keys(h).forEach(sec=>{const p=h[sec],r=Math.round((+p.r||0)*100)/100,reg=+p.h||0,ot=+p.o||0;if(!(reg||ot))return;
-      if(/training/i.test(sec)){trainH+=reg+ot;trainR=r;return;}
-      byRate[r]=byRate[r]||{reg:0,ot:0};byRate[r].reg+=reg;byRate[r].ot+=ot;});
+    let tips=0,unpaid=0;const byRate={};let trainH=0,trainR=0;
+    g.members.forEach(m=>{
+      const tt=tipRowTotals(m);tips+=tt.paid;unpaid+=tt.upt+((tipsState.busserSplit||{})[m]||0);
+      const h=tipHours(m);
+      Object.keys(h).forEach(sec=>{const p=h[sec],r=Math.round((+p.r||0)*100)/100,reg=+p.h||0,ot=+p.o||0;if(!(reg||ot))return;
+        if(/training/i.test(sec)){trainH+=reg+ot;trainR=r;return;}
+        byRate[r]=byRate[r]||{reg:0,ot:0};byRate[r].reg+=reg;byRate[r].ot+=ot;});
+    });
+    tips=Math.round(tips*100)/100;unpaid=Math.round(unpaid*100)/100;
     const rates=Object.keys(byRate).map(Number).sort((a,b)=>a-b);
     const rows=rates.map(r=>({hours:byRate[r].reg,rate:r,ot:byRate[r].ot}));
     if(!rows.length&&(tips||unpaid||trainH))rows.push({hours:0,rate:0,ot:0});
@@ -6193,7 +6206,9 @@ function hoursSrc(p){return (p&&p.src)||'wed';}   // legacy positions (no src) d
 // under their name. Wedding-ONLY people (no rest position) show in the weddings table.
 function isRestEmp(name){const h=tipsState.hours[name]||{};return Object.keys(h).some(sec=>hoursSrc(h[sec])==='rest');}
 function tipHoursGrandAll(){let reg=0,ot=0,pay=0;Object.keys(tipsState.hours||{}).forEach(n=>{const t=tipHoursPersonTot(n);reg+=t.reg;ot+=t.ot;pay+=t.pay;});const he=document.getElementById('hgrand-hrs'),pe=document.getElementById('hgrand-pay');if(he)he.textContent=(Math.round((reg+ot)*100)/100).toFixed(2);if(pe)pe.textContent=tipMoney(pay);}
-function tipHoursInput(name,sec,field,val){tipHoursSetPos(name,sec,field,val);const id=tipId(name),sid=sec.replace(/[^a-z0-9]/gi,'_');const pe=document.getElementById('hp-'+id+'-'+sid);if(pe){const pp=tipHoursPosPay((tipsState.hours[name]||{})[sec]||{});pe.textContent=pp?tipMoney(pp):'';}const t=tipHoursPersonTot(name);const re=document.getElementById('hreg-'+id);if(re)re.textContent=t.reg||'';const oe=document.getElementById('hot-'+id);if(oe)oe.textContent=t.ot||'';const te=document.getElementById('hpt-'+id);if(te)te.textContent=t.pay?tipMoney(t.pay):'';tipHoursGrandAll();tipsSaveHoursSoon();}
+function tipHoursGroupTot(g){let reg=0,ot=0,pay=0;g.members.forEach(m=>{const t=tipHoursPersonTot(m);reg+=t.reg;ot+=t.ot;pay+=t.pay;});return {reg:Math.round(reg*100)/100,ot:Math.round(ot*100)/100,pay:Math.round(pay*100)/100};}
+// The position cell is the spelling's own; the person totals are the merged row's (every spelling).
+function tipHoursInput(name,sec,field,val){tipHoursSetPos(name,sec,field,val);const sid=sec.replace(/[^a-z0-9]/gi,'_');const pe=document.getElementById('hp-'+tipId(name)+'-'+sid);if(pe){const pp=tipHoursPosPay((tipsState.hours[name]||{})[sec]||{});pe.textContent=pp?tipMoney(pp):'';}const g=tipGroupFor(name),id=tipId(g.primary),t=tipHoursGroupTot(g);const re=document.getElementById('hreg-'+id);if(re)re.textContent=t.reg||'';const oe=document.getElementById('hot-'+id);if(oe)oe.textContent=t.ot||'';const te=document.getElementById('hpt-'+id);if(te)te.textContent=t.pay?tipMoney(t.pay):'';tipHoursGrandAll();tipsSaveHoursSoon();}
 function tipHoursAddRow(name,src){if(!tipsState.hours)tipsState.hours={};if(!tipsState.hours[name])tipsState.hours[name]={};let base='Extra',nm=base,i=2;while(tipsState.hours[name][nm])nm=base+' '+(i++);tipsState.hours[name][nm]={src:src||'wed',m:1};if(tipsActive()&&(tipsState.view||'tips')==='hours'){tipsRerender();const el=document.getElementById('hn-'+tipId(name)+'-'+nm.replace(/[^a-z0-9]/gi,'_'));if(el){el.focus({preventScroll:true});el.select();}}tipsSaveHoursSoon();}
 function tipHoursRenamePos(name,oldSec,newSec){newSec=(newSec||'').trim();const H=tipsState.hours&&tipsState.hours[name];if(!H||!(oldSec in H)){return;}if(!newSec||newSec===oldSec){tipsRerender();return;}if(H[newSec]){tipsSetStatus('“'+newSec+'” already exists for '+name,'#f87171');tipsRerender();return;}H[newSec]=H[oldSec];H[newSec].m=1;delete H[oldSec];if(hoursSrc(H[newSec])==='wed')H[oldSec]={src:'wed',m:1,x:1};tipsRerender();tipsSaveHoursSoon();}
 // Deleting a 💍 row has to leave a mark, not a hole. The pull fills holes: it
@@ -6207,9 +6222,18 @@ function tipHoursDelPos(name,sec){const H=tipsState.hours&&tipsState.hours[name]
 function tipHoursUndoOut(name){if(tipsState.hoursOut)delete tipsState.hoursOut[name];tipsPullWeddingHours(false).then(()=>{tipsRerender();tipsSaveHoursSoon();});}
 // Put a hand-set row back under the schedule app's control.
 function tipHoursResync(name,sec){const H=tipsState.hours&&tipsState.hours[name];if(!H)return;if(H[sec]&&H[sec].x)delete H[sec];else if(H[sec])delete H[sec].m;tipsPullWeddingHours(false).then(()=>{tipsRerender();tipsSaveHoursSoon();});}
+// A merged row: take the PERSON out — every stored spelling — behind ONE confirm that names
+// each spelling, rather than one confirm per spelling or silently only the first.
+function tipHoursDelGroup(primary){
+  const g=tipGroupFor(primary);
+  if(!confirm('Take '+staffDisplayName(primary).name+' out of this pay period?\n\nThis removes their hours and tips from this period under every spelling: '+g.members.join(', ')+'. (Their saved emp-ID is kept.)'))return;
+  g.members.forEach(m=>tipHoursDelPerson(m,true));
+  tipsSaveSoon();tipsSaveHoursSoon();tipsRerender();
+  tipsSetStatus(staffDisplayName(primary).name+' removed from this period','#fbbf24');
+}
 // Take a whole person out of this pay period — clears their hours AND tips (both this period only; global emp-ID is left untouched). Destructive → confirm first.
-function tipHoursDelPerson(name){
-  if(!confirm('Take '+name+' out of this pay period?\n\nThis removes their hours and tips from this period. (Their saved emp-ID is kept.)'))return;
+function tipHoursDelPerson(name,confirmed){
+  if(!confirmed&&!confirm('Take '+name+' out of this pay period?\n\nThis removes their hours and tips from this period. (Their saved emp-ID is kept.)'))return;
   const nk=tipNormKey(name);
   // Same hole-filling problem one level up: the wedding pull re-adds any person
   // the scheduler has event hours for, so "removed from this period" lasted
@@ -6221,6 +6245,7 @@ function tipHoursDelPerson(name){
   if(tipsState.busserSplit)delete tipsState.busserSplit[name];
   if(tipsState.busserSplitByDay)Object.keys(tipsState.busserSplitByDay).forEach(d=>{const o=tipsState.busserSplitByDay[d];if(o)delete o[name];});
   if(tipsState.adds)Object.keys(tipsState.adds).forEach(sec=>{tipsState.adds[sec]=(tipsState.adds[sec]||[]).filter(n=>tipNormKey(n)!==nk);});
+  if(confirmed)return;   // the group delete saves and redraws once, after every spelling
   tipsSaveSoon();tipsSaveHoursSoon();tipsRerender();
   tipsSetStatus(name+' removed from this period','#fbbf24');
 }
@@ -6367,7 +6392,6 @@ function tipsSaveEmpIds(){
   try{kvPush('ct_emp_ids',{emp:tipsState.empIds},Date.now());return true;}catch(e){return false;}
 }
 function tipsSaveMoves(){if(tipsSaveBlocked())return;try{kvPush('ct_tips_moves',{moves:tipsState.moves},Date.now());}catch(e){}}
-function tipMovePerson(name,sec){if(!tipsState.moves)tipsState.moves={};if(tipBaseSection(name)===sec)delete tipsState.moves[name];else tipsState.moves[name]=sec;tipsSaveMoves();document.getElementById('pos-body').innerHTML=tipsHTML();}
 
 // Default range = the current 14-day pay period (anchor Mar 23 2026, same as the tip-out app).
 function tipCurrentPeriod(){
@@ -6513,6 +6537,40 @@ function tipSectionPeople(sec){
     return tipStaffLive(n)||tipPersonHasTipsThisPeriod(n);
   }).sort((a,b)=>{const la=a.split(' ').pop(),lb=b.split(' ').pop();return la.localeCompare(lb)||a.localeCompare(b);});
 }
+// ── ONE ROW PER STAFF PERSON — Jarvis/Vinny, 11/20/26: "just delete la gace and keep lagace"
+// (one Priscilla, NOT deleting her money). Two stored spellings that resolve to the same Staff
+// person (same pid) are shown, totalled and exported as ONE person. ⛔ Stored keys stay raw —
+// every edit still writes to a real stored spelling; this is display/export grouping only.
+// A name Staff can't resolve is its own group: there's nothing to merge it with until linked.
+function tipPersonKey(name){const p=staffResolveForTips(name);return p&&p.pid?'pid:'+p.pid:'raw:'+name;}
+function tipGroupNames(names){
+  const by={},out=[];
+  names.forEach(n=>{const k=tipPersonKey(n);if(!by[k]){by[k]={members:[]};out.push(by[k]);}if(by[k].members.indexOf(n)<0)by[k].members.push(n);});
+  out.forEach(g=>{const p=staffResolveForTips(g.members[0]);g.primary=(p&&g.members.find(n=>n===p.name))||g.members[0];});
+  return out;
+}
+// Which on-screen row a stored spelling is drawn in — rebuilt on every Tips/Hours render, so a
+// live edit to one spelling refreshes the merged row it belongs to.
+function tipGroupFor(name){return (tipsState.rowGroups&&tipsState.rowGroups[name])||{primary:name,members:[name]};}
+function tipRegisterGroups(groups){if(!tipsState.rowGroups)tipsState.rowGroups={};groups.forEach(g=>g.members.forEach(m=>{tipsState.rowGroups[m]=g;}));}
+function tipGroupDayCell(g,lb){
+  const out={};
+  g.members.forEach(m=>{const c=tipCell(m,lb)||{};['p','u','w'].forEach(k=>{if(c[k])out[k]=Math.round(((out[k]||0)+c[k])*100)/100;});
+    const sp=tipBusserDay(m,lb);if(sp)out.u=Math.round(((out.u||0)+sp)*100)/100;});
+  return Object.keys(out).length?out:null;
+}
+function tipGroupTotals(g){let paid=0,upt=0;g.members.forEach(m=>{const t=tipRowTotals(m);paid+=t.paid;upt+=t.upt+tipBusserSplit(m);});return {paid:Math.round(paid*100)/100,upt:Math.round(upt*100)/100};}
+// The stored spelling a click on a day cell edits: the ONE spelling holding a value that day,
+// else the row's own spelling. (Two spellings both holding money on one day: the row's own
+// spelling is edited and the editor says what else is there — never silently summed into it.)
+function tipEditTarget(g,lb){const holders=g.members.filter(m=>{const c=tipCell(m,lb);return c&&(c.p||c.u||c.w);});return holders.length===1?holders[0]:g.primary;}
+function tipCellEditGroup(primary,lb){tipCellEdit(tipEditTarget(tipGroupFor(primary),lb),lb);}
+// Moving a merged row moves every spelling in it — or the group would split across sections.
+function tipMoveGroup(primary,sec){
+  if(!tipsState.moves)tipsState.moves={};
+  tipGroupFor(primary).members.forEach(m=>{if(tipBaseSection(m)===sec)delete tipsState.moves[m];else tipsState.moves[m]=sec;});
+  tipsSaveMoves();document.getElementById('pos-body').innerHTML=tipsHTML();
+}
 function tipAddPerson(sec){const inp=document.getElementById('tip-add-'+sec.replace(/ /g,'_'));if(!inp)return;const name=(inp.value||'').trim();if(!name)return;if(!tipsState.adds[sec])tipsState.adds[sec]=[];const all=tipSectionPeople(sec);if(all.indexOf(name)<0){tipsState.adds[sec].push(name);tipsSaveSoon();}document.getElementById('pos-body').innerHTML=tipsHTML();}
 function tipsSetStatus(s,c){const el=document.getElementById('tips-status');if(el){el.textContent=s;el.style.color=c||'var(--text-dim)';}}
 
@@ -6585,20 +6643,28 @@ function tipsThisPeriod(){tipRangeForget();const p=tipCurrentPeriod();tipsState.
 // fields opens. Any combination can be set — one day can hold a paid day-party
 // tip AND an unpaid tip-out at the same time.
 let tipEdit={name:null,day:null};
-function tipRefreshRow(name){const t=tipRowTotals(name),id=tipId(name);const pe=document.getElementById('tp-'+id),ue=document.getElementById('tu-'+id);if(pe)pe.textContent=t.paid?tipMoney(t.paid):'';if(ue)ue.textContent=t.upt?tipMoney(t.upt):'';tipsUpdateGrand();}
-function tipRefreshCell(name,day){const el=document.getElementById('tc-'+tipId(name)+'-'+day.replace('/','_'));if(el)el.innerHTML=tipCompsHTML(tipCell(name,day));}
+// Both refresh the PERSON's row a stored spelling is drawn in (tipGroupFor), with the same
+// figures rowFor draws — busser shares included, so an edit never makes a pool share vanish
+// from a cell or a total until the next full redraw.
+function tipRefreshRow(name){const g=tipGroupFor(name),t=tipGroupTotals(g),id=tipId(g.primary);const pe=document.getElementById('tp-'+id),ue=document.getElementById('tu-'+id);if(pe)pe.textContent=t.paid?tipMoney(t.paid):'';if(ue)ue.textContent=t.upt?tipMoney(t.upt):'';tipsUpdateGrand();}
+function tipRefreshCell(name,day){const g=tipGroupFor(name);const el=document.getElementById('tc-'+tipId(g.primary)+'-'+day.replace('/','_'));if(el)el.innerHTML=tipCompsHTML(tipGroupDayCell(g,day));}
 function tipHidePopup(){const p=document.getElementById('tip-pop');if(p)p.style.display='none';tipCellClearHighlight();tipEdit.name=null;}
 function tipCellEditorEl(){let p=document.getElementById('tip-pop');if(!p){p=document.createElement('div');p.id='tip-pop';p.style.cssText='position:fixed;display:none;flex-direction:column;gap:7px;z-index:99999;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px;box-shadow:0 8px 26px rgba(0,0,0,.6);min-width:172px';document.body.appendChild(p);}return p;}
 function tipCellClearHighlight(){if(tipEdit&&tipEdit.cellEl){tipEdit.cellEl.style.boxShadow='';tipEdit.cellEl.style.background='';tipEdit.cellEl=null;}}
 function tipCellEdit(name,day){
   tipCellClearHighlight();
   tipEdit={name,day};
-  const cellEl=document.getElementById('tc-'+tipId(name)+'-'+day.replace('/','_'));
+  const g=tipGroupFor(name);
+  const cellEl=document.getElementById('tc-'+tipId(g.primary)+'-'+day.replace('/','_'));
   if(cellEl){cellEl.style.boxShadow='inset 0 0 0 2px var(--accent2)';cellEl.style.background='rgba(34,211,238,0.14)';tipEdit.cellEl=cellEl;}
   const c=tipCell(name,day)||{};
   const fld=(lab,comp,color,val)=>`<label style="display:flex;align-items:center;gap:8px;font-size:12px;color:${color};font-weight:800"><span style="width:56px">${lab}</span><input inputmode="decimal" value="${val!=null?val:''}" oninput="tipEditSet('${comp}',this.value)" onkeydown="if(event.key==='Enter')tipHidePopup()" style="width:82px;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 8px;font-size:13px;font-family:inherit;text-align:right;outline:none"></label>`;
   const p=tipCellEditorEl();
-  p.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1px"><b style="font-size:12px">${esc(name)} · ${day}</b><button onmousedown="event.preventDefault()" onclick="tipHidePopup()" style="background:none;border:none;color:var(--text-dim);font-size:17px;cursor:pointer;line-height:1;padding:0 2px">×</button></div>`+fld('Paid','p','#34d399',c.p)+fld('Unpaid','u','#fbbf24',c.u)+fld('Wedding','w','#c4b5fd',c.w);
+  // A merged row: say which stored spelling this edits, and what ELSE is on that day under
+  // another spelling — it's in the cell's total but is not changed from here.
+  const others=g.members.filter(m=>m!==name).map(m=>{const oc=tipCell(m,day);const v=oc?Math.round(((oc.p||0)+(oc.u||0)+(oc.w||0))*100)/100:0;return v?`+ ${tipMoney(v)} stored as “${esc(m)}” (not edited here)`:'';}).filter(Boolean);
+  const note=(g.members.length>1?`<div style="font-size:10.5px;color:var(--text-muted);margin-top:-2px">editing “${esc(name)}”${others.length?'<br>'+others.join('<br>'):''}</div>`:'');
+  p.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1px"><b style="font-size:12px">${esc(g.members.length>1?staffDisplayName(name).name:name)} · ${day}</b><button onmousedown="event.preventDefault()" onclick="tipHidePopup()" style="background:none;border:none;color:var(--text-dim);font-size:17px;cursor:pointer;line-height:1;padding:0 2px">×</button></div>`+note+fld('Paid','p','#34d399',c.p)+fld('Unpaid','u','#fbbf24',c.u)+fld('Wedding','w','#c4b5fd',c.w);
   p.style.display='flex';
   const ev=window.event,el=ev&&ev.currentTarget,r=el?el.getBoundingClientRect():{left:100,bottom:100,width:0},w=190;
   p.style.left=Math.max(6,Math.min(r.left+r.width/2-w/2,window.innerWidth-w-6))+'px';
@@ -6961,6 +7027,7 @@ function hoursHTML(){
   const addBtn=(name,src)=>`<button onclick="tipHoursAddRow('${esc(name).replace(/'/g,"\\'")}','${src}')" title="Add a position / special-rate row" style="background:transparent;border:1px solid var(--border);color:var(--text-muted);border-radius:5px;font-size:12px;line-height:1;padding:2px 6px;cursor:pointer;margin-left:8px">＋</button>`;
   const delX=(name,sec)=>`<button onclick="tipHoursDelPos('${esc(name).replace(/'/g,"\\'")}','${esc(sec).replace(/'/g,"\\'")}')" title="Delete this row" style="background:transparent;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;line-height:1;padding:0 3px;margin-left:4px">×</button>`;
   const delPersonBtn=(name)=>`<button onclick="tipHoursDelPerson('${esc(name).replace(/'/g,"\\'")}')" title="Take this person out of the pay period" style="background:transparent;border:none;color:#f87171;opacity:.7;cursor:pointer;font-size:15px;line-height:1;padding:0 2px 0 8px;margin-left:auto">✕</button>`;
+  const delGroupBtn=(name)=>`<button onclick="tipHoursDelGroup('${esc(name).replace(/'/g,"\\'")}')" title="Take this person out of the pay period (every spelling)" style="background:transparent;border:none;color:#f87171;opacity:.7;cursor:pointer;font-size:15px;line-height:1;padding:0 4px;margin-left:4px">✕</button>`;
   const th=(t,extra)=>`<th style="padding:3px 8px;${bb};${extra||''}">${t}</th>`;
   // 💍 = this row still tracks the schedule app. ✎ = you set it by hand, so the
   // pull leaves it alone — click it to hand the row back to the schedule app.
@@ -6986,16 +7053,22 @@ function hoursHTML(){
   const tipCells=(id,paid,upt)=>`<td id="htip-${id}" style="padding:3px 10px;text-align:right;font-weight:700;color:#34d399;border-left:1px solid var(--border);${bb};white-space:nowrap">${paid?tipMoney(paid):''}</td><td id="hupt-${id}" style="padding:3px 10px;text-align:right;font-weight:700;color:#fbbf24;border-left:1px solid var(--border);${bb};white-space:nowrap">${upt?tipMoney(upt):''}</td>`;
   const blankTips=`<td style="border-left:1px solid var(--border);${bb}"></td><td style="border-left:1px solid var(--border);${bb}"></td>`;
   let gHrs=0,gPay=0,gTip=0,gUpt=0,body='';
-  names.forEach(name=>{
-    const all=tipHours(name),secs=secOrd(all),id=tipId(name),t=tipHoursPersonTot(name),tt=tipRowTotals(name),asrc=isRestEmp(name)?'rest':'wed';
-    const uptTot=Math.round((tt.upt+((tipsState.busserSplit||{})[name]||0))*100)/100;   // unpaid = tips + this busser's share of the nightly pools
+  // One summary row per PERSON (every stored spelling of the same Staff person); the ↳
+  // position rows underneath stay per stored spelling, so each input still edits a real key.
+  tipsState.rowGroups={};
+  const hGroups=tipGroupNames(names);tipRegisterGroups(hGroups);
+  hGroups.forEach(g=>{
+    const name=g.primary,id=tipId(name),asrc=isRestEmp(name)?'rest':'wed';
+    const t=tipHoursGroupTot(g),gt=tipGroupTotals(g),tt={paid:gt.paid},uptTot=gt.upt;   // unpaid = tips + busser shares, every spelling
     gHrs+=t.reg+t.ot;gPay+=t.pay;gTip+=tt.paid;gUpt+=uptTot;
     const nb=`position:sticky;left:0;background:${nameBg};border-left:3px solid ${nameBar};padding:3px 12px;white-space:nowrap;border-right:2px solid var(--border);${bb}`;
     // Name row = the person + their period totals; each position sits on its own
     // indented ↳ row below (positions stay, just never inline next to the name).
     const disp=staffDisplayName(name);
-    body+=`<tr style="background:${nameBg}"><td style="${nb};font-weight:800;width:270px"><div style="display:flex;align-items:center;width:100%">${tipIdBadgeHTML(name,true)}<span style="white-space:nowrap">${esc(disp.name)}${staffDisplayMark(disp.matched,name)}</span>${addBtn(name,asrc)}${delPersonBtn(name)}</div></td><td style="${bb}"></td><td id="hreg-${id}" style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.reg||''}</td><td id="hot-${id}" style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.ot||''}</td><td id="hpt-${id}" style="padding:3px 10px;text-align:right;font-weight:800;color:#34d399;border-left:2px solid var(--border);${bb}">${t.pay?tipMoney(t.pay):''}</td>${tipCells(id,tt.paid,uptTot)}</tr>`;
-    secs.forEach(sec=>{body+=`<tr><td style="position:sticky;left:0;background:var(--surface);padding:2px 12px 2px 26px;white-space:nowrap;border-right:2px solid var(--border);${bb}">↳ ${posInput(name,sec)}${wtag(all,sec,name)}${delX(name,sec)}</td>${cells(name,sec)}${blankTips}</tr>`;});
+    const delBtn=g.members.length>1?delGroupBtn(name):delPersonBtn(name);
+    body+=`<tr style="background:${nameBg}"><td style="${nb};font-weight:800;width:270px"><div style="display:flex;align-items:center;width:100%">${tipIdBadgeHTML(name,true)}<span style="white-space:nowrap">${esc(disp.name)}${staffDisplayMark(disp.matched,name)}</span>${addBtn(name,asrc)}${delBtn}</div></td><td style="${bb}"></td><td id="hreg-${id}" style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.reg||''}</td><td id="hot-${id}" style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.ot||''}</td><td id="hpt-${id}" style="padding:3px 10px;text-align:right;font-weight:800;color:#34d399;border-left:2px solid var(--border);${bb}">${t.pay?tipMoney(t.pay):''}</td>${tipCells(id,tt.paid,uptTot)}</tr>`;
+    g.members.forEach(m=>{const all=tipHours(m),as=(g.members.length>1&&m!==disp.name)?` <span title="stored under this spelling — shown with ${esc(disp.name)}" style="color:var(--text-muted);font-size:10px">(as ${esc(m)})</span>`:'';
+      secOrd(all).forEach(sec=>{body+=`<tr><td style="position:sticky;left:0;background:var(--surface);padding:2px 12px 2px 26px;white-space:nowrap;border-right:2px solid var(--border);${bb}">↳ ${posInput(m,sec)}${wtag(all,sec,m)}${as}${delX(m,sec)}</td>${cells(m,sec)}${blankTips}</tr>`;});});
   });
   if(!names.length)body=`<tr><td colspan="7" style="padding:34px;text-align:center;color:var(--text-dim);line-height:1.6">No hours or tips yet — pick a date range to pull weddings, and give me the MICROS timesheet.</td></tr>`;
   return `
@@ -7047,6 +7120,7 @@ function tipsHTML(){
   if(!tipsState.loaded)return '<div style="padding:48px;text-align:center;color:var(--text-dim)">Loading tips…</div>';
   if((tipsState.view||'tips')==='hours')return hoursHTML()+staffFlagHTML();
   const days=tipDays();
+  tipsState.rowGroups={};
   // ⚠️ A CLEARLY THICKER divider, Vinny 11/20/26: "give me a thicker line separating the
   // last sunday and the paid column" — every period is a Monday-start fortnight, so the
   // LAST day column is always that Sunday; this just marks where the day grid ends and
@@ -7056,17 +7130,22 @@ function tipsHTML(){
   // row, and the footer total.
   const PAID_DIV='border-left:4px solid var(--border)';
   let gp=0,gu=0;
-  const rowFor=(name,isPool)=>{
-    const t=tipRowTotals(name),upt=Math.round((t.upt+tipBusserSplit(name))*100)/100;gp+=t.paid;gu+=upt;const id=tipId(name);
+  // One row per PERSON (g = {primary, members}): every stored spelling of the same Staff
+  // person sums into the one row; a day click edits the spelling that actually holds it.
+  const rowFor=(g,isPool)=>{
+    const name=g.primary;
+    const gt=tipGroupTotals(g),t={paid:gt.paid},upt=gt.upt;gp+=t.paid;gu+=upt;const id=tipId(name);
     const bb='border-bottom:1px solid var(--border)';
     const en=esc(name).replace(/'/g,"\\'");
     // "Busser Pool" isn't a person — never run it through the Staff lookup, or it would
     // show a loose-name flag on a label that was never a name to begin with.
     const disp=isPool?{name,matched:true}:staffDisplayName(name);
-    const tds=days.map(d=>{const lb=tipDayLabel(d);const mon=(d.getDay()===1);const c=tipCell(name,lb),sp=tipBusserDay(name,lb);
-      return `<td id="tc-${id}-${lb.replace('/','_')}" data-tipcell onclick="tipCellEdit('${en}','${lb}')" title="Click to edit" style="cursor:pointer;border-right:1px solid var(--border);${bb};text-align:right;padding:5px ${mon?'2px':'6px'};min-width:${mon?'18px':'58px'};white-space:nowrap;vertical-align:middle">${tipCompsHTML(sp?Object.assign({},c||{},{u:Math.round((((c&&c.u)||0)+sp)*100)/100}):c)}</td>`;}).join('');
+    const tds=days.map(d=>{const lb=tipDayLabel(d);const mon=(d.getDay()===1);
+      return `<td id="tc-${id}-${lb.replace('/','_')}" data-tipcell onclick="tipCellEditGroup('${en}','${lb}')" title="Click to edit" style="cursor:pointer;border-right:1px solid var(--border);${bb};text-align:right;padding:5px ${mon?'2px':'6px'};min-width:${mon?'18px':'58px'};white-space:nowrap;vertical-align:middle">${tipCompsHTML(tipGroupDayCell(g,lb))}</td>`;}).join('');
+    const also=g.members.filter(m=>m!==name);
+    const alsoTag=also.length?`<span title="Also stored as: ${esc(also.join(', '))} — shown and paid as one person" style="color:var(--text-muted);font-size:10px;font-weight:600">+${also.length} spelling${also.length>1?'s':''}</span>`:'';
     return `<tr style="${isPool?'background:rgba(251,191,36,0.06)':''}">
-      <td style="position:sticky;left:0;z-index:1;background:var(--surface);padding:7px 12px;font-weight:${isPool?'800':'600'};white-space:nowrap;border-right:2px solid var(--border);${bb};${isPool?'color:#fbbf24':''}"><span style="display:inline-flex;align-items:center;gap:6px">${isPool?'':tipIdBadgeHTML(name,false)}${esc(disp.name)}${staffDisplayMark(disp.matched,name)}${isPool?'':`<select title="Move to another section" onchange="tipMovePerson('${esc(name).replace(/'/g,"\\'")}',this.value)" style="background:transparent;border:none;color:var(--text-muted);font-size:11px;font-family:inherit;cursor:pointer;-webkit-appearance:none;appearance:none;padding:0 2px">${TIP_SECTIONS.map(s=>`<option value="${s}" ${tipEffSection(name)===s?'selected':''} style="color:#000">${TIP_SEC_SHORT[s]}</option>`).join('')}</select>`}</span></td>
+      <td style="position:sticky;left:0;z-index:1;background:var(--surface);padding:7px 12px;font-weight:${isPool?'800':'600'};white-space:nowrap;border-right:2px solid var(--border);${bb};${isPool?'color:#fbbf24':''}"><span style="display:inline-flex;align-items:center;gap:6px">${isPool?'':tipIdBadgeHTML(name,false)}${esc(disp.name)}${staffDisplayMark(disp.matched,name)}${alsoTag}${isPool?'':`<select title="Move to another section" onchange="tipMoveGroup('${esc(name).replace(/'/g,"\\'")}',this.value)" style="background:transparent;border:none;color:var(--text-muted);font-size:11px;font-family:inherit;cursor:pointer;-webkit-appearance:none;appearance:none;padding:0 2px">${TIP_SECTIONS.map(s=>`<option value="${s}" ${tipEffSection(name)===s?'selected':''} style="color:#000">${TIP_SEC_SHORT[s]}</option>`).join('')}</select>`}</span></td>
       ${tds}
       <td id="tp-${id}" style="padding:7px 8px;text-align:right;font-weight:700;color:#34d399;white-space:nowrap;${PAID_DIV};${bb}">${t.paid?tipMoney(t.paid):''}</td>
       <td id="tu-${id}" style="padding:7px 8px;text-align:right;font-weight:700;color:#fbbf24;white-space:nowrap;border-left:2px solid var(--border);${bb}">${upt?tipMoney(upt):''}</td>
@@ -7102,7 +7181,7 @@ function tipsHTML(){
       const ptot=Math.round(poolDays.reduce((s,x)=>s+x,0)*100)/100;
       body+=`<tr style="background:var(--surface2)"><td style="position:sticky;left:0;z-index:1;background:var(--surface2);color:var(--accent);font-weight:800;padding:6px 12px;letter-spacing:.5px;border-top:1px solid var(--border);border-right:2px solid var(--border);white-space:nowrap">BUSSERS <span style="color:var(--text-muted);font-weight:600;font-size:9px;letter-spacing:0">pool / night</span></td>${ptds}<td style="border-top:1px solid var(--border);${PAID_DIV}"></td><td style="text-align:right;color:#fbbf24;font-weight:800;padding:6px 8px;border-top:1px solid var(--border);border-left:1px solid var(--border);white-space:nowrap">${ptot?tipMoney(ptot):''}</td></tr>`;
     }else if(sec==='Busser'){
-      body+=rowFor('Busser Pool',true);   // no timesheet yet → show the lumped pool row
+      body+=rowFor({primary:'Busser Pool',members:['Busser Pool']},true);   // no timesheet yet → show the lumped pool row
       // Say WHY every busser's row is empty. The pool is collected nightly by the
       // calculator, but dividing it needs each busser's after-3:30 clock times, and those
       // only arrive with the MICROS timesheet PDF — "Pull hours from POS" brings hours
@@ -7112,7 +7191,8 @@ function tipsHTML(){
       const unsplit=Math.round(Object.values(poolCells).reduce((s,c)=>s+((c&&c.u)||0),0)*100)/100;
       if(unsplit)body+=`<tr><td colspan="${days.length+3}" style="position:sticky;left:0;background:rgba(251,191,36,.08);border-left:3px solid #fbbf24;padding:8px 12px;font-size:12px;color:var(--text-dim);line-height:1.5">⚠ <b style="color:#fbbf24">${tipMoney(unsplit)}</b> of busser pool is collected but <b>not split between anyone yet</b>, so every busser below reads empty. The share is worked out from each busser's hours after 3:30, which only come with the <b>📄 Import timesheet</b> PDF — pulling hours from the register gives totals per job, not clock-in times, so it can't divide the pool.</td></tr>`;
     }
-    ordered.forEach(n=>{body+=rowFor(n,false);});
+    const groups=tipGroupNames(ordered);tipRegisterGroups(groups);
+    groups.forEach(g=>{body+=rowFor(g,false);});
     // No "+ add" box for NoDept or Kitchen — both already list everyone on Staff who
     // belongs there; the fix for a missing person is their department on Staff.
     if(sec!=='NoDept'&&sec!=='Kitchen')body+=`<tr><td colspan="${days.length+3}" style="position:sticky;left:0;background:var(--surface);padding:4px 12px"><input id="tip-add-${sec.replace(/ /g,'_')}" placeholder="+ add ${TIP_SEC_LABEL[sec].toLowerCase().replace(/s$/,'')}…" onkeydown="if(event.key==='Enter')tipAddPerson('${sec}')" style="width:180px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 9px;font-size:12px;font-family:inherit"></td></tr>`;

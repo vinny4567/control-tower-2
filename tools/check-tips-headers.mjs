@@ -98,6 +98,12 @@ function world({ people = {}, cells = {}, busserSplitByDay = {}, busserSplit = {
     ${grab('tipIdNorm')}
     ${grab('tipPaychexId')}
     ${grab('tipIdBadgeHTML')}
+    ${grab('tipPersonKey')}
+    ${grab('tipGroupNames')}
+    ${grab('tipGroupFor')}
+    ${grab('tipRegisterGroups')}
+    ${grab('tipGroupDayCell')}
+    ${grab('tipGroupTotals')}
     ${grab('tipsHTML')}
     ctx.html=tipsHTML;ctx.staffS=staffS;ctx.tipsState=tipsState;ctx.grand=tipsGrandTotals;
   `)(ctx);
@@ -196,7 +202,7 @@ const PAID_DIV = 'border-left:4px solid var(--border)';
   ok('⛔ a kitchen person with money renders under KITCHEN', sectionOf(html, 'Cody Cook') === 'KITCHEN');
   ok('⛔ a kitchen person with NO money is listed under KITCHEN too (everyone, not just the paid)', sectionOf(html, 'Kim Cook') === 'KITCHEN');
   const tr = html.slice(html.indexOf('>Cody Cook<'), html.indexOf('</tr>', html.indexOf('>Cody Cook<')));
-  ok('their day cells are editable like everyone else\'s (data-tipcell, click to edit)', /data-tipcell onclick="tipCellEdit\('Cody Cook'/.test(tr));
+  ok('their day cells are editable like everyone else\'s (data-tipcell, click to edit)', /data-tipcell onclick="tipCellEditGroup\('Cody Cook'/.test(tr));
   ok('their Paid cell carries the thicker divider', /id="tp-[^"]+" style="[^"]*border-left:4px solid var\(--border\)/.test(tr));
   ok('⛔ their money counts in the grand total', w.grand().paid === 40);
 }

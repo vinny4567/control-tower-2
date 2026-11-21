@@ -95,7 +95,9 @@ ok('tipsHTML resolves the row label through staffDisplayName', /staffDisplayMark
 ok('⛔ the "Busser Pool" row is NEVER run through the Staff lookup (it is not a person)',
    /isPool\?\{name,matched:true\}:staffDisplayName\(name\)/.test(tipsHTMLFn));
 ok('⛔ the section-move dropdown still keys off the RAW name, not the resolved display name',
-   /onchange="tipMovePerson\('\$\{esc\(name\)\.replace/.test(tipsHTMLFn));
+   // 11/20/26: rows are per PERSON now (every stored spelling) — the dropdown moves the
+   // group, still addressed by a raw stored spelling (g.primary), never the display name.
+   /onchange="tipMoveGroup\('\$\{esc\(name\)\.replace/.test(tipsHTMLFn) && /const name=g\.primary;/.test(tipsHTMLFn));
 
 const hoursHTMLFn = grab('hoursHTML');
 ok('hoursHTML resolves the per-person row label through staffDisplayName', /staffDisplayName\(name\)/.test(hoursHTMLFn) && /staffDisplayMark\(disp\.matched,name\)/.test(hoursHTMLFn));
@@ -113,9 +115,10 @@ ok('the "taken out" chip also resolves to a display name, while the undo button 
    /tipHoursUndoOut\('\$\{esc\(n\)\.replace/.test(hoursHTMLFn) && /staffDisplayName\(n\)\.name/.test(hoursHTMLFn));
 
 const csvFn = grab('tipsPaychexCsv');
-ok('⛔ the Paychex CSV Worker ID lookup still keys off the RAW name', /ids\[n\]=tipPaychexId\(n\)/.test(csvFn) && /const r=ids\[name\]/.test(csvFn) && /const wid=r\.id/.test(csvFn));
+ok('⛔ the Paychex CSV Worker ID lookup still keys off the RAW name', /ids\[n\]=tipPaychexId\(n\)/.test(csvFn) && /g\.members\.map\(m=>ids\[m\]\)/.test(csvFn) && /const wid=r\.id/.test(csvFn));
 ok('⛔ every other lookup inside the CSV builder (tipRowTotals/tipHours/busserSplit) still uses the RAW name',
-   /tipRowTotals\(name\)/.test(csvFn) && /tipHours\(name\)/.test(csvFn));
+   // per stored spelling (m) of the person now — still raw keys, summed under one Worker ID
+   /tipRowTotals\(m\)/.test(csvFn) && /tipHours\(m\)/.test(csvFn) && /\(tipsState\.busserSplit\|\|\{\}\)\[m\]/.test(csvFn));
 ok('…and ONLY the printed Name column uses the resolved display name', /csvEsc\(dispName\)/.test(csvFn) && !/csvEsc\(name\)/.test(csvFn));
 
 const tsRowFn = grab('tsCheckRow');
