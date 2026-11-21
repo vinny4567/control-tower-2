@@ -5815,17 +5815,43 @@ let tipsGen=0;   // bumped on every (re)load; guards against two period-loads ra
 // MOVES section (a department change) leaves the view where it was; nothing jumps to it.
 // tools/check-scroll-guard.mjs fails the build if a Tips/Staff redraw path skips this.
 function posScrollers(){
+  // BY ROLE, never "the first thing that overflows": at a short height (an iPad with the
+  // keyboard up, or landscape) the POS SIDEBAR overflows too, and the old posScroller()
+  // returned it — so posRedraw saved and restored the sidebar while the list snapped to the
+  // top (reproduced 11/20/26 at 1024×400: 4804 → 0). Each role is found again AFTER the
+  // redraw, because the redraw replaces the nodes.
   const out=[],vp=document.getElementById('pos-body');
   if(vp){if(vp.firstElementChild)out.push(['inner',vp.firstElementChild]);const pane=vp.parentElement&&vp.parentElement.closest?vp.parentElement.closest('[style*="overflow-y"]'):null;if(pane)out.push(['pane',pane]);}
   const v=document.getElementById('viewport');if(v)out.push(['viewport',v]);
+  const d=document.scrollingElement||document.documentElement;if(d)out.push(['doc',d]);
   return out;
 }
 function posRedrawKeepScroll(fn){
   const before={};posScrollers().forEach(([k,el])=>{before[k]=el.scrollTop;});
   const win=(typeof window!=='undefined'&&window.scrollY)||0;
+  // AND THE CARET (from the old posKeepScroll): a rebuild destroys the box the cursor is in;
+  // put it back on the replacement, matched by its stable data-pf handle (never by index —
+  // the list re-sorts). Synchronously, so iOS keeps the keyboard; preventScroll, so focusing
+  // a row does not scroll it into view and undo the restore.
+  const act=document.activeElement;
+  const pf=(act&&act.getAttribute)?act.getAttribute('data-pf'):null;
+  let selA=null,selB=null;if(pf){try{selA=act.selectionStart;selB=act.selectionEnd}catch(e){}}
+  const put=()=>{
+    posScrollers().forEach(([k,el])=>{if(before[k]!=null&&el.scrollTop!==before[k])el.scrollTop=before[k];});
+    if(win&&window.scrollY!==win)window.scrollTo(0,win);
+  };
   fn();
-  posScrollers().forEach(([k,el])=>{if(before[k]!=null&&el.scrollTop!==before[k])el.scrollTop=before[k];});
-  if(win&&window.scrollY!==win)window.scrollTo(0,win);
+  put();
+  if(pf){
+    const el=document.querySelector('[data-pf="'+pf.replace(/["\\]/g,'\\$&')+'"]');
+    if(el&&el!==document.activeElement){
+      try{el.focus({preventScroll:true})}catch(e){el.focus()}
+      if(selA!=null){try{el.setSelectionRange(selA,selB)}catch(e){}}
+    }
+  }
+  // Again after layout: height comes back a frame later, and until it does the browser
+  // clamps anything above the briefly shorter maximum straight back down.
+  if(typeof requestAnimationFrame==='function')requestAnimationFrame(put);
 }
 function tipsRedraw(){const vp=document.getElementById('pos-body');if(!vp)return;posRedrawKeepScroll(()=>{vp.innerHTML=tipsHTML();});}
 function staffRedrawAll(){posRedrawKeepScroll(()=>renderViewport());}
@@ -7429,7 +7455,7 @@ function posSaveConn(){
   posS.url=posCleanUrl(u);posS.srv=posCleanUrl(s);
   localStorage.setItem(POS_URL_KEY,posS.url);localStorage.setItem(POS_SRV_KEY,posS.srv);
   posS.health='unknown';posS.me=null;posS.err='';posS.showConn=false;
-  renderViewport();posBoot();
+  posRedraw();posBoot();
 }
 function posSec(s){posS.sec=s;renderViewport();
   if(s==='items'||s==='printers')posLoadCatalog();
@@ -7440,7 +7466,7 @@ function posSec(s){posS.sec=s;renderViewport();
   if(s==='stations')posLoadStations();
   if(s==='grazie')posBoot();
 }
-function posToggleConn(){posS.showConn=!posS.showConn;renderViewport()}
+function posToggleConn(){posS.showConn=!posS.showConn;posRedraw()}
 
 // ---- the catalog snapshot (no server involved) -------------------------------
 async function posLoadCatalog(){
@@ -7449,7 +7475,7 @@ async function posLoadCatalog(){
   // 300KB over a phone connection is not instant, and a hung fetch used to leave
   // "Loading the item database…" on screen for ever with no way out but a reload.
   // Time it out, say so, and offer the retry.
-  posS.catLoading=true;renderViewport();
+  posS.catLoading=true;posRedraw();
   const ac=('AbortController' in window)?new AbortController():null;
   const timer=setTimeout(()=>{try{ac&&ac.abort()}catch(e){}},20000);
   try{
@@ -7461,7 +7487,7 @@ async function posLoadCatalog(){
       ?'timed out after 20s — the connection may be slow'
       :String(e&&e.message||e);
   }
-  clearTimeout(timer);posS.catLoading=false;renderViewport();
+  clearTimeout(timer);posS.catLoading=false;posRedraw();
 }
 // Fire-and-forget, on its own: the button map is an extra, and a missing or broken
 // pos-buttons.json must never take the catalogue down with it.
@@ -7512,42 +7538,9 @@ function posSetCat(v){posS.catFilter=v;posRerenderList()}
 // actually scrolls lives INSIDE #viewport and is destroyed with it. Clicking "show
 // all 36" on a group two thirds down the page snapped back to the top, which makes
 // a long list unusable. Save where we were, re-render, put it back.
-function posScroller(){
-  // Prefer one that is actually overflowing; fall back to the first scrollable pane,
-  // because immediately after a render the new one can measure as not-yet-overflowing
-  // and returning null there is what loses the position.
-  let fallback=null;
-  for(const e of document.querySelectorAll('#viewport *')){
-    const cs=getComputedStyle(e);
-    if(!/auto|scroll/.test(cs.overflowY))continue;
-    if(e.scrollHeight>e.clientHeight+4)return e;
-    if(!fallback)fallback=e;
-  }
-  return fallback;
-}
-function posRedraw(){
-  // Two places the page can be scrolled: an inner pane inside #viewport, or the
-  // document itself. It used to only look for the inner one — and when the layout
-  // changed so the POS section no longer overflowed its pane, scrolling moved to the
-  // document, posScroller() came back null, and the restore quietly stopped
-  // happening. Both are saved now, so it does not matter which one is doing the
-  // scrolling today.
-  const el=posScroller();
-  const y=el?el.scrollTop:0;
-  const doc=document.scrollingElement||document.documentElement;
-  const dy=doc?doc.scrollTop:0;
-  renderViewport();
-  if(!y&&!dy)return;
-  // Synchronously, before anything else gets a turn. Deferring to rAF was too late —
-  // something in between put it back to the top, and the restore then had no effect.
-  const put=()=>{
-    if(y){const n=posScroller(); if(n)n.scrollTop=y;}
-    if(dy&&doc)doc.scrollTop=dy;
-  };
-  put();
-  // Belt and braces for a render that finishes settling a frame later.
-  requestAnimationFrame(put);
-}
+// posScroller ("first element that overflows") is RETIRED: at a short height it found the
+// sidebar and the list snapped to the top. posRedraw now uses the one role-based helper.
+function posRedraw(){posRedrawKeepScroll(()=>renderViewport());}
 
 // PRICES TYPED HERE ARE NOT LIVE IN THE REGISTER.
 //
@@ -7944,7 +7937,7 @@ function posSetNewRoute(encCat,encName,id){
   // instead would mean choosing nowhere and still printing at Main.
   posRouting[posNewItemKey(i)]=opt.printers;
   kvPush('ct_pos_routing',posRouting,Date.now());
-  posKeepScroll(()=>{posRerenderList();renderViewport();});
+  posKeepScroll(()=>{posRerenderList();posRedraw();});
 }
 function posRemoveNewItem(encCat,encName){
   // ⚠️ MATCHED THE WAY THE ROW WAS DRAWN — posSectionOf — not by translating the section
@@ -8914,7 +8907,7 @@ async function posPublish(){
   const n=Object.keys(blob.items).length+blob.deleted.length+blob.added.length
     +Object.keys(blob.groups||{}).length+Object.keys(blob.attach||{}).length
     +Object.keys(blob.detach||{}).length+(blob.gone||[]).length;
-  posS.publishing=true;posS.publishErr=null;renderViewport();
+  posS.publishing=true;posS.publishErr=null;posRedraw();
   try{
     await posPublishSend(blob);
     miniPoke();   // transitional: stop the mini waiting up to 60s to notice — dies with this button
@@ -8930,7 +8923,7 @@ async function posPublish(){
       posPrunedDeletes=[];
     }
   }catch(e){ posS.publishErr=String((e&&e.message)||e); }
-  posS.publishing=false;renderViewport();
+  posS.publishing=false;posRedraw();
 }
 
 const posRoutedTo=(r)=>Object.prototype.hasOwnProperty.call(posRouting,r.key)
@@ -9311,7 +9304,7 @@ function posSetDiscRate(id,kind,str){
     posDiscRates[id]=Math.round(n*100);
   }
   kvPush('ct_pos_disc_rates',posDiscRates,Date.now());
-  posKeepScroll(()=>{renderViewport();});
+  posKeepScroll(()=>{posRedraw();});
 }
 // ADDING A DISCOUNT TYPE. The register ships with eleven and a twelfth used to mean a code
 // change; "Grazie" is the one that prompted this. It rides the same publish as a price, so
@@ -9492,12 +9485,12 @@ function posSetPrice(enc,str){
   if(!isFinite(cents)||cents<0)return;
   posPrices[key]=cents;
   kvPush('ct_pos_prices',posPrices,Date.now());
-  posKeepScroll(()=>{posRerenderList();renderViewport();});
+  posKeepScroll(()=>{posRerenderList();posRedraw();});
 }
 const posEntered=(r)=>Object.prototype.hasOwnProperty.call(posPrices,r.key);
 const posPriceOf=(r)=>posEntered(r)?posPrices[r.key]:r.cents;
 // Re-render only the list so typing in the search box never loses focus.
-function posRerenderList(){const el=document.getElementById('pos-items-body');if(el)el.innerHTML=posItemsBodyHTML();else renderViewport()}
+function posRerenderList(){const el=document.getElementById('pos-items-body');if(!el){posRedraw();return;}posRedrawKeepScroll(()=>{el.innerHTML=posItemsBodyHTML();});}   // replacing a tall list collapses it for a moment — hold the place
 
 // ⚠️ KEEP THE PLACE IN THE LIST.
 //
@@ -9518,59 +9511,7 @@ function posRerenderList(){const el=document.getElementById('pos-items-body');if
 // height for an instant, the browser clamps the page scroll to the new maximum, and the
 // position is gone before anything is put back — which looks identical to the inner
 // scroller losing its place.
-function posKeepScroll(fn){
-  const find=()=>{
-    const el=document.getElementById('pos-items-body');
-    return (el&&el.closest('[style*="overflow-y"]'))||document.getElementById('viewport')||null;
-  };
-  const before=find();
-  const top=before?before.scrollTop:0;
-  const win=window.scrollY||0;
-
-  // ⚠️ AND KEEP THE CARET. The scroll was only half of it.
-  //
-  // posRerenderList() replaces the list's innerHTML, which DESTROYS every price box
-  // in it — including the one the cursor is sitting in. Typing a price and clicking
-  // the next box fires onchange on the first, the rebuild wipes the second out from
-  // under the click, and focus falls back to <body>. On the Mac the cursor vanishes
-  // mid-edit; on an iPad the keyboard drops and the page re-lays out under your
-  // thumb, which is the "snapping" — it happened on EVERY item, and the whole job is
-  // working down a list of them.
-  //
-  // So note who had the caret and put it back on the row that replaced it. Matched by
-  // data-pf, a stable per-item handle, NOT by index — the list re-sorts and re-groups
-  // as gaps close, so position N after a rebuild is not position N before it, and
-  // restoring by index would silently drop the cursor into a different item's price.
-  const act=document.activeElement;
-  const pf=(act&&act.getAttribute)?act.getAttribute('data-pf'):null;
-  let selA=null,selB=null;
-  if(pf){try{selA=act.selectionStart;selB=act.selectionEnd}catch(e){}}
-
-  const put=()=>{
-    const sc=find();
-    if(sc&&sc.scrollTop!==top)sc.scrollTop=top;
-    if(win&&window.scrollY!==win)window.scrollTo(0,win);
-  };
-  fn();
-  put();
-
-  // ⚠️ SYNCHRONOUSLY, in the same task as the click that caused this. iOS only
-  // re-opens the on-screen keyboard for a focus() it can still attribute to the
-  // user's gesture; defer it to a timer or an animation frame and the caret comes
-  // back with no keyboard under it, which is worse than leaving it alone.
-  // preventScroll, or focusing a row that sits off-screen would scroll it into view
-  // and undo the position we just restored.
-  if(pf){
-    const el=document.querySelector('[data-pf="'+pf.replace(/["\\]/g,'\\$&')+'"]');
-    if(el&&el!==document.activeElement){
-      try{el.focus({preventScroll:true})}catch(e){el.focus()}
-      if(selA!=null){try{el.setSelectionRange(selA,selB)}catch(e){}}
-    }
-  }
-  // Again after layout. Height is restored a frame later, and until it is, the browser
-  // clamps anything set above the (briefly shorter) maximum straight back down.
-  requestAnimationFrame(put);
-}
+function posKeepScroll(fn){posRedrawKeepScroll(fn);}   // one helper for the whole POS area — see posRedrawKeepScroll
 
 const posMoney=(c)=>c==null?'—':'$'+(c/100).toFixed(2);
 function posBtn(c){return `padding:11px 16px;border:none;border-radius:10px;cursor:pointer;font-family:inherit;font-weight:700;font-size:15px;color:#fff;background:${c};-webkit-tap-highlight-color:transparent`}
@@ -9616,10 +9557,7 @@ function posToggleLetter(L){
   posS.openLetters[L]=!posS.openLetters[L];
   // Opening a section changes the height of the list under the cursor, which is
   // enough to move the scroll on its own — hold it where it was.
-  const el=posScroller(), y=el?el.scrollTop:0;
-  posRerenderList();
-  if(el&&document.contains(el))el.scrollTop=y;
-  else{const n=posScroller();if(n)n.scrollTop=y;}
+  posRedrawKeepScroll(()=>posRerenderList());
 }
 
 function posNewModRowHTML(){
@@ -10427,7 +10365,7 @@ function posSetRoute(enc,id){
   const opt=posRouteOptions().find(o=>o.id===id); if(!opt)return;
   posApplyRoute(row,opt);
   kvPush('ct_pos_routing',posRouting,Date.now());
-  posKeepScroll(()=>{posRerenderList();renderViewport();});
+  posKeepScroll(()=>{posRerenderList();posRedraw();});
 }
 // The rows sitting under one category heading, chosen the same way the heading chose
 // them — posCatOf, the DISPLAY group. Routing by `r.cat` instead would quietly act on
@@ -10455,7 +10393,7 @@ function posSetRouteCat(encK,id){
     +`Each one can still be changed on its own afterwards.`))return;
   rows.forEach(r=>posApplyRoute(r,opt));
   kvPush('ct_pos_routing',posRouting,Date.now());
-  posKeepScroll(()=>{posRerenderList();renderViewport();});
+  posKeepScroll(()=>{posRerenderList();posRedraw();});
 }
 function posRouteCell(r){
   // A modifier prints on the ticket of the item it modifies. It has no routing of
@@ -11247,7 +11185,7 @@ function posRangeMonth(back){const t=new Date();t.setHours(t.getHours()-4);const
   const b=back?new Date(t.getFullYear(),t.getMonth()-back+1,0):t;
   return{from:posYmd(a),to:posYmd(b),days:null,label:a.toLocaleDateString('en-US',{month:'long'})}}
 function posRange(){return posS.repRange||(posS.repRange=posRangeDefault())}
-function posRepPick(r){posS.repRange=r;if(posS.repShow)posLoadReports();else renderViewport()}
+function posRepPick(r){posS.repRange=r;if(posS.repShow)posLoadReports();else posRedraw()}
 function posRepFrom(v){const r=Object.assign({},posRange());r.from=v;r.days=null;r.label='';if(r.to<r.from)r.to=v;posRepPick(r)}
 function posRepTo(v){const r=Object.assign({},posRange());r.to=v;r.days=null;r.label='';if(r.to<r.from)r.from=v;posRepPick(r)}
 function posRangeLabel(r){if(r.label)return r.label;
@@ -11281,8 +11219,8 @@ async function posLoadReports(){
   // connection-refused every time, while the same setting is correct on the laptop. Falling back
   // to localhost costs one 1.2s probe and only when the pinned one is already broken.
   if(!posS.srv){await posFindLocal('srv')}
-  if(!posS.srv){renderViewport();return}
-  posS.repBusy=true;posS.repErr='';renderViewport();
+  if(!posS.srv){posRedraw();return}
+  posS.repBusy=true;posS.repErr='';posRedraw();
   try{
     const q=posRepQuery();
     // ONLY what this report needs. Loading all six to show one was six round trips for
@@ -11301,7 +11239,7 @@ async function posLoadReports(){
               discounts:got.discounts!==undefined?got.discounts:null,
               closed:got.closed!==undefined?got.closed:null};
   }catch(e){posS.rep=null;posS.repErr=String(e&&e.message||e)}
-  posS.repBusy=false;renderViewport();
+  posS.repBusy=false;posRedraw();
 }
 function posRepDays(d){posRepPick(posRangeLastDays(d,d===1?'Tonight':(d+' days')))}
 // ---- the report list ---------------------------------------------------------
@@ -11336,7 +11274,7 @@ const POS_REPORT_PATHS = {
   discounts:'/api/reports/discounts', closed:'/api/reports/closed-by-hand',
 };
 function posRepOpen(k){posS.repShow=k;posLoadReports()}
-function posRepBack(){posS.repShow=null;posS.rep=null;posS.repErr='';renderViewport()}
+function posRepBack(){posS.repShow=null;posS.rep=null;posS.repErr='';posRedraw()}
 
 function posReportListHTML(){
   return `<div style="${posCardCss};max-width:620px">
@@ -11796,8 +11734,8 @@ const POS_SAMPLE={
      tier_name:'Bronze Rewards Member',next_tier:'Silver Rewards Member',points_to_next:250,earned_this_year:0,balance:0,
      rewards:[{name:'Free Dessert!',min_spend_cents:2500,expires_at:'2026-09-09',grant_id:'g3'}],history:[]}],
 };
-function posDemoOn(){posS.demo=true;posCrmForget();renderViewport()}
-function posDemoOff(){posS.demo=false;posCrmForget();renderViewport()}
+function posDemoOn(){posS.demo=true;posCrmForget();posRedraw()}
+function posDemoOff(){posS.demo=false;posCrmForget();posRedraw()}
 // Everything the CRM has read, dropped together. Sample data and live data must never mix,
 // and forgetting one slice was how the demo banner ended up over real members.
 function posCrmForget(){
@@ -12299,20 +12237,20 @@ function privOwnerOnly(pk){
 // ---- Grazie (gift cards + customers, via the CRM portal) --------------------
 async function posBoot(){
   if(!posS.url&&!posMixed()){await posFindLocal('portal')}
-  if(!posS.url||posMixed()){renderViewport();return}
-  posS.health='checking';posS.err='';renderViewport();
+  if(!posS.url||posMixed()){posRedraw();return}
+  posS.health='checking';posS.err='';posRedraw();
   try{
     const h=await posApi('/api/health');
     posS.health=h.ok?'ok':'down';
     if(h.ok){const me=await posApi('/api/me');posS.me=me.ok?me.body:null;if(posS.me)await posLoadDash()}
   }catch(e){posS.health='down';posS.err=String(e&&e.message||e)}
-  renderViewport();
+  posRedraw();
 }
 async function posLoadDash(){const d=await posApi('/api/dashboard');if(d.ok){posS.dash=d.body;posLoadCampaigns()}}
 async function posLogin(){
   const u=(document.getElementById('pos-user')||{}).value||'';
   const p=(document.getElementById('pos-pass')||{}).value||'';
-  posS.busy=true;posS.err='';renderViewport();
+  posS.busy=true;posS.err='';posRedraw();
   try{
     const r=await posApi('/api/login',{method:'POST',body:JSON.stringify({username:u,password:p})});
     // Cross-site logins come back with a token because the cookie will not survive. Keep it;
@@ -12320,13 +12258,13 @@ async function posLogin(){
     if(r.ok&&r.body&&r.body.token)posSetToken(r.body.token);
     if(r.ok){posS.me=r.body;await posLoadDash()}else posS.err=r.body.error||('sign in failed ('+r.status+')');
   }catch(e){posS.err=String(e&&e.message||e)}
-  posS.busy=false;renderViewport();
+  posS.busy=false;posRedraw();
 }
-async function posLogout(){try{await posApi('/api/logout',{method:'POST'})}catch(_){}posSetToken('');posS.me=null;posS.dash=null;posS.card=null;posS.cust=null;renderViewport()}
+async function posLogout(){try{await posApi('/api/logout',{method:'POST'})}catch(_){}posSetToken('');posS.me=null;posS.dash=null;posS.card=null;posS.cust=null;posRedraw()}
 async function posFindCard(){const q=((document.getElementById('pos-card')||{}).value||'').trim();if(!q)return;
-  const r=await posApi('/api/card?q='+encodeURIComponent(q));posS.card=r.body;renderViewport()}
+  const r=await posApi('/api/card?q='+encodeURIComponent(q));posS.card=r.body;posRedraw()}
 async function posFindCust(){const q=((document.getElementById('pos-cust')||{}).value||'').trim();if(!q)return;
-  const r=await posApi('/api/customer?q='+encodeURIComponent(q));posS.cust=r.body;renderViewport()}
+  const r=await posApi('/api/customer?q='+encodeURIComponent(q));posS.cust=r.body;posRedraw()}
 
 function posGrazieHTML(){
   // ⚠️ THE RULES PAGE DOES NOT WAIT FOR THE PORTAL. Everything else in here reads member
@@ -12443,7 +12381,7 @@ function posCrmAuthLapsed(r){
   posSetToken('');posS.me=null;posS.dash=null;
   posS.err=(r.body&&r.body.error)||'Not signed in — sign in again.';
   posCrmForget();
-  renderViewport();
+  posRedraw();
   return true;
 }
 // Opening Members shows the members — it does not sit there waiting to be asked a second
@@ -12456,7 +12394,7 @@ function posCrmView(v){
     if(!posS.signups)return posSignupsLoad();
   }
   if(v==='campaigns'&&!posS.roi&&!posS.roiBusy)posLoadRoi();
-  posKeepScroll(()=>{renderViewport()});
+  posKeepScroll(()=>{posRedraw()});
 }
 
 const posTrigWords={before_birthday:'7 days before a birthday',before_anniversary:'7 days before an anniversary',
@@ -12513,7 +12451,7 @@ function posCampEditorHTML(){
       <div style="flex:2;min-width:220px">${lbl('Name')}
         <input id="pos-camp-name" value="${esc(E.name)}" placeholder="Birthday treat" style="${posFld};width:100%" oninput="posCampField('name',this.value)"></div>
       <div style="flex:1;min-width:190px">${lbl('When it fires')}
-        <select style="${posFld};width:100%" onchange="posCampField('type',this.value);renderViewport()">
+        <select style="${posFld};width:100%" onchange="posCampField('type',this.value);posRedraw()">
           ${types.map(t=>`<option value="${esc(t)}" ${E.type===t?'selected':''}>${esc(POS_TRIG_LABEL[t]||t)}</option>`).join('')}
         </select></div>
       <div style="flex:0 0 120px">${lbl(E.type==='lapsed'?'Days away':'Days before')}
@@ -12750,8 +12688,8 @@ async function posLoadOffers(force){
   return posS.offers;
 }
 function posCampTab(t){posS.campTab=t;posS.campEd=null;posS.offerEd=null;posS.prev=null;
-  if(t==='offers')posLoadOffers().then(()=>posKeepScroll(()=>renderViewport()));
-  else posKeepScroll(()=>renderViewport());}
+  if(t==='offers')posLoadOffers().then(()=>posKeepScroll(()=>posRedraw()));
+  else posKeepScroll(()=>posRedraw());}
 
 const POS_TRIG_LABEL={before_birthday:'Before their birthday',before_anniversary:'Before their anniversary',
   after_signup:'After they sign up',lapsed:'When they stop coming in'};
@@ -12774,32 +12712,32 @@ function posCampEdit(id){
     busy:false,err:'',isNew:false,
   };
   posS.prev=null;
-  posLoadOffers().then(()=>{renderViewport();posPrevSoon()});
-  renderViewport();
+  posLoadOffers().then(()=>{posRedraw();posPrevSoon()});
+  posRedraw();
 }
 function posCampNew(){
   posS.campEd={id:null,name:'',type:'before_birthday',days:7,offer:'',days_valid:14,enabled:false,
     subject:'',body:'',busy:false,err:'',isNew:true};
   posS.prev=null;
-  posLoadOffers().then(()=>renderViewport());
-  renderViewport();
+  posLoadOffers().then(()=>posRedraw());
+  posRedraw();
 }
-function posCampClose(){posS.campEd=null;posS.prev=null;renderViewport()}
+function posCampClose(){posS.campEd=null;posS.prev=null;posRedraw()}
 // Writes to state WITHOUT a re-render — see the warning at the top of this block.
 function posCampField(f,v){
   if(!posS.campEd)return;
   posS.campEd[f]=(f==='days'||f==='days_valid')?(String(v).replace(/[^0-9]/g,'')):v;
   if(f==='subject'||f==='body'||f==='offer'||f==='days_valid')posPrevSoon();
 }
-function posCampEnabled(v){ if(posS.campEd){posS.campEd.enabled=!!v; renderViewport()} }
+function posCampEnabled(v){ if(posS.campEd){posS.campEd.enabled=!!v; posRedraw()} }
 async function posCampSave(){
   const E=posS.campEd;
   if(!E||E.busy)return;
-  if(!String(E.name||'').trim()){E.err='Give it a name.';return renderViewport()}
-  if(E.type==='lapsed'&&!(+E.days>0)){E.err='Say how many days since their last visit.';return renderViewport()}
-  if(E.enabled&&!String(E.subject||'').trim()){E.err='An email needs a subject before it can be switched on.';return renderViewport()}
-  if(E.enabled&&!String(E.body||'').trim()){E.err='An email needs a message before it can be switched on.';return renderViewport()}
-  E.busy=true;E.err='';renderViewport();
+  if(!String(E.name||'').trim()){E.err='Give it a name.';return posRedraw()}
+  if(E.type==='lapsed'&&!(+E.days>0)){E.err='Say how many days since their last visit.';return posRedraw()}
+  if(E.enabled&&!String(E.subject||'').trim()){E.err='An email needs a subject before it can be switched on.';return posRedraw()}
+  if(E.enabled&&!String(E.body||'').trim()){E.err='An email needs a message before it can be switched on.';return posRedraw()}
+  E.busy=true;E.err='';posRedraw();
   const body={
     name:String(E.name).trim(),
     trigger:{type:E.type,days:+E.days||0},
@@ -12811,10 +12749,10 @@ async function posCampSave(){
   if(E.id)body.id=E.id;
   let r;
   try{ r=await posApi('/api/campaigns',{method:'POST',body:JSON.stringify(body)}) }
-  catch(e){ E.busy=false;E.err='That did not get through: '+(e&&e.message||e);return renderViewport() }
+  catch(e){ E.busy=false;E.err='That did not get through: '+(e&&e.message||e);return posRedraw() }
   E.busy=false;
   if(posCrmAuthLapsed(r))return;
-  if(!r.ok){E.err=(r.body&&r.body.error)||('the portal answered '+r.status);return renderViewport()}
+  if(!r.ok){E.err=(r.body&&r.body.error)||('the portal answered '+r.status);return posRedraw()}
   posS.campEd=null;posS.prev=null;
   await posLoadCampaigns();
 }
@@ -12823,9 +12761,9 @@ async function posCampDelete(id,name){
   if(!confirm('Delete the "'+name+'" campaign?\n\nIt stops firing for everybody. Offers already given out are not touched.'))return;
   let r;
   try{ r=await posApi('/api/campaigns/delete',{method:'POST',body:JSON.stringify({id})}) }
-  catch(e){ posS.campErr='Could not delete it: '+(e&&e.message||e);return renderViewport() }
+  catch(e){ posS.campErr='Could not delete it: '+(e&&e.message||e);return posRedraw() }
   if(posCrmAuthLapsed(r))return;
-  if(!r.ok){posS.campErr=(r.body&&r.body.error)||('the portal answered '+r.status);return renderViewport()}
+  if(!r.ok){posS.campErr=(r.body&&r.body.error)||('the portal answered '+r.status);return posRedraw()}
   posS.campErr='';posS.campEd=null;posS.prev=null;
   await posLoadCampaigns();
 }
@@ -12836,12 +12774,12 @@ async function posCampToggle(id,on){
   const c=(C.campaigns||[]).find(x=>String(x.id)===String(id));
   if(!c)return;
   const body={id:c.id,enabled:!!on};   // ONLY the switch — see the warning above
-  c.enabled=!!on; renderViewport();                 // answer the press straight away
+  c.enabled=!!on; posRedraw();                 // answer the press straight away
   let r;
   try{ r=await posApi('/api/campaigns',{method:'POST',body:JSON.stringify(body)}) }
-  catch(e){ c.enabled=!on; posS.campErr='Could not change that: '+(e&&e.message||e); return renderViewport() }
+  catch(e){ c.enabled=!on; posS.campErr='Could not change that: '+(e&&e.message||e); return posRedraw() }
   if(posCrmAuthLapsed(r))return;
-  if(!r.ok){c.enabled=!on; posS.campErr=(r.body&&r.body.error)||('the portal answered '+r.status); return renderViewport()}
+  if(!r.ok){c.enabled=!on; posS.campErr=(r.body&&r.body.error)||('the portal answered '+r.status); return posRedraw()}
   posS.campErr='';
   await posLoadCampaigns();
 }
@@ -12894,24 +12832,24 @@ function posMergeIns(tok){
 async function posSendTest(){
   const E=posS.campEd;
   if(!E)return;
-  if(!String(E.subject||'').trim()&&!String(E.body||'').trim()){E.err='Write something first.';return renderViewport()}
-  E.busy=true;E.err='';renderViewport();
+  if(!String(E.subject||'').trim()&&!String(E.body||'').trim()){E.err='Write something first.';return posRedraw()}
+  E.busy=true;E.err='';posRedraw();
   const body={template:{subject:String(E.subject||''),body:String(E.body||'')}};
   if(E.offer)body.offer_id=E.offer;
   let r;
   try{ r=await posApi('/api/email/test-template',{method:'POST',body:JSON.stringify(body)}) }
-  catch(e){ E.busy=false;E.err='Could not send it: '+(e&&e.message||e);return renderViewport() }
+  catch(e){ E.busy=false;E.err='Could not send it: '+(e&&e.message||e);return posRedraw() }
   E.busy=false;
   if(posCrmAuthLapsed(r))return;
-  if(!r.ok){E.err=(r.body&&r.body.error)||('the portal answered '+r.status);return renderViewport()}
+  if(!r.ok){E.err=(r.body&&r.body.error)||('the portal answered '+r.status);return posRedraw()}
   E.sent='Test sent to '+((r.body&&r.body.to)||'the restaurant inbox')+'.';
-  renderViewport();
-  setTimeout(()=>{if(posS.campEd)posS.campEd.sent='';renderViewport()},6000);
+  posRedraw();
+  setTimeout(()=>{if(posS.campEd)posS.campEd.sent='';posRedraw()},6000);
 }
 
 // ---- offers ------------------------------------------------------------------
 function posOfferNew(){posS.offerEd={id:null,name:'',kind:'amount_off',value:'',percent:'',item:'',
-  min_spend:'',max_value:'',cost_points:'',busy:false,err:'',isNew:true};renderViewport()}
+  min_spend:'',max_value:'',cost_points:'',busy:false,err:'',isNew:true};posRedraw()}
 function posOfferEdit(id){
   const o=((posS.offers&&posS.offers.offers)||[]).find(x=>String(x.id)===String(id));
   if(!o)return;
@@ -12927,21 +12865,21 @@ function posOfferEdit(id){
     max_value:money(o.max_value_cents),
     cost_points:(o.cost_points==null||o.cost_points===0)?'':String(o.cost_points),
     busy:false,err:'',isNew:false};
-  renderViewport();
+  posRedraw();
 }
-function posOfferClose(){posS.offerEd=null;renderViewport()}
+function posOfferClose(){posS.offerEd=null;posRedraw()}
 function posOfferField(f,v){if(posS.offerEd)posS.offerEd[f]=v}
-function posOfferKind(k){if(posS.offerEd){posS.offerEd.kind=k;renderViewport()}}
+function posOfferKind(k){if(posS.offerEd){posS.offerEd.kind=k;posRedraw()}}
 const posCents=(v)=>{const n=parseFloat(String(v).replace(/[^0-9.]/g,''));return isNaN(n)?null:Math.round(n*100)};
 async function posOfferSave(){
   const E=posS.offerEd;
   if(!E||E.busy)return;
-  if(!String(E.name||'').trim()){E.err='Give it a name.';return renderViewport()}
+  if(!String(E.name||'').trim()){E.err='Give it a name.';return posRedraw()}
   const body={name:String(E.name).trim(),kind:E.kind};
   if(E.id)body.id=E.id;
-  if(E.kind==='amount_off'){ const c=posCents(E.value); if(!(c>0)){E.err='How much comes off?';return renderViewport()} body.value_cents=c; }
-  if(E.kind==='percent_off'){ const n=parseFloat(E.percent); if(!(n>0&&n<=100)){E.err='A percentage between 1 and 100.';return renderViewport()} body.percent=n; }
-  if(E.kind==='free_item'){ if(!String(E.item||'').trim()){E.err='Which item is free?';return renderViewport()} body.item=String(E.item).trim(); }
+  if(E.kind==='amount_off'){ const c=posCents(E.value); if(!(c>0)){E.err='How much comes off?';return posRedraw()} body.value_cents=c; }
+  if(E.kind==='percent_off'){ const n=parseFloat(E.percent); if(!(n>0&&n<=100)){E.err='A percentage between 1 and 100.';return posRedraw()} body.percent=n; }
+  if(E.kind==='free_item'){ if(!String(E.item||'').trim()){E.err='Which item is free?';return posRedraw()} body.item=String(E.item).trim(); }
   // ⚠️ EDITS MERGE, so an omitted field is KEPT, not cleared. Emptying the minimum-spend box
   // and saving would have silently left the old minimum in place — the change looks applied
   // and isn't. On an edit these three are therefore always sent, as null when the box is
@@ -12952,35 +12890,35 @@ async function posOfferSave(){
   opt('min_spend_cents',E.min_spend);
   opt('max_value_cents',E.max_value);
   opt('cost_points',E.cost_points);
-  E.busy=true;E.err='';renderViewport();
+  E.busy=true;E.err='';posRedraw();
   let r;
   try{ r=await posApi('/api/offers',{method:'POST',body:JSON.stringify(body)}) }
-  catch(e){ E.busy=false;E.err='That did not get through: '+(e&&e.message||e);return renderViewport() }
+  catch(e){ E.busy=false;E.err='That did not get through: '+(e&&e.message||e);return posRedraw() }
   E.busy=false;
   if(posCrmAuthLapsed(r))return;
-  if(!r.ok){E.err=(r.body&&r.body.error)||('the portal answered '+r.status);return renderViewport()}
+  if(!r.ok){E.err=(r.body&&r.body.error)||('the portal answered '+r.status);return posRedraw()}
   posS.offerEd=null;
   await posLoadOffers(true);
-  renderViewport();
+  posRedraw();
 }
 // Retire, never delete — a campaign and every offer already handed out point at this id.
 async function posOfferActive(id,on,name){
   if(!on&&!confirm('Retire "'+name+'"?\n\nIt stops being offered. Anybody already holding it keeps it, and you can put it back.'))return;
   let r;
   try{ r=await posApi('/api/offers/active',{method:'POST',body:JSON.stringify({id,active:!!on})}) }
-  catch(e){ posS.offerErr='Could not change that: '+(e&&e.message||e);return renderViewport() }
+  catch(e){ posS.offerErr='Could not change that: '+(e&&e.message||e);return posRedraw() }
   if(posCrmAuthLapsed(r))return;
-  if(!r.ok){posS.offerErr=(r.body&&r.body.error)||('the portal answered '+r.status);return renderViewport()}
+  if(!r.ok){posS.offerErr=(r.body&&r.body.error)||('the portal answered '+r.status);return posRedraw()}
   posS.offerErr='';
   await posLoadOffers(true);
-  renderViewport();
+  posRedraw();
 }
 
 async function posLoadCampaigns(){
-  if(posS.demo){posS.campaigns=POS_SAMPLE.campaigns;return renderViewport()}
+  if(posS.demo){posS.campaigns=POS_SAMPLE.campaigns;return posRedraw()}
   try{ const r=await posApi('/api/campaigns'); posS.campaigns = r.ok ? r.body : {campaigns:[],catalog:[],multipliers:[]}; }
   catch(e){ posS.campaigns={campaigns:[],catalog:[],multipliers:[]}; }
-  renderViewport();
+  posRedraw();
 }
 
 // ---- membership growth, signups, offer ROI -----------------------------------
@@ -12990,7 +12928,7 @@ async function posLoadCampaigns(){
 async function posLoadGrowth(){
   if(posS.growthBusy)return;
   posS.growthBusy=true;
-  if(posS.demo){posS.growth=POS_SAMPLE.growth;posS.growthBusy=false;return renderViewport()}
+  if(posS.demo){posS.growth=POS_SAMPLE.growth;posS.growthBusy=false;return posRedraw()}
   let r;
   try{ r=await posApi('/api/stats/membership') }
   catch(e){ r={ok:false,status:0,body:{error:String(e&&e.message||e)}} }
@@ -13002,7 +12940,7 @@ async function posLoadGrowth(){
 async function posLoadRoi(){
   if(posS.roiBusy)return;
   posS.roiBusy=true;
-  if(posS.demo){posS.roi=POS_SAMPLE.roi;posS.roiBusy=false;return renderViewport()}
+  if(posS.demo){posS.roi=POS_SAMPLE.roi;posS.roiBusy=false;return posRedraw()}
   let r;
   try{ r=await posApi('/api/stats/offers') }
   catch(e){ r={ok:false,status:0,body:{error:String(e&&e.message||e)}} }
@@ -13293,7 +13231,7 @@ function posCrmPaint(keepFocus){
   }
   const el=document.getElementById('pos-crm-q');
   const focused=keepFocus!==false&&el&&document.activeElement===el;
-  posKeepScroll(()=>{renderViewport()});
+  posKeepScroll(()=>{posRedraw()});
   if(focused){const again=document.getElementById('pos-crm-q');
     if(again){try{again.focus();again.setSelectionRange(again.value.length,again.value.length)}catch(e){}}}
 }
@@ -13324,7 +13262,7 @@ async function posCrmShowAll(tab,offset){
 }
 async function posCrmOpen(id){
   if(posS.demo){const m=POS_SAMPLE.members.find(x=>x.id===id);
-    posS.crmMember=m?{customer:m,...m}:null;renderViewport();return}
+    posS.crmMember=m?{customer:m,...m}:null;posRedraw();return}
   const r=await posApi('/api/customers/detail?id='+encodeURIComponent(id));
   if(posCrmAuthLapsed(r))return;
   // ⚠️ A HALF-FINISHED ADJUSTMENT MUST NOT FOLLOW YOU TO SOMEBODY ELSE. posCrmOpen is also
@@ -13334,14 +13272,14 @@ async function posCrmOpen(id){
   if(!same){posS.pts=null;posS.grant=null;posS.histAll=false;posS.memberErr=''}
   posS.crmMember=r.ok?r.body:null;
   if(!r.ok)posS.err=r.body.error||'could not load that member';
-  renderViewport();
+  posRedraw();
 }
 function posCrmBack(){
   posS.crmMember=null;
   // An adjustment in progress belongs to the member you were looking at, not the next one.
   posS.pts=null;posS.grant=null;posS.histAll=false;posS.memberErr='';
   if(posS.crmBackTo){posS.crmView=posS.crmBackTo;posS.crmBackTo=null}
-  renderViewport();
+  posRedraw();
 }
 
 function posCrmResultsHTML(){
@@ -13452,7 +13390,7 @@ function posMemberHTML(){
       <button onclick="posCrmBack()" style="${posBtn('#3f3f46')};margin-left:auto;padding:7px 12px;font-size:13px">Back to results</button>
     </div>
     ${posS.memberErr?`<div style="margin-bottom:10px;padding:9px 12px;border-radius:9px;background:rgba(248,113,113,.12);color:#f87171;font-size:13px;line-height:1.5">${esc(String(posS.memberErr))}
-      <button onclick="posS.memberErr='';renderViewport()" style="background:transparent;border:none;color:inherit;cursor:pointer;font-family:inherit;font-size:13px;text-decoration:underline;margin-left:6px">dismiss</button></div>`:''}
+      <button onclick="posS.memberErr='';posRedraw()" style="background:transparent;border:none;color:inherit;cursor:pointer;font-family:inherit;font-size:13px;text-decoration:underline;margin-left:6px">dismiss</button></div>`:''}
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">
       ${posStat('Status',esc(m.tier_name||'—'),m.next_tier?`${m.points_to_next} points to ${m.next_tier}`:'top tier')}
       ${posStat('Earned this year',String(m.earned_this_year||0),'drives the tier')}
@@ -13527,9 +13465,9 @@ function posUuid(){
 const posRetryable=(st)=>!st||st===408||st===429||st>=500;
 function posPtsOpen(){
   posS.pts={delta:'',reason:'',key:posUuid(),busy:false,err:'',retry:false};
-  renderViewport();
+  posRedraw();
 }
-function posPtsClose(){posS.pts=null;renderViewport()}
+function posPtsClose(){posS.pts=null;posRedraw()}
 function posPtsField(f,v){
   if(!posS.pts)return;
   posS.pts[f]=v;
@@ -13552,10 +13490,10 @@ async function posPtsSave(){
   const d=posPtsDelta(), reason=String(P.reason||'').trim();
   // Checked here as well as on the server, so a missing reason costs a glance and not a
   // round trip — and so the reason is never invented on the member's behalf.
-  if(!d)               {P.err='Say how many points.';P.retry=false;return renderViewport()}
-  if(Number(m.balance||0)+d<0){P.err='That would put them below zero.';P.retry=false;return renderViewport()}
-  if(!reason)          {P.err='Say why — it goes in their history and it is the only record of this.';P.retry=false;return renderViewport()}
-  P.busy=true;P.err='';P.retry=false;renderViewport();
+  if(!d)               {P.err='Say how many points.';P.retry=false;return posRedraw()}
+  if(Number(m.balance||0)+d<0){P.err='That would put them below zero.';P.retry=false;return posRedraw()}
+  if(!reason)          {P.err='Say why — it goes in their history and it is the only record of this.';P.retry=false;return posRedraw()}
+  P.busy=true;P.err='';P.retry=false;posRedraw();
   let r;
   try{
     r=await posApi('/api/points/adjust',{method:'POST',body:JSON.stringify({
@@ -13564,7 +13502,7 @@ async function posPtsSave(){
     // The key SURVIVES. Pressing again replays this same adjustment rather than making a
     // second one, which is the whole reason it is held in state.
     P.busy=false;P.err='That did not get through: '+(e&&e.message||e);P.retry=true;
-    return renderViewport();
+    return posRedraw();
   }
   P.busy=false;
   if(posCrmAuthLapsed(r))return;
@@ -13575,7 +13513,7 @@ async function posPtsSave(){
     // on a second press, and telling somebody it is safely repeatable when the answer is
     // "you are not allowed" sends them pressing a button that can only keep saying no.
     P.retry=posRetryable(r.status);
-    return renderViewport();
+    return posRedraw();
   }
   posS.pts=null;
   await posCrmOpen(c.id);     // re-read rather than patching a number locally
@@ -13592,29 +13530,29 @@ async function posRewardsCatalog(){
 }
 async function posGrantOpen(){
   posS.grant={id:'',expires:'',note:'',busy:true,err:''};
-  renderViewport();
+  posRedraw();
   const cat=await posRewardsCatalog();
   if(!posS.grant)return;
   posS.grant.busy=false;
   if(cat.error)posS.grant.err=cat.error;
-  renderViewport();
+  posRedraw();
 }
-function posGrantClose(){posS.grant=null;renderViewport()}
+function posGrantClose(){posS.grant=null;posRedraw()}
 function posGrantField(f,v){if(posS.grant)posS.grant[f]=v}
 async function posGrantSave(){
   const G=posS.grant, m=posS.crmMember||{}, c=m.customer||{};
   if(!G||G.busy)return;
-  if(!G.id){G.err='Pick which offer.';return renderViewport()}
-  G.busy=true;G.err='';renderViewport();
+  if(!G.id){G.err='Pick which offer.';return posRedraw()}
+  G.busy=true;G.err='';posRedraw();
   const body={customer_id:c.id,reward_id:G.id};
   if(G.expires)body.expires_at=G.expires;
   if(String(G.note||'').trim())body.note=String(G.note).trim();
   let r;
   try{ r=await posApi('/api/customers/grant',{method:'POST',body:JSON.stringify(body)}) }
-  catch(e){ G.busy=false;G.err='That did not get through: '+(e&&e.message||e);return renderViewport() }
+  catch(e){ G.busy=false;G.err='That did not get through: '+(e&&e.message||e);return posRedraw() }
   G.busy=false;
   if(posCrmAuthLapsed(r))return;
-  if(!r.ok){G.err=(r.body&&r.body.error)||('the portal answered '+r.status);return renderViewport()}
+  if(!r.ok){G.err=(r.body&&r.body.error)||('the portal answered '+r.status);return posRedraw()}
   posS.grant=null;
   await posCrmOpen(c.id);
 }
@@ -13626,13 +13564,13 @@ async function posUngrant(grantId,label){
   if(!confirm('Take "'+label+'" away from '+([c.first,c.last].filter(Boolean).join(' ')||'this member')+'?\n\nIf they have already used it, it stays.'))return;
   let r;
   try{ r=await posApi('/api/customers/ungrant',{method:'POST',body:JSON.stringify({customer_id:c.id,grant_id:grantId})}) }
-  catch(e){ posS.memberErr='Could not remove that offer: '+(e&&e.message||e);return renderViewport() }
+  catch(e){ posS.memberErr='Could not remove that offer: '+(e&&e.message||e);return posRedraw() }
   if(posCrmAuthLapsed(r))return;
-  if(!r.ok){posS.memberErr=(r.body&&r.body.error)||('the portal answered '+r.status);return renderViewport()}
+  if(!r.ok){posS.memberErr=(r.body&&r.body.error)||('the portal answered '+r.status);return posRedraw()}
   posS.memberErr='';
   await posCrmOpen(c.id);
 }
-function posHistMore(){posS.histAll=!posS.histAll;renderViewport()}
+function posHistMore(){posS.histAll=!posS.histAll;posRedraw()}
 
 // The lookups never guess: an ambiguous tail asks for more digits rather than picking
 // one. Show that answer as-is instead of inventing a best match.
@@ -17062,7 +17000,7 @@ function posStaffHTML(){
 // dead one look alive, which is the direction that gets somebody hurt.
 let posStationsS={list:[],pending:[],err:'',busy:false,note:'',srvNow:0,gotAt:0};
 async function posLoadStations(){
-  if(!posS.srv){posStationsS.err='No register server set — POS tab → Connections.';return renderViewport()}
+  if(!posS.srv){posStationsS.err='No register server set — POS tab → Connections.';return posRedraw()}
   posStationsS.err='';
   try{
     const a=await posSrv('/api/stations');
@@ -17075,7 +17013,7 @@ async function posLoadStations(){
     posStationsS.pending=(b.ok&&b.body&&(b.body.pending||b.body.claims))||[];
     if(!a.ok)posStationsS.err=(a.body&&a.body.error)||('the register said '+a.status);
   }catch(e){posStationsS.err='Could not reach the register — '+(e&&e.message||e)}
-  renderViewport();
+  posRedraw();
 }
 // Which existing station a typed name would collide with. Matched on the station's
 // NAME and its id, case-insensitively — not on a client-side copy of the mini's
@@ -17134,9 +17072,9 @@ async function posApproveStation(){
   const code=String((el&&el.value)||'').replace(/\D/g,'');
   const nameEl=document.getElementById('station-name');
   const name=String((nameEl&&nameEl.value)||'').trim();
-  if(code.length!==6){posStationsS.note='A code is six digits — read it off the iPad.';return renderViewport()}
-  if(!name){posStationsS.note='Give it a name first — whatever you call that spot. It is what you will see when it goes quiet.';return renderViewport()}
-  posStationsS.busy=true;posStationsS.note='';renderViewport();
+  if(code.length!==6){posStationsS.note='A code is six digits — read it off the iPad.';return posRedraw()}
+  if(!name){posStationsS.note='Give it a name first — whatever you call that spot. It is what you will see when it goes quiet.';return posRedraw()}
+  posStationsS.busy=true;posStationsS.note='';posRedraw();
   try{
     const r=await posSrv('/api/stations/claim/approve',{method:'POST',body:JSON.stringify({code,name})});
     // Quote the SERVER's answer, not the text he typed. approve returns {id, name}
@@ -17369,7 +17307,7 @@ async function posTaxSave(key){
   await posTaxLoad();
 }
 
-function posTaxRender(){ if(activeTab===POS&&posS.sec==='tax')renderViewport(); }
+function posTaxRender(){ if(activeTab===POS&&posS.sec==='tax')posRedraw(); }
 
 function posTaxHTML(){
   const S=posTaxS;

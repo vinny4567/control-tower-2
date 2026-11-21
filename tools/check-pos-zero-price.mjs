@@ -30,7 +30,7 @@ function world(prices = {}) {
   new Function('ctx', `
     let posPrices=${JSON.stringify(prices)};
     function kvPush(k,v){ctx.pushes.push({k,v:JSON.parse(JSON.stringify(v))});}
-    function posKeepScroll(fn){fn();} function posRerenderList(){} function renderViewport(){}
+    function posKeepScroll(fn){fn();} function posRerenderList(){} function renderViewport(){} function posRedraw(){}
     ${grabConst('posEntered')}
     ${grabConst('posPriceOf')}
     ${grab('posSetPrice')}

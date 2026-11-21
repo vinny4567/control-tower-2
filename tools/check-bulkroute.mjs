@@ -85,6 +85,7 @@ const ctx = {
   posKeepScroll: (fn) => fn(),
   posRerenderList: () => {},
   renderViewport: () => {},
+  posRedraw: () => {},   // every POS redraw goes through the keep-scroll helper now
   confirm: (msg) => { confirms.push(msg); return confirmAnswer; },
   Date,
   Object, Array, JSON, String, Number, Math,

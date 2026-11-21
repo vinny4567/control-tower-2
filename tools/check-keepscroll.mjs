@@ -12,19 +12,23 @@ const src = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 let bad = 0;
 const ok = (what, cond) => { if (!cond) bad++; console.log(`  ${cond ? 'ok  ' : 'FAIL'}  ${what}`); };
 
-const fn = src.slice(src.indexOf('function posKeepScroll('),
-                     src.indexOf('const posMoney='));
-ok('posKeepScroll exists at all', fn.length > 40);
+// 11/20/26: posKeepScroll, posRedraw and the Tips/Staff redraws all go through ONE helper,
+// posRedrawKeepScroll (the old "first element that overflows" lookup found the SIDEBAR at a
+// short iPad height and the list snapped to the top). Every rule below is about that helper.
+const brace = (from) => { const i = src.indexOf(from); let d = 0, j = src.indexOf('{', i); for (let k = j; k < src.length; k++) { if (src[k] === '{') d++; else if (src[k] === '}') { d--; if (!d) return src.slice(i, k + 1); } } return ''; };
+const fn = brace('function posRedrawKeepScroll(');
+ok('posKeepScroll exists at all, and IS the shared helper', fn.length > 40 && /function posKeepScroll\(fn\)\{posRedrawKeepScroll\(fn\);\}/.test(src));
 
 // ---- ⚠️ THE REGRESSION -----------------------------------------------------------
 // It used to resolve the scroller ONCE, before fn(). renderViewport() replaces the
 // tab's contents, so that element is detached by the time the scroll is put back, and
 // setting scrollTop on a detached node is a silent no-op — it only appeared to work
 // when the match happened to be #viewport, which survives an innerHTML swap.
-ok('⚠️ the scroller is looked up through a function, not captured once',
-   /const find\s*=\s*\(\)\s*=>/.test(fn));
+ok('⚠️ the scrollers are looked up through a function, not captured once',
+   /posScrollers\(\)\.forEach\(\(\[k,el\]\)=>\{before\[k\]=el\.scrollTop;\}\)/.test(fn));
 const puts = fn.slice(fn.indexOf('const put='));
-ok('⚠️ and the restore re-finds it AFTER the rebuild', /const sc\s*=\s*find\(\)/.test(puts));
+ok('⚠️ and the restore re-finds them AFTER the rebuild, by role', /posScrollers\(\)\.forEach\(\(\[k,el\]\)=>\{if\(before\[k\]!=null/.test(puts));
+ok('⛔ by ROLE — never "the first element that overflows" (that found the sidebar on a short iPad)', !/scrollHeight>e\.clientHeight/.test(brace('function posScrollers(')) && !/function posScroller\(/.test(src));
 ok('the rebuild really does run between the two', /\n\s*fn\(\);/.test(fn));
 
 // ---- THE PAGE SCROLL COUNTS TOO --------------------------------------------------
@@ -38,6 +42,7 @@ ok('and restored', /window\.scrollTo\(0,\s*win\)/.test(fn));
 // Height comes back a frame later. Until it does, anything set above the briefly
 // shorter maximum is clamped straight back down.
 ok('⚠️ the restore is repeated after a frame', /requestAnimationFrame\(put\)/.test(fn));
+ok('…and the caret is put back on the rebuilt box (data-pf), without scrolling to it', /data-pf/.test(fn) && /preventScroll:true/.test(fn));
 
 // Every path that rebuilds after an edit has to go through it.
 for (const [what, near] of [
