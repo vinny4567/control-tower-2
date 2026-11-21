@@ -150,6 +150,7 @@ function longRead(name, { bumpDuring }) {
     'tipsSaveHoursSoon', 'tipsSaveEmpIds', 'tipsHTML', 'activeTab', 'TIPS', 'document', 'esc', 'tipMoney',
     'tipsState', 'tipsExtractPdfLines', 'tipsParseMicros', 'tipsComputeBusserSplit', 'tipsLoadPdfjs',
     'fetch', 'TIPS_LOG_URL', 'TIPS_LOG_KEY', 'tipsScanTimesheets', 'tipsRerender', 'tipsActive',
+    'tipsPosPersonName', 'tipDays', 'tipDayLabel', 'tipsApplyPosSplit',
     `let tipsGen; Object.defineProperty(this,'x',{});
      ${body.replace(/\btipsGen\b/g, 'env.gen')}
      return ${name};`
@@ -167,8 +168,9 @@ function longRead(name, { bumpDuring }) {
     { getElementById: () => ({ set innerHTML(_v) {} }) },
     (x) => x, () => '$0',
     { busserSplit: { x: 1 }, start: new Date(2026, 11, 1), end: new Date(2026, 11, 14) },
-    async () => [], () => ({ people: {}, shifts: [], punches: [] }), () => ({}), async () => {},
-    async () => ({ json: async () => ({}) }), '', () => '', () => {}, () => {}, () => false);
+    async () => [], () => ({ people: {}, shifts: [], punches: [] }), () => ({ split: {}, byDay: {}, posNights: [] }), async () => {},
+    async () => ({ ok: true, json: async () => ({ log: [] }) }), '', () => '', () => {}, () => {}, () => false,
+    (eid, n) => n, () => [], (d) => '', () => { seen.applied = (seen.applied || 0) + 1; });
   return { run: fn, seen, env };
 }
 
@@ -202,6 +204,7 @@ function importRun({ bumpDuring }) {
   const fn = new Function('env', 'seen', 'tipsSetStatus', 'tipsExtractPdfLines', 'tipsParseMicros',
     'tipsComputeBusserSplit', 'tipsMergeMicros', 'tipsSaveHoursSoon', 'tipsSaveEmpIds', 'tipsHTML',
     'activeTab', 'TIPS', 'document', 'tipsState', 'fetch', 'TIPS_LOG_URL', 'TIPS_LOG_KEY', 'tipsActive',
+    'tipDays', 'tipDayLabel',
     `${body.replace(/\btipsGen\b/g, 'env.gen')}
      return tipsImportTimesheet;`
   )(env, seen,
@@ -215,7 +218,7 @@ function importRun({ bumpDuring }) {
     { getElementById: () => ({ set innerHTML(_v) {} }) },
     { punches: [] },
     async () => ({ ok: true, json: async () => ({ log: [{ pool: 40 }] }) }),
-    '', () => 'k', () => false);
+    '', () => 'k', () => false, () => [], (d) => '');
   return { run: () => fn({ files: [{ name: 't.pdf', arrayBuffer: async () => new ArrayBuffer(8) }], value: '' }), seen };
 }
 const imp = importRun({ bumpDuring: false });

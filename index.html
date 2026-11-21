@@ -5913,23 +5913,83 @@ function tipsParseMicros(lines){
   }
   return {people,shifts,punches};
 }
-function tipsComputeBusserSplit(shifts,log){
-  const mds=new Set(shifts.map(s=>s.md)),pool={};
+// ── WHO A REGISTER emp_id IS (cutover #4, Jarvis/Vinny 11/20/26) ─────────────────────────
+// The register's emp_id is matched to the Staff person whose register.emp_id equals it; the
+// NAME is only a fallback when no Staff person carries that emp_id. Returns the hours-row name
+// to file them under: one that resolves BACK to that same Staff person (their name, or their
+// key if the name points elsewhere). A name that resolves to SOMEONE ELSE on the register (a
+// different emp_id) is a different person who happens to share it — kept apart as "Name #eid"
+// so two same-named people never overwrite each other's hours.
+function tipsStaffByEmpId(eid){
+  if(eid==null||eid==='')return null;
+  const s=String(eid),all=Object.values(staffS.people||{}).filter(p=>p&&p.register&&p.register.emp_id!=null&&String(p.register.emp_id)===s);
+  return all.find(p=>!p.removed)||all[0]||null;   // someone removed mid-period still gets paid
+}
+function tipsPosPersonName(eid,name){
+  const raw=String(name||'').trim()||('#'+eid);
+  const p=tipsStaffByEmpId(eid);
+  if(p){
+    const same=(x)=>{const q=staffResolveForTips(x);return !!q&&(q===p||(q.pid&&q.pid===p.pid));};
+    return same(p.name)?p.name:(same(p.key)?p.key:p.name);
+  }
+  const q=staffResolveForTips(raw);
+  const qe=q&&q.register&&q.register.emp_id;
+  if(eid!=null&&eid!==''&&qe!=null&&String(qe)!==String(eid))return raw+' #'+eid;   // that name is somebody else
+  return raw;
+}
+// The busser split, per night. Two sources, chosen PER NIGHT (cutover #4):
+//   · a night whose tip-out log entry is source:'pos' (and not practice) → the MINI already
+//     worked out each busser's after-3:30 share from the register's punches (2pm day-shift
+//     guard included) and wrote it as bussers[].share, in dollars. Taken as-is — one place
+//     does the 3:30 maths, and it is the mini.
+//   · every other night → the MICROS path, as before: after-3:30 hours off the timesheet PDF's
+//     busser punches (`shifts`), the night's pool divided by them.
+// `inPeriod` (the sheet's M/D labels) lets a POS night count with NO MICROS shift on it;
+// without it only nights the MICROS shifts cover are looked at, exactly as before.
+// `nameFor(emp_id,name)` files a POS busser under the same name their hours use.
+function tipsComputeBusserSplit(shifts,log,inPeriod,nameFor){
+  const nf=(eid,nm)=>(nameFor||tipsPosPersonName)(eid,nm);   // looked up only when a POS night needs it
+  const mds=new Set(shifts.map(s=>s.md)),best={};
   // ⚠️ PRACTICE nights never feed real payroll — same rule as tipsPull. A register practice
   // run saved into this log (no bussers clocked in, a pool of whatever was rung) would
   // otherwise win "newest" for its date and its pool would be divided among real bussers.
-  (log||[]).forEach(e=>{if(!e||e.practice)return;const d=e.date||'',p=d.split('/');if(p.length!==3)return;const md=(+p[0])+'/'+(+p[1]);if(!mds.has(md))return;
-    const bp=(e.pools&&e.pools.busser)||0,cur=pool[md];
-    if(!cur||((!e.draft)&&cur.draft)||(((!e.draft)===(!cur.draft))&&String(e.savedAt||'')>String(cur.savedAt||'')))pool[md]={busser:bp,draft:e.draft,savedAt:e.savedAt||''};});
-  const byDay={},split={};
-  [...mds].sort().forEach(md=>{const poolv=(pool[md]&&pool[md].busser)||0;if(!poolv)return;
-    const day={};shifts.forEach(s=>{if(s.md===md)day[s.name]=(day[s.name]||0)+s.after330;});
-    const tot=Object.values(day).reduce((a,b)=>a+b,0);if(tot<=0)return;
-    const amts={};Object.keys(day).forEach(nm=>amts[nm]=Math.round(poolv*day[nm]/tot*100)/100);
-    const resid=Math.round((poolv-Object.values(amts).reduce((a,b)=>a+b,0))*100)/100;
-    if(resid&&Object.keys(amts).length){const big=Object.keys(amts).reduce((a,b)=>amts[a]>=amts[b]?a:b);amts[big]=Math.round((amts[big]+resid)*100)/100;}
+  (log||[]).forEach(e=>{if(!e||e.practice)return;const d=e.date||'',p=d.split('/');if(p.length!==3)return;const md=(+p[0])+'/'+(+p[1]);if(!mds.has(md)&&!(inPeriod&&inPeriod[md]))return;
+    const cur=best[md];
+    if(!cur||((!e.draft)&&cur.draft)||(((!e.draft)===(!cur.draft))&&String(e.savedAt||'')>String(cur.savedAt||'')))best[md]=e;});
+  const byDay={},split={},posNights=[];
+  Object.keys(best).sort().forEach(md=>{const e=best[md];
+    let amts={};
+    if(e.source==='pos'&&Array.isArray(e.bussers)){
+      posNights.push(md);
+      e.bussers.forEach(b=>{if(!b)return;const v=Math.round((+b.share||0)*100)/100;if(!(v>0))return;
+        const nm=nf(b.emp_id,b.name);amts[nm]=Math.round(((amts[nm]||0)+v)*100)/100;});
+    }else{
+      if(!mds.has(md))return;
+      const poolv=(e.pools&&e.pools.busser)||0;if(!poolv)return;
+      const day={};shifts.forEach(s=>{if(s.md===md)day[s.name]=(day[s.name]||0)+s.after330;});
+      const tot=Object.values(day).reduce((a,b)=>a+b,0);if(tot<=0)return;
+      Object.keys(day).forEach(nm=>amts[nm]=Math.round(poolv*day[nm]/tot*100)/100);
+      const resid=Math.round((poolv-Object.values(amts).reduce((a,b)=>a+b,0))*100)/100;
+      if(resid&&Object.keys(amts).length){const big=Object.keys(amts).reduce((a,b)=>amts[a]>=amts[b]?a:b);amts[big]=Math.round((amts[big]+resid)*100)/100;}
+    }
+    if(!Object.keys(amts).length)return;
     byDay[md]=amts;Object.keys(amts).forEach(nm=>split[nm]=Math.round(((split[nm]||0)+amts[nm])*100)/100);});
-  return {split,byDay};
+  return {split,byDay,posNights};
+}
+// A POS pull refreshes ONLY its own nights' busser split. The MICROS nights already in the
+// period (worked out by an earlier timesheet import) stay exactly as they are: each POS night's
+// old by-day amounts come off the totals, the mini's shares go on. A POS night whose shares
+// are all zero still REPLACES what was there — the mini said nobody is owed.
+function tipsApplyPosSplit(posByDay,posNights){
+  const bd=Object.assign({},tipsState.busserSplitByDay||{}),sp=Object.assign({},tipsState.busserSplit||{});
+  const r2=v=>Math.round(v*100)/100;
+  (posNights||[]).forEach(md=>{
+    const old=bd[md]||{};Object.keys(old).forEach(nm=>{sp[nm]=r2((sp[nm]||0)-old[nm]);if(Math.abs(sp[nm])<0.005)delete sp[nm];});
+    delete bd[md];
+    const now=posByDay[md]||{};if(!Object.keys(now).length)return;
+    bd[md]=Object.assign({},now);Object.keys(now).forEach(nm=>{sp[nm]=r2((sp[nm]||0)+now[nm]);});
+  });
+  tipsState.busserSplit=sp;tipsState.busserSplitByDay=bd;
 }
 function tipsMergeMicros(people,split,byDay,opt){
   opt=opt||{};
@@ -5940,7 +6000,7 @@ function tipsMergeMicros(people,split,byDay,opt){
   Object.keys(tipsState.hours).forEach(nm=>{const h=tipsState.hours[nm];Object.keys(h).forEach(j=>{if((h[j]||{}).src==='rest')delete h[j];});if(!Object.keys(h).length)delete tipsState.hours[nm];});   // idempotent: drop old restaurant rows, keep weddings
   const map={};let n=0;
   Object.keys(people).forEach(eid=>{const mname=people[eid].name;if(/private\s*party|\bpool\b/i.test(mname))return;   // "Private Party" is not a person
-    const fname=tipCanon(mname);map[mname]=fname;n++;
+    const fname=opt.exactNames?mname:tipCanon(mname);map[mname]=fname;n++;   // a POS pull's names are already settled (by emp_id) — never re-spelled
     if(!tipsState.hours[fname])tipsState.hours[fname]={};
     const jobs=people[eid].jobs;Object.keys(jobs).forEach(job=>{const d=jobs[job];
       const kept=opt.keepRates?((prevRates[fname]||{})[job]):undefined;
@@ -5987,7 +6047,8 @@ async function tipsImportTimesheet(input){
       if(!r.ok||d.error)logErr=d.error||('the tip-out log answered '+r.status);
       log=d.log||[];
     }catch(e){logErr=(e&&e.message)||String(e);}
-    const {split,byDay}=tipsComputeBusserSplit(shifts,log);
+    const inPeriod={};tipDays().forEach(d=>inPeriod[tipDayLabel(d)]=true);
+    const {split,byDay}=tipsComputeBusserSplit(shifts,log,inPeriod);   // POS nights take the mini's shares
     const stot=Object.values(split).reduce((a,b)=>a+b,0),nb=Object.keys(split).length;
     // An import that worked out no split must not erase the one already there. Passing an
     // empty split through is how a good period gets wiped by a bad read.
@@ -6017,10 +6078,12 @@ async function tipsImportTimesheet(input){
 // WHAT THIS DOES NOT TOUCH, on purpose:
 //   · RATES. The register does not know what anybody is paid. Rates typed here are
 //     the only copy, so a pull keeps every one of them and moves only the hours.
-//   · TIPS and UNPAID. Those come off the nightly tip sheet and the busser split.
-//     The POS knows charge tips per server and will be able to fill them later, but
-//     overwriting a hand-built tip sheet from a half-migrated register is how a
-//     busser's night disappears. It reports what it saw and changes nothing.
+//   · TIPS. Those come off the nightly tip sheet. The POS knows charge tips per server
+//     and will be able to fill them later, but overwriting a hand-built tip sheet from a
+//     half-migrated register is how a night disappears. It reports what it saw.
+//   · The busser split of any night the register did NOT run. Since cutover #4 the
+//     split for a night whose tip-out log entry is source:'pos' is the MINI's (its
+//     bussers[].share), refreshed on every pull; MICROS nights stay as imported.
 //   · WEDDING (💍) rows. Same as the timesheet import — only restaurant rows are
 //     replaced, so re-pulling a period is safe and repeatable.
 async function tipsPullFromPos(){
@@ -6049,6 +6112,17 @@ async function tipsPullFromPos(){
 
   // Into the same shape the timesheet parser produces, so ONE merge fills this grid
   // and the two sources can never drift apart in how they land.
+  // ⛔ WHO IS WHO (cutover #4): by emp_id → the Staff person whose register.emp_id equals it,
+  // the name only when no Staff person has it. Every row gets a name NO OTHER emp_id in this
+  // pull uses, so two same-named people never overwrite each other's hours.
+  const nameOf={},usedBy={};
+  const nameFor=(eid,nm)=>{
+    const k=eid!=null?String(eid):('x'+(nm||''));
+    if(nameOf[k])return nameOf[k];
+    let n=tipsPosPersonName(eid,nm);
+    if(usedBy[n]&&usedBy[n]!==k)n=n+' #'+(eid!=null?eid:'?');
+    usedBy[n]=k;nameOf[k]=n;return n;
+  };
   const people={},warn=[];let posTips=0;
   rows.forEach(pr=>{
     const eid=pr.emp_id!=null?String(pr.emp_id):('x'+(pr.name||''));
@@ -6061,31 +6135,46 @@ async function tipsPullFromPos(){
       if(j.rate_cents!=null)e.rate=Math.round(+j.rate_cents)/100;
     });
     if(!Object.keys(jobs).length)return;
-    people[eid]={name:pr.name||('#'+eid),jobs:jobs};
-    if(pr.open_shifts)warn.push((pr.name||eid)+' — '+pr.open_shifts+' shift'+(pr.open_shifts>1?'s':'')+' never punched out');
+    const nm=nameFor(pr.emp_id,pr.name);
+    people[eid]={name:nm,jobs:jobs};
+    if(pr.open_shifts)warn.push(nm+' — '+pr.open_shifts+' shift'+(pr.open_shifts>1?'s':'')+' never punched out');
     posTips+=(+pr.charge_tips_cents||0);
   });
-  // The register cannot work out the busser split, and the reason is worth saying out loud
-  // rather than leaving the section looking broken: the split needs each busser's clock-in
-  // and clock-out, and as of 9/22 no punch has EVER reached the mini — staff still clock on
-  // MICROS, so the register is not the time clock yet. Its report does carry raw shifts, so
-  // the day that changes this can read them; until then the MICROS PDF is the only source.
+  // The register's raw shifts become PUNCHES, the same shape the MICROS import keeps, so the
+  // 3am / too-long / missing-half time-sheet checks run on POS hours too. Night = the mini's
+  // own service day (4am cut), so a shift past midnight stays on the night it belongs to.
   const posShifts=(r.body&&Array.isArray(r.body.shifts))?r.body.shifts:[];
+  const hm=(ms)=>{if(ms==null||ms==='')return '';const d=new Date(+ms);if(isNaN(d))return '';return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');};
+  const mdOf=(sh)=>{const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(sh.date||''));if(m)return (+m[2])+'/'+(+m[3]);const t=sh.in!=null?sh.in:sh.out;const d=new Date(+t);return isNaN(d)?'':(d.getMonth()+1)+'/'+d.getDate();};
+  const posPunches=posShifts.map(sh=>({name:nameFor(sh.emp_id,sh.name),job:sh.job||'',date:mdOf(sh),inTime:hm(sh.in),outTime:hm(sh.out),src:'pos'})).filter(p=>p.date);
+  // The busser split for the nights the MINI did (source:'pos' in the tip-out log). MICROS
+  // nights already in the period are left exactly as they are.
+  let log=[],logErr=null;
+  try{const lr=await fetch(TIPS_LOG_URL+'?key='+encodeURIComponent(TIPS_LOG_KEY()));const d=await lr.json();if(!lr.ok||d.error)logErr=d.error||('the tip-out log answered '+lr.status);log=d.log||[];}
+  catch(e){logErr=(e&&e.message)||String(e);}
+  const inPeriod={};tipDays().forEach(d=>inPeriod[tipDayLabel(d)]=true);
+  const ps=logErr?{byDay:{},posNights:[]}:tipsComputeBusserSplit([],log,inPeriod,nameFor);
   if(gen!==tipsGen){tipsSetStatus('⚠ nothing filled in — the dates changed while the register was being read. Press it again.','#fbbf24');return;}
-  const n=tipsMergeMicros(people,{},{},{keepRates:true,keepSplit:true});
+  const n=tipsMergeMicros(people,{},{},{keepRates:true,keepSplit:true,exactNames:true});
+  if(ps.posNights.length)tipsApplyPosSplit(ps.byDay,ps.posNights);
+  const posDates=new Set(posPunches.map(p=>p.date));
+  tipsState.punches=(tipsState.punches||[]).filter(p=>p.src!=='pos'&&!posDates.has(p.date)).concat(posPunches);   // MICROS punches stay for nights the register has none
   tipsSaveHoursSoon();   // (no tipsSaveEmpIds — the register's employee number is not a Paychex ID)
   if(tipsActive())tipsRedraw();
+  if(typeof tipsScanTimesheets==='function')tipsScanTimesheets(true);
   // An unpunched shift is somebody's pay being wrong, and it has to be LOUD — a
   // manager who does not hear about it signs off a period that is short a night.
   const tipNote=posTips?('  ·  register also recorded '+tipMoney(posTips/100)+' in charge tips (not filled in — the tip sheet still owns those)'):'';
   const clashNote=clash.length?('  ·  ⚠ two people share the name '+clash.slice(0,3).map(esc).join(', ')+(clash.length>3?' …':'')+' — their on-check tips could not be split, verify by hand'):'';
-  const splitNote=Object.keys(tipsState.busserSplit||{}).length?''
-    :(posShifts.length?'  ·  busser split not built from these punches yet — import the timesheet PDF for now'
-                      :'  ·  ⚠ the busser split still needs the 📄 timesheet PDF: the register has no clock-in/out punches (staff clock on MICROS), and the split is worked out from them');
+  const splitNote=logErr?('  ·  ⚠ busser split not updated — '+logErr)
+    :ps.posNights.length?('  ·  busser split from the register for '+ps.posNights.length+' night'+(ps.posNights.length>1?'s':''))
+    :Object.keys(tipsState.busserSplit||{}).length?''
+    :'  ·  no register-run tip-out nights in these dates yet — the busser split still comes from the 📄 timesheet PDF';
+  const splitWarn=!!logErr||(!ps.posNights.length&&!Object.keys(tipsState.busserSplit||{}).length);
   if(warn.length){
     tipsSetStatus('✓ '+n+' from the register — ⚠ '+warn.length+' unfinished shift'+(warn.length>1?'s':'')+': '+warn.slice(0,3).join('; ')+(warn.length>3?' …':'')+tipNote+clashNote+splitNote,'#fbbf24');
   }else{
-    tipsSetStatus('✓ hours for '+n+' employee'+(n===1?'':'s')+' pulled from the register — rates and tips untouched'+tipNote+clashNote+splitNote,(clash.length||splitNote)?'#fbbf24':'#34d399');
+    tipsSetStatus('✓ hours for '+n+' employee'+(n===1?'':'s')+' pulled from the register — rates and tips untouched'+tipNote+clashNote+splitNote,(clash.length||splitWarn)?'#fbbf24':'#34d399');
   }
 }
 function tipsPosBtnHTML(){
