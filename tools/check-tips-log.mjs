@@ -144,10 +144,16 @@ function world({ logEntries = null, fetchReturns = null, confirmAnswer = true, d
 }
 {
   const w = world({});
-  w.getState().logExpanded[7] = true;
-  const html = w.entryHtml({ id: 7, date: '11/4/2026', servers: [{ name: 'Amy Server', remaining: 50 }], source: 'register' }, 0);
-  ok('expanded shows the servers detail line with the name and figure', /Servers:/.test(html) && /Amy Server/.test(html) && /50\.00/.test(html));
-  ok('an explicit register source is honored, not defaulted to Calculator', /Register/.test(html));
+  w.getState().logExpanded['P20261118-1731900000000'] = true;   // a real register id shape
+  const html = w.entryHtml({ id: 'P20261118-1731900000000', date: '11/4/2026', servers: [{ name: 'Amy Server', remaining: 50 }], source: 'pos' }, 0);
+  ok('expanded (keyed by a string register id) shows the servers detail line with the name and figure', /Servers:/.test(html) && /Amy Server/.test(html) && /50\.00/.test(html));
+  ok('⛔ a register entry (source:"pos", the real marker) reads "Register", not Calculator', /Register/.test(html));
+  ok('…and a stray source:"register" (not the real marker) stays Calculator', /Calculator/.test(w.entryHtml({ id: 8, date: '11/4/2026', source: 'register' }, 0)));
+  // A real register id is a STRING. Raw JSON quotes inside a double-quoted onclick="…"
+  // attribute end the attribute early and kill both buttons — they must be &quot;-escaped.
+  ok('⛔ the delete button passes a string id HTML-escaped, so the onclick attribute is not cut short', html.includes('tipsLogDelete(&quot;P20261118-1731900000000&quot;'));
+  ok('⛔ …and so does the expand toggle', html.includes('tipsLogToggleEntry(&quot;P20261118-1731900000000&quot;)'));
+  ok('⛔ no raw double quote appears inside either onclick', !/onclick="tipsLog(Delete|ToggleEntry)\("/.test(html));
 }
 
 // ── toggling an entry flips its OWN expanded flag and redraws, nothing else ─────────────

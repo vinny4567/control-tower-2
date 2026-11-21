@@ -973,6 +973,20 @@ const M=[
     tsub("// ── TIP-OUT LOG VIEW — read-only, top right of the Tips tab, Vinny 11/20/26: \"the tipout",
          "// ── Read-only log of the tip-out calculator, shown from the Tips tab, Vinny 11/20/26: \"the tipout"),false],
 
+  // ── NO PERSONAL DATA TO THE CLOUD (check-staff-no-cloud-mirror) ─────────────────────────
+  ['MIRROR 1 · ⛔ staffMirrorToCloud comes back — the cloud ct_staff gets email/birthday/address pushed on every Staff load again','check-staff-no-cloud-mirror.mjs',
+    tsub("        staffS.people=s.people||{};staffS.jobs=s.jobs||{};staffS.aliases=s.aliases||{};staffS.at=s.at||0;\n        // ⚠️ SCOPED REFRESH, NEVER renderViewport() HERE.",
+         "        staffS.people=s.people||{};staffS.jobs=s.jobs||{};staffS.aliases=s.aliases||{};staffS.at=s.at||0;\n        try{localStorage.setItem(STAFF_KEY,JSON.stringify({people:staffS.people,jobs:staffS.jobs||{},aliases:staffS.aliases||{},at:staffS.at||Date.now()}));kvPush(STAFF_KEY,{people:staffS.people,jobs:staffS.jobs||{},aliases:staffS.aliases||{},at:staffS.at||Date.now()},staffS.at||Date.now());}catch(e){}\n        // ⚠️ SCOPED REFRESH, NEVER renderViewport() HERE."),true],
+  ['MIRROR 2 · ⛔ staffStripPersonal stops stripping email — it rides along into localStorage again','check-staff-no-cloud-mirror.mjs',
+    tsub("    delete c.email;delete c.birthday;delete c.address;",
+         "    delete c.birthday;delete c.address;"),true],
+  ['MIRROR 3 · ⛔ staffSave goes back to the raw staffS.people, skipping the strip entirely','check-staff-no-cloud-mirror.mjs',
+    tsub("localStorage.setItem(STAFF_KEY,JSON.stringify({people:staffStripPersonal(staffS.people),jobs:staffS.jobs||{},aliases:staffS.aliases||{},at:staffS.at}))",
+         "localStorage.setItem(STAFF_KEY,JSON.stringify({people:staffS.people,jobs:staffS.jobs||{},aliases:staffS.aliases||{},at:staffS.at}))"),true],
+  ['MIRROR 4 · BENIGN — the staffStripPersonal top comment reworded, no behaviour change','check-staff-no-cloud-mirror.mjs',
+    tsub("// ⛔ Never let email/birthday/address ride along into a localStorage ct_staff copy —",
+         "// ⛔ Keep email/birthday/address out of the localStorage ct_staff copy —"),false],
+
   // ── REPEATED SECTION HEADERS + THICKER PAID DIVIDER (check-tips-headers) ───────────────
   ['HEAD 1 · ⛔ sectionHeadRow is never called in the section loop — the repeated date headers Vinny asked for are gone','check-tips-headers.mjs',
     tsub("    body+=sectionHeadRow(sec);\n",''),true],
