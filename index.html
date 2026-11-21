@@ -5866,7 +5866,10 @@ function tipsParseMicros(lines){
 }
 function tipsComputeBusserSplit(shifts,log){
   const mds=new Set(shifts.map(s=>s.md)),pool={};
-  (log||[]).forEach(e=>{const d=(e&&e.date)||'',p=d.split('/');if(p.length!==3)return;const md=(+p[0])+'/'+(+p[1]);if(!mds.has(md))return;
+  // ⚠️ PRACTICE nights never feed real payroll — same rule as tipsPull. A register practice
+  // run saved into this log (no bussers clocked in, a pool of whatever was rung) would
+  // otherwise win "newest" for its date and its pool would be divided among real bussers.
+  (log||[]).forEach(e=>{if(!e||e.practice)return;const d=e.date||'',p=d.split('/');if(p.length!==3)return;const md=(+p[0])+'/'+(+p[1]);if(!mds.has(md))return;
     const bp=(e.pools&&e.pools.busser)||0,cur=pool[md];
     if(!cur||((!e.draft)&&cur.draft)||(((!e.draft)===(!cur.draft))&&String(e.savedAt||'')>String(cur.savedAt||'')))pool[md]={busser:bp,draft:e.draft,savedAt:e.savedAt||''};});
   const byDay={},split={};

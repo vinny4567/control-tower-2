@@ -96,5 +96,28 @@ async function run(log) {
   ok('a period with no practice entries at all pulls exactly as before', ctx.cells['Plain Night'] && ctx.cells['Plain Night']['11/6'].p === 45);
 }
 
+// ── THE MICROS IMPORT'S BUSSER SPLIT SKIPS PRACTICE NIGHTS TOO (Jarvis, 11/20/26) ────────
+// tipsComputeBusserSplit reads the nightly busser pool from the SAME log. A practice entry
+// that won "newest" for a date would have its pool divided among real bussers' pay.
+{
+  const split = new Function(`${grab('tipsComputeBusserSplit')}\nreturn tipsComputeBusserSplit;`)();
+  const shifts = [
+    { md: '11/3', name: 'Bea Bus', after330: 4 },
+    { md: '11/3', name: 'Cal Bus', after330: 4 },
+    { md: '11/5', name: 'Bea Bus', after330: 5 },
+  ];
+  const log = [
+    { date: '11/3/2026', savedAt: '2026-11-03T22:00:00Z', pools: { busser: 100 } },
+    { date: '11/3/2026', savedAt: '2026-11-03T23:30:00Z', practice: true, pools: { busser: 999 } },   // NEWER, practice
+    { date: '11/5/2026', savedAt: '2026-11-05T22:00:00Z', practice: true, pools: { busser: 80 } },    // practice-only night
+  ];
+  const { split: s, byDay } = split(shifts, log);
+  ok('⛔ a newer PRACTICE pool never replaces the real night\'s pool — 11/3 splits the calculator\'s $100, not $999', byDay['11/3'] && byDay['11/3']['Bea Bus'] === 50 && byDay['11/3']['Cal Bus'] === 50);
+  ok('⛔ a practice-only night produces no split at all', !byDay['11/5']);
+  ok('…so the period totals carry only real money ($50 each)', s['Bea Bus'] === 50 && s['Cal Bus'] === 50);
+  const { byDay: plain } = split(shifts, [{ date: '11/5/2026', savedAt: 'x', pools: { busser: 80 } }]);
+  ok('a non-practice night splits exactly as before', plain['11/5'] && plain['11/5']['Bea Bus'] === 80);
+}
+
 console.log(bad ? `\n${bad} FAILED` : '\nall good');
 process.exit(bad ? 1 : 0);
