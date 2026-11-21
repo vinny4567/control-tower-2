@@ -13530,7 +13530,7 @@ function staffFlagFindRemoved(rawName){
   const want=staffKeyOf(rawName);if(!want)return null;
   return Object.values(staffS.people||{}).find(p=>p&&p.removed&&staffKeyOf(p.name)===want)||null;
 }
-function staffFlagRedraw(){if(activeTab===TIPS)document.getElementById('viewport').innerHTML=tipsHTML();}
+function staffFlagRedraw(){if(tipsActive())document.getElementById('pos-body').innerHTML=tipsHTML();}
 function staffFlagOpen(name){
   staffFlagS={name,removedPerson:staffFlagFindRemoved(name),q:'',results:[],busy:false,err:null};
   staffFlagRedraw();
@@ -13594,12 +13594,22 @@ function staffAliasesFor(p){
   if(!p)return [];
   return Object.keys(staffS.aliases||{}).filter(k=>staffS.aliases[k]===p.key).sort();
 }
+// 11/20/26, Jarvis's review of the shelved build: a real input, not window.prompt() —
+// iPad Safari silently drops a paste into prompt(), so typing in a long spelling by hand
+// was the only way it ever worked. Reads the live box instead.
 async function staffAddSpelling(k){
   const p=staffS.people[k];if(!p)return;
-  const typed=prompt('Add another spelling for “'+(p.name||'')+'”.\n\nType exactly how it appears elsewhere (a timesheet, the tip roster).');
-  if(typed===null)return;
-  const spelling=String(typed).trim();if(!spelling)return;
-  await staffWriteOp({op:'alias',pid:p.pid,spelling});
+  const kid=k.replace(/[^a-z0-9]/gi,'_');
+  const el=document.getElementById('staff-addspell-'+kid);
+  if(!el)return;
+  const spelling=String(el.value||'').trim();
+  if(!spelling)return;
+  el.disabled=true;
+  const r=await staffWriteOp({op:'alias',pid:p.pid,spelling});
+  // On success staffWriteOp's own staffLoad(true) already redraws this row from fresh
+  // data, which rebuilds this input empty — nothing left to clean up. On a refusal
+  // nothing redraws, so re-enable and keep what they typed, ready to fix and retry.
+  if(!r){const el2=document.getElementById('staff-addspell-'+kid);if(el2)el2.disabled=false;}
 }
 function staffFlagHTML(){
   const s=staffFlagS;
@@ -15918,7 +15928,12 @@ function staffDetail(p){
       ${(()=>{const al=staffAliasesFor(p);return al.length
         ?al.map(a=>`<div style="font-size:13px;color:var(--text-dim);padding:1px 0">${esc(a)}</div>`).join('')
         :'<div style="color:var(--text-muted);font-size:12px">None yet.</div>';})()}
-      <button onclick="staffAddSpelling('${esc(k)}')" style="${posBtn('#3f3f46')};padding:3px 9px;font-size:12px;margin-top:6px">+ Add spelling</button>
+      <!-- A real input, not window.prompt() — iPad Safari silently drops a paste into
+           prompt(), caught by Jarvis's review before this shipped. -->
+      <div style="display:flex;gap:5px;align-items:center;margin-top:6px">
+        <input id="staff-addspell-${kid}" placeholder="Type exactly as it appears elsewhere" onkeydown="if(event.key==='Enter')staffAddSpelling('${esc(k)}')" style="${inp};width:168px">
+        <button onclick="staffAddSpelling('${esc(k)}')" style="${posBtn('#3f3f46')};padding:3px 9px;font-size:12px">Add</button>
+      </div>
     </div>
 
     <button onclick="staffRename('${esc(k)}')" title="Fix or change this person's name"

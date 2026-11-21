@@ -36,12 +36,15 @@ const grabLet = (name) => {
   return src.slice(i, j + 1);
 };
 
-function world({ people = {}, aliases = {}, kvValue, kvFails = false, writeOpResults = {}, confirmAnswer = true, promptAnswer } = {}) {
+function world({ people = {}, aliases = {}, kvValue, kvFails = false, writeOpResults = {}, confirmAnswer = true, promptAnswer, inputValues = {} } = {}) {
   const calls = { writeOps: [], kvGets: [], kvPushes: [], redraws: 0, alerts: [], confirms: [], prompts: [] };
   const ctx = {};
-  new Function('ctx', `
+  const inputs = {};
+  new Function('ctx', 'inputs', `
     const TIP_SECTIONS=['Server','Bartender','Busser','Food Runner','Weddings'];
-    let activeTab='TIPS', TIPS='TIPS';
+    const POS='pos', TIPS='tips';
+    let activeTab=POS; let posS={sec:'tips'};
+    function tipsActive(){return activeTab===POS&&posS.sec===TIPS;}
     let staffS={people:${JSON.stringify(people)},aliases:${JSON.stringify(aliases)}};
     Object.keys(staffS.people).forEach(k=>{if(!staffS.people[k].key)staffS.people[k].key=k;});
     ${grabConst('TIPS_IGNORE_KEY')}
@@ -49,7 +52,13 @@ function world({ people = {}, aliases = {}, kvValue, kvFails = false, writeOpRes
     function esc(s){return(s||'').toString().replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
     ${grab('staffKeyOf')}
     const staffByFirst=(a,b)=>String(a.name||'').localeCompare(String(b.name||''));
-    const document={getElementById(){return {innerHTML:''};}};
+    // Real input stand-ins, keyed by id — staffAddSpelling reads .value off one of
+    // these by id, same as the real DOM, instead of window.prompt().
+    const document={getElementById(id){
+      if(!inputs[id])inputs[id]={value:${JSON.stringify(inputValues)}[id]||'',disabled:false};
+      return inputs[id];
+    }};
+    ctx.inputs=inputs;
     function confirm(msg){ctx.calls.confirms.push(msg);return ${JSON.stringify(confirmAnswer)};}
     function prompt(msg){ctx.calls.prompts.push(msg);return ${JSON.stringify(promptAnswer)};}
     function alert(msg){ctx.calls.alerts.push(msg);}
@@ -78,7 +87,7 @@ function world({ people = {}, aliases = {}, kvValue, kvFails = false, writeOpRes
     ctx.aliasesFor=staffAliasesFor;ctx.addSpelling=staffAddSpelling;ctx.mark=staffDisplayMark;
     ctx.fetchIgnore=tipsFetchIgnore;
     ctx.getState=()=>staffFlagS;ctx.getStaffS=()=>staffS;ctx.getTipsState=()=>tipsState;
-  `)(ctx);
+  `)(ctx, inputs);
   ctx.calls = calls;
   return ctx;
 }
@@ -228,19 +237,45 @@ const person = (name, extra = {}) => ({ name, sources: {}, at: 0, ...extra });
   ok('nobody aliased yet → empty list, not a throw', w.aliasesFor(w.getStaffS().people.keeper).length === 0);
 }
 {
-  const w = world({ people: { keeper: person('Michael Fornero', { pid: 'p1', key: 'keeper' }) }, promptAnswer: 'Mike Fornero' });
+  // ⛔ 11/20/26, Jarvis's review: a real input, never window.prompt() — iPad Safari
+  // silently drops a paste into prompt(). staffAddSpelling reads the live box by id.
+  const w = world({
+    people: { keeper: person('Michael Fornero', { pid: 'p1', key: 'keeper' }) },
+    inputValues: { 'staff-addspell-keeper': 'Mike Fornero' },
+  });
   await w.addSpelling('keeper');
-  ok('⛔ typing a spelling sends exactly one alias op for this pid', w.calls.writeOps.length === 1 && w.calls.writeOps[0].op === 'alias' && w.calls.writeOps[0].pid === 'p1' && w.calls.writeOps[0].spelling === 'Mike Fornero');
+  ok('⛔ typing a spelling into the real input sends exactly one alias op for this pid', w.calls.writeOps.length === 1 && w.calls.writeOps[0].op === 'alias' && w.calls.writeOps[0].pid === 'p1' && w.calls.writeOps[0].spelling === 'Mike Fornero');
 }
 {
-  const w = world({ people: { keeper: person('Michael Fornero', { pid: 'p1', key: 'keeper' }) }, promptAnswer: null });
+  const w = world({
+    people: { keeper: person('Michael Fornero', { pid: 'p1', key: 'keeper' }) },
+    inputValues: { 'staff-addspell-keeper': '   ' },
+  });
   await w.addSpelling('keeper');
-  ok('⛔ cancelling the prompt sends nothing', w.calls.writeOps.length === 0);
+  ok('⛔ a blank (or whitespace-only) box sends nothing', w.calls.writeOps.length === 0);
 }
 {
-  const w = world({ people: { keeper: person('Michael Fornero', { pid: 'p1', key: 'keeper' }) }, promptAnswer: '   ' });
+  // a refused write re-enables the box so the typed text can be fixed and retried
+  const w = world({
+    people: { keeper: person('Michael Fornero', { pid: 'p1', key: 'keeper' }) },
+    inputValues: { 'staff-addspell-keeper': 'Already Taken Spelling' },
+    writeOpResults: { 'p1:alias': null },
+  });
   await w.addSpelling('keeper');
-  ok('⛔ a blank spelling sends nothing either', w.calls.writeOps.length === 0);
+  ok('⛔ a refusal re-enables the box instead of leaving it stuck disabled', w.inputs['staff-addspell-keeper'].disabled === false);
+}
+{
+  // a missing input element (the row isn't actually open) must not throw
+  const w = world({ people: { keeper: person('Michael Fornero', { pid: 'p1', key: 'keeper' }) } });
+  let threw = false;
+  try { await w.addSpelling('nobody-such-key'); } catch (e) { threw = true; }
+  ok('a key with no matching person is a no-op, not a throw', !threw && w.calls.writeOps.length === 0);
+}
+{
+  // source-level: no window.prompt() left anywhere in staffAddSpelling
+  const addSpellingFn = grab('staffAddSpelling');
+  ok('⛔ staffAddSpelling never calls window.prompt() — iPad Safari drops a paste into it', !/\bprompt\(/.test(addSpellingFn));
+  ok('…reads a real input by id instead', /getElementById\('staff-addspell-'\+kid\)/.test(addSpellingFn));
 }
 
 // ── source-level: the mark actually reaches Tips/Hours/timesheet-checks rows ──────

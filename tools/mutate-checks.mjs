@@ -1004,6 +1004,9 @@ const M=[
   ['FLAG 8 · BENIGN — the FIX A LOOSE NAME top comment reworded, no behaviour change','check-staff-flag.mjs',
     tsub("// ── FIX A LOOSE NAME — tap the ⚑, Vinny's call 11/20/26 ─────────────────────────────",
          "// ── Resolving an unmatched Tips/Hours name by hand ──────────────────────────────────"),false],
+  ['FLAG 9 · ⛔ staffAddSpelling reverts to window.prompt() — iPad Safari silently drops a paste into it, the exact bug Jarvis caught before this shipped','check-staff-flag.mjs',
+    tsub("  const el=document.getElementById('staff-addspell-'+kid);\n  if(!el)return;\n  const spelling=String(el.value||'').trim();",
+         "  const typed=prompt('Add another spelling for \"'+(p.name||'')+'\".');\n  if(typed===null)return;\n  const spelling=String(typed).trim();"),true],
 ];
 
 let wrong=0;
