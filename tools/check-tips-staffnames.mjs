@@ -99,8 +99,13 @@ ok('⛔ the section-move dropdown still keys off the RAW name, not the resolved 
 
 const hoursHTMLFn = grab('hoursHTML');
 ok('hoursHTML resolves the per-person row label through staffDisplayName', /staffDisplayName\(name\)/.test(hoursHTMLFn) && /staffDisplayMark\(disp\.matched,name\)/.test(hoursHTMLFn));
-ok('⛔ the emp-ID badge still keys off the RAW name (tipsState.empIds is a LEAVE-IT store)',
-   /const empBadge=\(name\)=>\{const id=\(tipsState\.empIds\|\|\{\}\)\[name\]/.test(hoursHTMLFn));
+// 11/20/26: the badge moved into tipIdBadgeHTML (Staff is now the master for the ID), but the
+// rule this guards is unchanged — the old map (tipsState.empIds) is keyed by the RAW name.
+const idFn = grab('tipPaychexId');
+ok('⛔ the ID badge is handed the RAW name (tipsState.empIds is a LEAVE-IT store)',
+   /\$\{tipIdBadgeHTML\(name,true\)\}/.test(hoursHTMLFn));
+ok('⛔ …and the fallback lookup inside it reads the old map by that RAW name',
+   /\(tipsState\.empIds\|\|\{\}\)\[name\]/.test(idFn));
 ok('⛔ tipHoursInput/tipHoursDelPos/tipHoursRenamePos/tipHoursAddRow/tipHoursDelPerson are all still called with the RAW name',
    /oninput="tipHoursInput\('\$\{esc\(name\)/.test(hoursHTMLFn) &&
    /onclick="tipHoursDelPerson\('\$\{esc\(name\)/.test(hoursHTMLFn));
@@ -108,7 +113,7 @@ ok('the "taken out" chip also resolves to a display name, while the undo button 
    /tipHoursUndoOut\('\$\{esc\(n\)\.replace/.test(hoursHTMLFn) && /staffDisplayName\(n\)\.name/.test(hoursHTMLFn));
 
 const csvFn = grab('tipsPaychexCsv');
-ok('⛔ the Paychex CSV Worker ID lookup still keys off the RAW name', /const wid=\(tipsState\.empIds\|\|\{\}\)\[name\]/.test(csvFn));
+ok('⛔ the Paychex CSV Worker ID lookup still keys off the RAW name', /ids\[n\]=tipPaychexId\(n\)/.test(csvFn) && /const r=ids\[name\]/.test(csvFn) && /const wid=r\.id/.test(csvFn));
 ok('⛔ every other lookup inside the CSV builder (tipRowTotals/tipHours/busserSplit) still uses the RAW name',
    /tipRowTotals\(name\)/.test(csvFn) && /tipHours\(name\)/.test(csvFn));
 ok('…and ONLY the printed Name column uses the resolved display name', /csvEsc\(dispName\)/.test(csvFn) && !/csvEsc\(name\)/.test(csvFn));

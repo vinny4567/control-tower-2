@@ -6045,19 +6045,51 @@ function tipsPosBtnHTML(){
 function tipsImportBtnHTML(){return `<label title="Import the MICROS timesheet PDF" style="background:#7c3aed;border:none;color:#fff;font-weight:700;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px;display:inline-flex;align-items:center;gap:5px;white-space:nowrap">📄 Import timesheet<input type="file" accept="application/pdf,.pdf" onchange="tipsImportTimesheet(this)" style="display:none"></label>`;}
 // ── Paychex wide CSV (the format from ~/Desktop/Payroll/*/PAYCHEX COMBINED…WITH NAMES.csv) ──
 function csvEsc(s){s=String(s==null?'':s);return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}
+// ⚠️ STAFF IS THE MASTER FOR PAYCHEX IDs — Vinny, 11/20/26: "i want the emp number aka paychex
+// id listed here. Remember this sheet gets turned into the paychex csv file import." The old
+// per-sheet map (tipsState.empIds = ct_emp_ids, filled by the MICROS import and the wedding
+// pull) is only a FALLBACK for someone Staff has no ID for, and it is flagged when used.
+// ⛔ When Staff and the old map DISAGREE nobody is guessed: a wrong Worker ID pays the wrong
+// person, so that person is left OUT of the CSV and named until it's fixed on Staff.
+// Compared with leading zeros ignored ("0412" is 412); the Staff spelling is what's exported.
+function tipIdNorm(v){const s=String(v==null?'':v).trim();return /^\d+$/.test(s)?String(parseInt(s,10)):s;}
+function tipPaychexId(name){
+  const p=staffResolveForTips(name);
+  const staff=String((p&&p.paychex_id)||'').trim();
+  const sheet=String((tipsState.empIds||{})[name]||'').trim();
+  if(staff&&sheet&&tipIdNorm(staff)!==tipIdNorm(sheet))return {id:'',src:'conflict',staff,sheet};
+  if(staff)return {id:staff,src:'staff'};
+  if(sheet)return {id:sheet,src:'sheet'};
+  return {id:'',src:'none'};
+}
+// The ID beside a name, on Tips (read-only) and Hours (editable ONLY when Staff has no ID —
+// that box writes the fallback map, never Staff; the real fix is the Staff tab).
+function tipIdBadgeHTML(name,editable){
+  const r=tipPaychexId(name);
+  const base='font-weight:700;font-size:11px;margin-right:6px;font-variant-numeric:tabular-nums;white-space:nowrap';
+  if(r.src==='staff')return `<span title="Paychex ID, from Staff" style="${base};color:var(--accent2,#38bdf8)">${esc(r.id)}</span>`;
+  if(r.src==='conflict')return `<span title="Paychex ID differs — Staff says ${esc(r.staff)}, the old sheet says ${esc(r.sheet)}. Left off the Paychex CSV until it's settled on Staff." style="${base};color:#f87171">${esc(r.staff)}≠${esc(r.sheet)}</span>`;
+  if(editable){const en=esc(name).replace(/'/g,"\\'");return `<input value="${esc(r.id)}" onchange="tipEmpIdSet('${en}',this.value)" placeholder="no ID" title="${r.id?'Paychex ID from the old sheet — this person has none on Staff. Set it on Staff to make it the real one.':'No Paychex ID on Staff — set it there (or type one here as a fallback)'}" style="width:40px;background:transparent;border:none;border-bottom:1px dashed ${r.id?'#fbbf24':'#f87171'};color:${r.id?'#fbbf24':'#f87171'};font-weight:700;font-size:11px;text-align:center;margin-right:6px;padding:0 1px;font-family:inherit;outline:none;font-variant-numeric:tabular-nums">`;}
+  if(r.src==='sheet')return `<span title="Paychex ID from the old sheet — not on Staff" style="${base};color:#fbbf24">${esc(r.id)}*</span>`;
+  return `<span title="No Paychex ID on Staff" style="${base};color:#f87171">no ID</span>`;
+}
 function tipsPaychexCsv(){
   const COMPANY='11048355';
   const isPool=(n)=>/\bpool\b/i.test(n)||/private\s*party/i.test(n);
   const set={};Object.keys(tipsState.hours||{}).forEach(n=>{if(!isPool(n))set[n]=1;});Object.keys(tipsState.cells||{}).forEach(n=>{if(isPool(n))return;const t=tipRowTotals(n);if(t.paid>0||t.upt>0)set[n]=1;});
   tipBusserSplitPeople().forEach(n=>{if(!isPool(n))set[n]=1;});   // a pool share is pay: it puts you on the export on its own
-  const names=Object.keys(set).sort((a,b)=>{const wa=parseInt((tipsState.empIds||{})[a])||999999,wb=parseInt((tipsState.empIds||{})[b])||999999;return wa-wb||a.localeCompare(b);});
+  const ids={};Object.keys(set).forEach(n=>ids[n]=tipPaychexId(n));
+  const names=Object.keys(set).sort((a,b)=>{const wa=parseInt(ids[a].id)||999999,wb=parseInt(ids[b].id)||999999;return wa-wb||a.localeCompare(b);});
   const lines=['Company ID,Worker ID,Name,Pay Component,Hours,Rate,Tips,Unpaid Tips,Overtime Hours,Training Hours,Training Rate,Bonus Amount'];
   const f=n=>{n=Math.round((+n||0)*100)/100;return n?n.toFixed(2):'';};
   const rn=r=>{r=Math.round((+r||0)*100)/100;return r?(r%1===0?String(r):String(r)):'';};
-  const people=[],skipped=[];
+  const people=[],skipped=[],conflicts=[],fallback=[];
   names.forEach(name=>{
-    const wid=(tipsState.empIds||{})[name]||'';
+    const r=ids[name];
+    if(r.src==='conflict'){conflicts.push({name,staff:r.staff,sheet:r.sheet});return;}   // ⛔ never guess between two IDs
+    const wid=r.id;
     if(!wid){skipped.push(name);return;}   // no Paychex Worker ID → can't import; leave them off (Amanda etc.)
+    if(r.src==='sheet')fallback.push(name);
     people.push(name);
     const tt=tipRowTotals(name);
     const tips=tt.paid, unpaid=Math.round((tt.upt+((tipsState.busserSplit||{})[name]||0))*100)/100;
@@ -6076,7 +6108,7 @@ function tipsPaychexCsv(){
     rows.forEach((row,i)=>{const base=i===0;
       lines.push([COMPANY,wid,csvEsc(dispName),'hourly',f(row.hours),rn(row.rate),base?f(tips):'',base?f(unpaid):'',f(row.ot),base?f(trainH):'',base&&trainR?rn(trainR):'',''].join(','));});
   });
-  return {csv:lines.join('\n'),people,skipped};
+  return {csv:lines.join('\n'),people,skipped,conflicts,fallback};
 }
 // Save the Paychex CSV straight into ~/Desktop/Payroll/<period>/ via the File System
 // Access API (Chrome/Edge). Pick the Payroll folder ONCE — the browser remembers it,
@@ -6097,7 +6129,11 @@ async function tipsPayrollDir(){
 async function tipsDownloadCsv(){
   let out;try{out=tipsPaychexCsv();}catch(e){tipsSetStatus('⚠ CSV failed: '+e.message,'#f87171');return;}
   const fname='Paychex '+tipISO(tipsState.start)+' to '+tipISO(tipsState.end)+'.csv',folder=tipsPeriodFolder();
-  const note=out.skipped.length?(' — left off (no emp-ID): '+out.skipped.join(', ')):'',col=out.skipped.length?'#fbbf24':'#34d399';
+  const dn=n=>staffDisplayName(n).name;
+  const note=(out.conflicts.length?(' — ⚠ left off, Paychex ID differs: '+out.conflicts.map(c=>dn(c.name)+' (Staff '+c.staff+', old sheet '+c.sheet+')').join('; ')):'')
+    +(out.skipped.length?(' — left off (no Paychex ID): '+out.skipped.map(dn).join(', ')):'')
+    +(out.fallback.length?(' — ID from the old sheet, not Staff: '+out.fallback.map(dn).join(', ')):'');
+  const col=out.conflicts.length?'#f87171':((out.skipped.length||out.fallback.length)?'#fbbf24':'#34d399');
   if(window.showDirectoryPicker){
     try{
       const base=await tipsPayrollDir();
@@ -6934,7 +6970,6 @@ function hoursHTML(){
     if(all[sec]&&all[sec].m)return ` <button onclick="tipHoursResync('${esc(name).replace(/'/g,"\\'")}','${esc(sec).replace(/'/g,"\\'")}')" title="You set this row by hand, so the schedule app no longer changes it.&#10;Click to put it back under the schedule app." style="background:transparent;border:none;color:#fbbf24;font-size:10px;cursor:pointer;padding:0 2px">✎</button>`;
     return hoursSrc(all[sec])==='wed'?` <span title="wedding / event — follows the schedule app" style="color:#c4b5fd;font-size:10px">💍</span>`:'';
   };
-  const empBadge=(name)=>{const id=(tipsState.empIds||{})[name]||'',en=esc(name).replace(/'/g,"\\'");return `<input value="${esc(id)}" onchange="tipEmpIdSet('${en}',this.value)" placeholder="id" title="Paychex worker ID — click to edit" style="width:36px;background:transparent;border:none;border-bottom:1px dashed ${id?'var(--border)':'#f87171'};color:${id?'var(--accent2)':'#f87171'};font-weight:700;font-size:11px;text-align:center;margin-right:6px;padding:0 1px;font-family:inherit;outline:none;font-variant-numeric:tabular-nums">`;};
   // ONE combined sheet: everyone, restaurant positions over wedding (💍), + Tips/Unpaid from the Tips tab.
   const secOrd=(all)=>Object.keys(all).filter(k=>!(all[k]&&all[k].x)).sort((a,b)=>{const sa=hoursSrc(all[a])==='rest'?0:1,sb=hoursSrc(all[b])==='rest'?0:1;return sa-sb||a.localeCompare(b);});
   const isPoolRow=(n)=>/\bpool\b/i.test(n)||/private\s*party/i.test(n);   // "Busser Pool" / "Private Party" are tracking rows, not people
@@ -6959,7 +6994,7 @@ function hoursHTML(){
     // Name row = the person + their period totals; each position sits on its own
     // indented ↳ row below (positions stay, just never inline next to the name).
     const disp=staffDisplayName(name);
-    body+=`<tr style="background:${nameBg}"><td style="${nb};font-weight:800;width:270px"><div style="display:flex;align-items:center;width:100%">${empBadge(name)}<span style="white-space:nowrap">${esc(disp.name)}${staffDisplayMark(disp.matched,name)}</span>${addBtn(name,asrc)}${delPersonBtn(name)}</div></td><td style="${bb}"></td><td id="hreg-${id}" style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.reg||''}</td><td id="hot-${id}" style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.ot||''}</td><td id="hpt-${id}" style="padding:3px 10px;text-align:right;font-weight:800;color:#34d399;border-left:2px solid var(--border);${bb}">${t.pay?tipMoney(t.pay):''}</td>${tipCells(id,tt.paid,uptTot)}</tr>`;
+    body+=`<tr style="background:${nameBg}"><td style="${nb};font-weight:800;width:270px"><div style="display:flex;align-items:center;width:100%">${tipIdBadgeHTML(name,true)}<span style="white-space:nowrap">${esc(disp.name)}${staffDisplayMark(disp.matched,name)}</span>${addBtn(name,asrc)}${delPersonBtn(name)}</div></td><td style="${bb}"></td><td id="hreg-${id}" style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.reg||''}</td><td id="hot-${id}" style="${bb};text-align:right;font-weight:700;color:var(--text-dim)">${t.ot||''}</td><td id="hpt-${id}" style="padding:3px 10px;text-align:right;font-weight:800;color:#34d399;border-left:2px solid var(--border);${bb}">${t.pay?tipMoney(t.pay):''}</td>${tipCells(id,tt.paid,uptTot)}</tr>`;
     secs.forEach(sec=>{body+=`<tr><td style="position:sticky;left:0;background:var(--surface);padding:2px 12px 2px 26px;white-space:nowrap;border-right:2px solid var(--border);${bb}">↳ ${posInput(name,sec)}${wtag(all,sec,name)}${delX(name,sec)}</td>${cells(name,sec)}${blankTips}</tr>`;});
   });
   if(!names.length)body=`<tr><td colspan="7" style="padding:34px;text-align:center;color:var(--text-dim);line-height:1.6">No hours or tips yet — pick a date range to pull weddings, and give me the MICROS timesheet.</td></tr>`;
@@ -7031,7 +7066,7 @@ function tipsHTML(){
     const tds=days.map(d=>{const lb=tipDayLabel(d);const mon=(d.getDay()===1);const c=tipCell(name,lb),sp=tipBusserDay(name,lb);
       return `<td id="tc-${id}-${lb.replace('/','_')}" data-tipcell onclick="tipCellEdit('${en}','${lb}')" title="Click to edit" style="cursor:pointer;border-right:1px solid var(--border);${bb};text-align:right;padding:5px ${mon?'2px':'6px'};min-width:${mon?'18px':'58px'};white-space:nowrap;vertical-align:middle">${tipCompsHTML(sp?Object.assign({},c||{},{u:Math.round((((c&&c.u)||0)+sp)*100)/100}):c)}</td>`;}).join('');
     return `<tr style="${isPool?'background:rgba(251,191,36,0.06)':''}">
-      <td style="position:sticky;left:0;z-index:1;background:var(--surface);padding:7px 12px;font-weight:${isPool?'800':'600'};white-space:nowrap;border-right:2px solid var(--border);${bb};${isPool?'color:#fbbf24':''}"><span style="display:inline-flex;align-items:center;gap:6px">${esc(disp.name)}${staffDisplayMark(disp.matched,name)}${isPool?'':`<select title="Move to another section" onchange="tipMovePerson('${esc(name).replace(/'/g,"\\'")}',this.value)" style="background:transparent;border:none;color:var(--text-muted);font-size:11px;font-family:inherit;cursor:pointer;-webkit-appearance:none;appearance:none;padding:0 2px">${TIP_SECTIONS.map(s=>`<option value="${s}" ${tipEffSection(name)===s?'selected':''} style="color:#000">${TIP_SEC_SHORT[s]}</option>`).join('')}</select>`}</span></td>
+      <td style="position:sticky;left:0;z-index:1;background:var(--surface);padding:7px 12px;font-weight:${isPool?'800':'600'};white-space:nowrap;border-right:2px solid var(--border);${bb};${isPool?'color:#fbbf24':''}"><span style="display:inline-flex;align-items:center;gap:6px">${isPool?'':tipIdBadgeHTML(name,false)}${esc(disp.name)}${staffDisplayMark(disp.matched,name)}${isPool?'':`<select title="Move to another section" onchange="tipMovePerson('${esc(name).replace(/'/g,"\\'")}',this.value)" style="background:transparent;border:none;color:var(--text-muted);font-size:11px;font-family:inherit;cursor:pointer;-webkit-appearance:none;appearance:none;padding:0 2px">${TIP_SECTIONS.map(s=>`<option value="${s}" ${tipEffSection(name)===s?'selected':''} style="color:#000">${TIP_SEC_SHORT[s]}</option>`).join('')}</select>`}</span></td>
       ${tds}
       <td id="tp-${id}" style="padding:7px 8px;text-align:right;font-weight:700;color:#34d399;white-space:nowrap;${PAID_DIV};${bb}">${t.paid?tipMoney(t.paid):''}</td>
       <td id="tu-${id}" style="padding:7px 8px;text-align:right;font-weight:700;color:#fbbf24;white-space:nowrap;border-left:2px solid var(--border);${bb}">${upt?tipMoney(upt):''}</td>
