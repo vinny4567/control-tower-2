@@ -44,8 +44,12 @@ for (const [what, near] of [
   ['a price edit', 'function posSetPrice('],
   ['a discount rate edit', "kvPush('ct_pos_disc_rates'"],
 ]) {
+  // the whole function when `near` starts one (a fixed 900-char window went blind the
+  // moment a comment grew the function), else a window around the call site
   const i = src.indexOf(near);
-  ok(`${what} keeps your place`, i > 0 && src.slice(i, i + 900).includes('posKeepScroll('));
+  let body = src.slice(i, i + 900);
+  if (i > 0 && near.startsWith('function ')) { let d = 0, j = src.indexOf('{', i); for (let k = j; k < src.length; k++) { if (src[k] === '{') d++; else if (src[k] === '}') { d--; if (!d) { body = src.slice(i, k + 1); break; } } } }
+  ok(`${what} keeps your place`, i > 0 && body.includes('posKeepScroll('));
 }
 
 console.log(bad ? `\n${bad} FAILED` : '\nall good');

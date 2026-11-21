@@ -23,7 +23,7 @@ const grab = (name) => {
   }
   return src.slice(i, j + 1);
 };
-const grabConst = (name) => { const i = src.indexOf('const ' + name + '='); return src.slice(i, src.indexOf(';', i) + 1); };
+const grabConst = (name) => { const i = src.indexOf('const ' + name + '='); return src.slice(i, src.indexOf('\n', i)); };   // one-line consts, whole line
 
 // The real shape: Jose Curvo carries ONE built-in group (Liquor Mods #120, one of several groups
 // with that title), and "tequila" is a group attached from the back office.
@@ -33,13 +33,16 @@ const modGroups = [
   { num: 300, name: 'Rocks', used_by: ['Patron'] },
   { num: null, name: 'Garnish', used_by: ['Patron'] },
 ];
-function world({ rows, order = {}, attach = {}, detach = {}, newGroups = [] }) {
+function world({ rows, order = {}, attach = {}, detach = {}, newGroups = [], names = {} }) {
   const ctx = {};
   new Function('ctx', `
     let posS={cat:{mod_groups:${JSON.stringify(modGroups)}}};
+    let posGroupNames=${JSON.stringify(names)};
     let posItemGroupOrder=${JSON.stringify(order)},posGroupAttach=${JSON.stringify(attach)},posGroupDetach=${JSON.stringify(detach)},posNewGroups=${JSON.stringify(newGroups)};
     function posAllRows(){return ${JSON.stringify(rows)};}
     ${grabConst('posGroupKey')}
+    ${grabConst('posGroupLabel')}
+    ${grabConst('posPromptKey')}
     ${grab('posItemGroupKeys')}${grab('posBuildPromptOrder')}
     ctx.keys=posItemGroupKeys;ctx.build=posBuildPromptOrder;
   `)(ctx);
@@ -54,7 +57,10 @@ const attachTequila = { 'g:tequila': { items: ['Jose Curvo'], cats: [] } };
   const w = world({ rows: [jose], newGroups: [tequila], attach: attachTequila, order: { 'm:TEQUILA:Jose Curvo': ['tequila', 'Liquor Mods'] } });
   const po = w.build();
   ok('⛔ promptOrder is keyed by the SAME item key the blob\'s items map uses', Object.keys(po).join() === 'm:TEQUILA:Jose Curvo');
-  ok('⛔ the dragged order is published: tequila\'s key first, then Liquor Mods\' (#120)', JSON.stringify(po['m:TEQUILA:Jose Curvo']) === JSON.stringify(['g:tequila', '120']));
+  // ⚠️ the REGISTER's key for the attached group: 'n:' + its shown title, never our own 'g:…'
+  // (menulive.js promptFromGroup numbers a group only when its key is all digits)
+  ok('⛔ the dragged order is published in the REGISTER\'s keys: n:tequila first, then Liquor Mods #120', JSON.stringify(po['m:TEQUILA:Jose Curvo']) === JSON.stringify(['n:tequila', '120']));
+  ok('⛔ the back office\'s own group key ("g:tequila") never reaches the register — it can\'t match it', !JSON.stringify(po).includes('g:tequila'));
 }
 {
   const w = world({ rows: [jose], newGroups: [tequila], attach: attachTequila });
@@ -69,11 +75,18 @@ const attachTequila = { 'g:tequila': { items: ['Jose Curvo'], cats: [] } };
   ok('an unnumbered group publishes as n:<title>, the register\'s key form', JSON.stringify(w.build()['m:TEQUILA:Patron']) === JSON.stringify(['n:Garnish', '300', '120']));
 }
 
+// ── a RENAMED group: the register shows (and keys) the new title; a numbered one stays numbered ──
+{
+  const w = world({ rows: [jose], newGroups: [tequila], attach: attachTequila, names: { 'g:tequila': 'Tequila choice', '120': 'Liquor' }, order: { 'm:TEQUILA:Jose Curvo': ['tequila', 'Liquor Mods'] } });
+  ok('⛔ an unnumbered group renamed here publishes under the title the register shows', JSON.stringify(w.build()['m:TEQUILA:Jose Curvo']) === JSON.stringify(['n:Tequila choice', '120']));
+  ok('…while a numbered group stays its number whatever it is called', w.build()['m:TEQUILA:Jose Curvo'][1] === '120');
+}
+
 // ── ALL current groups, every time — even ones the drag never saw ───────────────────────────
 {
   // order saved before "tequila" was attached: it still gets listed (after the dragged ones)
   const w = world({ rows: [jose], newGroups: [tequila], attach: attachTequila, order: { 'm:TEQUILA:Jose Curvo': ['Liquor Mods'] } });
-  ok('⛔ a group not in the saved order is still listed (after the ordered ones) — every current group travels', JSON.stringify(w.build()['m:TEQUILA:Jose Curvo']) === JSON.stringify(['120', 'g:tequila']));
+  ok('⛔ a group not in the saved order is still listed (after the ordered ones) — every current group travels', JSON.stringify(w.build()['m:TEQUILA:Jose Curvo']) === JSON.stringify(['120', 'n:tequila']));
 }
 {
   // a group taken off the item stops being listed — its key just stops matching

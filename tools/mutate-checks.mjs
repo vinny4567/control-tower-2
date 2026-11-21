@@ -1000,6 +1000,15 @@ const M=[
     tsub("// ⚠️ STAFF IS THE MASTER FOR PAYCHEX IDs — Vinny, 11/20/26:",
          "// Staff owns the Paychex ID — Vinny, 11/20/26:"),false],
 
+  // ── A $0 PRICE IS A REAL PRICE (check-pos-zero-price) ───────────────────────────────────
+  ['ZERO 1 · ⛔ emptying the price box deletes the override again — the platter snaps back to $3.00','check-pos-zero-price.mjs',
+    tsub("  const cents=raw?Math.round(parseFloat(raw)*100):0;\n  if(!isFinite(cents)||cents<0)return;\n  posPrices[key]=cents;",
+         "  if(!raw){delete posPrices[key];}\n  else{const cents=Math.round(parseFloat(raw)*100);if(!isFinite(cents)||cents<0)return;posPrices[key]=cents;}"),true],
+  ['ZERO 2 · ⛔ the publish treats a $0 price as "nothing set" (a falsy test) — $0 never reaches the register','check-pos-zero-price.mjs',
+    tsub("if(posEntered(r)&&posPriceOf(r)!==r.cents)o.cents=posPriceOf(r);","if(posEntered(r)&&posPriceOf(r)&&posPriceOf(r)!==r.cents)o.cents=posPriceOf(r);"),true],
+  ['ZERO 3 · ⛔ the settle step drops a $0 override as if it were nothing','check-pos-zero-price.mjs',
+    tsub("const it=byItem[k]; if(it&&it.cents===cents)drop(posPrices,k,'ct_pos_prices');","const it=byItem[k]; if(it&&(it.cents===cents||!cents))drop(posPrices,k,'ct_pos_prices');"),true],
+
   // ── THE ORDER AN ITEM ASKS ITS GROUPS (check-pos-prompt-order) ────────────────────────────
   ['PROMPT 1 · ⛔ promptOrder never leaves the page — the drag reorders the back office and the register keeps asking Liquor Mods first','check-pos-prompt-order.mjs',
     tsub("    promptOrder:posBuildPromptOrder(),   // the order each item asks its groups (see posBuildPromptOrder)\n",""),true],
@@ -1010,6 +1019,11 @@ const M=[
     tsub("    out[r.key]=cur.map((x,i)=>[x,i])","    out[r.key]=cur.filter(x=>ord.includes(x.n)).map((x,i)=>[x,i])"),true],
   ['PROMPT 4 · ⛔ a detached group is still listed','check-pos-prompt-order.mjs',
     tsub("  for(const n of live){\n    if(off.has(n))continue;","  for(const n of live){"),true],
+  ['PROMPT 6 · ⛔ an attached group publishes the BACK OFFICE\'s key ("g:tequila") — the register can\'t match it and Jose still asks Liquor Mods first','check-pos-prompt-order.mjs',
+    tsub("const posPromptKey=(g)=>{const k=String(posGroupKey(g));return /^\\d+$/.test(k)?k:'n:'+posGroupLabel(g);};",
+         "const posPromptKey=(g)=>String(posGroupKey(g));"),true],
+  ['PROMPT 7 · ⛔ an unnumbered group is keyed by its ORIGINAL name, not the renamed title the register shows','check-pos-prompt-order.mjs',
+    tsub("return /^\\d+$/.test(k)?k:'n:'+posGroupLabel(g);};","return /^\\d+$/.test(k)?k:'n:'+g.name;};"),true],
   ['PROMPT 5 · BENIGN — the prompt-order comment reworded, no behaviour change','check-pos-prompt-order.mjs',
     tsub("// ── THE ORDER AN ITEM ASKS ITS GROUPS — Vinny, 11/20/26:","// ── Which group an item asks first — Vinny, 11/20/26:"),false],
 

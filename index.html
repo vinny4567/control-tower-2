@@ -8296,6 +8296,12 @@ const POS_LIVE_KEY='ct_pos_live';
 // listed keeps its old order after them; a detached group's key simply stops matching.
 // A NAME is resolved against the item it sits on: one title can belong to several numbered
 // groups ("Liquor Mods"), so the one whose used_by holds THIS item wins.
+// ⚠️ THE KEY IS THE REGISTER'S, NOT OURS (Jarvis/POS-UI, menulive.js promptFromGroup): the
+// register numbers a group only when its key is all digits, and otherwise knows it ONLY as
+// 'n:' + the title it shows — which is posGroupLabel (a rename here, else its name). A
+// back-office group's own key ('g:…') means nothing there; publishing it left Jose asking
+// Liquor Mods first. So: digits → the number, anything else → 'n:' + the shown title.
+const posPromptKey=(g)=>{const k=String(posGroupKey(g));return /^\d+$/.test(k)?k:'n:'+posGroupLabel(g);};
 function posItemGroupKeys(r){
   const cat=(posS.cat&&posS.cat.mod_groups)||[];
   const live=r.groups||[],off=new Set(),out=[];
@@ -8307,12 +8313,12 @@ function posItemGroupKeys(r){
   for(const n of live){
     if(off.has(n))continue;
     const g=cat.find(x=>x.name===n&&(x.used_by||[]).includes(r.name))||cat.find(x=>x.name===n);
-    out.push({n,k:g?String(posGroupKey(g)):'n:'+n});
+    out.push({n,k:g?posPromptKey(g):'n:'+n});
   }
   for(const [k,a] of Object.entries(posGroupAttach)){
     if(!(a.cats||[]).includes(r.cat)&&!(a.items||[]).includes(r.name))continue;
     const g=posNewGroups.find(x=>x.key===k)||cat.find(x=>String(x.num)===k);
-    if(g&&!live.includes(g.name)&&!off.has(g.name))out.push({n:g.name,k:String(k)});
+    if(g&&!live.includes(g.name)&&!off.has(g.name))out.push({n:g.name,k:posPromptKey(g)});
   }
   return out;
 }
@@ -9395,12 +9401,16 @@ function posDiscKindChanged(){
 function posSetPrice(enc,str){
   const key=decodeURIComponent(enc);
   const raw=String(str).replace(/[^0-9.]/g,'');
-  if(!raw){delete posPrices[key];}
-  else{
-    const cents=Math.round(parseFloat(raw)*100);
-    if(!isFinite(cents)||cents<0)return;
-    posPrices[key]=cents;
-  }
+  // ⚠️ AN EMPTIED BOX IS $0, NOT "UNDO" (Vinny, 11/20/26, GELATO PLATTER: "i just tried to
+  // delete it to take the price off, the price for that comes from the mods"). Emptying it
+  // used to delete the override, so the register's own $3.00 came straight back — the
+  // second time "take the price off" failed this way. Clearing and typing 0 now both save a
+  // real cents:0 override, which publishes, and the register rings $0 + the mods (POS-UI
+  // confirmed). To go back to the register's price, type that price: posPruneOrphans drops
+  // an override equal to the built-in one, so nothing is left behind.
+  const cents=raw?Math.round(parseFloat(raw)*100):0;
+  if(!isFinite(cents)||cents<0)return;
+  posPrices[key]=cents;
   kvPush('ct_pos_prices',posPrices,Date.now());
   posKeepScroll(()=>{posRerenderList();renderViewport();});
 }
@@ -10649,10 +10659,12 @@ function posItemGroupPanelHTML(r){
   </div>`;
 }
 
-// ⚠️ EMPTYING THIS BOX DOES NOT MEAN "NO PRICE". It deletes the override, so the row
-// falls back to the price the register already has — the number reappears on its own
-// and it reads as the edit having failed. Vinny: "im trying to take the price off this
-// its not working." It was working; it was doing the other thing.
+// ⚠️ 11/20/26: EMPTYING THIS BOX NOW MEANS $0 (see posSetPrice). The history below is
+// why: it used to delete the override, so the row fell back to the price the register
+// already has — the number reappeared on its own and read as the edit having failed.
+// Vinny: "im trying to take the price off this its not working." It was working; it was
+// doing the other thing — and the half-fix below (typed 0 shows 0.00) left clearing as
+// "revert", which he hit again on the gelato platter.
 //
 // Two different intentions were sharing one empty box:
 //   · clear it  → forget what I typed, use the register's price   (revert)
@@ -10682,8 +10694,8 @@ function posPriceCell(r){
     onchange="posSetPrice('${enc}',this.value)"
     onkeydown="if(event.key==='Enter')this.blur()"
     title="${mine
-      ? 'Set here, and live on the registers. Empty the box to drop it and go back to the register&#39;s own price.'
-      : 'The register&#39;s price. Type a new one, or 0 to make the item cost nothing.'}"
+      ? 'Set here, and live on the registers. Empty the box (or type 0) to make it $0 — the mods then set the price. Type the register&#39;s own price to go back to it.'
+      : 'The register&#39;s price. Type a new one; empty the box or type 0 to make the item cost nothing.'}"
     style="width:100%;text-align:right;font-variant-numeric:tabular-nums;font-size:16px;
       padding:4px 7px;border-radius:6px;font-family:inherit;
       border:1px solid var(--border);
