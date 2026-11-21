@@ -55,6 +55,7 @@ function world({ logEntries = null, fetchReturns = null, confirmAnswer = true, d
     function tipsActive(){return activeTab===POS&&posS.sec===TIPS;}
     const document={getElementById(id){ctx.calls.redraws++;return {set innerHTML(v){},get innerHTML(){return '';}};}};
     function tipsHTML(){return '';}   // stub — this file tests the Log functions, not the whole render
+    function tipsRedraw(){const vp=document.getElementById('pos-body');if(vp)vp.innerHTML=tipsHTML();}   // the real one also keeps the scroll — tested in check-scroll-guard
     function confirm(msg){ctx.calls.confirms.push(msg);return ${JSON.stringify(confirmAnswer)};}
     function alert(msg){ctx.calls.alerts.push(msg);}
     const fetch=async (url,opts)=>{

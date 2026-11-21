@@ -5760,7 +5760,6 @@ const EVENTS_TIPS_URL='https://restaurant-scheduler-hh5e.onrender.com/api/events
 // for it (see tipsHTML) — the fix is giving them a department, not moving their row.
 const TIP_SECTIONS=['Server','Bartender','Busser','Food Runner','Weddings','NoDept','Kitchen'];
 const TIP_SEC_LABEL={'Server':'Servers','Bartender':'Bartenders','Busser':'Bussers','Food Runner':'Food Runners','Weddings':'Weddings (event-only)','NoDept':'No department yet','Kitchen':'Kitchen'};
-const TIP_SEC_SHORT={'Server':'Srv','Bartender':'Bar','Busser':'Bus','Food Runner':'Run','Weddings':'Wed','NoDept':'—','Kitchen':'Kit'};
 function tipBusserSplit(name){return (tipsState.busserSplit&&tipsState.busserSplit[name])||0;}   // period-total busser pool share
 // busserSplitByDay is stored DATE first, then name — {"9/8":{"Anna Kinsella":20.93,…}} — which
 // is what tipsComputeBusserSplit produces and what the rename/remove helpers already assume.
@@ -5805,9 +5804,32 @@ function tipCanon(name){const k=tipNormKey(name);if(!k)return String(name||'').t
 // aliases once, so MICROS spellings like "Priscill Lagace" keep landing on the right
 // person. Nothing writes it; tipRosterFixPriscilla (which used to) is retired.
 const TIPS_ROSTER_KEY='ct_tips_roster';
-let tipsState={start:null,end:null,cells:{},adds:{},moves:{},expanded:{},hours:{},hoursOut:{},empIds:{},busserSplit:{},busserSplitByDay:{},view:'tips',loaded:false,loading:false,logOpen:false,logEntries:null,logExpanded:{}};
+let tipsState={start:null,end:null,cells:{},adds:{},expanded:{},hours:{},hoursOut:{},empIds:{},busserSplit:{},busserSplitByDay:{},view:'tips',loaded:false,loading:false,logOpen:false,logEntries:null,logExpanded:{}};
 let tipsGen=0;   // bumped on every (re)load; guards against two period-loads racing and crossing data
-function tipsSetView(v){tipsState.view=v;document.getElementById('pos-body').innerHTML=tipsHTML();}
+// ⛔ NO ACTION IN TIPS OR STAFF MAY MOVE THE SCROLL — Vinny, 11/20/26: "make sure it doesnt
+// snap me back up after pressing something in the dropdown, that seems to be a reoccuring
+// theme." Every Tips and Staff redraw goes through here. It records EVERY element that can be
+// the one holding the position — the view's own scroller (first child of #pos-body), the POS
+// pane around #pos-body, #viewport — and the window, runs the redraw (which replaces some of
+// those nodes), then finds them again by the same role and puts each value back. A row that
+// MOVES section (a department change) leaves the view where it was; nothing jumps to it.
+// tools/check-scroll-guard.mjs fails the build if a Tips/Staff redraw path skips this.
+function posScrollers(){
+  const out=[],vp=document.getElementById('pos-body');
+  if(vp){if(vp.firstElementChild)out.push(['inner',vp.firstElementChild]);const pane=vp.parentElement&&vp.parentElement.closest?vp.parentElement.closest('[style*="overflow-y"]'):null;if(pane)out.push(['pane',pane]);}
+  const v=document.getElementById('viewport');if(v)out.push(['viewport',v]);
+  return out;
+}
+function posRedrawKeepScroll(fn){
+  const before={};posScrollers().forEach(([k,el])=>{before[k]=el.scrollTop;});
+  const win=(typeof window!=='undefined'&&window.scrollY)||0;
+  fn();
+  posScrollers().forEach(([k,el])=>{if(before[k]!=null&&el.scrollTop!==before[k])el.scrollTop=before[k];});
+  if(win&&window.scrollY!==win)window.scrollTo(0,win);
+}
+function tipsRedraw(){const vp=document.getElementById('pos-body');if(!vp)return;posRedrawKeepScroll(()=>{vp.innerHTML=tipsHTML();});}
+function staffRedrawAll(){posRedrawKeepScroll(()=>renderViewport());}
+function tipsSetView(v){tipsState.view=v;tipsRedraw();}
 function tipsSetHoursFilter(f){tipsState.hoursFilter=f;tipsRerender();}
 // Import the MICROS timesheet PDF: upload it to the cloud for this period (Claude
 // parses it into hours + rates + busser splits; auto-parse backend is coming).
@@ -5943,7 +5965,7 @@ async function tipsImportTimesheet(input){
     const n=tipsMergeMicros(people,split,byDay,nb?undefined:{keepSplit:true});
     tipsSaveHoursSoon();
     tipsSaveEmpIds();
-    if(tipsActive())document.getElementById('pos-body').innerHTML=tipsHTML();
+    if(tipsActive())tipsRedraw();
     // Say why when there is no split — this failed silently for weeks behind a cheerful
     // "imported 58 employees" and the bussers simply read as zero.
     if(nb){
@@ -6024,7 +6046,7 @@ async function tipsPullFromPos(){
   const n=tipsMergeMicros(people,{},{},{keepRates:true,keepSplit:true});
   tipsSaveHoursSoon();
   tipsSaveEmpIds();
-  if(tipsActive())document.getElementById('pos-body').innerHTML=tipsHTML();
+  if(tipsActive())tipsRedraw();
   // An unpunched shift is somebody's pay being wrong, and it has to be LOUD — a
   // manager who does not hear about it signs off a period that is short a night.
   const tipNote=posTips?('  ·  register also recorded '+tipMoney(posTips/100)+' in charge tips (not filled in — the tip sheet still owns those)'):'';
@@ -6176,7 +6198,7 @@ async function tipsDownloadCsv(){
 function tipsCsvBtnHTML(){return `<button onclick="tipsDownloadCsv()" title="Save the Paychex CSV into Desktop/Payroll/<period>/ (pick the Payroll folder the first time)" style="background:#34d399;border:none;color:#06281c;font-weight:800;border-radius:8px;padding:6px 14px;cursor:pointer;font-size:12px;white-space:nowrap;margin-left:auto">⬇ Paychex CSV</button>`;}
 // Re-render the Tips/Hours view in place WITHOUT losing the vertical scroll position
 // (a plain innerHTML swap snaps the page back to the top).
-function tipsRerender(){const vp=document.getElementById('pos-body');if(!vp)return;const sc=vp.firstElementChild;const top=sc?sc.scrollTop:0;vp.innerHTML=tipsHTML();const sc2=vp.firstElementChild;if(sc2)sc2.scrollTop=top;}
+function tipsRerender(){tipsRedraw();}   // kept as a name callers already use; same helper
 // ── Hours page — per person, hours by POSITION (weddings pull + MICROS import) ──
 // tipsState.hours[name] = { <section>: {h:hours, r:rate, o:ot} }  (a person can work
 // several positions at different rates — e.g. Bar $15 + Servers $25).
@@ -6299,7 +6321,7 @@ async function tipsPullWeddingHours(auto){
     }
     if(!Object.keys(H).length)delete tipsState.hours[nm];
   });
-  if(filled){if(tipsActive()&&(tipsState.view||'tips')==='hours')document.getElementById('pos-body').innerHTML=tipsHTML();tipsSaveHoursSoon();}
+  if(filled){if(tipsActive()&&(tipsState.view||'tips')==='hours')tipsRedraw();tipsSaveHoursSoon();}
   // "in sync" must not be said while rows are deliberately NOT in sync — that
   // exact claim is how stale wedding hours hid before. Count what he holds.
   let held=0;Object.keys(tipsState.hours||{}).forEach(n=>{const H=tipsState.hours[n]||{};Object.keys(H).forEach(j=>{if(H[j]&&H[j].m&&!H[j].x)held++;});});
@@ -6378,7 +6400,11 @@ function tipCleanAdds(){
   });
   return changed;
 }
-function tipEffSection(name){return (tipsState.moves&&tipsState.moves[name])||tipBaseSection(name);}
+// ⚠️ 11/20/26 — the per-sheet "moves" (ct_tips_moves) are RETIRED: the row's dropdown now sets
+// the person's DEPARTMENT on Staff (tipSetDept), so where a row sits IS its department — one
+// place for it (Vinny: "can i move people to their department right from here?"). Nothing reads
+// or writes ct_tips_moves any more; the stored value is left alone (already {}).
+function tipEffSection(name){return tipBaseSection(name);}
 // ⛔ EVERY TIPS SAVE ANSWERS TWO QUESTIONS FIRST: is this screen real, and is it still the
 // fortnight it was about? Vinny 11/18: "fix both".
 // Clicking a date EMPTIES the sheet and then loads the new period. Any save that fires in
@@ -6403,7 +6429,6 @@ function tipsSaveEmpIds(){
   if(tipsSaveBlocked())return false;
   try{kvPush('ct_emp_ids',{emp:tipsState.empIds},Date.now());return true;}catch(e){return false;}
 }
-function tipsSaveMoves(){if(tipsSaveBlocked())return;try{kvPush('ct_tips_moves',{moves:tipsState.moves},Date.now());}catch(e){}}
 
 // Default range = the current 14-day pay period (anchor Mar 23 2026, same as the tip-out app).
 function tipCurrentPeriod(){
@@ -6577,13 +6602,21 @@ function tipGroupTotals(g){let paid=0,upt=0;g.members.forEach(m=>{const t=tipRow
 // spelling is edited and the editor says what else is there — never silently summed into it.)
 function tipEditTarget(g,lb){const holders=g.members.filter(m=>{const c=tipCell(m,lb);return c&&(c.p||c.u||c.w);});return holders.length===1?holders[0]:g.primary;}
 function tipCellEditGroup(primary,lb){tipCellEdit(tipEditTarget(tipGroupFor(primary),lb),lb);}
-// Moving a merged row moves every spelling in it — or the group would split across sections.
-function tipMoveGroup(primary,sec){
-  if(!tipsState.moves)tipsState.moves={};
-  tipGroupFor(primary).members.forEach(m=>{if(tipBaseSection(m)===sec)delete tipsState.moves[m];else tipsState.moves[m]=sec;});
-  tipsSaveMoves();document.getElementById('pos-body').innerHTML=tipsHTML();
+// The row's dropdown SETS THE STAFF DEPARTMENT (Vinny, 11/20/26: "can i move people to their
+// department right from here?"). One write, through the same door as every Staff edit, for the
+// Staff person the row resolves to; on success staffWriteOp re-pulls Staff, and the row moves
+// because its department changed — every stored spelling with it, since they resolve to the same
+// person. "—" clears it. A refused write (read-only, unreachable…) redraws so the dropdown shows
+// what is actually saved, not what was picked.
+const TIP_DEPT_CHOICES=[['server','Srv'],['bartender','Bar'],['busser','Bus'],['runner','Run'],['events','Wed'],['kitchen','Kit'],['','—']];
+async function tipSetDept(name,v){
+  const p=staffResolveForTips(name);if(!p)return;
+  const dept=STAFF_DEPARTMENTS.includes(v)?v:null;
+  if((p.department||null)===dept)return;
+  const r=await staffWriteOp({op:'update',pid:p.pid,patch:{department:dept}});
+  if(!r)tipsRedraw();
 }
-function tipAddPerson(sec){const inp=document.getElementById('tip-add-'+sec.replace(/ /g,'_'));if(!inp)return;const name=(inp.value||'').trim();if(!name)return;if(!tipsState.adds[sec])tipsState.adds[sec]=[];const all=tipSectionPeople(sec);if(all.indexOf(name)<0){tipsState.adds[sec].push(name);tipsSaveSoon();}document.getElementById('pos-body').innerHTML=tipsHTML();}
+function tipAddPerson(sec){const inp=document.getElementById('tip-add-'+sec.replace(/ /g,'_'));if(!inp)return;const name=(inp.value||'').trim();if(!name)return;if(!tipsState.adds[sec])tipsState.adds[sec]=[];const all=tipSectionPeople(sec);if(all.indexOf(name)<0){tipsState.adds[sec].push(name);tipsSaveSoon();}tipsRedraw();}
 function tipsSetStatus(s,c){const el=document.getElementById('tips-status');if(el){el.textContent=s;el.style.color=c||'var(--text-dim)';}}
 
 async function tipsInit(){
@@ -6595,28 +6628,26 @@ async function tipsInit(){
   // answered — an empty default written into state is one autosave away from
   // being written back over a real fortnight.
   const remote=await kvGetOrLegacy(tipPeriodKey(),tipLegacyKey('ct_tips_'));if(g!==tipsGen)return;   // period changed mid-load — abort so cells never cross periods
-  const rm=await kvGet('ct_tips_moves');if(g!==tipsGen)return;
   const rh=await kvGetOrLegacy(tipHoursKey(),tipLegacyKey('ct_hours_'));if(g!==tipsGen)return;
   const ge=await kvGet('ct_emp_ids');if(g!==tipsGen)return;
   // ⛔ Could not reach the store. STOP — do not fall through to empty defaults.
   // `loaded` deliberately stays false, so tipsRefresh/visibilitychange retries
   // this on its own, and loadFailed makes every save refuse in the meantime.
-  if(kvFailed(remote)||kvFailed(rm)||kvFailed(rh)||kvFailed(ge)){
+  if(kvFailed(remote)||kvFailed(rh)||kvFailed(ge)){
     tipsState.loading=false;tipsState.loadFailed=true;
-    if(tipsActive())document.getElementById('pos-body').innerHTML=tipsHTML();
+    if(tipsActive())tipsRedraw();
     tipsSetStatus('⚠ Could not reach the store — this screen is NOT your data, and nothing will be saved.','#f87171');
     return;
   }
   tipsState.loadFailed=false;
   tipsState.cells=(remote&&remote.v&&remote.v.cells)?remote.v.cells:{};
   tipsState.adds=(remote&&remote.v&&remote.v.adds)?remote.v.adds:{};
-  tipsState.moves=(rm&&rm.v&&rm.v.moves)?rm.v.moves:{};
   tipsState.hours=(rh&&rh.v&&rh.v.hours)?rh.v.hours:{};const globalEmp=(ge&&ge.v&&ge.v.emp)?ge.v.emp:{};   // emp-IDs never change → remembered globally across periods
 tipsState.empIds=Object.assign({},(rh&&rh.v&&rh.v.empIds)?rh.v.empIds:{},globalEmp);   // global wins
 tipsState.busserSplit=(rh&&rh.v&&rh.v.busserSplit)?rh.v.busserSplit:{};tipsState.busserSplitByDay=(rh&&rh.v&&rh.v.busserSplitByDay)?rh.v.busserSplitByDay:{};tipsState.punches=(rh&&rh.v&&rh.v.punches)?rh.v.punches:[];tipsState.hoursOut=(rh&&rh.v&&rh.v.hoursOut)?rh.v.hoursOut:{};   // per-person + per-night busser pool split, and who he took out by hand
   let _mig=tipMigrateCells();if(tipCleanAdds())_mig=true;if(_mig)tipsSaveSoon();   // upgrade legacy {v,upt,wed} cells + heal stale adds
   tipsState.loaded=true;tipsState.loading=false;
-  if(tipsActive())document.getElementById('pos-body').innerHTML=tipsHTML();
+  if(tipsActive())tipsRedraw();
   tipsPull(true).then(()=>{ if(g!==tipsGen)return; tipsPullWeddings(true); tipsPullWeddingHours(true); tipsScanTimesheets(true); tipsPulledAt=Date.now(); });   // picking a date range pulls the tip-out log + wedding tips + wedding hours
 }
 // Come back to this tab and pick the numbers up again.
@@ -6646,7 +6677,7 @@ function tipsReload(){tipsGen++;tipsState.loaded=false;tipsState.loading=false;t
   // The busser split belongs to a period as much as the cells do. Leaving it behind meant
   // last fortnight's shares sat on the new one until the load finished overwriting them.
   tipsState.hours={};tipsState.busserSplit={};tipsState.busserSplitByDay={};tipsState.punches=[];tipsState.checks=null;tipsState.hoursOut={};
-  document.getElementById('pos-body').innerHTML=tipsHTML();tipsInit();}
+  tipsRedraw();tipsInit();}
 function tipsSetStart(ds){const d=tipParseISO(ds);if(!d)return;tipsState.start=d;tipsState.end=new Date(d.getFullYear(),d.getMonth(),d.getDate()+13);tipRangeRemember();tipsReload();} // snap to a 14-day period; adjust the end for a custom length
 function tipsSetEnd(ds){const d=tipParseISO(ds);if(!d)return;tipsState.end=d;if(tipsState.start>d)tipsState.start=new Date(d.getFullYear(),d.getMonth(),d.getDate()-13);tipRangeRemember();tipsReload();}
 function tipsThisPeriod(){tipRangeForget();const p=tipCurrentPeriod();tipsState.start=p.start;tipsState.end=p.end;tipsReload();}
@@ -6752,7 +6783,7 @@ async function tipsPull(auto){
     Object.keys(direct).forEach(nm=>{const info=direct[nm];if(!info.amt)return;ensure(nm,ROLE_SEC[info.role]||tipBaseSection(nm)||'Weddings');putC(nm,lb,'p',info.amt);});
   });
   tipsState.loaded=true;
-  if(filled&&tipsActive())document.getElementById('pos-body').innerHTML=tipsHTML();
+  if(filled&&tipsActive())tipsRedraw();
   if(filled&&!auto)tipsSaveSoon();   // UNDO auto-save: an auto pull (on load) only DISPLAYS the calculator's numbers now — it no longer freezes them into saved data (that's what stuck the early/partial busser pool). Only a manual pull or a hand edit saves.
   tipsSetStatus(filled?('Pulled '+filled+' from calculator ✓'):(auto?'✓ in sync with calculator':'Nothing new to pull'),'var(--text-dim)');
 }
@@ -6782,7 +6813,7 @@ async function tipsLogFetch(){
   catch(e){tipsState.logEntries=tipsState.logEntries||[];tipsState.logFailed=true;}
   tipsState.logLoading=false;
 }
-function tipsLogRedraw(){if(tipsActive())document.getElementById('pos-body').innerHTML=tipsHTML();}
+function tipsLogRedraw(){if(tipsActive())tipsRedraw();}
 async function tipsLogOpen(){
   tipsState.logOpen=true;
   tipsLogRedraw();
@@ -6892,7 +6923,7 @@ async function tipsPullWeddings(auto){
       tipSetComp(n,lb,'w',0);filled++;
     });
   });
-  if(filled&&tipsActive())document.getElementById('pos-body').innerHTML=tipsHTML();
+  if(filled&&tipsActive())tipsRedraw();
   // Unlike the tip-out pull, this one SAVES even on an auto pull. That pull fills blanks
   // from a calculator that can still be mid-night, so freezing it was the bug; this one
   // copies a finished event's figures from the app that owns them, and a correction is no
@@ -6990,7 +7021,7 @@ async function tipsScanTimesheets(force){
   const wed=await tsFetchWeddingRows();
   if(g!==tipsGen)return;
   tipsState.checks=tsCheckAll(wed,tsRestaurantRows());
-  if(tipsActive()&&(tipsState.view||'tips')==='hours')document.getElementById('pos-body').innerHTML=tipsHTML();
+  if(tipsActive()&&(tipsState.view||'tips')==='hours')tipsRedraw();
 }
 function tsChecksHTML(){
   const list=tipsState.checks;
@@ -7154,10 +7185,14 @@ function tipsHTML(){
     const disp=isPool?{name,matched:true}:staffDisplayName(name);
     const tds=days.map(d=>{const lb=tipDayLabel(d);const mon=(d.getDay()===1);
       return `<td id="tc-${id}-${lb.replace('/','_')}" data-tipcell onclick="tipCellEditGroup('${en}','${lb}')" title="Click to edit" style="cursor:pointer;border-right:1px solid var(--border);${bb};text-align:right;padding:5px ${mon?'2px':'6px'};min-width:${mon?'18px':'58px'};white-space:nowrap;vertical-align:middle">${tipCompsHTML(tipGroupDayCell(g,lb))}</td>`;}).join('');
+    // Department dropdown — only for a row that resolves to a Staff person (an unlinked ⚑
+    // name's fix is the ⚑ link first), disabled while Staff is read-only (mini unreachable).
+    const sp=isPool?null:staffResolveForTips(name),cur=(sp&&sp.department)||'';
+    const deptSel=(!sp)?'':`<select title="Department — saved on Staff" ${staffS.readOnly?'disabled':''} onchange="tipSetDept('${en}',this.value)" style="background:transparent;border:none;color:var(--text-muted);font-size:11px;font-family:inherit;cursor:${staffS.readOnly?'not-allowed':'pointer'};-webkit-appearance:none;appearance:none;padding:0 2px">${TIP_DEPT_CHOICES.map(([v,l])=>`<option value="${v}" ${cur===v?'selected':''} style="color:#000">${l}</option>`).join('')}${cur&&!TIP_DEPT_CHOICES.some(([v])=>v===cur)?`<option value="${esc(cur)}" selected style="color:#000">${esc(cur)}</option>`:''}</select>`;
     const also=g.members.filter(m=>m!==name);
     const alsoTag=also.length?`<span title="Also stored as: ${esc(also.join(', '))} — shown and paid as one person" style="color:var(--text-muted);font-size:10px;font-weight:600">+${also.length} spelling${also.length>1?'s':''}</span>`:'';
     return `<tr style="${isPool?'background:rgba(251,191,36,0.06)':''}">
-      <td style="position:sticky;left:0;z-index:1;background:var(--surface);padding:7px 12px;font-weight:${isPool?'800':'600'};white-space:nowrap;border-right:2px solid var(--border);${bb};${isPool?'color:#fbbf24':''}"><span style="display:inline-flex;align-items:center;gap:6px">${isPool?'':tipIdBadgeHTML(name)}${esc(disp.name)}${staffDisplayMark(disp.matched,name)}${alsoTag}${isPool?'':`<select title="Move to another section" onchange="tipMoveGroup('${esc(name).replace(/'/g,"\\'")}',this.value)" style="background:transparent;border:none;color:var(--text-muted);font-size:11px;font-family:inherit;cursor:pointer;-webkit-appearance:none;appearance:none;padding:0 2px">${TIP_SECTIONS.map(s=>`<option value="${s}" ${tipEffSection(name)===s?'selected':''} style="color:#000">${TIP_SEC_SHORT[s]}</option>`).join('')}</select>`}</span></td>
+      <td style="position:sticky;left:0;z-index:1;background:var(--surface);padding:7px 12px;font-weight:${isPool?'800':'600'};white-space:nowrap;border-right:2px solid var(--border);${bb};${isPool?'color:#fbbf24':''}"><span style="display:inline-flex;align-items:center;gap:6px">${isPool?'':tipIdBadgeHTML(name)}${esc(disp.name)}${staffDisplayMark(disp.matched,name)}${alsoTag}${deptSel}</span></td>
       ${tds}
       <td id="tp-${id}" style="padding:7px 8px;text-align:right;font-weight:700;color:#34d399;white-space:nowrap;${PAID_DIV};${bb}">${t.paid?tipMoney(t.paid):''}</td>
       <td id="tu-${id}" style="padding:7px 8px;text-align:right;font-weight:700;color:#fbbf24;white-space:nowrap;border-left:2px solid var(--border);${bb}">${upt?tipMoney(upt):''}</td>
@@ -13792,7 +13827,7 @@ function staffFlagFindRemoved(rawName){
   const want=staffKeyOf(rawName);if(!want)return null;
   return Object.values(staffS.people||{}).find(p=>p&&p.removed&&staffKeyOf(p.name)===want)||null;
 }
-function staffFlagRedraw(){if(tipsActive())document.getElementById('pos-body').innerHTML=tipsHTML();}
+function staffFlagRedraw(){if(tipsActive())tipsRedraw();}
 function staffFlagOpen(name){
   staffFlagS={name,removedPerson:staffFlagFindRemoved(name),q:'',results:[],busy:false,err:null};
   staffFlagRedraw();
@@ -14072,7 +14107,7 @@ async function staffLoad(force){
         // Tips already shows names resolved through Staff (staffDisplayName) — if Tips was
         // opened before this load finished, catch it up now rather than leaving last-paint's
         // raw/flagged names on screen until something else happens to redraw.
-        if(tipsActive())document.getElementById('pos-body').innerHTML=tipsHTML();
+        if(tipsActive())tipsRedraw();
         staffReconcileJobNums();
         return;
       }
@@ -14100,8 +14135,8 @@ async function staffLoad(force){
   // refresh wouldn't touch it. Rare enough (a connectivity blip mid-re-pull, not a normal
   // write) that losing scroll position here is the lesser problem — unlike the success
   // path above, which is every ordinary write and is what Vinny actually hit.
-  if(activeTab===POS&&(posS.sec==='staff'||posS.sec==='jobrates'))renderViewport();
-  if(tipsActive())document.getElementById('pos-body').innerHTML=tipsHTML();
+  if(activeTab===POS&&(posS.sec==='staff'||posS.sec==='jobrates'))staffRedrawAll();
+  if(tipsActive())tipsRedraw();
 }
 // ⛔ REMOVED 11/20/26 (Jarvis, urgent): staffMirrorToCloud() used to copy every post-read
 // projection into the cloud KV ct_staff — but staffS now holds the LIVE projection, which
@@ -14205,15 +14240,15 @@ function staffSave(){
 // create/update ops (one per scheduler row) FIRST, same shape as staffMicrosApply below.
 async function staffPull(){
   if(!staffRosterKey())return staffSetKey();
-  staffS.busy=true;staffS.note='';renderViewport();
+  staffS.busy=true;staffS.note='';staffRedrawAll();
   let body=null;
   try{
     const r=await fetch(staffUrl()+'/api/roster/all',{headers:{'x-api-key':staffRosterKey()}});
-    if(r.status===401){staffS.busy=false;staffS.note='⚠ the scheduler refused that key';return renderViewport()}
-    if(r.status===404){staffS.busy=false;staffS.note='⚠ this scheduler does not serve /api/roster/all — check it has deployed the current build';return renderViewport()}
+    if(r.status===401){staffS.busy=false;staffS.note='⚠ the scheduler refused that key';return staffRedrawAll()}
+    if(r.status===404){staffS.busy=false;staffS.note='⚠ this scheduler does not serve /api/roster/all — check it has deployed the current build';return staffRedrawAll()}
     if(!r.ok)throw new Error('HTTP '+r.status);
     body=await r.json();
-  }catch(e){staffS.busy=false;staffS.note='⚠ could not reach the scheduler: '+(e&&e.message||e);return renderViewport()}
+  }catch(e){staffS.busy=false;staffS.note='⚠ could not reach the scheduler: '+(e&&e.message||e);return staffRedrawAll()}
 
   const rows=(body&&body.employees)||[];
   const now=Date.now();
@@ -14267,7 +14302,7 @@ async function staffPull(){
     +(gone?('  ·  '+gone+' no longer listed there (kept, marked)'):'')
     +(body.counts?('  ·  '+body.counts.payroll_only+' payroll-only, '+body.counts.no_paychex_id+' with no Paychex ID'):'');
   staffSave();
-  renderViewport();
+  staffRedrawAll();
 }
 
 // ---- MICROS employee ids ----------------------------------------------------
@@ -14418,20 +14453,20 @@ async function staffMicrosFile(input){
   if(!f)return;
   let text='';
   try{ text=await f.text() }
-  catch(e){ staffS.micros={error:'Could not read that file: '+(e&&e.message||e)}; return renderViewport() }
+  catch(e){ staffS.micros={error:'Could not read that file: '+(e&&e.message||e)}; return staffRedrawAll() }
   const parsed=staffMicrosParse(text);
-  if(parsed.error){staffS.micros={error:parsed.error};return renderViewport()}
+  if(parsed.error){staffS.micros={error:parsed.error};return staffRedrawAll()}
   staffS.micros={file:f.name,plan:staffMicrosPlan(parsed.rows),count:parsed.rows.length};
-  renderViewport();
+  staffRedrawAll();
 }
-function staffMicrosCancel(){staffS.micros=null;renderViewport()}
+function staffMicrosCancel(){staffS.micros=null;staffRedrawAll()}
 // Accept ONE suggestion. It joins the list that will be written; it is not written here.
 function staffMicrosSame(i){
   const m=staffS.micros;
   if(!m||!m.plan||!m.plan.maybe[i])return;
   const pick=m.plan.maybe.splice(i,1)[0];
   m.plan.set.push({p:pick.p,r:pick.r});
-  renderViewport();
+  staffRedrawAll();
 }
 // Reject one — it becomes an unmatched row, which adds nobody.
 function staffMicrosNotSame(i){
@@ -14439,7 +14474,7 @@ function staffMicrosNotSame(i){
   if(!m||!m.plan||!m.plan.maybe[i])return;
   const pick=m.plan.maybe.splice(i,1)[0];
   m.plan.unmatched.push(pick.r);
-  renderViewport();
+  staffRedrawAll();
 }
 // ⛔ ONE update OP PER PERSON — the write contract has no bulk shape, same as
 // staffBulkJob/staffDelJobRow. Sequential, gap-fill only (never overwrites an id already
@@ -14449,7 +14484,7 @@ async function staffMicrosApply(){
   if(!m||!m.plan)return;
   const set=m.plan.set;
   staffS.micros=null;
-  renderViewport();
+  staffRedrawAll();
   let done=0;
   for(const {p,r} of set){
     const patch={};
@@ -14464,7 +14499,7 @@ async function staffMicrosApply(){
     +(m.plan.unmatched.length?('  ·  '+m.plan.unmatched.length+' not on this roster (nobody added)'):'')
     +(m.plan.maybe.length?('  ·  '+m.plan.maybe.length+' suggestion'+(m.plan.maybe.length===1?'':'s')+' left undecided'):'')
     +(m.plan.conflicts.length?('  ·  ⚠ '+m.plan.conflicts.length+(m.plan.conflicts.length===1?' needs':' need')+' a decision'):'');
-  renderViewport();
+  staffRedrawAll();
 }
 function staffMicrosHTML(){
   const m=staffS.micros;
@@ -14534,7 +14569,7 @@ function staffNotesHTML(){
        + (staffS.regNote?box(staffS.regNote,staffS.regNote[0]==='✓'&&staffS.regNote.indexOf('⚠')<0):'')
        + (staffS.syncNote?box(staffS.syncNote,false):'');
 }
-function staffRefreshNotes(){const el=document.getElementById('staff-notes');if(el)el.innerHTML=staffNotesHTML();else renderViewport();}
+function staffRefreshNotes(){const el=document.getElementById('staff-notes');if(el)el.innerHTML=staffNotesHTML();else staffRedrawAll();}
 
 // NOT ON THE SCHEDULE = payroll-only: somebody who gets paid but has no scheduler
 // account. It is the inverse of the number on the card, which is the point — the count
@@ -14546,7 +14581,7 @@ function staffFilter(mode){
   // way OUT of a filtered view into a no-op the second time it was pressed.
   staffS.filter=mode==null?null:(staffS.filter===mode?null:mode);
   staffS.open=null;
-  posKeepScroll(()=>renderViewport());
+  staffRedrawAll();
 }
 function staffRows(){
   const q=(staffS.q||'').toLowerCase().trim();
@@ -14663,7 +14698,7 @@ async function staffPullRegister(quiet){
     +(drift.length?('  ·  ⚠ '+drift.length+' disagree'+(drift.length===1?'s':'')+' with this list'):'  ·  everything matches')
     +(strays.length?('  ·  '+strays.length+' on the register not in Staff'):'');
   staffSave();
-  renderViewport();
+  staffRedrawAll();
 }
 
 // Every way the two can disagree, named. Each is a real failure somebody would hit:
@@ -14836,7 +14871,7 @@ function staffRedraw(){staffRefresh();staffRefreshNotes();}
 
 function staffRefresh(){
   const el=document.getElementById('staff-body');
-  if(!el){renderViewport();return;}
+  if(!el){staffRedrawAll();return;}
   // The duplicates panel lives OUTSIDE #staff-body, so a redraw that only
   // replaced the body left "Find duplicates" doing nothing visible — state
   // flipped, redraw ran, screen unchanged. Refresh it here too.
@@ -15139,7 +15174,7 @@ async function staffAddPerson(){
   }
   staffS.q=nm;                      // land on the new row rather than leaving them to find it
   staffS.filter='';
-  renderViewport();
+  staffRedrawAll();
   // Deliberately NOT given a Paychex id, a job or register access here. Those are separate,
   // consequential decisions with their own buttons — and a half-filled row that LOOKS complete
   // is how somebody ends up missing from an export.
@@ -16521,7 +16556,7 @@ async function staffAddJobRow(){
   if(!jobs[name])jobs[name]={};
   el.value='';
   await staffWriteOp({op:'jobs',jobs});
-  renderViewport();
+  staffRedrawAll();
 }
 // ⚠️ THE × USED TO LIE. It deleted the default rate and nothing else, so a row that
 // existed because PEOPLE hold the job, or because it is one of the standard jobs, came
@@ -16557,7 +16592,7 @@ async function staffDelJobRow(job){
     spellings.forEach(n=>delete jobs[n]);
     await staffWriteOp({op:'jobs',jobs});
   }
-  renderViewport();
+  staffRedrawAll();
 }
 function posJobRatesRefresh(){const el=document.getElementById('jobrates-body');if(el)el.innerHTML=posJobRatesBody();}
 

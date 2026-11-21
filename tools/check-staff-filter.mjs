@@ -25,7 +25,7 @@ ok('⚠️ pressing PEOPLE always ends with no filter, pressed twice or not',
    /mode==null\?null:/.test(fn));
 ok('the others still toggle themselves off', /staffS\.filter===mode\?null:mode/.test(fn));
 ok('opening a person does not survive the change of view', /staffS\.open=null/.test(fn));
-ok('and it keeps your scroll place', /posKeepScroll/.test(fn));
+ok('and it keeps your scroll place (the one Tips/Staff keep-scroll helper)', /staffRedrawAll\(\)/.test(fn) && /function staffRedrawAll\(\)\{posRedrawKeepScroll\(\(\)=>renderViewport\(\)\);\}/.test(src));
 
 // Both filters have to actually filter.
 const rows = src.slice(src.indexOf('function staffRows('), src.indexOf('function staffSearch('));

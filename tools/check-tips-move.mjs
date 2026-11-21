@@ -108,14 +108,18 @@ ok('⛔ renderViewport no longer special-cases TIPS as a top-level destination �
 // ── EVERY TIPS REDRAW TARGETS #pos-body, NEVER THE BARE #viewport ──────────────────
 // (a stray #viewport write from inside Tips would blow away the POS sidebar around it)
 {
-  const tipsWrites = [...src.matchAll(/document\.getElementById\('(viewport|pos-body)'\)\.innerHTML=tipsHTML\(\)/g)];
+  // 11/20/26: every Tips redraw now goes through ONE helper, tipsRedraw(), which writes into
+  // #pos-body (and keeps the scroll). So: no direct tipsHTML() write anywhere else at all, and
+  // the helper's own write targets #pos-body, never #viewport.
+  const direct = [...src.matchAll(/getElementById\('(viewport|pos-body)'\)\.innerHTML=tipsHTML\(\)/g)];
+  const helper = grab('tipsRedraw');
   ok('⛔ every single redraw that sets tipsHTML() as innerHTML targets #pos-body — none target the bare #viewport',
-     tipsWrites.length > 0 && tipsWrites.every(m => m[1] === 'pos-body'));
+     direct.length === 0 && /const vp=document\.getElementById\('pos-body'\)/.test(helper) && /vp\.innerHTML=tipsHTML\(\)/.test(helper) && !/'viewport'/.test(helper));
 }
 {
   // tipsRerender's own scroll-preserving helper must also have moved
   const tipsRerenderFn = grab('tipsRerender');
-  ok("⛔ tipsRerender's scroll-position helper reads/writes #pos-body, not #viewport, or scroll restores to the wrong element", /getElementById\('pos-body'\)/.test(tipsRerenderFn) && !/getElementById\('viewport'\)/.test(tipsRerenderFn));
+  ok("⛔ tipsRerender goes through the same #pos-body helper, so scroll restores to the right element", /tipsRedraw\(\)/.test(tipsRerenderFn) && !/getElementById\('viewport'\)/.test(tipsRerenderFn));
 }
 
 // ── staffLoad's cross-module Tips catch-up uses the gate too ───────────────────────

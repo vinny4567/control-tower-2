@@ -27,17 +27,22 @@ const grab = (name) => {
 };
 const grabLast = (name) => { const i = src.lastIndexOf('function ' + name + '('); let d = 0, j = src.indexOf('{', i); for (let k = j; k < src.length; k++) { if (src[k] === '{') d++; else if (src[k] === '}') { d--; if (!d) { j = k; break; } } } return src.slice(i, j + 1); };
 
-function world({ people = {}, aliases = {}, cells = {}, hours = {}, empIds = {}, busserSplit = {}, moves = {}, confirmAnswer = true } = {}) {
+function world({ people = {}, aliases = {}, cells = {}, hours = {}, empIds = {}, busserSplit = {}, confirmAnswer = true, readOnly = false, writeOk = true } = {}) {
   const ctx = { calls: { confirms: [], saves: 0, moveSaves: 0 } };
   new Function('ctx', `
     ${grabConst('TIP_SECTIONS')}
     ${grabConst('TIP_SEC_LABEL')}
-    ${grabConst('TIP_SEC_SHORT')}
     ${grabConst('TIP_SECTION_FROM_DEPT')}
-    let staffS={people:${JSON.stringify(people)},aliases:${JSON.stringify(aliases)}};
+    ${grabConst('TIP_DEPT_CHOICES')}
+    let staffS={people:${JSON.stringify(people)},aliases:${JSON.stringify(aliases)},readOnly:${JSON.stringify(readOnly)}};
+    ${grabConst('STAFF_DEPARTMENTS')}
+    ctx.calls.writes=[];ctx.calls.redraws=0;
+    // the mini: applies the patch, and staffWriteOp's own re-pull lands it in staffS
+    async function staffWriteOp(op){ctx.calls.writes.push(op);if(!${JSON.stringify(writeOk)})return null;const k=Object.keys(staffS.people).find(x=>staffS.people[x].pid===op.pid);Object.assign(staffS.people[k],op.patch);return {};}
+    function tipsRedraw(){ctx.calls.redraws++;}
     let tipsState={loaded:true,view:'tips',start:new Date(2026,10,2),end:new Date(2026,10,15),
       cells:${JSON.stringify(cells)},hours:${JSON.stringify(hours)},empIds:${JSON.stringify(empIds)},
-      busserSplit:${JSON.stringify(busserSplit)},busserSplitByDay:{},adds:{},moves:${JSON.stringify(moves)},hoursOut:{},ignoreSet:{}};
+      busserSplit:${JSON.stringify(busserSplit)},busserSplitByDay:{},adds:{},hoursOut:{},ignoreSet:{}};
     const POS='pos',TIPS='tips';let activeTab=POS,posS={sec:'tips'};function tipsActive(){return true;}
     const els={};
     const document={getElementById(id){if(id==='pos-body')return els['pos-body']=els['pos-body']||{innerHTML:''};return els[id]||null;},createElement(){return {style:{},querySelector(){return null;},set innerHTML(v){this._h=v;},get innerHTML(){return this._h;}};},body:{appendChild(){}}};
@@ -56,12 +61,12 @@ function world({ people = {}, aliases = {}, cells = {}, hours = {}, empIds = {},
     ${grab('tipRowTotals')}${grab('tipStaffLive')}${grab('tipPersonHasTipsThisPeriod')}${grab('tipSectionPeople')}${grab('tipHasTips')}${grab('tipsGrandTotals')}
     ${grab('tipEnsureRange')}${grab('tipDays')}${grab('tipDayLabel')}${grab('tipISO')}${grab('tipId')}${grab('tipCell')}${grab('tipSetComp')}${grab('tipCellComps')}${grab('tipNum')}${grab('tipCompsHTML')}${grabLast('tipMoney')}
     ${grab('tipIdNorm')}${grab('tipPaychexId')}${grab('tipIdBadgeHTML')}${grab('csvEsc')}${grab('tipHours')}
-    ${grab('tipPersonKey')}${grab('tipGroupNames')}${grab('tipGroupFor')}${grab('tipRegisterGroups')}${grab('tipGroupDayCell')}${grab('tipGroupTotals')}${grab('tipEditTarget')}${grab('tipCellEditGroup')}${grab('tipMoveGroup')}
+    ${grab('tipPersonKey')}${grab('tipGroupNames')}${grab('tipGroupFor')}${grab('tipRegisterGroups')}${grab('tipGroupDayCell')}${grab('tipGroupTotals')}${grab('tipEditTarget')}${grab('tipCellEditGroup')}${grab('tipSetDept')}
     ${grab('tipsHTML')}${grab('tipsPaychexCsv')}${grab('tipCellEdit')}${grab('tipEditSet')}${grab('tipRefreshCell')}${grab('tipRefreshRow')}${grab('tipsUpdateGrand')}
     ${grab('hoursSrc')}${grab('isRestEmp')}${grab('tipHoursPosPay')}${grab('tipHoursPersonTot')}${grab('tipHoursGroupTot')}${grab('hoursHTML')}
     ${grab('tipNormKey')}${grab('tipHoursDelPerson')}${grab('tipHoursDelGroup')}
     ctx.tips=()=>{tipsState.view='tips';return tipsHTML();};ctx.hours=()=>hoursHTML();ctx.csv=tipsPaychexCsv;ctx.grand=tipsGrandTotals;
-    ctx.editGroup=tipCellEditGroup;ctx.edit=()=>tipEdit;ctx.set=tipEditSet;ctx.move=tipMoveGroup;ctx.delGroup=tipHoursDelGroup;ctx.st=()=>tipsState;
+    ctx.editGroup=tipCellEditGroup;ctx.edit=()=>tipEdit;ctx.set=tipEditSet;ctx.setDept=tipSetDept;ctx.delGroup=tipHoursDelGroup;ctx.st=()=>tipsState;
   `)(ctx);
   return ctx;
 }
@@ -89,7 +94,7 @@ const hours = { 'Priscill Lagace': { Server: { h: 20, r: 9, src: 'rest' } }, 'Pr
   ok('…its 11/3 cell carries the first spelling\'s $100 and its 11/5 cell the other\'s $60', tr.includes('100') && tr.includes('60'));
   // On Tips the live Staff name is itself a member (every live person is listed), so the row is
   // keyed by the STAFF spelling and carries the two stored spellings as "+2".
-  ok('the row is keyed by the Staff spelling and says it holds the two stored spellings', /onchange="tipMoveGroup\('Priscilla Lagace'/.test(tr) && /\+2 spellings/.test(tr));
+  ok('the row is keyed by the Staff spelling and says it holds the two stored spellings', /onchange="tipSetDept\('Priscilla Lagace'/.test(tr) && /\+2 spellings/.test(tr));
   ok('⛔ the grand total is unchanged by merging ($160 paid, $15 unpaid either way)', JSON.stringify(w.grand()) === JSON.stringify(sepGrand) && w.grand().paid === 160 && w.grand().upt === 15);
   const out = w.csv(), lines = out.csv.split('\n').slice(1);
   ok('⛔ ONE person in the CSV — every line under one Worker ID (455)', out.people.length === 1 && lines.length > 0 && lines.every(l => l.split(',')[1] === '455'));
@@ -134,15 +139,54 @@ const hours = { 'Priscill Lagace': { Server: { h: 20, r: 9, src: 'rest' } }, 'Pr
   ok('…and the editor names the other amount, "not edited here"', /not edited here/.test(w.popup && w.popup.innerHTML || ''));
 }
 
-// ── moving a merged row moves EVERY spelling, or the person would split in two ─────────────
+// ── THE ROW'S DROPDOWN SETS THE STAFF DEPARTMENT (Vinny: "can i move people to their department
+// right from here?") — one write through staffWriteOp; the row moves because the department did ──
+const deptSection = (html, label) => { const i = html.indexOf('>' + label + '<'); if (i < 0) return null; const m = [...html.slice(0, i).matchAll(/<tr style="background:var\(--surface2\)">\s*<th[^>]*>([^<]+)<\/th>/g)]; return m.length ? m[m.length - 1][1] : null; };
 {
-  const w = world({ people, aliases, cells });
-  w.tips();
-  const primary = w.st().rowGroups['Priscill Lagace'].primary;
-  w.move(primary, 'Bartender');
-  ok('⛔ the section move applies to every stored spelling', w.st().moves['Priscill Lagace'] === 'Bartender' && w.st().moves['Priscilla La Gace'] === 'Bartender');
+  // Jarvis's test: picking Bar on a NO DEPARTMENT YET row
+  const w = world({ people: { ...P('priscilla lagace', 'Priscilla Lagace', { pid: 'p1', paychex_id: '455' }) }, aliases, cells });
+  let html = w.tips();
+  const before = { sec: deptSection(html, 'Priscilla Lagace'), paid: paidOf(rowHtml(html, 'Priscilla Lagace')), grand: JSON.stringify(w.grand()) };
+  ok('fixture: the person starts in NO DEPARTMENT YET', before.sec === 'NO DEPARTMENT YET' && before.paid === '$160.00');
+  await w.setDept('Priscilla Lagace', 'bartender');
+  ok('⛔ ONE write, through staffWriteOp, setting department on the Staff person the row resolves to', w.calls.writes.length === 1 && w.calls.writes[0].op === 'update' && w.calls.writes[0].pid === 'p1' && w.calls.writes[0].patch.department === 'bartender');
+  html = w.tips();
+  ok('⛔ the row moves to BARTENDERS — every spelling with it, still ONE row', deptSection(html, 'Priscilla Lagace') === 'BARTENDERS' && rowsNamed(html, 'Priscilla Lagace') === 1);
+  ok('⛔ …with the same figures', paidOf(rowHtml(html, 'Priscilla Lagace')) === before.paid);
+  ok('⛔ …and the grand total unchanged', JSON.stringify(w.grand()) === before.grand);
+  ok('⛔ nothing is written to the retired per-sheet moves', w.st().moves === undefined);
+}
+{
+  const w = world({ people: { ...P('amy server', 'Amy Server', { pid: 'a1', department: 'server' }) }, cells: { 'Amy Server': { '11/3': { p: 10 } } } });
+  await w.setDept('Amy Server', '');
+  ok('"—" CLEARS the department (null, not an empty string)', w.calls.writes.length === 1 && w.calls.writes[0].patch.department === null);
+  await w.setDept('Amy Server', '');
+  ok('picking what is already saved sends nothing', w.calls.writes.length === 1);
+  await w.setDept('Amy Server', 'kitchen');
+  ok('Kit → kitchen', w.calls.writes[1].patch.department === 'kitchen');
+  await w.setDept('Amy Server', 'not-a-department');
+  ok('⛔ a value that is not a real department is never sent as one (clears instead)', w.calls.writes[2].patch.department === null);
+}
+{
+  const w = world({ people: { ...P('amy server', 'Amy Server', { pid: 'a1', department: 'server' }) }, cells: { 'Amy Server': { '11/3': { p: 10 } } }, writeOk: false });
+  await w.setDept('Amy Server', 'busser');
+  ok('a refused write redraws, so the dropdown shows what is actually saved', w.calls.redraws === 1 && w.st() && true);
+}
+{
+  const w = world({ people, aliases, cells: { ...cells, 'Mike Fornero': { '11/3': { p: 50 } } } });
   const html = w.tips();
-  ok('…so the person is still ONE row, now in BARTENDERS', rowsNamed(html, 'Priscilla Lagace') === 1);
+  ok('⛔ an unlinked ⚑ name shows NO department dropdown — its fix is the ⚑ link first', !/onchange="tipSetDept\('Mike Fornero'/.test(rowHtml(html, 'Mike Fornero')));
+  await w.setDept('Mike Fornero', 'server');
+  ok('…and even called directly, nothing is written for it', w.calls.writes.length === 0);
+}
+{
+  const w = world({ people: { ...P('amy server', 'Amy Server', { pid: 'a1', department: 'server' }) }, cells: { 'Amy Server': { '11/3': { p: 10 } } }, readOnly: true });
+  ok('⛔ read-only (mini unreachable): the dropdown is disabled, same as Staff', /<select title="Department — saved on Staff" disabled/.test(rowHtml(w.tips(), 'Amy Server')));
+}
+{
+  const w = world({ people: { ...P('amy server', 'Amy Server', { pid: 'a1', department: 'server' }) }, cells: { 'Amy Server': { '11/3': { p: 10 } } } });
+  const tr = rowHtml(w.tips(), 'Amy Server');
+  ok('the dropdown offers Srv/Bar/Bus/Run/Wed/Kit/— and shows the saved department', ['Srv', 'Bar', 'Bus', 'Run', 'Wed', 'Kit', '—'].every(l => tr.includes('>' + l + '<')) && /value="server" selected/.test(tr));
 }
 
 // ── taking the person out of a period removes every spelling, behind ONE confirm ──────────

@@ -66,6 +66,7 @@ function world({ people = {}, aliases = {}, kvValue, kvFails = false, writeOpRes
     async function kvPush(k,v,at){ctx.calls.kvPushes.push({k,v,at});}
     async function staffWriteOp(op){ctx.calls.writeOps.push(op);const key=op.pid+':'+op.op;const r=(${JSON.stringify(writeOpResults)});return (key in r)?r[key]:{};}
     function tipsHTML(){return '';}
+    function tipsRedraw(){const vp=document.getElementById('pos-body');if(vp)vp.innerHTML=tipsHTML();}   // the real one also keeps the scroll — tested in check-scroll-guard
     ${grab('staffFlagFindRemoved')}
     ${grab('staffFlagRedraw')}
     ${grab('staffFlagOpen')}

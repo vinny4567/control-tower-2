@@ -152,12 +152,13 @@ ok('⛔ a person not matched to any Staff record and not in adds resolves to no 
   ok('⛔ a SET department overrides a disagreeing add — department decides, never a stray add', w.baseSection('Iris Both') === 'Busser');
 }
 {
-  // a manual move still outranks everything, department included
+  // 11/20/26: the per-sheet moves are RETIRED — the row's dropdown sets the Staff department
+  // instead, so a stale ct_tips_moves entry must change nothing (department is the one place).
   const w = world({
     people: { ...person('kay moved', 'Kay Moved', { department: 'server' }) },
     moves: { 'Kay Moved': 'Bartender' },
   });
-  ok('⛔ a manual move still outranks department — it is the more specific, more recent fact', w.effSection('Kay Moved') === 'Bartender');
+  ok('⛔ a leftover per-sheet move is IGNORED — department decides, one place for it', w.effSection('Kay Moved') === 'Server');
 }
 
 // ── staffResolveForTips: alias chain, direct key, and the mangled-removed-key fallback ──

@@ -47,8 +47,8 @@ function world({ people = {}, cells = {}, busserSplitByDay = {}, busserSplit = {
   new Function('ctx', `
     ${grabConst('TIP_SECTIONS')}
     ${grabConst('TIP_SEC_LABEL')}
-    ${grabConst('TIP_SEC_SHORT')}
     ${grabConst('TIP_SECTION_FROM_DEPT')}
+    ${grabConst('TIP_DEPT_CHOICES')}
     let staffS={people:${JSON.stringify(people)},aliases:{}};
     let tipsState={
       loaded:true,view:'tips',

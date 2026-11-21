@@ -29,10 +29,9 @@ function world(state, periodKey = 'ct_tips_2026_12_1') {
      let tipsSaveTimer, tipsHoursSaveTimer;
      ${lift('tipsSaveBlocked').replace(/tipsState/g, 'env.tipsState')}
      ${lift('tipsSaveEmpIds').replace(/tipsState/g, 'env.tipsState')}
-     ${lift('tipsSaveMoves').replace(/tipsState/g, 'env.tipsState')}
      ${lift('tipsSaveSoon').replace(/tipsState/g, 'env.tipsState').replace(/tipsGen/g, 'env.gen')}
      ${lift('tipsSaveHoursSoon').replace(/tipsState/g, 'env.tipsState').replace(/tipsGen/g, 'env.gen')}
-     return { tipsSaveBlocked, tipsSaveEmpIds, tipsSaveMoves, tipsSaveSoon, tipsSaveHoursSoon };`
+     return { tipsSaveBlocked, tipsSaveEmpIds, tipsSaveSoon, tipsSaveHoursSoon };`
   )(env,
     (k, v) => env.writes.push({ key: k, v }),
     (s) => env.status.push(s),
@@ -79,8 +78,7 @@ ok('…and says so, loudly — a silent refusal is worse than the bug',
    w.env.status.join('|').includes('not saved'));
 
 w = world(failed());
-w.tipsSaveMoves();
-ok('⛔ nor do the moves', w.env.writes.length === 0);
+ok('⛔ the per-sheet moves have no saver at all any more (retired 11/20/26 — the dropdown sets the Staff department)', !/function tipsSaveMoves\(|kvPush\('ct_tips_moves'/.test(src));
 
 // ⛔ THE PAYCHEX ONE. On a screen that failed to load, empIds is empty — saving it would write
 // a map containing ONLY what is in memory over every worker in the business. (11/20/26: the
@@ -103,9 +101,6 @@ ok('…and the refusal is visible, not silent', w.env.status.join('|').includes(
 // ── the normal path still works ─────────────────────────────────────────────
 w = world(good());
 ok('saving the IDs on a good screen writes them, everyone kept', (w.tipsSaveEmpIds(), w.env.writes.length === 1 && w.env.writes[0].key === 'ct_emp_ids' && w.env.writes[0].v.emp.Ann === '123'));
-w = world(good());
-w.tipsSaveMoves();
-ok('moves still save on a good screen', w.env.writes.length === 1 && w.env.writes[0].key === 'ct_tips_moves');
 w = world(good());
 ok('tipsSaveEmpIds reports success', w.tipsSaveEmpIds() === true);
 ok('…and refuses with false when it cannot', world(failed()).tipsSaveEmpIds() === false);

@@ -94,10 +94,11 @@ const tipsHTMLFn = grab('tipsHTML');
 ok('tipsHTML resolves the row label through staffDisplayName', /staffDisplayMark\(disp\.matched,name\)/.test(tipsHTMLFn) && /staffDisplayName\(name\)/.test(tipsHTMLFn));
 ok('⛔ the "Busser Pool" row is NEVER run through the Staff lookup (it is not a person)',
    /isPool\?\{name,matched:true\}:staffDisplayName\(name\)/.test(tipsHTMLFn));
-ok('⛔ the section-move dropdown still keys off the RAW name, not the resolved display name',
-   // 11/20/26: rows are per PERSON now (every stored spelling) — the dropdown moves the
-   // group, still addressed by a raw stored spelling (g.primary), never the display name.
-   /onchange="tipMoveGroup\('\$\{esc\(name\)\.replace/.test(tipsHTMLFn) && /const name=g\.primary;/.test(tipsHTMLFn));
+ok('⛔ the row\'s department dropdown still keys off the RAW name, not the resolved display name',
+   // 11/20/26: the dropdown now SETS the Staff department (tipSetDept resolves the raw stored
+   // spelling to its Staff person) — still addressed by the raw spelling (g.primary), never
+   // the display name, which may not resolve back.
+   /const en=esc\(name\)\.replace/.test(tipsHTMLFn) && /onchange="tipSetDept\('\$\{en\}',this\.value\)"/.test(tipsHTMLFn) && /const name=g\.primary;/.test(tipsHTMLFn));
 
 const hoursHTMLFn = grab('hoursHTML');
 ok('hoursHTML resolves the per-person row label through staffDisplayName', /staffDisplayName\(name\)/.test(hoursHTMLFn) && /staffDisplayMark\(disp\.matched,name\)/.test(hoursHTMLFn));
