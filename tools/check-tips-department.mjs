@@ -39,14 +39,14 @@ const grab = (name) => {
   return src.slice(i, j + 1);
 };
 
-function world({ people = {}, aliases = {}, adds = {}, moves = {}, cells = {}, busserSplit = {}, hours = {} } = {}) {
+function world({ people = {}, aliases = {}, adds = {}, moves = {}, cells = {}, busserSplit = {}, busserSplitByDay = {}, hours = {} } = {}) {
   const ctx = {};
   new Function('ctx', `
     const TIP_SECTIONS=['Server','Bartender','Busser','Food Runner','Weddings','NoDept'];
     ${grabConst('TIP_SECTION_FROM_DEPT')}
     ${grabConst('TIP_TIPPED_POSITIONS')}
     let staffS={people:${JSON.stringify(people)},aliases:${JSON.stringify(aliases)}};
-    let tipsState={adds:${JSON.stringify(adds)},moves:${JSON.stringify(moves)},cells:${JSON.stringify(cells)},busserSplit:${JSON.stringify(busserSplit)},hours:${JSON.stringify(hours)}};
+    let tipsState={adds:${JSON.stringify(adds)},moves:${JSON.stringify(moves)},cells:${JSON.stringify(cells)},busserSplit:${JSON.stringify(busserSplit)},busserSplitByDay:${JSON.stringify(busserSplitByDay)},hours:${JSON.stringify(hours)},start:new Date(2026,10,2),end:new Date(2026,10,15)};
     ${grab('staffKeyOf')}
     ${grab('staffEmployed')}
     ${grabConst('staffJobCanon')}
@@ -57,14 +57,21 @@ function world({ people = {}, aliases = {}, adds = {}, moves = {}, cells = {}, b
     ${grab('tipBaseSection')}
     ${grab('tipEffSection')}
     ${grab('tipBusserSplit')}
+    ${grab('tipBusserDay')}
     ${grab('tipBusserSplitPeople')}
+    ${grab('tipBusserPoolDay')}
     ${grab('tipRowTotals')}
     ${grab('tipStaffLive')}
     ${grab('tipPersonHasTipsThisPeriod')}
     ${grab('tipSectionPeople')}
+    ${grab('tipEnsureRange')}
+    ${grab('tipDays')}
+    ${grab('tipDayLabel')}
+    ${grab('tipsGrandTotals')}
     ctx.resolve=staffResolveForTips;ctx.baseSection=tipBaseSection;ctx.effSection=tipEffSection;
     ctx.sectionPeople=tipSectionPeople;ctx.staffLive=tipStaffLive;ctx.hasTips=tipPersonHasTipsThisPeriod;
     ctx.hasTippedPosition=tipHasTippedPosition;ctx.hasHours=tipPersonHasHoursThisPeriod;
+    ctx.grand=tipsGrandTotals;
   `)(ctx);
   return ctx;
 }
@@ -279,6 +286,39 @@ ok('no match at all → null, not a throw', world({}).resolve('Totally Unknown')
   ok('…or anywhere else', TIP_SECTIONS_ALL(w).every(sec => w.sectionPeople(sec).indexOf('Hal Host2') < 0));
 }
 function TIP_SECTIONS_ALL(w) { return ['Server', 'Bartender', 'Busser', 'Food Runner', 'Weddings', 'NoDept']; }
+
+// ── MONEY MUST NEVER GO INVISIBLE (Jarvis's review catch, 11/20/26) ─────────────────
+// The exact "Mike Fornero" case: a raw name that doesn't resolve to any Staff record (not
+// aliased, not yet linked via the ⚑ picker) and isn't in `adds` either. Before the wipe the
+// roster placed him; now nothing else will. He MUST still render — in NoDept, with his ⚑ —
+// and his dollars MUST still reach the grand total, or his money is silently off the grid.
+{
+  const w = world({ cells: { 'Mike Fornero': { '11/3': { p: 212.5 } } } });
+  ok('⛔ an unmatched name with real PAID tips this period still renders, in NoDept', w.sectionPeople('NoDept').indexOf('Mike Fornero') >= 0);
+  ok('…and nowhere else', ['Server', 'Bartender', 'Busser', 'Food Runner', 'Weddings'].every(sec => w.sectionPeople(sec).indexOf('Mike Fornero') < 0));
+  ok('⛔ his dollars reach tipsGrandTotals too — not just a visible row with money that never gets summed', w.grand().paid === 212.5);
+}
+{
+  // unpaid (tip-out) money, same requirement
+  const w = world({ cells: { 'Ghost Name': { '11/3': { u: 40 } } } });
+  ok('⛔ an unmatched name with UNPAID tips this period still renders, in NoDept', w.sectionPeople('NoDept').indexOf('Ghost Name') >= 0);
+  ok('…and counts in the grand total', w.grand().upt === 40);
+}
+{
+  // hours-only — no cells money at all, the other half of "money or hours"
+  const w = world({ hours: { 'Hourly Ghost': { '11/3': { h: 6 } } } });
+  ok('⛔ an unmatched name with ONLY hours (no tips cells at all) still renders in NoDept — hours are a signal too', w.sectionPeople('NoDept').indexOf('Hourly Ghost') >= 0);
+}
+{
+  // no money, no hours, not in adds, not on Staff → correctly invisible (nothing to surface)
+  const w = world({});
+  ok('a name with no money, no hours, and no Staff/adds match at all has nothing to show — correctly absent, not a false positive', w.sectionPeople('NoDept').indexOf('Nobody At All') < 0);
+}
+{
+  // an add still places someone even with zero money — unaffected by this fix
+  const w = world({ adds: { Weddings: ['June Added'] }, cells: { 'June Added': { '11/3': { p: 75 } } } });
+  ok('an added name with money still places via the add path (Weddings), not pulled into NoDept by the money fallback', w.sectionPeople('Weddings').indexOf('June Added') >= 0 && w.sectionPeople('NoDept').indexOf('June Added') < 0);
+}
 
 // ── A BUSSER-POOL SHARE SURVIVES BEING PROMOTED OUT OF BUSSER (kept from 11/20 review) ──
 {
