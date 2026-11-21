@@ -8240,7 +8240,7 @@ function posPruneOrphans(){
   for(const [k,v] of Object.entries(posGroupKinds)){
     const g=byKey[k]; if(!g)continue;
     const own=g.qty?'qty':(g.multi?'multi':'one');
-    if(v===own)drop(posGroupKinds,k,'ct_pos_group_kinds');
+    if(v===own||v==='qty')drop(posGroupKinds,k,'ct_pos_group_kinds');   // 'qty' is no longer a choice
   }
   // prices and routing the catalog now matches
   for(const [k,cents] of Object.entries(posPrices)){
@@ -8280,12 +8280,15 @@ function posPruneOrphans(){
 
 // ── PICK ONE / PICK SEVERAL / HOW MANY OF EACH, per group ─────────────────────────────────
 // What the group is set to: the switch here if it has been used, else the catalog's own flags.
-// qty and multi are exclusive on the register (ChoicePrompt), so they are one three-way
-// setting, never two checkboxes that could both be on.
-function posGroupKind(k,g){const v=posGroupKinds[String(k)];if(v==='one'||v==='multi'||v==='qty')return v;return g&&g.qty?'qty':(g&&g.multi?'multi':'one');}
-function posKindFlags(k,g){const v=posGroupKind(k,g);return {multi:v==='multi',qty:v==='qty'};}
+// ⚠️ TWO options, not three (Vinny, 11/20/26: "you can get rid of the how many of each button,
+// if its several just let me click unlimited"). "pick several" is multi with no maximum (the
+// register's multi has only an optional `min`). The switch NEVER publishes qty:true; a stored
+// 'qty' from the brief three-way version is ignored, and the catalog's own qty (if a built-in
+// group has one) is left exactly as it was — the switch only overrides when it is set.
+function posGroupKind(k,g){const v=posGroupKinds[String(k)];if(v==='one'||v==='multi')return v;return g&&g.qty?'qty':(g&&g.multi?'multi':'one');}
+function posKindFlags(k,g){const set=posGroupKinds[String(k)];if(set==='one'||set==='multi')return {multi:set==='multi',qty:false};return {multi:!!(g&&g.multi),qty:!!(g&&g.qty)};}
 function posSetGroupKind(enc,kind){
-  if(!['one','multi','qty'].includes(kind))return;
+  if(!['one','multi'].includes(kind))return;
   posGroupKinds[decodeURIComponent(enc)]=kind;
   kvPush('ct_pos_group_kinds',posGroupKinds,Date.now());   // any ct_pos_* save publishes (posLiveSoon)
   posRedraw();                                               // keeps the scroll
@@ -8295,8 +8298,7 @@ function posGroupKindHTML(g){
   const b=(v,l,t)=>`<button onclick="event.stopPropagation();posSetGroupKind('${enc}','${v}')" title="${t}" style="border:none;padding:2px 8px;font-size:11px;font-weight:700;font-family:inherit;cursor:pointer;background:${cur===v?'var(--accent)':'transparent'};color:${cur===v?'#000':'var(--text-muted)'}">${l}</button>`;
   return `<span data-kind="${cur}" style="display:inline-flex;border:1px solid var(--border);border-radius:6px;overflow:hidden">`
     +b('one','pick one','The server picks ONE choice')
-    +b('multi','pick several','The server can pick several, then Done')
-    +b('qty','how many of each','The server sets a count for each choice')
+    +b('multi','pick several','The server can pick as many as they like, then Done')
     +`</span>`;
 }
 
