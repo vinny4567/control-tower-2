@@ -7544,12 +7544,12 @@ async function posLoadPrices(){
   // Fetch everything, compare it to what is already on screen, and only redraw when
   // something actually differs. A reload that changes nothing now changes nothing.
   const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
-  const [r,g,ng,at,rt,pc,nm,gn,gd,ml,dm,cc,mn,dg,ce,co,io,ito,di,ni,sa,dr,nd,dd,bt]=await Promise.all([
+  const [r,g,ng,at,rt,pc,nm,gn,gd,ml,dm,cc,mn,dg,ce,co,io,ito,di,ni,sa,dr,nd,dd,bt,gk]=await Promise.all([
     kvGet('ct_pos_prices'),kvGet('ct_pos_group_mods'),kvGet('ct_pos_new_groups'),
     kvGet('ct_pos_group_attach'),kvGet('ct_pos_routing'),kvGet('ct_pos_print_classes'),
     kvGet('ct_pos_new_mods'),kvGet('ct_pos_group_names'),kvGet('ct_pos_group_detach'),
     kvGet('ct_pos_mod_letters'),kvGet('ct_pos_deleted_mods'),kvGet('ct_pos_choice_cuts'),
-    kvGet('ct_pos_mod_names'),kvGet('ct_pos_deleted_groups'),kvGet('ct_pos_choice_edits'),kvGet('ct_pos_choice_order'),kvGet('ct_pos_item_group_order'),kvGet('ct_pos_item_order'),kvGet('ct_pos_deleted_items'),kvGet('ct_pos_new_items'),kvGet('ct_pos_section_adds'),kvGet('ct_pos_disc_rates'),kvGet('ct_pos_new_discounts'),kvGet('ct_pos_deleted_discounts'),kvGet('ct_pos_buttons')]);
+    kvGet('ct_pos_mod_names'),kvGet('ct_pos_deleted_groups'),kvGet('ct_pos_choice_edits'),kvGet('ct_pos_choice_order'),kvGet('ct_pos_item_group_order'),kvGet('ct_pos_item_order'),kvGet('ct_pos_deleted_items'),kvGet('ct_pos_new_items'),kvGet('ct_pos_section_adds'),kvGet('ct_pos_disc_rates'),kvGet('ct_pos_new_discounts'),kvGet('ct_pos_deleted_discounts'),kvGet('ct_pos_buttons'),kvGet('ct_pos_group_kinds')]);
   // ⛔ A FAILED FETCH IS NOT AN EMPTY VALUE. `kvGet` returns null for ANY non-200 — a dropped
   // connection, a rejected key, a restart — and this block used to read `(x&&x.v)||[]`, which turns
   // that null into an EMPTY LIST and then assigns it over the live one below. The pending edits are
@@ -7588,6 +7588,7 @@ async function posLoadPrices(){
     // null, not {} — "never edited" is a real state for this one and means "the
     // registers use their own built-in rail", which is NOT the same as an empty rail.
     buttons:take(bt,posBtnStore,null),
+    kinds:take(gk,posGroupKinds,{}),
   };
   const changed=!same(next.prices,posPrices)||!same(next.mods,posGroupMods)
     ||!same(next.groups,posNewGroups)||!same(next.attach,posGroupAttach)
@@ -7599,7 +7600,7 @@ async function posLoadPrices(){
     ||!same(next.choiceEdits,posChoiceEdits)||!same(next.choiceOrder,posChoiceOrder)
     ||!same(next.itemGroupOrder,posItemGroupOrder)||!same(next.itemOrder,posItemOrder)||!same(next.delItems,posDeletedItems)||!same(next.newItems,posNewItems)||!same(next.sectionAdds,posSectionAdds)
     ||!same(next.discRates,posDiscRates)||!same(next.newDiscounts,posNewDiscounts)||!same(next.delDiscounts,posDeletedDiscounts)
-    ||!same(next.buttons,posBtnStore);
+    ||!same(next.buttons,posBtnStore)||!same(next.kinds,posGroupKinds);
   posPrices=next.prices; posGroupMods=next.mods; posNewGroups=next.groups;
   posGroupAttach=next.attach; posRouting=next.routing; posNewClasses=next.classes;
   posNewMods=next.newMods; posGroupNames=next.names; posGroupDetach=next.detach;
@@ -7608,6 +7609,7 @@ async function posLoadPrices(){
   posChoiceEdits=next.choiceEdits; posChoiceOrder=next.choiceOrder; posItemGroupOrder=next.itemGroupOrder; posItemOrder=next.itemOrder||{}; posDeletedItems=next.delItems; posNewItems=next.newItems; posSectionAdds=next.sectionAdds;
   posDiscRates=next.discRates; posNewDiscounts=next.newDiscounts; posDeletedDiscounts=next.delDiscounts;
   posBtnStore=next.buttons;
+  posGroupKinds=next.kinds;
   // The `at` we actually loaded, kept so a save can refuse to clobber a newer one. Only
   // from a reply we could read: a failure must not reset it to 0 and make the next save
   // look like a first write.
@@ -7627,6 +7629,11 @@ let posChoiceEdits={};
 let posChoiceOrder={};
 // itemKey -> [group names, in the order the register should ask them]
 let posItemGroupOrder={};
+// groupKey -> 'one' | 'multi' | 'qty' — HOW the register asks the group (Vinny, 11/20/26: "i
+// need to set up certain mod groups to allow multiple selections"). The register already
+// reads prompt.multi (pick several, then Done) and prompt.qty (a count per choice); this is
+// the switch. Absent = the catalog's own setting.
+let posGroupKinds={};
 // ─── WHAT ORDER THE BUTTONS SIT IN, per category ─────────────────────────────
 //
 // Vinny: "give me an item slider that adjust the order of everything not only here in
@@ -8187,6 +8194,12 @@ function posPruneOrphans(){
     if(left.length)posGroupMods[k]=left; else delete posGroupMods[k];
     dirty.add('ct_pos_group_mods');
   }
+  // a pick one / several / how many setting that is just what the catalog says already
+  for(const [k,v] of Object.entries(posGroupKinds)){
+    const g=byKey[k]; if(!g)continue;
+    const own=g.qty?'qty':(g.multi?'multi':'one');
+    if(v===own)drop(posGroupKinds,k,'ct_pos_group_kinds');
+  }
   // prices and routing the catalog now matches
   for(const [k,cents] of Object.entries(posPrices)){
     const it=byItem[k]; if(it&&it.cents===cents)drop(posPrices,k,'ct_pos_prices');
@@ -8218,9 +8231,31 @@ function posPruneOrphans(){
     ct_pos_choice_cuts:posChoiceCuts,ct_pos_mod_names:posModNames,
     ct_pos_deleted_groups:posDeletedGroups,ct_pos_deleted_mods:posDeletedMods,
     ct_pos_choice_edits:posChoiceEdits,ct_pos_choice_order:posChoiceOrder,
-    ct_pos_item_group_order:posItemGroupOrder,ct_pos_deleted_items:posDeletedItems,ct_pos_new_items:posNewItems,ct_pos_section_adds:posSectionAdds};
+    ct_pos_item_group_order:posItemGroupOrder,ct_pos_deleted_items:posDeletedItems,ct_pos_new_items:posNewItems,ct_pos_section_adds:posSectionAdds,ct_pos_group_kinds:posGroupKinds};
   for(const k of dirty)kvPush(k,stores[k],Date.now());
   if(dirty.size)posRedraw();
+}
+
+// ── PICK ONE / PICK SEVERAL / HOW MANY OF EACH, per group ─────────────────────────────────
+// What the group is set to: the switch here if it has been used, else the catalog's own flags.
+// qty and multi are exclusive on the register (ChoicePrompt), so they are one three-way
+// setting, never two checkboxes that could both be on.
+function posGroupKind(k,g){const v=posGroupKinds[String(k)];if(v==='one'||v==='multi'||v==='qty')return v;return g&&g.qty?'qty':(g&&g.multi?'multi':'one');}
+function posKindFlags(k,g){const v=posGroupKind(k,g);return {multi:v==='multi',qty:v==='qty'};}
+function posSetGroupKind(enc,kind){
+  if(!['one','multi','qty'].includes(kind))return;
+  posGroupKinds[decodeURIComponent(enc)]=kind;
+  kvPush('ct_pos_group_kinds',posGroupKinds,Date.now());   // any ct_pos_* save publishes (posLiveSoon)
+  posRedraw();                                               // keeps the scroll
+}
+function posGroupKindHTML(g){
+  const k=String(posGroupKey(g)),cur=posGroupKind(k,g),enc=posEnc(k);
+  const b=(v,l,t)=>`<button onclick="event.stopPropagation();posSetGroupKind('${enc}','${v}')" title="${t}" style="border:none;padding:2px 8px;font-size:11px;font-weight:700;font-family:inherit;cursor:pointer;background:${cur===v?'var(--accent)':'transparent'};color:${cur===v?'#000':'var(--text-muted)'}">${l}</button>`;
+  return `<span data-kind="${cur}" style="display:inline-flex;border:1px solid var(--border);border-radius:6px;overflow:hidden">`
+    +b('one','pick one','The server picks ONE choice')
+    +b('multi','pick several','The server can pick several, then Done')
+    +b('qty','how many of each','The server sets a count for each choice')
+    +`</span>`;
 }
 
 function posRenameGroup(enc,encCurrent){
@@ -8628,6 +8663,7 @@ const POS_SYNC_KEYS=[
   ['ct_pos_section_adds','Section adds'],
   ['ct_pos_choice_order','Choice order'],
   ['ct_pos_item_group_order','Group order per item'],
+  ['ct_pos_group_kinds','Pick one / several / how many'],
   ['ct_pos_item_order','Item order per category'],
   ['ct_pos_new_items','New items'],
   ['ct_pos_new_mods','New mods'],
@@ -10170,7 +10206,7 @@ function posPendingCount(){
     +posNewClasses.length+posNewMods.length+Object.keys(posGroupNames).length
     +Object.keys(posGroupDetach).length+Object.keys(posModLetters).length+posDeletedMods.length
     +Object.values(posChoiceEdits).reduce((n,v)=>n+Object.keys(v).length,0)
-    +Object.keys(posChoiceOrder).length+Object.keys(posItemGroupOrder).length+Object.keys(posItemOrder).length+posDeletedItems.length+posNewItems.length
+    +Object.keys(posChoiceOrder).length+Object.keys(posItemGroupOrder).length+Object.keys(posGroupKinds).length+Object.keys(posItemOrder).length+posDeletedItems.length+posNewItems.length
     +Object.values(posSectionAdds).reduce((n,v)=>n+v.length,0)
     +Object.keys(posChoiceCuts).length+Object.keys(posModNames).length
     +posDeletedGroups.length
@@ -10208,7 +10244,7 @@ function posResolveGroup(g){
   return {
     key:k,
     name:posGroupNames[k]||g.name,
-    required:!!g.required, multi:!!g.multi, qty:!!g.qty, screen:g.screen||null,
+    required:!!g.required, ...posKindFlags(k,g), screen:g.screen||null,
     choices:items.map(x=>({name:x.name,cents:x.cents})),
   };
 }
@@ -10218,7 +10254,7 @@ function posResolveGroup(g){
 function posBuildGroups(){
   const touched=new Set([
     ...Object.keys(posGroupMods), ...Object.keys(posChoiceEdits), ...Object.keys(posChoiceCuts),
-    ...Object.keys(posChoiceOrder), ...Object.keys(posGroupNames),
+    ...Object.keys(posChoiceOrder), ...Object.keys(posGroupNames), ...Object.keys(posGroupKinds),
     ...Object.keys(posGroupAttach), ...Object.keys(posGroupDetach),
   ].map(String));
   const live=(posS.cat&&posS.cat.mod_groups)||[];
@@ -10282,7 +10318,7 @@ function posClearChanges(){
   posPrices={};posRouting={};posGroupMods={};posNewGroups=[];posGroupAttach={};
   posNewClasses=[];posNewMods=[];posGroupNames={};posGroupDetach={};
   posChoiceCuts={};posModLetters={};posDeletedMods=[];posModNames={};posDeletedGroups=[];
-  posChoiceEdits={};posChoiceOrder={};posItemGroupOrder={};posItemOrder={};posDeletedItems=[];posNewItems=[];posSectionAdds={};posNewDiscounts=[];posDeletedDiscounts=[];
+  posChoiceEdits={};posChoiceOrder={};posItemGroupOrder={};posGroupKinds={};posItemOrder={};posDeletedItems=[];posNewItems=[];posSectionAdds={};posNewDiscounts=[];posDeletedDiscounts=[];
   // One shared `at` for the whole revert, not a fresh Date.now() per key — this is a
   // single moment ("undo everything"), and ct_pos_new_discounts' baseline needs the EXACT
   // value its own kvPush used, which a re-call to Date.now() after the fact would not be.
@@ -10291,7 +10327,7 @@ function posClearChanges(){
                   'ct_pos_group_attach','ct_pos_print_classes','ct_pos_new_mods',
                   'ct_pos_group_names','ct_pos_group_detach','ct_pos_choice_cuts',
                   'ct_pos_mod_letters','ct_pos_deleted_mods','ct_pos_mod_names',
-                  'ct_pos_deleted_groups','ct_pos_choice_edits','ct_pos_choice_order','ct_pos_item_group_order','ct_pos_item_order','ct_pos_deleted_items','ct_pos_new_items','ct_pos_section_adds','ct_pos_new_discounts','ct_pos_deleted_discounts'])
+                  'ct_pos_deleted_groups','ct_pos_choice_edits','ct_pos_choice_order','ct_pos_item_group_order','ct_pos_group_kinds','ct_pos_item_order','ct_pos_deleted_items','ct_pos_new_items','ct_pos_section_adds','ct_pos_new_discounts','ct_pos_deleted_discounts'])
     kvPush(k,(k==='ct_pos_new_groups'||k==='ct_pos_print_classes'||k==='ct_pos_new_mods'
               ||k==='ct_pos_deleted_mods'||k==='ct_pos_deleted_groups'||k==='ct_pos_deleted_items'||k==='ct_pos_new_items'||k==='ct_pos_new_discounts'||k==='ct_pos_deleted_discounts')?[]:{},at);
   // Same reason as posRemoveNewDiscount: posCompareAndSetWrite compares against
@@ -10633,7 +10669,7 @@ function posItemGroupPanelHTML(r){
       ${posGroupNames[k]?`<span style="font-size:12px;color:var(--text-muted)">was ${esc(g.name)}</span>`:''}
       <button onclick="posRenameGroup('${posEnc(k)}','${posEnc(g.name)}')"
         style="border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-size:12px;font-family:inherit">rename</button>
-      <span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;border:1px solid currentColor;color:${g.required?'#ef4444':'var(--text-muted)'}">${g.required?'required':'optional'}</span>
+      <span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;border:1px solid currentColor;color:${g.required?'#ef4444':'var(--text-muted)'}">${g.required?'required':'optional'}</span>${posGroupKindHTML(g)}
       ${(()=>{
         // Counted by NAME, not by length-1. The item can be absent from used_by
         // entirely when the attachment is still pending, and subtracting a one that
@@ -11066,7 +11102,7 @@ function posGroupsHTML(){
         style="border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-size:12px;font-family:inherit">rename</button>
       <button onclick="posDuplicateGroup('${posEnc(posGroupKey(g))}')" title="make a copy of this group with the same choices and prices"
         style="border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-size:12px;font-family:inherit">duplicate</button>
-      <span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;border:1px solid currentColor;color:${g.required?'#ef4444':'var(--text-muted)'}">${g.required?'required':'optional'}</span>
+      <span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;border:1px solid currentColor;color:${g.required?'#ef4444':'var(--text-muted)'}">${g.required?'required':'optional'}</span>${posGroupKindHTML(g)}
       <button onclick="posDeleteNewGroup('${posEnc(g.key)}')" title="delete this group"
         style="margin-left:auto;border:none;background:transparent;color:#ef4444;cursor:pointer;
           font-size:22px;font-weight:700;line-height:1;padding:0 4px">×</button>
@@ -11104,7 +11140,7 @@ function posGroupsHTML(){
         style="border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-size:12px;font-family:inherit">rename</button>
       <button onclick="posDuplicateGroup('${posEnc(posGroupKey(g))}')" title="make a copy of this group with the same choices and prices"
         style="border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-size:12px;font-family:inherit">duplicate</button>
-      <span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;border:1px solid currentColor;color:${g.required?'#ef4444':'var(--text-muted)'}">${g.required?'required':'optional'}</span>
+      <span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;border:1px solid currentColor;color:${g.required?'#ef4444':'var(--text-muted)'}">${g.required?'required':'optional'}</span>${posGroupKindHTML(g)}
       ${g.declared?'<span style="font-size:11px;color:#f59e0b;font-weight:700" title="It exists and keeps its prices, but no item asks it">defined, not in use</span>':''}
       <button onclick="posDeleteGroup('${posEnc(posGroupKey(g))}','${posEnc(g.name)}',${(g.used_by||[]).length})"
         title="${posDeletedGroups.includes(posGroupKey(g))?'keep it after all':'delete this group'}"

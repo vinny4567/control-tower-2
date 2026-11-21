@@ -34,7 +34,10 @@ const build = html.slice(html.indexOf('function posBuildLive()'),
                          html.indexOf('async function posPublishSend'));
 const groups = html.slice(html.indexOf('function posBuildGroups()'),
                           html.indexOf('function posBuildGroups()') + 2600);
-const published = build + groups;
+// …plus the helpers they call to fill two fields (11/20/26): promptOrder is built by
+// posBuildPromptOrder, and each group's multi/qty by posGroupKind via posKindFlags.
+const fnText = (name) => { const i = html.indexOf('function ' + name + '('); if (i < 0) return ''; let d = 0, j = html.indexOf('{', i); for (let k = j; k < html.length; k++) { if (html[k] === '{') d++; else if (html[k] === '}') { d--; if (!d) return html.slice(i, k + 1); } } return ''; };
+const published = build + groups + fnText('posBuildPromptOrder') + fnText('posGroupKind');
 
 // store -> the variable posBuildLive would have to touch for it to travel.
 const VAR = {
@@ -60,6 +63,10 @@ const VAR = {
   // never the draft — a rail change rearranges every server's screen, so it must not
   // ride the same 1400ms debounce as a price edit.
   ct_pos_buttons: 'posBtnStore',
+  // 11/20/26: the drag order on an item's group line publishes as promptOrder (it used to be
+  // back-office only), and the pick one / several / how many switch rides each group.
+  ct_pos_item_group_order: 'posItemGroupOrder',
+  ct_pos_group_kinds: 'posGroupKinds',
 };
 
 // Deliberately NOT published — each with the reason, because "we meant to" is the only
@@ -67,7 +74,6 @@ const VAR = {
 const LOCAL_ONLY = {
   ct_pos_print_classes: 'print classes are the mini\'s own table; the register never reads them',
   ct_pos_section_adds: 'which section a back-office screen shows an item in — a back-office view, not a register one',
-  ct_pos_item_group_order: 'the order groups are LISTED in the back office, not the order the register asks them',
 };
 
 for (const key of written) {

@@ -1000,6 +1000,20 @@ const M=[
     tsub("// ⚠️ STAFF IS THE MASTER FOR PAYCHEX IDs — Vinny, 11/20/26:",
          "// Staff owns the Paychex ID — Vinny, 11/20/26:"),false],
 
+  // ── PICK ONE / SEVERAL / HOW MANY (check-pos-group-kind) ────────────────────────────────
+  ['KIND 1 · ⛔ the switch is saved but never published — the group keeps the catalog\'s multi/qty on the iPads','check-pos-group-kind.mjs',
+    tsub("    required:!!g.required, ...posKindFlags(k,g), screen:g.screen||null,","    required:!!g.required, multi:!!g.multi, qty:!!g.qty, screen:g.screen||null,"),true],
+  ['KIND 2 · ⛔ "how many of each" also sets multi — the register gets both flags at once','check-pos-group-kind.mjs',
+    tsub("return {multi:v==='multi',qty:v==='qty'};","return {multi:v==='multi'||v==='qty',qty:v==='qty'};"),true],
+  ['KIND 3 · ⛔ a group whose only change is the switch is not published at all','check-pos-group-kind.mjs',
+    tsub("...Object.keys(posGroupNames), ...Object.keys(posGroupKinds),","...Object.keys(posGroupNames),"),true],
+  ['KIND 4 · ⛔ any stored string is trusted as a kind','check-pos-group-kind.mjs',
+    tsub("if(v==='one'||v==='multi'||v==='qty')return v;","if(v)return v;"),true],
+  ['KIND 5 · ⛔ the switch\'s click also toggles the card it sits on','check-pos-group-kind.mjs',
+    tsub("onclick=\"event.stopPropagation();posSetGroupKind(","onclick=\"posSetGroupKind("),true],
+  ['KIND 6 · ⛔ the kinds store is not loaded with the others — another device\'s switch never shows here','check-pos-group-kind.mjs',
+    tsub("    kinds:take(gk,posGroupKinds,{}),\n",""),true],
+
   // ── A $0 PRICE IS A REAL PRICE (check-pos-zero-price) ───────────────────────────────────
   ['ZERO 1 · ⛔ emptying the price box deletes the override again — the platter snaps back to $3.00','check-pos-zero-price.mjs',
     tsub("  const cents=raw?Math.round(parseFloat(raw)*100):0;\n  if(!isFinite(cents)||cents<0)return;\n  posPrices[key]=cents;",
