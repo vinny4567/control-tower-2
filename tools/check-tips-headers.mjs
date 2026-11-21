@@ -61,8 +61,6 @@ function world({ people = {}, cells = {}, busserSplitByDay = {}, busserSplit = {
     const tipsToggleHTML=()=>'';
     const tipsImportBtnHTML=()=>'';
     const staffFlagHTML=()=>'';
-    const tipsLogBtnHTML=()=>'';
-    const tipsLogPanelHTML=()=>'';
     ${grab('staffKeyOf')}
     ${grab('staffEmployed')}
     ${grabConst('staffJobCanon')}

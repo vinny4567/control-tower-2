@@ -5804,7 +5804,7 @@ function tipCanon(name){const k=tipNormKey(name);if(!k)return String(name||'').t
 // aliases once, so MICROS spellings like "Priscill Lagace" keep landing on the right
 // person. Nothing writes it; tipRosterFixPriscilla (which used to) is retired.
 const TIPS_ROSTER_KEY='ct_tips_roster';
-let tipsState={start:null,end:null,cells:{},adds:{},expanded:{},hours:{},hoursOut:{},empIds:{},busserSplit:{},busserSplitByDay:{},view:'tips',loaded:false,loading:false,logOpen:false,logEntries:null,logExpanded:{}};
+let tipsState={start:null,end:null,cells:{},adds:{},expanded:{},hours:{},hoursOut:{},empIds:{},busserSplit:{},busserSplitByDay:{},view:'tips',loaded:false,loading:false};
 let tipsGen=0;   // bumped on every (re)load; guards against two period-loads racing and crossing data
 // ⛔ NO ACTION IN TIPS OR STAFF MAY MOVE THE SCROLL — Vinny, 11/20/26: "make sure it doesnt
 // snap me back up after pressing something in the dropdown, that seems to be a reoccuring
@@ -6788,88 +6788,6 @@ async function tipsPull(auto){
   tipsSetStatus(filled?('Pulled '+filled+' from calculator ✓'):(auto?'✓ in sync with calculator':'Nothing new to pull'),'var(--text-dim)');
 }
 
-// ── TIP-OUT LOG VIEW — read-only, top right of the Tips tab, Vinny 11/20/26: "the tipout
-// log in the calculator now i want in the tip sheet, top right." One card per entry,
-// newest first, same shape as the calculator's own Log tab: date, employee count, source
-// (Calculator/Register), a PRACTICE badge, draft labelled. ▶ expands servers/bartenders/
-// runners/pools/direct; × deletes via the scheduler's own DELETE, with a confirm. Never
-// writes anything into tipsState.cells — this is a window onto the log, not another pull.
-function tipsLogEmployeeCount(e){
-  const names=new Set();
-  (e.servers||[]).forEach(x=>{const n=tipCanon(x.name);if(n)names.add(n);});
-  (e.bartenders||[]).forEach(x=>{const n=tipCanon(x.name);if(n)names.add(n);});
-  (e.runners||[]).forEach(x=>{const n=tipCanon(x.name);if(n)names.add(n);});
-  (e.direct||[]).forEach(x=>{const n=tipCanon(x.name);if(n)names.add(n);});
-  return names.size;
-}
-function tipsLogSorted(){
-  const log=(tipsState.logEntries||[]).slice();
-  const at=(e)=>{const p=String(e.date||'').split('/');const d=(p.length===3)?new Date(+p[2],(+p[0]||1)-1,+p[1]):new Date(0);return d.getTime();};
-  return log.sort((a,b)=>at(b)-at(a)||String(b.savedAt||'').localeCompare(String(a.savedAt||'')));
-}
-async function tipsLogFetch(){
-  tipsState.logLoading=true;tipsState.logFailed=false;
-  try{const r=await fetch(TIPS_LOG_URL+'?key='+encodeURIComponent(TIPS_LOG_KEY()));const d=await r.json();tipsState.logEntries=d.log||[];}
-  catch(e){tipsState.logEntries=tipsState.logEntries||[];tipsState.logFailed=true;}
-  tipsState.logLoading=false;
-}
-function tipsLogRedraw(){if(tipsActive())tipsRedraw();}
-async function tipsLogOpen(){
-  tipsState.logOpen=true;
-  tipsLogRedraw();
-  if(!tipsState.logEntries){await tipsLogFetch();tipsLogRedraw();}
-}
-function tipsLogClose(){tipsState.logOpen=false;tipsLogRedraw();}
-function tipsLogToggleEntry(id){tipsState.logExpanded[id]=!tipsState.logExpanded[id];tipsLogRedraw();}
-async function tipsLogDelete(id,label){
-  if(!confirm('Delete the tip-out log entry for '+(label||'this night')+'?\n\nThis removes it from the log permanently — it does not touch any tips already pulled onto the grid.'))return;
-  let ok=false;
-  try{const r=await fetch(TIPS_LOG_URL+'?id='+encodeURIComponent(id)+'&key='+encodeURIComponent(TIPS_LOG_KEY()),{method:'DELETE'});ok=r.ok;}catch(e){}
-  if(!ok){alert('Could not delete — the log could not be reached or refused the request.');return;}
-  await tipsLogFetch();tipsLogRedraw();
-}
-function tipsLogBtnHTML(){
-  return `<button onclick="tipsLogOpen()" title="View the tip-out log" style="background:var(--surface2);border:1px solid var(--border);color:var(--text-dim);border-radius:8px;padding:5px 10px;cursor:pointer;font-size:12px;white-space:nowrap">🗒 Log</button>`;
-}
-function tipsLogEntryHTML(e,idx){
-  const id=e.id!=null?e.id:idx;
-  const open=!!tipsState.logExpanded[id];
-  const n=tipsLogEmployeeCount(e);
-  const source=e.source==='pos'?'Register':'Calculator';   // a register entry carries source:'pos' (id "P<date>-<ms>")
-  const badges=`${e.practice?'<span style="background:#f59e0b;color:#000;font-weight:800;font-size:10px;padding:1px 6px;border-radius:999px;margin-left:6px">PRACTICE</span>':''}${e.draft?'<span style="color:var(--text-muted);font-size:10px;font-weight:600;margin-left:6px">draft</span>':''}`;
-  const detail=open?`<div style="padding:8px 12px 12px;font-size:12px;color:var(--text-dim);line-height:1.6">
-    ${(e.servers||[]).length?`<div><b style="color:var(--text)">Servers:</b> ${e.servers.map(s=>`${esc(s.name)} (${tipMoney(s.remaining!=null?s.remaining:(s.tips||0))})`).join(', ')}</div>`:''}
-    ${(e.bartenders||[]).length?`<div><b style="color:var(--text)">Bartenders:</b> ${e.bartenders.map(b=>`${esc(b.name)} (${tipMoney(b.tipReceived||0)})`).join(', ')}</div>`:''}
-    ${(e.runners||[]).length?`<div><b style="color:var(--text)">Runners:</b> ${e.runners.map(r=>`${esc(r.name)} (${tipMoney(r.tipReceived||0)})`).join(', ')}</div>`:''}
-    ${e.pools?`<div><b style="color:var(--text)">Pools:</b> busser ${tipMoney(e.pools.busser||0)} · bar ${tipMoney(e.pools.bar||0)} · runner ${tipMoney(e.pools.runner||0)}</div>`:''}
-    ${(e.direct||[]).length?`<div><b style="color:var(--text)">Direct party tips:</b> ${e.direct.map(d=>`${esc(d.name)} (${tipMoney(d.tips||0)})`).join(', ')}</div>`:''}
-  </div>`:'';
-  return `<div style="border-bottom:1px solid var(--border)">
-    <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer" onclick="tipsLogToggleEntry(${esc(JSON.stringify(id))})">
-      <span style="color:var(--text-dim);font-size:11px;width:12px">${open?'▼':'▶'}</span>
-      <span style="font-weight:700;min-width:60px">${esc(e.date||'?')}</span>
-      <span style="color:var(--text-dim);font-size:12px">${n} employee${n===1?'':'s'}</span>
-      <span style="color:var(--text-muted);font-size:11px">· ${source}</span>
-      ${badges}
-      <span style="margin-left:auto" onclick="event.stopPropagation()"><button onclick="tipsLogDelete(${esc(JSON.stringify(id))},${esc(JSON.stringify(e.date||''))})" title="Delete this log entry" style="background:none;border:none;color:#f87171;cursor:pointer;font-size:14px;padding:2px 6px">✕</button></span>
-    </div>
-    ${detail}
-  </div>`;
-}
-function tipsLogPanelHTML(){
-  if(!tipsState.logOpen)return '';
-  const body=tipsState.logLoading?`<div style="padding:16px;text-align:center;color:var(--text-dim);font-size:12px">Loading…</div>`
-    :tipsState.logFailed?`<div style="padding:16px;text-align:center;color:#f87171;font-size:12px">⚠ Could not reach the tip-out log.</div>`
-    :tipsLogSorted().length?tipsLogSorted().map((e,i)=>tipsLogEntryHTML(e,i)).join('')
-    :`<div style="padding:16px;text-align:center;color:var(--text-dim);font-size:12px">No log entries.</div>`;
-  return `<div style="position:absolute;right:0;top:calc(100% + 6px);z-index:5;width:min(440px,90vw);max-height:60vh;overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.4)">
-    <div style="display:flex;align-items:center;padding:8px 12px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface)">
-      <span style="font-weight:800;color:var(--accent)">TIP-OUT LOG</span>
-      <button onclick="tipsLogClose()" style="margin-left:auto;background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:16px;padding:0 4px">✕</button>
-    </div>
-    ${body}
-  </div>`;
-}
 
 // Pull per-person WEDDING/EVENT tip-outs from the scheduler (same Model-B math
 // the events screen uses) and drop them in as wedding tips: shown with a "W",
@@ -7248,7 +7166,7 @@ function tipsHTML(){
   const di='background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:5px 8px;font-family:inherit;font-size:13px;color-scheme:dark;cursor:pointer';
   return `
   <div style="height:100%;overflow-y:auto;padding:2px 2px 56px">
-    <div style="position:relative;display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
       ${tipsToggleHTML('tips')}
       <div style="display:flex;align-items:center;gap:6px">
         <input type="date" value="${tipISO(tipsState.start)}" onchange="tipsSetStart(this.value)" title="Start date" style="${di}">
@@ -7259,8 +7177,6 @@ function tipsHTML(){
       ${tipsImportBtnHTML()}
       <span id="tips-status" style="font-size:12px;color:var(--text-dim)"></span>
       <span style="margin-left:auto;font-size:12px;color:var(--text-dim)">picking dates pulls the tip-out log + weddings automatically · click a cell to edit</span>
-      ${tipsLogBtnHTML()}
-      ${tipsLogPanelHTML()}
     </div>
     <div style="overflow-x:auto;border:1px solid var(--border);border-radius:12px">
       <table style="border-collapse:collapse;font-size:12px;min-width:100%">
@@ -14224,6 +14140,29 @@ function staffStripPersonal(people){
   });
   return out;
 }
+// ⛔ ONE-TIME SCRUB ON BOOT (Jarvis, 11/20/26): before 0278aae every Staff load wrote the whole
+// live projection — email, birthday, address — into this device's localStorage ct_staff. Strip
+// those fields from ANY local copy of staff records still sitting there: ct_staff, and any other
+// ct_* value shaped like a staff list ({people:{…}} or a {v:{people:{…}}} KV mirror). Idempotent
+// and quiet: a clean copy is left byte-for-byte alone; only a copy carrying personal fields is
+// rewritten, stripped. Never touches the mini or the cloud.
+function staffScrubLocalPersonal(){
+  let fixed=0;
+  try{
+    for(let i=0;i<localStorage.length;i++){
+      const k=localStorage.key(i);if(!k||k.indexOf('ct_')!==0)continue;
+      let j;try{j=JSON.parse(localStorage.getItem(k));}catch(e){continue;}
+      const holder=(j&&j.people&&typeof j.people==='object')?j:((j&&j.v&&j.v.people&&typeof j.v.people==='object')?j.v:null);
+      if(!holder)continue;
+      const dirty=Object.values(holder.people).some(p=>p&&('email' in p||'birthday' in p||'address' in p));
+      if(!dirty)continue;
+      holder.people=staffStripPersonal(holder.people);
+      localStorage.setItem(k,JSON.stringify(j));fixed++;
+    }
+  }catch(e){}
+  return fixed;
+}
+staffScrubLocalPersonal();
 let staffResyncTimer=null;
 function staffSave(){
   staffS.at=Date.now();

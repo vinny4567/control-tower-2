@@ -62,5 +62,33 @@ const saveFn = grab('staffSave');
 ok('⛔ staffSave writes through staffStripPersonal, not the raw staffS.people', /localStorage\.setItem\(STAFF_KEY,JSON\.stringify\(\{people:staffStripPersonal\(staffS\.people\)/.test(saveFn));
 ok('⛔ staffSave never calls kvPush — it is localStorage only, exactly as Jarvis described it', !/kvPush\(/.test(saveFn));
 
+// ── ONE-TIME BOOT SCRUB of copies already sitting in this device's localStorage ──────────────
+{
+  const store = {
+    ct_staff: JSON.stringify({ people: { amy: { key: 'amy', name: 'Amy', pid: 'p1', email: 'a@x.com', birthday: '1990-01-01', address: { street: '1 Main' }, register: { pin_set: true } } }, jobs: { Server: { rate: 9 } }, at: 5 }),
+    ct_staff_mirror: JSON.stringify({ v: { people: { bob: { key: 'bob', name: 'Bob', email: 'b@x.com' } } }, at: 7 }),
+    ct_clean: JSON.stringify({ people: { cal: { key: 'cal', name: 'Cal', pid: 'p3' } } }),
+    other_app: JSON.stringify({ people: { dee: { name: 'Dee', email: 'd@x.com' } } }),   // not ours (no ct_ prefix)
+    ct_notjson: '{not json',
+    ct_liq_items: JSON.stringify({ v: [1, 2, 3], at: 1 }),
+  };
+  const before = { ...store };
+  let writes = 0;
+  const localStorage = { get length() { return Object.keys(store).length; }, key: (i) => Object.keys(store)[i], getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { writes++; store[k] = String(v); } };
+  const fns = new Function('localStorage', `${grab('staffStripPersonal')}\n${grab('staffScrubLocalPersonal')}\nreturn {staffScrubLocalPersonal};`)(localStorage);
+  const n = fns.staffScrubLocalPersonal();
+  const staff = JSON.parse(store.ct_staff).people.amy;
+  ok('⛔ ct_staff: email, birthday and address are scrubbed from the copy already on the device', !('email' in staff) && !('birthday' in staff) && !('address' in staff));
+  ok('…everything else on the record (and the rest of the blob) survives', staff.name === 'Amy' && staff.pid === 'p1' && staff.register.pin_set === true && JSON.parse(store.ct_staff).jobs.Server.rate === 9 && JSON.parse(store.ct_staff).at === 5);
+  ok('⛔ any other ct_* local copy of staff records ({v:{people}} KV mirror shape) is scrubbed too', !('email' in JSON.parse(store.ct_staff_mirror).v.people.bob) && JSON.parse(store.ct_staff_mirror).at === 7);
+  ok('a copy with nothing personal is left byte-for-byte alone (not rewritten)', store.ct_clean === before.ct_clean);
+  ok('a non-ct_ key is never touched', store.other_app === before.other_app);
+  ok('non-JSON and non-staff ct_ values are skipped, not thrown on', store.ct_notjson === before.ct_notjson && store.ct_liq_items === before.ct_liq_items);
+  ok('exactly the two dirty copies were rewritten, and it reports that', n === 2 && writes === 2);
+  const again = fns.staffScrubLocalPersonal();
+  ok('idempotent: a second run finds nothing to do and writes nothing', again === 0 && writes === 2);
+}
+ok('⛔ it actually RUNS on boot (a top-level call, not just a definition)', /\nstaffScrubLocalPersonal\(\);\n/.test(src));
+
 console.log(bad ? `\n${bad} FAILED` : '\nall good');
 process.exit(bad ? 1 : 0);

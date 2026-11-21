@@ -54,7 +54,7 @@ function world({ people = {}, aliases = {}, cells = {}, hours = {}, empIds = {},
     const setTimeout=()=>{};
     const window={innerWidth:1000,innerHeight:800};
     const esc=(s)=>(s||'').toString();
-    const staffDisplayMark=()=>'';const staffFlagHTML=()=>'';const tipsToggleHTML=()=>'';const tipsImportBtnHTML=()=>'';const tipsPosBtnHTML=()=>'';const tipsCsvBtnHTML=()=>'';const tsChecksHTML=()=>'';const tipsLogBtnHTML=()=>'';const tipsLogPanelHTML=()=>'';
+    const staffDisplayMark=()=>'';const staffFlagHTML=()=>'';const tipsToggleHTML=()=>'';const tipsImportBtnHTML=()=>'';const tipsPosBtnHTML=()=>'';const tipsCsvBtnHTML=()=>'';const tsChecksHTML=()=>'';
     ${grab('staffKeyOf')}${grab('staffEmployed')}${grab('staffResolveForTips')}${grab('staffDisplayName')}
     ${grab('staffFlagIgnored')}${grab('tipNotAPerson')}${grab('tipPersonHasHoursThisPeriod')}
     ${grab('tipBaseSection')}${grab('tipEffSection')}${grab('tipBusserSplit')}${grab('tipBusserDay')}${grab('tipBusserSplitPeople')}${grab('tipBusserPoolDay')}
