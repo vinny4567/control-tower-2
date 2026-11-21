@@ -11112,7 +11112,7 @@ function posGroupsHTML(){
   // ragged, and it collapses to one column when the window is too narrow to keep
   // both readable.
   const grid=(cards)=>`<div class="pos-grid2">${cards}</div>`;
-  return datalist+newBtn+grid(newCards+gs.map(g=>`<div data-gk="${posEnc(posGroupKey(g))}" style="${posCardCss}${
+  const card=(g)=>`<div data-gk="${posEnc(posGroupKey(g))}" style="${posCardCss}${
     posDeletedGroups.includes(posGroupKey(g))?';border-color:#ef4444;background:rgba(239,68,68,0.06)':''}">
     <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
       <span style="font-size:13px;font-weight:800;color:var(--text-dim);font-variant-numeric:tabular-nums">${g.num!=null?g.num:'—'}</span>
@@ -11134,8 +11134,25 @@ function posGroupsHTML(){
     ${posGroupModsHTML(g)}
     ${posGroupAttachHTML(g)}
     ${posUsedByHTML(g)}
-  </div>`).join(''));
+  </div>`;
+  // ⚠️ A DELETED GROUP LEAVES THE LIST (Vinny, 11/20/26, after deleting 250: "now get rid of it
+  // from the mod group list"). It used to stay in the grid, outlined red with "undo" — a
+  // finished deletion described as one still happening, the same complaint as the red
+  // "removed" items. The way back stays, out of the way: one quiet line at the foot of the
+  // list, "N deleted groups · show", which opens to the deleted cards with their undo. The
+  // delete confirm has promised exactly that line ("deleted · show") all along.
+  const isDel=(g)=>posDeletedGroups.includes(posGroupKey(g));
+  const live=gs.filter(g=>!isDel(g)),gone=gs.filter(isDel);
+  const openDel=!!posS.openDeletedGroups;
+  const delLine=gone.length?`<div data-deleted-groups style="margin-top:14px;font-size:12px;color:var(--text-muted)">
+      ${gone.length} deleted group${gone.length===1?'':'s'}
+      <button onclick="posToggleDeletedGroups()" style="border:none;background:transparent;color:var(--text-dim);
+        cursor:pointer;font-family:inherit;font-size:12px;text-decoration:underline;padding:0 2px">${openDel?'hide':'show'}</button>
+      ${openDel?`<div style="margin-top:8px">${grid(gone.map(card).join(''))}</div>`:''}
+    </div>`:'';
+  return datalist+newBtn+grid(newCards+live.map(card).join(''))+delLine;
 }
+function posToggleDeletedGroups(){posS.openDeletedGroups=!posS.openDeletedGroups;posRedraw();}   // keeps the scroll
 
 // ---- Printers ---------------------------------------------------------------
 function posPrintersHTML(){
