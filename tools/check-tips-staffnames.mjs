@@ -102,13 +102,13 @@ ok('⛔ the row\'s department dropdown still keys off the RAW name, not the reso
 
 const hoursHTMLFn = grab('hoursHTML');
 ok('hoursHTML resolves the per-person row label through staffDisplayName', /staffDisplayName\(name\)/.test(hoursHTMLFn) && /staffDisplayMark\(disp\.matched,name\)/.test(hoursHTMLFn));
-// 11/20/26: the badge moved into tipIdBadgeHTML (Staff is now the master for the ID), but the
-// rule this guards is unchanged — the old map (tipsState.empIds) is keyed by the RAW name.
+// 11/20/26: the badge moved into tipIdBadgeHTML, and the ID now comes ONLY from Staff (the old
+// map, tipsState.empIds, held MICROS numbers and is retired — never read).
 const idFn = grab('tipPaychexId');
-ok('⛔ the ID badge is handed the RAW name (tipsState.empIds is a LEAVE-IT store)',
+ok('⛔ the ID badge is handed the RAW name (Staff resolves it through the alias chain)',
    /\$\{tipIdBadgeHTML\(name\)\}/.test(hoursHTMLFn));
-ok('⛔ …and the fallback lookup inside it reads the old map by that RAW name',
-   /\(tipsState\.empIds\|\|\{\}\)\[name\]/.test(idFn));
+ok('⛔ …and the lookup resolves that RAW name through Staff, never the old map',
+   /staffResolveForTips\(name\)/.test(idFn) && !/empIds/.test(idFn));
 ok('⛔ tipHoursInput/tipHoursDelPos/tipHoursRenamePos/tipHoursAddRow/tipHoursDelPerson are all still called with the RAW name',
    /oninput="tipHoursInput\('\$\{esc\(name\)/.test(hoursHTMLFn) &&
    /onclick="tipHoursDelPerson\('\$\{esc\(name\)/.test(hoursHTMLFn));

@@ -28,10 +28,9 @@ function world(state, periodKey = 'ct_tips_2026_12_1') {
     `let tipsState = env.tipsState;
      let tipsSaveTimer, tipsHoursSaveTimer;
      ${lift('tipsSaveBlocked').replace(/tipsState/g, 'env.tipsState')}
-     ${lift('tipsSaveEmpIds').replace(/tipsState/g, 'env.tipsState')}
      ${lift('tipsSaveSoon').replace(/tipsState/g, 'env.tipsState').replace(/tipsGen/g, 'env.gen')}
      ${lift('tipsSaveHoursSoon').replace(/tipsState/g, 'env.tipsState').replace(/tipsGen/g, 'env.gen')}
-     return { tipsSaveBlocked, tipsSaveEmpIds, tipsSaveSoon, tipsSaveHoursSoon };`
+     return { tipsSaveBlocked, tipsSaveSoon, tipsSaveHoursSoon };`
   )(env,
     (k, v) => env.writes.push({ key: k, v }),
     (s) => env.status.push(s),
@@ -80,31 +79,15 @@ ok('…and says so, loudly — a silent refusal is worse than the bug',
 w = world(failed());
 ok('⛔ the per-sheet moves have no saver at all any more (retired 11/20/26 — the dropdown sets the Staff department)', !/function tipsSaveMoves\(|kvPush\('ct_tips_moves'/.test(src));
 
-// ⛔ THE PAYCHEX ONE. On a screen that failed to load, empIds is empty — saving it would write
-// a map containing ONLY what is in memory over every worker in the business. (11/20/26: the
-// sheet no longer takes typed IDs at all — Staff is the master — but the MICROS import and
-// wedding pull still save the fallback map through this one guarded saver.)
-w = world(failed());
-w.tipsSaveEmpIds();
-ok('⛔ saving the worker IDs on a screen that failed to load writes nothing', w.env.writes.length === 0);
-ok('…and says so', w.env.status.join('|').includes('not saved'));
+// ⛔ THE PAYCHEX ONE (retired 11/20/26, "lets finish this"): the old worker-ID list held MICROS
+// employee numbers (Ethan Browning's 13 vs Staff's 647). Nothing saves it any more — a Paychex ID
+// comes only from Staff — so there is no saver left to guard.
+ok('⛔ the worker-ID saver is gone (tipsSaveEmpIds no longer exists)', !/function tipsSaveEmpIds\(/.test(src));
 
 // ── half-loaded is not loaded ───────────────────────────────────────────────
 w = world({ ...good(), loading: true, cells: {} });
 w.tipsSaveSoon(); w.fire();
 ok('⛔ a sheet still loading does not write its half-empty self back', w.env.writes.length === 0);
-w = world({ ...good(), loading: true, empIds: {} });
-w.tipsSaveEmpIds();
-ok('⛔ …nor the worker IDs', w.env.writes.length === 0);
-ok('…and the refusal is visible, not silent', w.env.status.join('|').includes('not saved'));
-
-// ── the normal path still works ─────────────────────────────────────────────
-w = world(good());
-ok('saving the IDs on a good screen writes them, everyone kept', (w.tipsSaveEmpIds(), w.env.writes.length === 1 && w.env.writes[0].key === 'ct_emp_ids' && w.env.writes[0].v.emp.Ann === '123'));
-w = world(good());
-ok('tipsSaveEmpIds reports success', w.tipsSaveEmpIds() === true);
-ok('…and refuses with false when it cannot', world(failed()).tipsSaveEmpIds() === false);
-
 // ── the hours save answers to the SAME gate ────────────────────────────────
 // It carried its own copy of the load-failed line, and so was missing the still-loading
 // one: hours typed into a half-loaded fortnight went to the store anyway.
@@ -124,13 +107,11 @@ w.tipsSaveHoursSoon(); w.fire();
 ok('hours still save on a good, settled sheet',
    w.env.writes.length === 1 && w.env.writes[0].key === 'ct_tips_hours_ct_tips_2026_12_1');
 
-// ── ONE writer for the worker IDs ───────────────────────────────────────────
-// It used to be written from three places and the one that mattered had no guard. Three
-// copies of a rule is how one ends up missing it.
-const raw = (src.match(/kvPush\('ct_emp_ids'/g) || []).length;
-ok('⛔ exactly one place writes the worker-ID map', raw === 1);
-ok('…and it is inside the guarded saver',
-   lift('tipsSaveEmpIds').includes("kvPush('ct_emp_ids'"));
+// ── NO writer for the worker IDs ────────────────────────────────────────────
+// It used to be written from three places, then one guarded saver. Now none: ct_emp_ids stays
+// in the store untouched, as history, and the page never writes it.
+const raw = (src.match(/kvPush\(\s*['"]ct_emp_ids['"]/g) || []).length;
+ok('⛔ nothing in the page writes the old worker-ID map (ct_emp_ids)', raw === 0);
 
 
 // ── THE TWO LONG READS ──────────────────────────────────────────────────────

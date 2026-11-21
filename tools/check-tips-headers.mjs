@@ -93,7 +93,7 @@ function world({ people = {}, cells = {}, busserSplitByDay = {}, busserSplit = {
     ${grab('tipCompsHTML')}
     ${grab('tipMoney')}
     ${grab('staffDisplayName')}
-    ${grab('tipIdNorm')}
+    
     ${grab('tipPaychexId')}
     ${grab('tipIdBadgeHTML')}
     ${grab('tipPersonKey')}
