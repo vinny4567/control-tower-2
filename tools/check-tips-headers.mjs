@@ -98,7 +98,7 @@ function world({ people = {}, cells = {}, busserSplitByDay = {}, busserSplit = {
     ${grab('tipMoney')}
     ${grab('staffDisplayName')}
     ${grab('tipsHTML')}
-    ctx.html=tipsHTML;
+    ctx.html=tipsHTML;ctx.staffS=staffS;ctx.tipsState=tipsState;ctx.grand=tipsGrandTotals;
   `)(ctx);
   return ctx;
 }
@@ -154,6 +154,30 @@ const PAID_DIV = 'border-left:4px solid var(--border)';
   ok('the grand-total Paid <td> uses the thicker divider', /id="tips-grand-paid" style="[^"]*border-left:4px solid var\(--border\)/.test(html));
   ok("Amy's own Paid <td> uses the thicker divider, not the old 2px border", /id="tp-[^"]+" style="[^"]*border-left:4px solid var\(--border\)/.test(html));
   ok('⛔ nothing still uses the OLD 2px literal on a Paid column", confirming it is not a stray duplicate', !/color:#34d399;border-left:2px solid var\(--border\)/.test(html));
+}
+
+
+// ── SETTING A DEPARTMENT MOVES THE ROW AND KEEPS EVERY FIGURE (Trinette, 11/20/26) ──────
+// Vinny set Trinette Notarangeli → server and reported her 11/17 tips "didn't come up". The
+// period was unsaved, so every figure was an in-memory auto-pull fill. Setting a department
+// must only MOVE the row — the cells are keyed by the raw name and nothing about Staff
+// touches them. Pinned here against the real tipsHTML(), paid AND unpaid, grand total too.
+{
+  const rowTotal = (html, name) => { const i = html.indexOf('>' + name + '<'); if (i < 0) return null; const tr = html.slice(i, html.indexOf('</tr>', i)); const p = tr.match(/id="tp-[^"]+"[^>]*>([^<]*)</); const u = tr.match(/id="tu-[^"]+"[^>]*>([^<]*)</); return (p ? p[1] : '') + '|' + (u ? u[1] : ''); };
+  const sectionOf = (html, name) => { const i = html.indexOf('>' + name + '<'); if (i < 0) return null; const m = [...html.slice(0, i).matchAll(/<tr style="background:var\(--surface2\)">\s*<th[^>]*>([^<]+)<\/th>/g)]; return m.length ? m[m.length - 1][1] : null; };
+  const w = world({
+    people: { 'trinette notarangeli': { key: 'trinette notarangeli', name: 'Trinette Notarangeli', active: true, positions: ['Server'] } },
+    cells: { 'Trinette Notarangeli': { '11/3': { p: 120 }, '11/4': { u: 35 } } },
+  });
+  let html = w.html();
+  const beforeTotals = rowTotal(html, 'Trinette Notarangeli'), beforeGrand = JSON.stringify(w.grand());
+  ok('fixture: a tipped person with no department starts in NO DEPARTMENT YET with her pulled figures', sectionOf(html, 'Trinette Notarangeli') === 'NO DEPARTMENT YET' && beforeTotals === '$120.00|$35.00');
+  w.staffS.people['trinette notarangeli'].department = 'server';   // what the Staff write + staffLoad(true) lands
+  html = w.html();
+  ok('⛔ after a department is set her row MOVES to SERVERS', sectionOf(html, 'Trinette Notarangeli') === 'SERVERS');
+  ok('⛔ …and keeps every pulled figure, paid and unpaid', rowTotal(html, 'Trinette Notarangeli') === beforeTotals);
+  ok('⛔ …and appears exactly once (not left behind in NO DEPARTMENT YET as well)', html.split('>Trinette Notarangeli<').length - 1 === 1);
+  ok('⛔ the grand total is unchanged by the move', JSON.stringify(w.grand()) === beforeGrand);
 }
 
 console.log(bad ? `\n${bad} FAILED` : '\nall good');
