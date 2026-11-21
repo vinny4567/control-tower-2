@@ -16521,8 +16521,13 @@ function staffDetail(p){
 // if the two have drifted, so a fixed constant actually reaches the mini.)
 //
 // 'Setup' is deliberately absent — event hours, never a register punch, name-only by design.
+// 'Day Party' 120 / 'Wedding Setup' 110 / 'Training' 119 added 11/20/26 (POS-UI, register 7461a73):
+// MICROS's own numbers off the timesheet PDFs ("110 - WeddingSetup", "119 - Training",
+// "120 - Day Party"), verified against pos/src/employees.js JOBS. Every punch under them sends
+// name AND num, and rateOf tries the num first.
 const STAFF_JOB_NUMS={Manager:101,Cook:104,Server:200,Bartender:201,Host:202,Busser:203,
-                      Salads:204,Dishwasher:205,'Food Runner':206};
+                      Salads:204,Dishwasher:205,'Food Runner':206,
+                      'Wedding Setup':110,Training:119,'Day Party':120};
 
 function staffJobs(){return staffS.jobs||(staffS.jobs={})}
 
@@ -16631,6 +16636,10 @@ function staffJobRatesForMini(){
     const s=stdOf(job),r=map[job];
     if(!s||s===job||!(r>0))return;           // no standard twin, or no rate to carry
     if(out[prefix+s]==null)out[prefix+s]=Math.round(r*100);   // the exact spelling's own rate was published first, and wins
+    // …and under the standard job's register NUMBER too — the register punches name AND num and
+    // rateOf tries the num first, so "training" must reach "119" as well as "Training".
+    const num=STAFF_JOB_NUMS[s];
+    if(num!=null&&out[prefix+String(num)]==null)out[prefix+String(num)]=Math.round(r*100);
   });
   alsoStd(Object.fromEntries(Object.keys(jobs).map(j=>[j,jobs[j]&&jobs[j].rate])),'');
   Object.values(staffS.people||{}).forEach(p=>{

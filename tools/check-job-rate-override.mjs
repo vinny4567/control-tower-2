@@ -105,8 +105,10 @@ ok('⛔ staffPushMerged is gone — nothing in this file still calls it', !/staf
 const fn = grab('staffJobRatesForMini');
 ok('⛔ exactly one function publishes ct_job_rates',
    (src.match(/function staffJobRatesForMini\(/g) || []).length === 1);
+// Every number lookup goes through the ONE table (job loop, person loop, the standard-spelling
+// pass since 11/20/26) — the rule is "no second copy of the map", not a fixed count of lookups.
 ok('the per-person loop reuses STAFF_JOB_NUMS, not a second copy of the job-number map',
-   (fn.match(/STAFF_JOB_NUMS\[/g) || []).length === 2);
+   (fn.match(/STAFF_JOB_NUMS\[/g) || []).length >= 2 && !/\b(101|104|110|119|120|20[0-6])\b/.test(fn.split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n')));
 
 
 // ── Jarvis, 11/19 late: does the drift check actually fire, and does it count the new
@@ -183,6 +185,19 @@ out = run({ p1: { register: { emp_id: 7 }, rates: { weddingsetup: 17 } } });
 ok('…per person too (emp:7|Wedding Setup)', out['emp:7|Wedding Setup'] === 1700);
 const noCollide = STAFF_JOBS.map(j => j.toLowerCase().replace(/\s+/g, ''));
 ok('no two standard jobs read the same with the spaces taken out (the match can never pick the wrong one)', new Set(noCollide).size === STAFF_JOBS.length);
+// ── the register NUMBERS for the three (POS-UI, register 7461a73: MICROS's own) ─────────────
+ok('⛔ STAFF_JOB_NUMS carries exactly Wedding Setup 110, Training 119, Day Party 120', STAFF_JOB_NUMS['Wedding Setup'] === 110 && STAFF_JOB_NUMS.Training === 119 && STAFF_JOB_NUMS['Day Party'] === 120);
+ok('⛔ no two jobs share a register number (a shared number pays one job at the other\'s rate)', new Set(Object.values(STAFF_JOB_NUMS)).size === Object.keys(STAFF_JOB_NUMS).length);
+out = run({}, { 'Day Party': { rate: 18 }, 'Wedding Setup': { rate: 16 } });
+ok('an exact-spelled rate publishes under its number too ("120", "110")', out['120'] === 1800 && out['110'] === 1600);
+out = run({}, { training: { rate: 12 } });
+ok('⛔ a rate stored as "training" reaches "119" too — the register tries the number FIRST', out['119'] === 1200);
+out = run({}, { WeddingSetup: { rate: 16 } });
+ok('⛔ …and "WeddingSetup" reaches "110"', out['110'] === 1600);
+out = run({}, { training: { rate: 12 }, Training: { rate: 14 } });
+ok('⛔ the exact "Training" rate owns "119" — a variant never overwrites it', out['119'] === 1400);
+out = run({ p1: { register: { emp_id: 42 }, rates: { training: 13 } } });
+ok('…per person too: emp:42|119', out['emp:42|119'] === 1300);
 out = run({}, { 'Server ': { rate: 20 } });
 ok('the standard-spelling publish is generic: a stray-space "Server " also reaches the mini as "Server"', out.Server === 2000);
 

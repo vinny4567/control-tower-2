@@ -696,6 +696,12 @@ const M=[
          "A fix nobody's device ever runs is not a fix;"),false],
   ['JOB3 7 · ⛔ "WeddingSetup" (no space) is not caught — a "Wedding Setup" punch gets no rate','check-job-rate-override.mjs',
     tsub("  const flat=(n)=>staffJobKey(n).replace(/ /g,'');","  const flat=(n)=>staffJobKey(n);"),true],
+  ['JOB3 8 · ⛔ Training gets the wrong register number (120 — Day Party\'s)','check-job-rate-override.mjs',
+    tsub("'Wedding Setup':110,Training:119,'Day Party':120};","'Wedding Setup':110,Training:120,'Day Party':120};"),true],
+  ['JOB3 9 · ⛔ a variant-spelled rate ("training") never reaches the register number "119"','check-job-rate-override.mjs',
+    tsub("    if(num!=null&&out[prefix+String(num)]==null)out[prefix+String(num)]=Math.round(r*100);","    void num;"),true],
+  ['JOB3 10 · ⛔ a variant overwrites the exact job\'s number key','check-job-rate-override.mjs',
+    tsub("    if(num!=null&&out[prefix+String(num)]==null)out[prefix+String(num)]=Math.round(r*100);","    if(num!=null)out[prefix+String(num)]=Math.round(r*100);"),true],
   // ── CUTOVER #4: busser split from the register's punches (check-tips-pos-busser) ─────────
   ['POSB 1 · ⛔ a POS night is divided by MICROS shifts again — the mini\'s shares ignored','check-tips-pos-busser.mjs',
     tsub("    if(e.source==='pos'&&Array.isArray(e.bussers)){","    if(false){"),true],
