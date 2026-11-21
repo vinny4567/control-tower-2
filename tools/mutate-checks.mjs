@@ -1008,15 +1008,18 @@ const M=[
     tsub("// ⚠️ STAFF IS THE MASTER FOR PAYCHEX IDs — Vinny, 11/20/26:",
          "// Staff owns the Paychex ID — Vinny, 11/20/26:"),false],
 
-  // ── A DELETED GROUP LEAVES THE LIST (check-pos-deleted-groups) ─────────────────────────
-  ['DELG 1 · ⛔ deleted groups stay in the grid (outlined red) — the list Vinny asked to be rid of','check-pos-deleted-groups.mjs',
-    tsub("  return datalist+newBtn+grid(newCards+live.map(card).join(''))+delLine;","  return datalist+newBtn+grid(newCards+gs.map(card).join(''))+delLine;"),true],
-  ['DELG 2 · ⛔ the way back is lost — no "deleted · show" line, so an accidental delete has no undo','check-pos-deleted-groups.mjs',
-    tsub("  return datalist+newBtn+grid(newCards+live.map(card).join(''))+delLine;","  return datalist+newBtn+grid(newCards+live.map(card).join(''));"),true],
-  ['DELG 3 · ⛔ the foot line shows the deleted cards even when closed','check-pos-deleted-groups.mjs',
-    tsub("      ${openDel?`<div style=\"margin-top:8px\">${grid(gone.map(card).join(''))}</div>`:''}","      <div style=\"margin-top:8px\">${grid(gone.map(card).join(''))}</div>"),true],
-  ['DELG 4 · ⛔ show/hide redraws with a bare renderViewport (snaps the scroll)','check-scroll-guard.mjs',
-    tsub("function posToggleDeletedGroups(){posS.openDeletedGroups=!posS.openDeletedGroups;posRedraw();}","function posToggleDeletedGroups(){posS.openDeletedGroups=!posS.openDeletedGroups;renderViewport();}"),true],
+  // ── DELETE A MOD GROUP: ASK FIRST, THEN GONE (check-pos-deleted-groups) ──────────────────
+  ['DELG 1 · ⛔ the ✕ deletes with no confirmation — the accident Vinny asked to guard against','check-pos-deleted-groups.mjs',
+    tsub("  if(!await posAsk(`Delete <b>${esc(name)}</b>? It stops being asked on the register.${on}`,'Delete','Cancel',{danger:true}))return;\n",""),true],
+  ['DELG 2 · ⛔ a deleted group stays in the list','check-pos-deleted-groups.mjs',
+    tsub("grid(newCards+gs.filter(g=>!posDeletedGroups.includes(posGroupKey(g))).map(card).join(''))","grid(newCards+gs.map(card).join(''))"),true],
+  ['DELG 3 · ⛔ the confirm uses window.confirm again (misbehaves on iPad Safari)','check-pos-deleted-groups.mjs',
+    tsub("  if(!await posAsk(`Delete <b>${esc(name)}</b>? It stops being asked on the register.${on}`,'Delete','Cancel',{danger:true}))return;",
+         "  if(!confirm('Delete '+name+'? It stops being asked on the register.'))return;"),true],
+  ['DELG 4 · ⛔ in the delete confirm, Enter means Delete — a stray Enter deletes the group','check-pos-deleted-groups.mjs',
+    tsub("if(e.key==='Enter')done(!danger);","if(e.key==='Enter')done(true);"),true],
+  ['DELG 5 · ⛔ the delete confirm opens with DELETE focused','check-pos-deleted-groups.mjs',
+    tsub("wrap.querySelector(danger?'button[data-a=\"no\"]':'button[data-a=\"yes\"]').focus();","wrap.querySelector('button[data-a=\"yes\"]').focus();"),true],
 
   // ── PICK ONE / SEVERAL / HOW MANY (check-pos-group-kind) ────────────────────────────────
   ['KIND 1 · ⛔ the switch is saved but never published — the group keeps the catalog\'s multi/qty on the iPads','check-pos-group-kind.mjs',

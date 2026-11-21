@@ -7990,18 +7990,19 @@ let posModNames={};       // oldName -> newName
 // attached to real items, so deleting one here records it and marks the card — it is
 // still asking a server for an answer until it is published.
 let posDeletedGroups=[];  // [groupKey]
-function posDeleteGroup(encKey,encName,used){
+// The red ✕ on a mod group card (Vinny, 11/20/26: "the only thing i want is a confirmation after
+// pressing x in case anyone accidentally presses it"). An IN-PAGE confirm (posAsk), Cancel the
+// default — not window.confirm. On Delete the group simply leaves the list: no red undo card and
+// no "deleted · show" line (both tried and dropped the same evening).
+async function posDeleteGroup(encKey,encName,used){
   const k=decodeURIComponent(encKey), name=decodeURIComponent(encName);
-  if(posDeletedGroups.includes(k)){
-    posDeletedGroups=posDeletedGroups.filter(x=>x!==k);
-  }else{
-    const n=Number(used)||0;
-    const warn=n?`\n\nIt is on ${n} item${n===1?'':'s'} — they will stop asking it.`:'';
-    if(!confirm(`Delete the \u201c${name}\u201d group?${warn}\n\nIt comes off the registers within a second \u2014 there is no Publish step any more. You can put it back from \u201cdeleted \u00b7 show\u201d at the foot of the list.`))return;
-    posDeletedGroups=[...posDeletedGroups,k];
-  }
+  if(posDeletedGroups.includes(k))return;
+  const n=Number(used)||0;
+  const on=n?`<br><br>It is on ${n} item${n===1?'':'s'} — they will stop asking it.`:'';
+  if(!await posAsk(`Delete <b>${esc(name)}</b>? It stops being asked on the register.${on}`,'Delete','Cancel',{danger:true}))return;
+  posDeletedGroups=[...posDeletedGroups,k];
   kvPush('ct_pos_deleted_groups',posDeletedGroups,Date.now());
-  posRedraw();
+  posRedraw();   // keeps the scroll
 }
 const posRowLabel=(r)=>posModNames[r.key]||r.name;
 function posRenameMod(encKey,encName){
@@ -8945,7 +8946,10 @@ function posSaveGroups(){
 // The browser's own confirm() is stuck with OK and Cancel, and "OK = required,
 // Cancel = optional" is a legend you have to read to answer a yes/no question. This
 // is the same dialog with the answer written on the buttons.
-function posAsk(question,yesLabel,noLabel){
+// opts.danger: for a destructive yes — the yes button turns red, and Cancel is the default
+// (focused, and what Enter does), so a stray Enter or tap-through never deletes anything.
+function posAsk(question,yesLabel,noLabel,opts){
+  const danger=!!(opts&&opts.danger);
   return new Promise((resolve)=>{
     const wrap=document.createElement('div');
     wrap.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:20px';
@@ -8956,7 +8960,7 @@ function posAsk(question,yesLabel,noLabel){
       +'<button data-a="yes" style="padding:9px 18px;border-radius:8px;border:1px solid var(--accent);background:var(--accent);color:#fff;font-size:14px;font-weight:700;cursor:pointer">'+yesLabel+'</button>'
       +'</div></div>';
     const done=(v)=>{wrap.remove();document.removeEventListener('keydown',onKey);resolve(v);};
-    const onKey=(e)=>{if(e.key==='Escape')done(false);if(e.key==='Enter')done(true);};
+    const onKey=(e)=>{if(e.key==='Escape')done(false);if(e.key==='Enter')done(!danger);};
     wrap.addEventListener('click',(e)=>{
       const b=e.target.closest('button[data-a]');
       if(b)done(b.dataset.a==='yes');
@@ -8964,7 +8968,8 @@ function posAsk(question,yesLabel,noLabel){
     });
     document.addEventListener('keydown',onKey);
     document.body.appendChild(wrap);
-    wrap.querySelector('button[data-a="yes"]').focus();
+    if(danger){const y=wrap.querySelector('button[data-a="yes"]');y.style.background='#ef4444';y.style.borderColor='#ef4444';}
+    wrap.querySelector(danger?'button[data-a="no"]':'button[data-a="yes"]').focus();
   });
 }
 async function posNewGroup(){
@@ -11112,8 +11117,7 @@ function posGroupsHTML(){
   // ragged, and it collapses to one column when the window is too narrow to keep
   // both readable.
   const grid=(cards)=>`<div class="pos-grid2">${cards}</div>`;
-  const card=(g)=>`<div data-gk="${posEnc(posGroupKey(g))}" style="${posCardCss}${
-    posDeletedGroups.includes(posGroupKey(g))?';border-color:#ef4444;background:rgba(239,68,68,0.06)':''}">
+  const card=(g)=>`<div data-gk="${posEnc(posGroupKey(g))}" style="${posCardCss}">
     <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
       <span style="font-size:13px;font-weight:800;color:var(--text-dim);font-variant-numeric:tabular-nums">${g.num!=null?g.num:'—'}</span>
       <span style="font-size:17px;font-weight:700;color:var(--text)">${esc(posGroupLabel(g))}</span>
@@ -11124,35 +11128,21 @@ function posGroupsHTML(){
         style="border:none;background:transparent;color:var(--text-muted);cursor:pointer;font-size:12px;font-family:inherit">duplicate</button>
       <span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;border:1px solid currentColor;color:${g.required?'#ef4444':'var(--text-muted)'}">${g.required?'required':'optional'}</span>${posGroupKindHTML(g)}
       ${g.declared?'<span style="font-size:11px;color:#f59e0b;font-weight:700" title="It exists and keeps its prices, but no item asks it">defined, not in use</span>':''}
-      <button onclick="posDeleteGroup('${posEnc(posGroupKey(g))}','${posEnc(g.name)}',${(g.used_by||[]).length})"
-        title="${posDeletedGroups.includes(posGroupKey(g))?'keep it after all':'delete this group'}"
+      <button onclick="event.stopPropagation();posDeleteGroup('${posEnc(posGroupKey(g))}','${posEnc(g.name)}',${(g.used_by||[]).length})"
+        title="delete this group"
         style="border:none;background:transparent;cursor:pointer;font-family:inherit;line-height:1;
-          font-size:${posDeletedGroups.includes(posGroupKey(g))?'15px':'22px'};font-weight:700;padding:0 4px;
-          color:#ef4444">${posDeletedGroups.includes(posGroupKey(g))?'undo':'×'}</button>
+          font-size:22px;font-weight:700;padding:0 4px;color:#ef4444">×</button>
       <span style="margin-left:auto;font-size:12px;color:var(--text-dim)">${g.used_by.length?g.used_by.length+' item'+(g.used_by.length===1?'':'s'):''}</span>
     </div>
     ${posGroupModsHTML(g)}
     ${posGroupAttachHTML(g)}
     ${posUsedByHTML(g)}
   </div>`;
-  // ⚠️ A DELETED GROUP LEAVES THE LIST (Vinny, 11/20/26, after deleting 250: "now get rid of it
-  // from the mod group list"). It used to stay in the grid, outlined red with "undo" — a
-  // finished deletion described as one still happening, the same complaint as the red
-  // "removed" items. The way back stays, out of the way: one quiet line at the foot of the
-  // list, "N deleted groups · show", which opens to the deleted cards with their undo. The
-  // delete confirm has promised exactly that line ("deleted · show") all along.
-  const isDel=(g)=>posDeletedGroups.includes(posGroupKey(g));
-  const live=gs.filter(g=>!isDel(g)),gone=gs.filter(isDel);
-  const openDel=!!posS.openDeletedGroups;
-  const delLine=gone.length?`<div data-deleted-groups style="margin-top:14px;font-size:12px;color:var(--text-muted)">
-      ${gone.length} deleted group${gone.length===1?'':'s'}
-      <button onclick="posToggleDeletedGroups()" style="border:none;background:transparent;color:var(--text-dim);
-        cursor:pointer;font-family:inherit;font-size:12px;text-decoration:underline;padding:0 2px">${openDel?'hide':'show'}</button>
-      ${openDel?`<div style="margin-top:8px">${grid(gone.map(card).join(''))}</div>`:''}
-    </div>`:'';
-  return datalist+newBtn+grid(newCards+live.map(card).join(''))+delLine;
+  // ⚠️ A DELETED GROUP IS NOT IN THE LIST (Vinny, 11/20/26). It used to stay, outlined red with
+  // "undo"; then briefly behind a "deleted · show" line — he wanted neither, only a confirm on
+  // the ✕ (posDeleteGroup). So the list is simply the groups that exist.
+  return datalist+newBtn+grid(newCards+gs.filter(g=>!posDeletedGroups.includes(posGroupKey(g))).map(card).join(''));
 }
-function posToggleDeletedGroups(){posS.openDeletedGroups=!posS.openDeletedGroups;posRedraw();}   // keeps the scroll
 
 // ---- Printers ---------------------------------------------------------------
 function posPrintersHTML(){
