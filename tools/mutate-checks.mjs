@@ -1008,6 +1008,18 @@ const M=[
     tsub("// ⚠️ STAFF IS THE MASTER FOR PAYCHEX IDs — Vinny, 11/20/26:",
          "// Staff owns the Paychex ID — Vinny, 11/20/26:"),false],
 
+  // ── TAKE A GROUP OFF EVERY ITEM (check-pos-detach-all) ─────────────────────────────────
+  ['DALL 1 · ⛔ only the back-office attachments are cleared — every built-in item keeps asking 250','check-pos-detach-all.mjs',
+    tsub("  if(live.length)posGroupDetach[k]=[...new Set([...posDetachedFrom(k),...live])];\n",""),true],
+  ['DALL 2 · ⛔ only attached ITEMS are cleared — a whole category (VODKA) keeps asking it','check-pos-detach-all.mjs',
+    tsub("  delete posGroupAttach[k];\n","  if(posGroupAttach[k])posGroupAttach[k]={items:[],cats:posGroupAttach[k].cats||[]};\n"),true],
+  ['DALL 3 · ⛔ "remove from all" deletes the group itself too','check-pos-detach-all.mjs',
+    tsub("  delete posGroupAttach[k];\n","  delete posGroupAttach[k];posDeletedGroups.push(k);\n"),true],
+  ['DALL 4 · ⛔ no confirm — one tap takes a group off 156 items','check-pos-detach-all.mjs',
+    tsub("  if(!confirm('Take '+posGroupLabel(g)+' off all '","  if(false&&!confirm('Take '+posGroupLabel(g)+' off all '"),true],
+  ['DALL 5 · ⛔ detaching all REPLACES the existing detach list — items taken off earlier come back','check-pos-detach-all.mjs',
+    tsub("posGroupDetach[k]=[...new Set([...posDetachedFrom(k),...live])];","posGroupDetach[k]=[...live];"),true],
+
   // ── PICK ONE / SEVERAL / HOW MANY (check-pos-group-kind) ────────────────────────────────
   ['KIND 1 · ⛔ the switch is saved but never published — the group keeps the catalog\'s multi/qty on the iPads','check-pos-group-kind.mjs',
     tsub("    required:!!g.required, ...posKindFlags(k,g), screen:g.screen||null,","    required:!!g.required, multi:!!g.multi, qty:!!g.qty, screen:g.screen||null,"),true],

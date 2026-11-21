@@ -8105,6 +8105,27 @@ function posDetachItem(enc,encItem){
   kvPush('ct_pos_group_detach',posGroupDetach,Date.now());
   posRedraw();
 }
+// TAKE A GROUP OFF EVERYTHING AT ONCE — Vinny, 11/20/26, "250 All Food Mods" on 156 items
+// (every vodka, gin, rum…): "take all those off." One tap instead of 156 ×'s. Covers BOTH
+// ways an item can ask a group: the register's BUILT-IN uses (used_by) get a detach each, and
+// the back office's own attachments — items AND whole categories — are cleared. The group
+// itself stays (nothing goes to posDeletedGroups). Two stores, one publish (posLiveSoon is
+// debounced), and the redraw keeps the scroll.
+function posDetachAll(enc){
+  const k=decodeURIComponent(enc);
+  const g=((posS.cat&&posS.cat.mod_groups)||[]).find(x=>String(posGroupKey(x))===k)||(posNewGroups||[]).find(x=>String(x.key)===k);
+  if(!g)return;
+  const live=(g.used_by||[]).filter(n=>!posIsDetached(k,n));
+  const att=posAttachOf(k),pend=(att.items||[]).filter(n=>!live.includes(n)&&!posIsDetached(k,n)),cats=att.cats||[];
+  const n=live.length+pend.length;
+  if(!n&&!cats.length)return;
+  if(!confirm('Take '+posGroupLabel(g)+' off all '+n+' item'+(n===1?'':'s')+(cats.length?(' and the '+cats.length+' categor'+(cats.length===1?'y':'ies')+' it was added to ('+cats.join(', ')+')'):'')+'?\n\nThe group itself stays — you can put it back on any item.'))return;
+  if(live.length)posGroupDetach[k]=[...new Set([...posDetachedFrom(k),...live])];
+  delete posGroupAttach[k];
+  kvPush('ct_pos_group_detach',posGroupDetach,Date.now());
+  kvPush('ct_pos_group_attach',posGroupAttach,Date.now());
+  posRedraw();
+}
 function posToggleDeleted(){
   posS.openDeleted=!posS.openDeleted;
   posKeepScroll(()=>{posRerenderList()});
@@ -11022,8 +11043,12 @@ function posUsedByHTML(g){
               font-size:14px;line-height:1;padding:0 2px">↺</button></span>`).join('')}</div>`:''}
     </div>`:'';
   return `<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)">
-    <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">
-      On these items</div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+      <span style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">On these items</span>
+      ${items.length>1?`<button onclick="event.stopPropagation();posDetachAll('${enc}')" title="take this group off every item it is on — the group itself stays"
+        style="margin-left:auto;border:1px solid #f87171;background:transparent;color:#f87171;border-radius:6px;cursor:pointer;
+          font-family:inherit;font-size:12px;font-weight:700;padding:2px 9px">Remove from all ${items.length} items</button>`:''}
+    </div>
     <div style="display:flex;flex-wrap:wrap;gap:5px">${shown.map(chip).join('')}</div>
     ${liveOn.length>CAP?`<button onclick="posToggleUsedBy('${enc}')"
       style="border:none;background:transparent;color:var(--text-dim);cursor:pointer;
