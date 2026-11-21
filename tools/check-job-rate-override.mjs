@@ -175,6 +175,14 @@ out = run({ p1: { register: { emp_id: 42 }, rates: { training: 13 } } });
 ok('⛔ a person\'s override under "training" is published as emp:42|Training too', out['emp:42|Training'] === 1300 && out['emp:42|training'] === 1300);
 out = run({ p1: { register: { emp_id: 42 }, rates: { training: 13, Training: 15 } } });
 ok('…and the person\'s exact "Training" override wins', out['emp:42|Training'] === 1500);
+out = run({}, { WeddingSetup: { rate: 16 } });
+ok('⛔ a MICROS-style "WeddingSetup" rate is also published as "Wedding Setup" — the spelling the register punches', out['Wedding Setup'] === 1600 && out.WeddingSetup === 1600);
+out = run({}, { WeddingSetup: { rate: 16 }, 'Wedding Setup': { rate: 19 } });
+ok('…and an exact "Wedding Setup" rate still wins over it', out['Wedding Setup'] === 1900);
+out = run({ p1: { register: { emp_id: 7 }, rates: { weddingsetup: 17 } } });
+ok('…per person too (emp:7|Wedding Setup)', out['emp:7|Wedding Setup'] === 1700);
+const noCollide = STAFF_JOBS.map(j => j.toLowerCase().replace(/\s+/g, ''));
+ok('no two standard jobs read the same with the spaces taken out (the match can never pick the wrong one)', new Set(noCollide).size === STAFF_JOBS.length);
 out = run({}, { 'Server ': { rate: 20 } });
 ok('the standard-spelling publish is generic: a stray-space "Server " also reaches the mini as "Server"', out.Server === 2000);
 

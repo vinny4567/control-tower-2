@@ -694,6 +694,8 @@ const M=[
   ['JRO 8 · BENIGN — the boot-wiring comment reworded, staffLoad() itself untouched','check-job-rate-override.mjs',
     tsub("A code change nobody's screen ever\n  // visits is not a fix;",
          "A fix nobody's device ever runs is not a fix;"),false],
+  ['JOB3 7 · ⛔ "WeddingSetup" (no space) is not caught — a "Wedding Setup" punch gets no rate','check-job-rate-override.mjs',
+    tsub("  const flat=(n)=>staffJobKey(n).replace(/ /g,'');","  const flat=(n)=>staffJobKey(n);"),true],
   // ── CUTOVER #4: busser split from the register's punches (check-tips-pos-busser) ─────────
   ['POSB 1 · ⛔ a POS night is divided by MICROS shifts again — the mini\'s shares ignored','check-tips-pos-busser.mjs',
     tsub("    if(e.source==='pos'&&Array.isArray(e.bussers)){","    if(false){"),true],

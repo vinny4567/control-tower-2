@@ -16623,7 +16623,10 @@ function staffJobRatesForMini(){
   // the register's picker punches — because the mini's match is exact. The stored key stays
   // published as well (harmless, and nothing that matched it before stops matching). An
   // exact standard-spelling rate always wins over a variant's.
-  const stdOf=(job)=>STAFF_JOBS.find(j=>staffJobKey(j)===staffJobKey(job));
+  // Matched with the spaces taken out too, so a MICROS-style "WeddingSetup" key is caught and a
+  // "Wedding Setup" punch still gets its rate (Jarvis, 11/20/26). No two standard jobs collide that way.
+  const flat=(n)=>staffJobKey(n).replace(/ /g,'');
+  const stdOf=(job)=>STAFF_JOBS.find(j=>flat(j)===flat(job));
   const alsoStd=(map,prefix)=>Object.keys(map).forEach(job=>{
     const s=stdOf(job),r=map[job];
     if(!s||s===job||!(r>0))return;           // no standard twin, or no rate to carry
