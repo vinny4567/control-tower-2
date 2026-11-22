@@ -97,8 +97,8 @@ ok('…and the per-person override still publishes alongside it, under its OWN k
 // ct_job_rates publishing now rides staffReconcileJobNums, exercised directly below.
 const editFn = grab('staffEdit');
 const rateBranch = editFn.slice(editFn.indexOf("f.startsWith('rate:')"), editFn.indexOf("if(f==='paychex')"));
-ok('⛔ the rate:<job> branch actually persists — writes the FULL merged rates object through staffWriteOp',
-   /staffWriteOp\(\{op:'update',pid:p\.pid,patch:\{rates:p\.rates\}\}\)/.test(rateBranch));
+ok('⛔ the rate:<job> branch actually persists — writes the FULL rates object (overrides > 0) through staffWriteOp',
+   /const rates=staffRealRates\(p\)/.test(rateBranch) && /const patch=\{rates\};/.test(rateBranch) && /staffWriteOp\(\{op:'update',pid:p\.pid,patch\}\)/.test(rateBranch));
 ok('⛔ staffPushMerged is gone — nothing in this file still calls it', !/staffPushMerged/.test(src));
 
 // ── ONE WRITER, SAME SHAPE AS THE JOB LOOP ──────────────────────────────────────────────

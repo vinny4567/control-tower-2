@@ -93,10 +93,14 @@ ok('⚠️ and NOT as a prefilled value — an override must be distinguishable 
    /value="\$\{own>0\?/.test(row) && !/value="\$\{(own\|\||def)/.test(row));
 ok('the column is labelled OVERRIDE', /">OVERRIDE</.test(src));
 
-const edit = src.slice(src.indexOf("if(f.startsWith('rate:'))"), src.indexOf("if(f.startsWith('rate:'))") + 900);
+const edit = src.slice(src.indexOf("if(f.startsWith('rate:'))"), src.indexOf("if(f==='paychex')", src.indexOf("if(f.startsWith('rate:'))")));   // the whole branch, not a fixed window
 ok('emptying the box does not delete the job off the person',
    !/delete p\.rates\[job\]/.test(edit));
-ok('it falls back to the default instead', /p\.rates\[job\]=\(isFinite/.test(edit));
+// 11/22/26: "holds the job" is positions on the mini (a $0 rate is dropped by its cleanRates), so
+// an empty box drops the override and the job stays held through positions. RUN in
+// check-staff-positions.mjs; this just says the edit still goes that way.
+ok('it falls back to the default instead — the override goes, the job stays held through positions',
+   /else delete rates\[job\]/.test(edit) && /const positions=staffPositionsWith\(p,job\)/.test(edit));
 ok('so there is a separate way to take a job away', src.includes('async function staffDelPersonJob('));
 const dpj = src.slice(src.indexOf('async function staffDelPersonJob('), src.indexOf('async function staffAddJob('));
 ok('⛔ which removes the override with it, reaching the mini through the update op',

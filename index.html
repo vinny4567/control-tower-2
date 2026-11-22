@@ -15068,11 +15068,19 @@ async function staffEdit(k,f,v){
     // while the box was the only thing on the row; now that it shows the default when
     // it is empty, empty is a perfectly normal state to want. 0 = holds the job, on
     // the default. The × on the row is how a job is taken away.
-    const job=f.slice(5);p.rates=p.rates||{};
+    // (11/22/26: "holds the job" is positions now — an empty box drops the override from
+    // rates, and the job stays held through positions, which this makes sure of.)
+    const job=f.slice(5);
     const n=parseFloat(v);
-    p.rates[job]=(isFinite(n)&&n>0)?n:0;
+    const rates=staffRealRates(p),kk=staffJobKey(job);
+    Object.keys(rates).forEach(o=>{if(o!==job&&staffJobKey(o)===kk)delete rates[o];});   // one spelling per job
+    if(isFinite(n)&&n>0)rates[job]=n;else delete rates[job];
+    const positions=staffPositionsWith(p,job);
+    const patch={rates};
+    if(positions.length!==(p.positions||[]).length)patch.positions=positions;   // positions untouched unless the job was missing
+    p.rates=rates;if(patch.positions)p.positions=positions;
     staffTouch(p);staffRefresh();
-    await staffWriteOp({op:'update',pid:p.pid,patch:{rates:p.rates}});
+    await staffWriteOp({op:'update',pid:p.pid,patch});
     return;
   }
   if(f==='paychex'){
@@ -15148,13 +15156,31 @@ async function staffDelPersonJob(k,job){
   await staffWriteOp({op:'update',pid:p.pid,patch:{rates,positions}});
 }
 
+// ⛔ HOLDING A JOB IS people.positions ON THE MINI — Jarvis/Vinny 11/22/26 ("the assign a job
+// button didnt work"). Giving a job used to write rates[job]=0 ("holds it, no override"), but the
+// mini's cleanRates keeps only rates > 0, so the $0 entry was dropped, the re-pull came back
+// without it and the tick vanished. positions is also what the register's clock-in job picker
+// reads. rates is ONLY the person's override amounts. So:
+//   give a job      → positions + the job (STAFF_JOBS spelling), never a $0 rate
+//   take a job off  → positions without it AND its override dropped (full rates object)
+//   type an override → rates (> 0 only), and the job added to positions if it isn't there
+// A person HOLDS a job if it is in positions OR has a rate > 0 (older records).
+function staffStdJob(job){const k=staffJobKey(job);return STAFF_JOBS.find(j=>staffJobKey(j)===k)||staffJobCanon(job);}
+function staffHolds(p,job){
+  const k=staffJobKey(job);
+  return (p.positions||[]).some(j=>staffJobKey(j)===k)||Object.keys(p.rates||{}).some(n=>staffJobKey(n)===k&&p.rates[n]>0);
+}
+function staffPositionsWith(p,job){
+  const k=staffJobKey(job),cur=(p.positions||[]).slice();
+  return cur.some(j=>staffJobKey(j)===k)?cur:cur.concat([staffStdJob(job)]);
+}
+// A person's override amounts with every zero/blank dropped — what the mini keeps anyway.
+function staffRealRates(p){const out={};Object.keys(p.rates||{}).forEach(n=>{if(p.rates[n]>0)out[n]=p.rates[n];});return out;}
 async function staffAddJob(k){
   const sel=document.getElementById('staff-job-'+k.replace(/[^a-z0-9]/gi,'_'));
   if(!sel||!sel.value)return;
   const p=staffS.people[k];if(!p)return;
-  const rates=Object.assign({},p.rates||{});
-  if(rates[sel.value]==null)rates[sel.value]=0;
-  await staffWriteOp({op:'update',pid:p.pid,patch:{rates}});
+  await staffWriteOp({op:'update',pid:p.pid,patch:{positions:staffPositionsWith(p,sel.value)}});
 }
 
 // REMOVING SOMEBODY IS A TOMBSTONE, not an erase. The next scheduler pull would
@@ -15203,7 +15229,7 @@ function staffBulkJob(){
   const onKey=(e)=>{if(e.key==='Escape')close()};
   const jobSel=()=>wrap.querySelector('#sbj-job').value;
   const people=()=>Object.values(staffS.people).filter(x=>!x.removed).sort(staffByFirst);
-  const holds=(x,job)=>{const kk=staffJobKey(job);return Object.keys(x.rates||{}).some(n=>staffJobKey(n)===kk)};
+  const holds=(x,job)=>staffHolds(x,job);   // positions OR an override > 0 — same as the person's own list
   const ticks={};                               // key -> desired, only for rows touched
   function paint(){
     const job=jobSel(), q=(wrap.querySelector('#sbj-q').value||'').toLowerCase().trim();
@@ -15250,8 +15276,7 @@ function staffBulkJob(){
     (async()=>{
       let done=0;
       for(const x of add){
-        const rates=Object.assign({},x.rates||{});if(rates[job]==null)rates[job]=0;
-        if(await staffWriteOp({op:'update',pid:x.pid,patch:{rates}}))done++;
+        if(await staffWriteOp({op:'update',pid:x.pid,patch:{positions:staffPositionsWith(x,job)}}))done++;
       }
       for(const x of rm){
         const rates=Object.assign({},x.rates||{});Object.keys(rates).forEach(n=>{if(staffJobKey(n)===kk)delete rates[n]});
@@ -16301,8 +16326,10 @@ function staffDetail(p){
   const hd='font-size:10px;font-weight:800;letter-spacing:.6px;color:var(--text-muted);margin-bottom:4px';
   const reg=p.register||{};
   const drawer=staffDrawer(p);
-  const jobs=Object.keys(p.rates||{});
-  const known=[...new Set([...(p.positions||[]),...jobs])];
+  // Held = in positions OR an override > 0 (older records); one row per job, whatever the spelling.
+  const known=[];
+  [...(p.positions||[]),...Object.keys(p.rates||{}).filter(n=>p.rates[n]>0)].forEach(j=>{
+    if(!known.some(h=>staffJobKey(h)===staffJobKey(j)))known.push(j);});
   // THE BOX SHOWS THE DEFAULT WHEN THERE IS NO OVERRIDE, as a placeholder — grey, and
   // it disappears the moment anything is typed.
   //
