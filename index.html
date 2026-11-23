@@ -15235,13 +15235,25 @@ function staffBulkJob(){
   const people=()=>Object.values(staffS.people).filter(x=>!x.removed).sort(staffByFirst);
   const holds=(x,job)=>staffHolds(x,job);   // positions OR an override > 0 — same as the person's own list
   const ticks={};                               // key -> desired, only for rows touched
+  // WHO HOLDS IT, FIRST — Vinny 11/22/26: "i want to see the people i have selected all listed
+  // first at the top." Holders (alphabetical), a thin divider, then everyone else (alphabetical).
+  // ⚠️ The order is decided when the panel opens or the job changes — NEVER on a tick, so a row
+  // can't jump out from under his finger mid-list. Search filters both groups in that order.
+  let order=[],top=new Set();
+  function reorder(){
+    const job=jobSel(),all=people();
+    top=new Set(all.filter(x=>holds(x,job)).map(x=>x.key));
+    order=all.filter(x=>top.has(x.key)).concat(all.filter(x=>!top.has(x.key))).map(x=>x.key);
+  }
   function paint(){
     const job=jobSel(), q=(wrap.querySelector('#sbj-q').value||'').toLowerCase().trim();
-    const rows=people().filter(x=>!q||(x.name||'').toLowerCase().includes(q));
-    wrap.querySelector('#sbj-list').innerHTML=rows.map(x=>{
+    const rows=order.map(k=>staffS.people[k]).filter(x=>x&&!x.removed).filter(x=>!q||(x.name||'').toLowerCase().includes(q));
+    const firstRest=rows.findIndex(x=>!top.has(x.key));
+    wrap.querySelector('#sbj-list').innerHTML=rows.map((x,i)=>{
       const on=(ticks[x.key]!==undefined)?ticks[x.key]:holds(x,job);
       const own=(x.rates||{})[job];
-      return '<label style="display:flex;gap:9px;align-items:center;padding:4px 5px;border-radius:6px;cursor:pointer;font-size:14px">'
+      return (i>0&&i===firstRest?'<div data-sbj-divider style="border-top:1px solid var(--border);margin:5px 4px"></div>':'')
+        +'<label style="display:flex;gap:9px;align-items:center;padding:4px 5px;border-radius:6px;cursor:pointer;font-size:14px">'
         +'<input type="checkbox" data-k="'+esc(x.key)+'"'+(on?' checked':'')+'>'
         +'<span style="flex:1">'+esc(x.name)+'</span>'
         +(own>0?'<span style="font-size:12px;color:var(--text-muted)">$'+esc(String(own))+'</span>':'')+'</label>';
@@ -15250,7 +15262,7 @@ function staffBulkJob(){
     wrap.querySelector('#sbj-count').textContent=n+' hold it';
   }
   wrap.addEventListener('change',(e)=>{
-    if(e.target.id==='sbj-job'){for(const k in ticks)delete ticks[k];paint();return}   // new job = fresh slate
+    if(e.target.id==='sbj-job'){for(const k in ticks)delete ticks[k];reorder();paint();return}   // new job = fresh slate, re-ordered
     const cb=e.target.closest('input[type="checkbox"][data-k]');
     if(cb){ticks[cb.dataset.k]=cb.checked;paint()}
   });
@@ -15293,7 +15305,7 @@ function staffBulkJob(){
   });
   document.addEventListener('keydown',onKey);
   document.body.appendChild(wrap);
-  paint();
+  reorder();paint();
   wrap.querySelector('#sbj-q').focus();
 }
 // 11/20/26 — the mini mints the pid now (op:'create'); this page never does. A restore

@@ -76,6 +76,13 @@ function world(people) {
     for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0));
     return ctx.writes.slice(before);
   };
+  // open the panel on a job (the real <select> opens on its first option; here it is set first)
+  ctx.open = (job) => { els['#sbj-job'].value = job; ctx.bulk(); };
+  ctx.names = () => [...els['#sbj-list'].innerHTML.matchAll(/data-k="([^"]+)"/g)].map((m) => m[1]);
+  ctx.dividerBefore = () => { const h = els['#sbj-list'].innerHTML; const i = h.indexOf('data-sbj-divider'); if (i < 0) return null; const m = /data-k="([^"]+)"/.exec(h.slice(i)); return m && m[1]; };
+  ctx.tick = (k, on) => listeners.change({ target: { id: '', closest: () => ({ dataset: { k }, checked: on }) } });
+  ctx.pickJob = (job) => { els['#sbj-job'].value = job; listeners.change({ target: { id: 'sbj-job', closest: () => null } }); };
+  ctx.search = (q) => { els['#sbj-q'].value = q; listeners.input({ target: { id: 'sbj-q' } }); };
   return ctx;
 }
 const P = (key, extra = {}) => ({ [key]: { key, pid: 'pid-' + key.replace(/ /g, '-'), name: key.replace(/\b\w/g, (c) => c.toUpperCase()), positions: [], rates: {}, ...extra } });
@@ -145,6 +152,30 @@ const P = (key, extra = {}) => ({ [key]: { key, pid: 'pid-' + key.replace(/ /g, 
   await w.edit('lexi allen', 'rate:Server', '17');
   ok('stale $0 entries are not sent back (the mini would drop them anyway) — only real overrides', JSON.stringify(w.writes.at(-1).patch.rates) === JSON.stringify({ Busser: 11, Server: 17 }));
 }
+// ── the panel lists who HOLDS the job first — Vinny 11/22/26 ──────────────────────────────────
+// "i want to see the people i have selected all listed first at the top."
+{
+  const w = world({
+    ...P('zoe bar', { positions: ['Bartender'] }), ...P('adam floor'), ...P('mia bar', { rates: { Bartender: 15 } }),
+    ...P('ben floor'), ...P('cara floor', { positions: ['Server'] }), ...P('gone bar', { positions: ['Bartender'], removed: true }),
+  });
+  w.open('Bartender');
+  ok('⛔ the people who hold the job come FIRST, alphabetical — then everyone else, alphabetical', w.names().join() === 'mia bar,zoe bar,adam floor,ben floor,cara floor');
+  ok('…with a thin divider between the two groups (right before the first non-holder)', w.dividerBefore() === 'adam floor');
+  ok('removed people are not listed at all', !w.names().includes('gone bar'));
+  w.tick('ben floor', true); w.tick('zoe bar', false);
+  ok('⛔ ticking / unticking does NOT re-sort — no row jumps out from under his finger', w.names().join() === 'mia bar,zoe bar,adam floor,ben floor,cara floor');
+  ok('…but the boxes show the new ticks', /data-k="ben floor" checked/.test(w.els['#sbj-list'].innerHTML) && !/data-k="zoe bar" checked/.test(w.els['#sbj-list'].innerHTML));
+  w.pickJob('Server');
+  ok('⛔ changing the job re-orders for THAT job (Cara holds Server)', w.names().join() === 'cara floor,adam floor,ben floor,mia bar,zoe bar' && w.dividerBefore() === 'adam floor');
+  w.pickJob('Bartender'); w.search('floor');
+  ok('search filters both groups (no holder matches → no divider, just the rest)', w.names().join() === 'adam floor,ben floor,cara floor' && w.dividerBefore() === null);
+  w.search('a');
+  ok('…and keeps the holders-first order inside the matches', w.names().join() === 'mia bar,zoe bar,adam floor,cara floor' && w.dividerBefore() === 'adam floor');
+  w.pickJob('Host');
+  ok('nobody holds it → plain alphabetical, no divider', w.dividerBefore() === null && w.names()[0] === 'adam floor');
+}
+
 // ── who HOLDS a job: positions OR a rate > 0 (older records) ─────────────────────────────────
 {
   const w = world({ ...P('sean young', { positions: ['Server'], rates: { Busser: 12, Host: 0 } }) });
