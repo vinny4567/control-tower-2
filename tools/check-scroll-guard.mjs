@@ -71,6 +71,24 @@ function page() {
   ok('⛔ scrollers are found by ROLE — the "first element that overflows" lookup (which found the sidebar) is gone', !/function posScroller\(/.test(src) && !/scrollHeight>/.test(grab('posScrollers')));
 }
 
+// ── SIDEWAYS (11/22/26): a grid that scrolls horizontally keeps its place across a redraw ───────
+// The Tips grid at iPad width scrolls sideways, its days running under the pinned Paid/Unpaid; a
+// redraw (a department change, a pull) replaced the node and snapped it back to the first day.
+{
+  const dom = { grid: { scrollLeft: 260, getAttribute: () => 'tips-grid' }, hours: { scrollLeft: 40, getAttribute: () => 'hours-grid' } };
+  const document = { getElementById: () => null, querySelectorAll: (q) => q === '[data-keep-x]' ? [dom.grid, dom.hours] : [] };
+  const window = { scrollY: 0, scrollTo() {} };
+  const ctx = {};
+  new Function('ctx', 'document', 'window', 'dom', `
+    ${grab('posScrollers')}${grab('posRedrawKeepScroll')}
+    ctx.keep=posRedrawKeepScroll;
+  `)(ctx, document, window, dom);
+  ctx.keep(() => { dom.grid = { scrollLeft: 0, getAttribute: () => 'tips-grid' }; dom.hours = { scrollLeft: 0, getAttribute: () => 'hours-grid' }; });
+  ok('⛔ a redraw that REPLACES the Tips grid puts it back at the same sideways position', dom.grid.scrollLeft === 260);
+  ok('…each grid by its own name (the Hours grid gets its own position back)', dom.hours.scrollLeft === 40);
+  ok('both grids are marked for it', /data-keep-x="tips-grid"/.test(src) && /data-keep-x="hours-grid"/.test(src));
+}
+
 // ── the department dropdown, end to end: write → staffLoad(true) → the Tips redraw it does ──
 {
   const load = grab('staffLoad');

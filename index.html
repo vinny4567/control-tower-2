@@ -5829,6 +5829,11 @@ function posScrollers(){
 function posRedrawKeepScroll(fn){
   const before={};posScrollers().forEach(([k,el])=>{before[k]=el.scrollTop;});
   const win=(typeof window!=='undefined'&&window.scrollY)||0;
+  // SIDEWAYS TOO (11/22/26): a grid that scrolls horizontally (the Tips grid at iPad width, its
+  // days running under the pinned Paid/Unpaid) is marked data-keep-x="<name>"; a redraw puts
+  // each one back where it was, found again by that name after the nodes are replaced.
+  const xs=()=>(typeof document.querySelectorAll==='function')?[...document.querySelectorAll('[data-keep-x]')]:[];
+  const beforeX={};xs().forEach(el=>{beforeX[el.getAttribute('data-keep-x')]=el.scrollLeft;});
   // AND THE CARET (from the old posKeepScroll): a rebuild destroys the box the cursor is in;
   // put it back on the replacement, matched by its stable data-pf handle (never by index —
   // the list re-sorts). Synchronously, so iOS keeps the keyboard; preventScroll, so focusing
@@ -5838,6 +5843,7 @@ function posRedrawKeepScroll(fn){
   let selA=null,selB=null;if(pf){try{selA=act.selectionStart;selB=act.selectionEnd}catch(e){}}
   const put=()=>{
     posScrollers().forEach(([k,el])=>{if(before[k]!=null&&el.scrollTop!==before[k])el.scrollTop=before[k];});
+    xs().forEach(el=>{const v=beforeX[el.getAttribute('data-keep-x')];if(v!=null&&el.scrollLeft!==v)el.scrollLeft=v;});
     if(win&&window.scrollY!==win)window.scrollTo(0,win);
   };
   fn();
@@ -7144,7 +7150,7 @@ function hoursHTML(){
       <span id="tips-csv-left" style="font-size:12px"></span>
       ${tipsCsvBtnHTML()}
     </div>
-    <div style="overflow-x:auto;border:1px solid var(--border);border-radius:12px;width:860px;max-width:100%">
+    <div data-keep-x="hours-grid" style="overflow-x:auto;border:1px solid var(--border);border-radius:12px;width:860px;max-width:100%">
       <table style="border-collapse:collapse;font-size:13px;width:100%">
         <thead><tr style="background:var(--surface)">
           ${th('Name','position:sticky;left:0;z-index:2;background:var(--surface);text-align:left;border-right:2px solid var(--border);width:270px')}
@@ -7184,6 +7190,16 @@ function tipsHTML(){
   // the thead, every repeated section header, every data row, the busser-pool-per-night
   // row, and the footer total.
   const PAID_DIV='border-left:4px solid var(--border)';
+  // ⛔ PAID + UNPAID ARE PINNED TO THE RIGHT EDGE — Vinny 11/22/26, "something happened to this at
+  // the end": the Name column grew (Paychex ID badge + department dropdown) and pushed the last
+  // Sunday, Paid and Unpaid past the edge at his width. Like Name on the left, the two totals now
+  // stay on screen at ANY width and the days scroll between them (horizontal scroll inside the
+  // grid, as before). Unpaid has a fixed minimum width so Paid can sit exactly beside it; a
+  // fortnight's grand Unpaid ("$12,345.67", bold) still fits inside it. Each pinned cell carries
+  // an opaque background of its row, or the days would show through as they scroll under it.
+  const PIN_W=92;
+  const PIN_P=(bg)=>`position:sticky;right:${PIN_W}px;z-index:1;background:${bg}`;
+  const PIN_U=(bg)=>`position:sticky;right:0;z-index:1;min-width:${PIN_W}px;box-sizing:border-box;background:${bg}`;
   let gp=0,gu=0;
   // One row per PERSON (g = {primary, members}): every stored spelling of the same Staff
   // person sums into the one row; a day click edits the spelling that actually holds it.
@@ -7206,8 +7222,8 @@ function tipsHTML(){
     return `<tr style="${isPool?'background:rgba(251,191,36,0.06)':''}">
       <td style="position:sticky;left:0;z-index:1;background:var(--surface);padding:7px 12px;font-weight:${isPool?'800':'600'};white-space:nowrap;border-right:2px solid var(--border);${bb};${isPool?'color:#fbbf24':''}"><span style="display:inline-flex;align-items:center;gap:6px">${isPool?'':tipIdBadgeHTML(name)}${esc(disp.name)}${staffDisplayMark(disp.matched,name)}${alsoTag}${deptSel}</span></td>
       ${tds}
-      <td id="tp-${id}" style="padding:7px 8px;text-align:right;font-weight:700;color:#34d399;white-space:nowrap;${PAID_DIV};${bb}">${t.paid?tipMoney(t.paid):''}</td>
-      <td id="tu-${id}" style="padding:7px 8px;text-align:right;font-weight:700;color:#fbbf24;white-space:nowrap;border-left:2px solid var(--border);${bb}">${upt?tipMoney(upt):''}</td>
+      <td id="tp-${id}" style="padding:7px 8px;text-align:right;font-weight:700;color:#34d399;white-space:nowrap;${PAID_DIV};${bb};${PIN_P('var(--surface)')}">${t.paid?tipMoney(t.paid):''}</td>
+      <td id="tu-${id}" style="padding:7px 8px;text-align:right;font-weight:700;color:#fbbf24;white-space:nowrap;border-left:2px solid var(--border);${bb};${PIN_U('var(--surface)')}">${upt?tipMoney(upt):''}</td>
     </tr>`;
   };
   // Built once, reused as the header AND repeated at the top of every section — Vinny,
@@ -7218,11 +7234,18 @@ function tipsHTML(){
   const sectionHeadRow=(sec)=>`<tr style="background:var(--surface2)">
       <th style="position:sticky;left:0;z-index:1;background:var(--surface2);color:var(--accent);font-weight:800;padding:6px 12px;letter-spacing:.5px;text-align:left;border-top:1px solid var(--border);border-right:2px solid var(--border);white-space:nowrap">${TIP_SEC_LABEL[sec].toUpperCase()}</th>
       ${dayHead}
-      <th style="padding:6px 8px;color:#34d399;${PAID_DIV};border-top:1px solid var(--border);white-space:nowrap">Paid</th>
-      <th style="padding:6px 8px;color:#fbbf24;border-left:1px solid var(--border);border-top:1px solid var(--border);white-space:nowrap">Unpaid</th>
+      <th style="padding:6px 8px;color:#34d399;${PAID_DIV};border-top:1px solid var(--border);white-space:nowrap;${PIN_P('var(--surface2)')}">Paid</th>
+      <th style="padding:6px 8px;color:#fbbf24;border-left:1px solid var(--border);border-top:1px solid var(--border);white-space:nowrap;${PIN_U('var(--surface2)')}">Unpaid</th>
+    </tr>`;
+  // The FIRST section sits directly under the main header, so its own repeated date row would
+  // just say the dates twice (Vinny's screenshot, 11/22/26). It keeps its LABEL — a thin row,
+  // no dates; every later section keeps the full repeated header.
+  const sectionLabelRow=(sec)=>`<tr style="background:var(--surface2)" data-sec-label>
+      <th style="position:sticky;left:0;z-index:1;background:var(--surface2);color:var(--accent);font-weight:800;padding:6px 12px;letter-spacing:.5px;text-align:left;border-top:1px solid var(--border);border-right:2px solid var(--border);white-space:nowrap">${TIP_SEC_LABEL[sec].toUpperCase()}</th>
+      <th colspan="${days.length+2}" style="border-top:1px solid var(--border)"></th>
     </tr>`;
   let body='';
-  TIP_SECTIONS.forEach(sec=>{
+  TIP_SECTIONS.forEach((sec,si)=>{
     const people=tipSectionPeople(sec);
     // Full staff list always shown; people WITH tips float to the top of their section.
     const ordered=[...people.filter(tipHasTips),...people.filter(n=>!tipHasTips(n))];
@@ -7234,11 +7257,11 @@ function tipsHTML(){
     // Repeated date header on every section, Vinny's own ask (see `sectionHeadRow`
     // above) — always emitted first, even for Busser-with-pool, which used to skip
     // the header row entirely by being the "if" side of this same branch.
-    body+=sectionHeadRow(sec);
+    body+=si===0?sectionLabelRow(sec):sectionHeadRow(sec);
     if(sec==='Busser'&&poolDays.some(x=>x>0)){
       const ptds=days.map((d,di)=>{const mon=(d.getDay()===1);const p=poolDays[di];return `<td style="text-align:right;padding:5px ${mon?'2px':'6px'};color:#fbbf24;font-weight:700;font-size:11px;border-right:1px solid var(--border);border-top:1px solid var(--border);white-space:nowrap">${p?tipMoney(p):''}</td>`;}).join('');
       const ptot=Math.round(poolDays.reduce((s,x)=>s+x,0)*100)/100;
-      body+=`<tr style="background:var(--surface2)"><td style="position:sticky;left:0;z-index:1;background:var(--surface2);color:var(--accent);font-weight:800;padding:6px 12px;letter-spacing:.5px;border-top:1px solid var(--border);border-right:2px solid var(--border);white-space:nowrap">BUSSERS <span style="color:var(--text-muted);font-weight:600;font-size:9px;letter-spacing:0">pool / night</span></td>${ptds}<td style="border-top:1px solid var(--border);${PAID_DIV}"></td><td style="text-align:right;color:#fbbf24;font-weight:800;padding:6px 8px;border-top:1px solid var(--border);border-left:1px solid var(--border);white-space:nowrap">${ptot?tipMoney(ptot):''}</td></tr>`;
+      body+=`<tr style="background:var(--surface2)"><td style="position:sticky;left:0;z-index:1;background:var(--surface2);color:var(--accent);font-weight:800;padding:6px 12px;letter-spacing:.5px;border-top:1px solid var(--border);border-right:2px solid var(--border);white-space:nowrap">BUSSERS <span style="color:var(--text-muted);font-weight:600;font-size:9px;letter-spacing:0">pool / night</span></td>${ptds}<td style="border-top:1px solid var(--border);${PAID_DIV};${PIN_P('var(--surface2)')}"></td><td style="text-align:right;color:#fbbf24;font-weight:800;padding:6px 8px;border-top:1px solid var(--border);border-left:1px solid var(--border);white-space:nowrap;${PIN_U('var(--surface2)')}">${ptot?tipMoney(ptot):''}</td></tr>`;
     }else if(sec==='Busser'){
       body+=rowFor({primary:'Busser Pool',members:['Busser Pool']},true);   // no timesheet yet → show the lumped pool row
       // Say WHY every busser's row is empty. The pool is collected nightly by the
@@ -7272,20 +7295,20 @@ function tipsHTML(){
       <span id="tips-status" style="font-size:12px;color:var(--text-dim)"></span>
       <span style="margin-left:auto;font-size:12px;color:var(--text-dim)">picking dates pulls the tip-out log + weddings automatically · click a cell to edit</span>
     </div>
-    <div style="overflow-x:auto;border:1px solid var(--border);border-radius:12px">
+    <div data-keep-x="tips-grid" style="overflow-x:auto;border:1px solid var(--border);border-radius:12px">
       <table style="border-collapse:collapse;font-size:12px;min-width:100%">
         <thead><tr style="background:var(--surface)">
           <th style="position:sticky;left:0;z-index:2;background:var(--surface);padding:6px 10px;text-align:left;border-right:2px solid var(--border);border-bottom:1px solid var(--border)">Name</th>
           ${dayHead}
-          <th style="padding:6px 8px;color:#34d399;${PAID_DIV};border-bottom:1px solid var(--border);white-space:nowrap">Paid</th>
-          <th style="padding:6px 8px;color:#fbbf24;border-bottom:1px solid var(--border);border-left:2px solid var(--border);white-space:nowrap">Unpaid</th>
+          <th style="padding:6px 8px;color:#34d399;${PAID_DIV};border-bottom:1px solid var(--border);white-space:nowrap;${PIN_P('var(--surface)')};z-index:2">Paid</th>
+          <th style="padding:6px 8px;color:#fbbf24;border-bottom:1px solid var(--border);border-left:2px solid var(--border);white-space:nowrap;${PIN_U('var(--surface)')};z-index:2">Unpaid</th>
         </tr></thead>
         <tbody>${body}</tbody>
         <tfoot><tr style="background:var(--surface2);font-weight:800">
           <td style="position:sticky;left:0;background:var(--surface2);padding:9px 12px;border-right:2px solid var(--border);border-top:2px solid var(--border)">TOTAL</td>
           <td colspan="${days.length}" style="border-top:2px solid var(--border)"></td>
-          <td id="tips-grand-paid" style="padding:9px 8px;text-align:right;color:#34d399;${PAID_DIV};border-top:2px solid var(--border)">${tipMoney(_grand.paid)}</td>
-          <td id="tips-grand-upt" style="padding:9px 8px;text-align:right;color:#fbbf24;border-top:2px solid var(--border);border-left:2px solid var(--border)">${tipMoney(_grand.upt)}</td>
+          <td id="tips-grand-paid" style="padding:9px 8px;text-align:right;color:#34d399;${PAID_DIV};border-top:2px solid var(--border);${PIN_P('var(--surface2)')}">${tipMoney(_grand.paid)}</td>
+          <td id="tips-grand-upt" style="padding:9px 8px;text-align:right;color:#fbbf24;border-top:2px solid var(--border);border-left:2px solid var(--border);${PIN_U('var(--surface2)')}">${tipMoney(_grand.upt)}</td>
         </tr></tfoot>
       </table>
     </div>
