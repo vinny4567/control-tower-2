@@ -159,16 +159,18 @@ rc = runReconcile(
 await rc.run();
 ok('a mini that already matches, emp: keys included, is left alone', rc.getPublished() === null);
 
-// ── CUTOVER #2 (Jarvis, 11/20/26): Day Party / Wedding Setup / Training ─────────────────────
+// ── CUTOVER #2 (Jarvis, 11/20/26): Wedding Setup / Training (Day Party removed 11/22/26) ───────
 // The register's clock-in picker punches these exact names; the mini's rateOf matches the job
 // NAME exactly. So the standard spelling must be published even when the rate was typed under
 // another one (the live store has 'training').
-ok('⛔ the three jobs are standard jobs, spelled exactly "Day Party", "Wedding Setup", "Training"',
-   ['Day Party', 'Wedding Setup', 'Training'].every(j => STAFF_JOBS.includes(j)) && !STAFF_JOBS.includes('training') && !STAFF_JOBS.includes('WeddingSetup'));
+ok('⛔ the two jobs are standard jobs, spelled exactly "Wedding Setup", "Training"',
+   ['Wedding Setup', 'Training'].every(j => STAFF_JOBS.includes(j)) && !STAFF_JOBS.includes('training') && !STAFF_JOBS.includes('WeddingSetup'));
+// Vinny 11/22/26: "i want the system to just know its a day party" — no clock-in job.
+ok('⛔ "Day Party" is NOT a standard job (time decides a day party) — and has no register number', !STAFF_JOBS.some(j => /day ?party/i.test(j)) && !Object.keys(STAFF_JOB_NUMS).some(j => /day ?party/i.test(j)) && !Object.values(STAFF_JOB_NUMS).includes(120));
 out = run({}, { training: { rate: 12 }, 'Day Party': { rate: 18 } });
 ok('⛔ a rate stored as "training" is published as "Training" too — the spelling the register punches', out.Training === 1200);
 ok('…and the stored "training" key stays published (nothing that matched it stops matching)', out.training === 1200);
-ok('"Day Party" publishes under its own spelling, once', out['Day Party'] === 1800 && Object.keys(out).filter(k => /day party/i.test(k)).length === 1);
+ok('a stored "Day Party" rate is left alone — still published under its own name, once, and with no number', out['Day Party'] === 1800 && Object.keys(out).filter(k => /day party/i.test(k)).length === 1 && !('120' in out));
 out = run({}, { training: { rate: 12 }, Training: { rate: 14 } });
 ok('⛔ an exact "Training" rate wins over a variant\'s — never overwritten by the lowercase one', out.Training === 1400 && out.training === 1200);
 out = run({}, { training: {} });
@@ -185,11 +187,11 @@ out = run({ p1: { register: { emp_id: 7 }, rates: { weddingsetup: 17 } } });
 ok('…per person too (emp:7|Wedding Setup)', out['emp:7|Wedding Setup'] === 1700);
 const noCollide = STAFF_JOBS.map(j => j.toLowerCase().replace(/\s+/g, ''));
 ok('no two standard jobs read the same with the spaces taken out (the match can never pick the wrong one)', new Set(noCollide).size === STAFF_JOBS.length);
-// ── the register NUMBERS for the three (POS-UI, register 7461a73: MICROS's own) ─────────────
-ok('⛔ STAFF_JOB_NUMS carries exactly Wedding Setup 110, Training 119, Day Party 120', STAFF_JOB_NUMS['Wedding Setup'] === 110 && STAFF_JOB_NUMS.Training === 119 && STAFF_JOB_NUMS['Day Party'] === 120);
+// ── the register NUMBERS (POS-UI, register 7461a73: MICROS's own) ─────────────────────────────
+ok('⛔ STAFF_JOB_NUMS carries exactly Wedding Setup 110, Training 119', STAFF_JOB_NUMS['Wedding Setup'] === 110 && STAFF_JOB_NUMS.Training === 119);
 ok('⛔ no two jobs share a register number (a shared number pays one job at the other\'s rate)', new Set(Object.values(STAFF_JOB_NUMS)).size === Object.keys(STAFF_JOB_NUMS).length);
-out = run({}, { 'Day Party': { rate: 18 }, 'Wedding Setup': { rate: 16 } });
-ok('an exact-spelled rate publishes under its number too ("120", "110")', out['120'] === 1800 && out['110'] === 1600);
+out = run({}, { 'Wedding Setup': { rate: 16 }, Training: { rate: 12 } });
+ok('an exact-spelled rate publishes under its number too ("110", "119")', out['110'] === 1600 && out['119'] === 1200);
 out = run({}, { training: { rate: 12 } });
 ok('⛔ a rate stored as "training" reaches "119" too — the register tries the number FIRST', out['119'] === 1200);
 out = run({}, { WeddingSetup: { rate: 16 } });

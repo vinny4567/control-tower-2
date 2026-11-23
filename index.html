@@ -14932,12 +14932,16 @@ async function staffPushPaychex(p){
 // Rates, register access and a sign-in code. Everything here is per-person and
 // typed by a manager, which makes it the data a scheduler pull must never touch —
 // see the merge rules in staffPull.
-// ⛔ 'Day Party', 'Wedding Setup' and 'Training' added 11/20/26 (Jarvis, cutover #2) — the
-// register's clock-in picker carries the SAME three names, spelled exactly so: the mini costs
+// ⛔ 'Wedding Setup' and 'Training' added 11/20/26 (Jarvis, cutover #2) — the
+// register's clock-in picker carries the SAME names, spelled exactly so: the mini costs
 // a shift by matching its job name against ct_job_rates keys EXACTLY (server/labor.js
 // rateOf — case and spaces count). staffJobRatesForMini publishes this spelling even when the
 // rate was stored under another one (the old 'training'), so the two always meet.
-const STAFF_JOBS=['Server','Bartender','Busser','Food Runner','Host','Cook','Dishwasher','Manager','Setup','Day Party','Wedding Setup','Training'];
+// 'Day Party' was added then REMOVED 11/22/26 (Vinny: "i want the system to just know its a day
+// party"): no clock-in job — TIME decides it (the busser split already counts only after-3:30
+// time, 2pm day-shift guard; the mini keeps tips paid before 3:30 whole as direct day-party tips).
+// A stored "Day Party" job/rate is left alone — it just isn't a standard job any more.
+const STAFF_JOBS=['Server','Bartender','Busser','Food Runner','Host','Cook','Dishwasher','Manager','Setup','Wedding Setup','Training'];
 
 // DEPARTMENT. Vinny's 11/20/26 rebuild: one per person, decides which Tips sheet section
 // they land in. 'restaurant' is retired — the mini refuses it on write, and null means not
@@ -16548,13 +16552,14 @@ function staffDetail(p){
 // if the two have drifted, so a fixed constant actually reaches the mini.)
 //
 // 'Setup' is deliberately absent — event hours, never a register punch, name-only by design.
-// 'Day Party' 120 / 'Wedding Setup' 110 / 'Training' 119 added 11/20/26 (POS-UI, register 7461a73):
-// MICROS's own numbers off the timesheet PDFs ("110 - WeddingSetup", "119 - Training",
-// "120 - Day Party"), verified against pos/src/employees.js JOBS. Every punch under them sends
-// name AND num, and rateOf tries the num first.
+// 'Wedding Setup' 110 / 'Training' 119 added 11/20/26 (POS-UI, register 7461a73): MICROS's own
+// numbers off the timesheet PDFs ("110 - WeddingSetup", "119 - Training"), verified against
+// pos/src/employees.js JOBS. Every punch under them sends name AND num, and rateOf tries the
+// num first. 'Day Party' 120 removed 11/22/26 with the job itself (no clock-in job — time
+// decides a day party); the register drops it too.
 const STAFF_JOB_NUMS={Manager:101,Cook:104,Server:200,Bartender:201,Host:202,Busser:203,
                       Salads:204,Dishwasher:205,'Food Runner':206,
-                      'Wedding Setup':110,Training:119,'Day Party':120};
+                      'Wedding Setup':110,Training:119};
 
 function staffJobs(){return staffS.jobs||(staffS.jobs={})}
 
