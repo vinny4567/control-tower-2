@@ -2110,12 +2110,63 @@ function mailParseSubmission(m){
     date:c.date,service:c.service,guests:g?g[1]:'',kids:kids?kids[1]:'',
     notes:[c.notes,c.when?('Best time to call: '+c.when):''].filter(Boolean).join('\n\n'),
     raw:{dateText:c.dateText,serviceText:c.service}}}
+// ── A PLAIN EMAIL ORDER — Vinny 11/24/26, with a customer's own order email ("We would like to
+// place a catering order for December 2nd… a delivery order for 1:45 pm to <their address>…"):
+// "this is the kind of thing i want the start order button for." Not the website's form, so there are no
+// labels to read — just the sender, and whatever the customer wrote. What is read reliably goes
+// in its own field (name = the sender, email, phone, the date, delivery/pickup, guests); the
+// delivery time and address the form has no handover for go at the TOP of the notes; and the
+// whole email follows verbatim, which the catering form's own order reader turns into items.
+const MAIL_MONTHS=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+function mailBodyOnly(t){
+  // the customer's own words: cut the quoted thread ("On … wrote:" / "-----Original Message")
+  const cut=String(t||'').split(/\n\s*(?:On\s[^\n]{0,200}?wrote:|-{2,}\s*Original Message|From:\s[^\n]*\n\s*Sent:)/i)[0];
+  return cut.replace(/\r/g,'').replace(/[ \t]+\n/g,'\n').replace(/\n{3,}/g,'\n\n').trim();
+}
+// "December 2nd", "Dec. 2", "Tuesday, December 2, 2026", "12/2", "12/2/26" → YYYY-MM-DD. A date
+// with no year is the NEXT one on or after the day the email was sent (an order is never for a
+// date already past — "December 2nd" sent in late November is this year, "January 5th" next).
+function mailFindDate(text,sentAt){
+  const t=String(text||''),ref=sentAt?new Date(sentAt):new Date();
+  const base=isNaN(ref)?new Date():ref;
+  const mk=(y,mo,d)=>{if(!(mo>=1&&mo<=12&&d>=1&&d<=31))return '';
+    if(!y){y=base.getFullYear();const cand=new Date(y,mo-1,d),floor=new Date(base.getFullYear(),base.getMonth(),base.getDate());if(cand<floor)y++;}
+    return y+'-'+String(mo).padStart(2,'0')+'-'+String(d).padStart(2,'0');};
+  const mn=/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b(?:,?\s*(\d{4}))?/i.exec(t);
+  const num=/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/.exec(t);
+  const fromName=mn?{i:mn.index,v:mk(mn[3]?+mn[3]:0,MAIL_MONTHS.indexOf(mn[1].slice(0,3).toLowerCase())+1,+mn[2]),txt:mn[0]}:null;
+  const fromNum=num?{i:num.index,v:mk(num[3]?(num[3].length===2?2000+(+num[3]):+num[3]):0,+num[1],+num[2]),txt:num[0]}:null;
+  const pick=[fromName,fromNum].filter(x=>x&&x.v).sort((a,b)=>a.i-b.i)[0];
+  return pick?{date:pick.v,text:pick.txt}:{date:'',text:''};
+}
+function mailParseFreeform(m){
+  const body=mailBodyOnly(mailPlain(m));
+  const phone=(body.match(/\+?1?[\s.-]?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/)||[''])[0].trim();
+  const dt=mailFindDate(body,m&&m.date);
+  const svc=/\bdeliver(?:y|ed|ing)?\b/i.test(body)?'Delivery':(/\bpick[\s-]?up\b/i.test(body)?'Pickup':'');
+  const g=/(\d{1,4})\s*(?:guests?|people|persons?|pax|ppl|attendees)\b/i.exec(body);
+  const time=(body.match(/\b\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)/i)||[''])[0];
+  // the house number must be a number of its own — not the "45" of "1:45 pm"
+  const addr=(body.match(/(?<![:\d])\b\d{1,6}(?!\s*(?:am|pm|a\.m\.|p\.m\.)\b)\s+[A-Za-z0-9.' -]{2,60}?\b(?:street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln|way|court|ct|parkway|pkwy|place|pl|highway|hwy|circle|cir|terrace|trail)\b\.?(?:,?\s*(?:suite|ste|unit|apt|#|floor|fl)\.?\s*[\w-]+)?(?:,\s*[A-Za-z .'-]+)?(?:,\s*[A-Z]{2})?(?:\s+\d{5}(?:-\d{4})?)?/i)||[''])[0].replace(/\s+/g,' ').trim();
+  const fromName=String((m&&m.from)||'').replace(/<[^>]*>/g,'').replace(/["']/g,'').trim();
+  const name=/@/.test(fromName)?'':fromName.slice(0,60);
+  const head=[svc||time||addr?((svc||'When')+':'+(time?(' '+time):'')+(addr?(' to '+addr):'')):''].filter(Boolean);
+  return {name,email:(m&&m.fromAddr)||'',phone,date:dt.date,service:svc,guests:g?g[1]:'',kids:'',
+    notes:[head.join('\n'),body].filter(Boolean).join('\n\n'),
+    raw:{dateText:dt.text,serviceText:svc,time,address:addr},freeform:true};
+}
+// Which message in a thread to start from: the website's form submission if there is one,
+// otherwise the FIRST message the customer sent (the order itself — later ones are follow-ups).
+function mailOrderMsg(msgs){
+  msgs=msgs||[];
+  return msgs.filter(mailIsSubmission)[0]||msgs.filter(x=>x&&!x.fromSelf)[0]||null;
+}
 // Open the catering form in its own tab and hand the details over by message —
 // none of the customer's details go anywhere near the URL.
 function mailStartOrder(m){
-  const d=mailParseSubmission(m);
+  const d=mailIsSubmission(m)?mailParseSubmission(m):mailParseFreeform(m);
   if(!d.name&&!d.email){alert('I couldn’t read the details out of this one — open the catering form and start it by hand.');return}
-  const summary=[d.name,d.date?('event '+(d.raw.dateText||d.date)):'',d.guests?(d.guests+' guests'):'',d.service].filter(Boolean).join(' · ');
+  const summary=[d.name,d.date?('event '+(d.raw.dateText||d.date)):'',d.guests?(d.guests+' guests'):'',d.service,d.raw.time||'',d.raw.address||''].filter(Boolean).join(' · ');
   if(!confirm('Start a catering ticket for:\n\n'+summary+'\n\nThe Catering tab opens with these filled in — nothing is saved until you save it there.'))return;
   d.ticket='t'+Date.now().toString(36);            // lets the form ignore repeat sends
   // Straight to the Catering tab — same trick the agenda arrow uses: keep offering the
@@ -2160,11 +2211,11 @@ function mailStartOrder(m){
 function mailStartOrderCurrent(){
   const th=mailx.selThread,target=mailx.selMsg;
   const msgs=(th&&th.messages&&th.messages.length)?th.messages:(target?[target]:[]);
-  const m=msgs.filter(mailIsSubmission)[0]||msgs[0];
+  const m=mailOrderMsg(msgs);
   if(m)mailStartOrder(m)}
 function wedStartOrderCurrent(){
   const v=wed.mailView,msgs=(v&&v.thread&&v.thread.messages)||[];
-  const m=msgs.filter(mailIsSubmission)[0]||msgs[0];
+  const m=mailOrderMsg(msgs);
   if(m)mailStartOrder(m)}
 
 function mailDetailHTML(){
@@ -2172,7 +2223,9 @@ function mailDetailHTML(){
   const msgs=(th&&th.messages&&th.messages.length)?th.messages:(target?[target]:[]);
   if(!msgs.length)return '';
   const trashBtn=mailx.folder==='trash'?'':`<button class="gmail-action-btn" style="background:#7c2a2a;border-color:#7c2a2a;color:#fff" onclick="mailTrashCurrent()">🗑 Trash</button>`;
-  const startBtn=msgs.some(mailIsSubmission)
+  // On ANY email a customer sent (Vinny 11/24/26) — the website's form, or a plain "we would
+  // like to place a catering order…". Not on a thread that is only our own sent mail.
+  const startBtn=mailOrderMsg(msgs)
     ?`<button class="gmail-action-btn" style="background:var(--accent);border-color:var(--accent);color:#140f02" onclick="mailStartOrderCurrent()" title="Open the catering form with these details filled in">🧾 Start Order</button>`:'';
   const compose=mailx.composing?mailComposeHTML():`<div class="gmail-actions">${startBtn}<button class="gmail-action-btn" onclick="mailStartReply()">↩ Reply</button>${trashBtn}</div>`;
   const subjectBar=`<div class="gmail-thread-subject"><span class="subj-text">${esc((th&&th.subject)||msgs[0].subject)}</span></div>${msgs.length>1?`<div class="gmail-thread-count">${msgs.length} messages</div>`:''}`;
@@ -4315,7 +4368,7 @@ function wedMailPaneHTML(fe){
       <button class="wed-btn" onclick="wedMailBack()">‹ All emails</button>
       <span style="font-weight:800;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(addr)}</span>
       <span style="flex:1"></span>
-      ${((wed.mailView.thread&&wed.mailView.thread.messages)||[]).some(mailIsSubmission)?'<button class="wed-btn amber" onclick="wedStartOrderCurrent()" title="Open the catering form with these details filled in">🧾 Start Order</button>':''}
+      ${mailOrderMsg((wed.mailView.thread&&wed.mailView.thread.messages)||[])?'<button class="wed-btn amber" onclick="wedStartOrderCurrent()" title="Open the catering form with these details filled in">🧾 Start Order</button>':''}
       <button class="wed-btn amber" onclick="wedMailReply()">↩ Reply</button>
     </div>
     <div style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch">${wedThreadHTML()}</div></div>`;
