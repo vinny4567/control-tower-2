@@ -75,7 +75,8 @@ On Sun, Nov 22, 2026 at 3:02 PM Angeli's <catering@example.com> wrote:
      d.notes.split('\n')[0] === 'Delivery: 1:45 pm to 100 N. Main Street, Suite 200, Naperville, IL 60540');
   ok('⛔ the WHOLE order follows verbatim — every item and quantity, for the form\'s order reader', ['Stuffed Mushrooms – 2 dozen (24 pieces)', 'Peppadew Peppers- 1 dozen (12 pieces)', "Angeli's Special Salad – Small bowl", 'Chicken Parmigiana – 14 pieces', 'Baked Mostaccioli Bolognese – Half pan'].every((x) => d.notes.includes(x)));
   ok('⛔ …but not the quoted earlier thread ("On … wrote:")', !/wrote:/.test(d.notes) && !/menu is attached/.test(d.notes));
-  ok('no guest count is invented when she gave none', d.guests === '');
+  ok('no guest count is invented when none was given (the form\'s AI may still guess one, listed for review)', d.guests === '');
+  ok('⛔ the time and address ALSO go across as their own fields, for the form\'s Time and Delivery-address boxes', d.time === '1:45 pm' && d.address === '100 N. Main Street, Suite 200, Naperville, IL 60540');
 }
 // ── the date rule: next one on or after the day it was sent ─────────────────────────────────
 {

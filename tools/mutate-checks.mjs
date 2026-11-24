@@ -769,6 +769,8 @@ const M=[
     tsub("    notes:[head.join('\\n'),body].filter(Boolean).join('\\n\\n'),","    notes:body,"),true],
   ['MAILSO 8 · ⛔ the sender\'s email ADDRESS is used as their name','check-mail-start-order.mjs',
     tsub("  const name=/@/.test(fromName)?'':fromName.slice(0,60);","  const name=fromName.slice(0,60);"),true],
+  ['MAILSO 9 · ⛔ the time and address are not handed over as fields (notes only again)','check-mail-start-order.mjs',
+    tsub("kids:'',time,address:addr,","kids:'',"),true],
   // ── CUTOVER #4: busser split from the register's punches (check-tips-pos-busser) ─────────
   ['POSB 1 · ⛔ a POS night is divided by MICROS shifts again — the mini\'s shares ignored','check-tips-pos-busser.mjs',
     tsub("    if(e.source==='pos'&&Array.isArray(e.bussers)){","    if(false){"),true],

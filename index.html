@@ -2151,7 +2151,9 @@ function mailParseFreeform(m){
   const fromName=String((m&&m.from)||'').replace(/<[^>]*>/g,'').replace(/["']/g,'').trim();
   const name=/@/.test(fromName)?'':fromName.slice(0,60);
   const head=[svc||time||addr?((svc||'When')+':'+(time?(' '+time):'')+(addr?(' to '+addr):'')):''].filter(Boolean);
-  return {name,email:(m&&m.fromAddr)||'',phone,date:dt.date,service:svc,guests:g?g[1]:'',kids:'',
+  // time + address ALSO go across as their own fields — the form puts them in its Time and
+  // Delivery address boxes (catering-internal ctFillNew), not only in the notes.
+  return {name,email:(m&&m.fromAddr)||'',phone,date:dt.date,service:svc,guests:g?g[1]:'',kids:'',time,address:addr,
     notes:[head.join('\n'),body].filter(Boolean).join('\n\n'),
     raw:{dateText:dt.text,serviceText:svc,time,address:addr},freeform:true};
 }
