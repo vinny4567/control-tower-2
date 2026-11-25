@@ -1585,8 +1585,33 @@ async function mailSilentRefresh(){
       if(!mailx.search)renderMailListRegion();renderMailAccts();mailPrecacheTop(mailx.acct,d.messages,3,mailx.folder);}}catch(e){}
 }
 function mailSearchInput(v){mailx.search=v;clearTimeout(mailSearchTimer);if(!v.trim()){mailx.searchResults=null;mailx.searching=false;renderMailListRegion();return;}mailSearchTimer=setTimeout(mailDoSearch,450);}
-async function mailDoSearch(){const q=(mailx.search||'').trim();if(!q){mailx.searchResults=null;mailx.searching=false;renderMailListRegion();return;}mailx.searching=true;renderMailListRegion();try{const r=await mailFetch('/mail/search?acct='+encodeURIComponent(mailx.acct)+'&q='+encodeURIComponent(q));const d=await r.json();if(!r.ok)throw new Error(d.detail||d.error||'search failed');mailx.searchResults=d.messages||[];mailx.searchErr=null;}catch(e){mailx.searchResults=[];mailx.searchErr='Search failed — '+String(e.message||e);}mailx.searching=false;renderMailListRegion();}
-function mailClearSearch(){mailx.search='';mailx.searchResults=null;mailx.searching=false;if(activeTab===MAIL)renderViewport();setTimeout(()=>{const s=document.getElementById('mail-search-input');if(s)s.focus()},30);}
+// TWO PASSES (Vinny 11/24/26: "its taking a really long time to search something on the sbc").
+// The quick pass (sender / recipient / subject) shows at once; on a mailbox with no text index
+// (SBCGlobal) the server says more:true and the message-TEXT pass (last year) is added when it
+// lands. A newer search, or another account, makes an older pass's answer drop on the floor.
+async function mailDoSearch(){
+  const q=(mailx.search||'').trim(),acct=mailx.acct;
+  if(!q){mailx.searchResults=null;mailx.searching=false;mailx.searchingText=false;renderMailListRegion();return;}
+  const current=()=>(mailx.search||'').trim()===q&&mailx.acct===acct;
+  const url=(mode)=>'/mail/search?acct='+encodeURIComponent(acct)+'&q='+encodeURIComponent(q)+'&mode='+mode;
+  mailx.searching=true;mailx.searchingText=false;mailx.searchResults=null;renderMailListRegion();
+  let more=false;
+  try{const r=await mailFetch(url('quick'));const d=await r.json();if(!r.ok)throw new Error(d.detail||d.error||'search failed');
+    if(!current())return;
+    mailx.searchResults=d.messages||[];mailx.searchErr=null;more=!!d.more;}
+  catch(e){if(!current())return;mailx.searchResults=[];mailx.searchErr='Search failed — '+String(e.message||e);}
+  mailx.searching=false;mailx.searchingText=more;renderMailListRegion();
+  if(!more)return;
+  try{const r=await mailFetch(url('text'));const d=await r.json();
+    if(!current())return;
+    if(r.ok){const have={};(mailx.searchResults||[]).forEach(m=>{have[String(m.uid)]=1;});
+      const add=(d.messages||[]).filter(m=>!have[String(m.uid)]);
+      mailx.searchResults=(mailx.searchResults||[]).concat(add).sort((a,b)=>new Date(b.date)-new Date(a.date));
+      if(mailx.searchResults.length)mailx.searchErr=null;}}
+  catch(e){if(!current())return;}
+  mailx.searchingText=false;renderMailListRegion();
+}
+function mailClearSearch(){mailx.search='';mailx.searchResults=null;mailx.searching=false;mailx.searchingText=false;if(activeTab===MAIL)renderViewport();setTimeout(()=>{const s=document.getElementById('mail-search-input');if(s)s.focus()},30);}
 // ── Compose a brand-new email ────────────────────────────────────────
 function mailStartCompose(){mailx.composeNew=true;mailx.composing=false;mailx.selUid=null;mailx.selMsg=null;mailx.sendStatus=null;mailx.attach=[];mailx.draftNew={to:"",subject:"",body:""};if(activeTab===MAIL)renderViewport();setTimeout(()=>{const t=document.getElementById('mail-new-to');if(t)t.focus()},50);}
 function mailCancelCompose(){mailx.composeNew=false;mailx.sendStatus=null;mailx.attach=[];mailx.draftNew=null;if(activeTab===MAIL)renderViewport();}
@@ -1971,10 +1996,10 @@ function mailListHTML(forTwoPane){
   // Search view — server-side results across the whole mailbox, replaces the folder list while active.
   if(mailx.search&&(mailx.searching||mailx.searchResults!==null)){
     const res=mailx.searchResults||[];
-    const hdr=`<div class="gmail-toolbar"><span class="gmail-title">${mailx.searching&&mailx.searchResults===null?'Searching all mail…':`Search · ${res.length} result${res.length===1?'':'s'}`}</span><button class="gmail-refresh" onclick="mailClearSearch()" title="Clear search">✕</button></div>`;
+    const hdr=`<div class="gmail-toolbar"><span class="gmail-title">${mailx.searching&&mailx.searchResults===null?'Searching all mail…':`Search · ${res.length} result${res.length===1?'':'s'}${mailx.searchingText?' <span style="font-weight:500;font-size:12px;color:var(--text-muted)">· still searching message text…</span>':''}`}</span><button class="gmail-refresh" onclick="mailClearSearch()" title="Clear search">✕</button></div>`;
     if(mailx.searching&&mailx.searchResults===null)return hdr+'<div class="gmail-loading">Searching…</div>';
     if(mailx.searchErr&&!res.length)return hdr+`<div class="gmail-empty">${esc(mailx.searchErr)}</div>`;
-    if(!res.length)return hdr+`<div class="gmail-empty">No matches for “${esc(mailx.search)}”.</div>`;
+    if(!res.length)return hdr+`<div class="gmail-empty">${mailx.searchingText?'Nothing in the sender or subject yet — still searching the message text…':`No matches for “${esc(mailx.search)}”.`}</div>`;
     return hdr+`<div class="gmail-list-tab">${mailGroupList(res).map(e=>mailRowHTML(e,forTwoPane,'inbox')).join('')}</div>`;
   }
   const list0=mailx.lists[mailListKey()];

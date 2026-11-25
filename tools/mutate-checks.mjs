@@ -775,6 +775,15 @@ const M=[
     tsub('<table style="border-collapse:separate;border-spacing:0;font-size:12px;min-width:100%">','<table style="border-collapse:collapse;font-size:12px;min-width:100%">'),true],
   ['GRID 10 · ⛔ Paid no longer covers the strip to its right','check-tips-headers.mjs',
     tsub(";background:${bg};box-shadow:6px 0 0 0 ${bg}`;",";background:${bg}`;"),true],
+  // ── MAIL SEARCH IN TWO PASSES (check-mail-search) — "its taking a really long time to search" ──
+  ['MSRCH 1 · ⛔ the quick results wait for the text pass (nothing shows until both answer)','check-mail-search.mjs',
+    tsub("  mailx.searching=false;mailx.searchingText=more;renderMailListRegion();\n  if(!more)return;","  if(more){mailx.searchingText=true;}\n  if(!more){mailx.searching=false;renderMailListRegion();return;}"),true],
+  ['MSRCH 2 · ⛔ the text pass replaces the quick results instead of adding to them','check-mail-search.mjs',
+    tsub("      mailx.searchResults=(mailx.searchResults||[]).concat(add).sort(","      mailx.searchResults=(d.messages||[]).sort("),true],
+  ['MSRCH 3 · ⛔ a stale text pass lands on a newer search','check-mail-search.mjs',
+    tsub("  try{const r=await mailFetch(url('text'));const d=await r.json();\n    if(!current())return;","  try{const r=await mailFetch(url('text'));const d=await r.json();"),true],
+  ['MSRCH 4 · ⛔ the text pass always runs, even on Gmail','check-mail-search.mjs',
+    tsub("  if(!more)return;\n","  more=true;\n"),true],
   // ── CUTOVER #4: busser split from the register's punches (check-tips-pos-busser) ─────────
   ['POSB 1 · ⛔ a POS night is divided by MICROS shifts again — the mini\'s shares ignored','check-tips-pos-busser.mjs',
     tsub("    if(e.source==='pos'&&Array.isArray(e.bussers)){","    if(false){"),true],
