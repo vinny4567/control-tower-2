@@ -7253,7 +7253,9 @@ function tipsHTML(){
   // fortnight's grand Unpaid ("$12,345.67", bold) still fits inside it. Each pinned cell carries
   // an opaque background of its row, or the days would show through as they scroll under it.
   const PIN_W=92;
-  const PIN_P=(bg)=>`position:sticky;right:${PIN_W}px;z-index:1;background:${bg}`;
+  // …and Paid paints a few px of its own background to its RIGHT (a box-shadow, under Unpaid, which
+  // comes later and sits on top), so no rounding at an odd split-screen width can open a sliver.
+  const PIN_P=(bg)=>`position:sticky;right:${PIN_W}px;z-index:1;background:${bg};box-shadow:6px 0 0 0 ${bg}`;
   const PIN_U=(bg)=>`position:sticky;right:0;z-index:1;min-width:${PIN_W}px;box-sizing:border-box;background:${bg}`;
   let gp=0,gu=0;
   // One row per PERSON (g = {primary, members}): every stored spelling of the same Staff
@@ -7351,7 +7353,11 @@ function tipsHTML(){
       <span style="margin-left:auto;font-size:12px;color:var(--text-dim)">picking dates pulls the tip-out log + weddings automatically · click a cell to edit</span>
     </div>
     <div data-keep-x="tips-grid" style="overflow-x:auto;border:1px solid var(--border);border-radius:12px">
-      <table style="border-collapse:collapse;font-size:12px;min-width:100%">
+      <!-- ⛔ SEPARATE borders, not collapsed (Vinny 11/24/26, split screen: "this is getting messed up").
+           In the collapsed model a cell's border belongs to the TABLE and is not painted with a pinned
+           (sticky) cell as it moves, so a see-through sliver opened beside Paid/Unpaid and the days
+           showed through it. With separate borders every cell carries its own, pinned ones included. -->
+      <table style="border-collapse:separate;border-spacing:0;font-size:12px;min-width:100%">
         <thead><tr style="background:var(--surface)">
           <th style="position:sticky;left:0;z-index:2;background:var(--surface);padding:6px 10px;text-align:left;border-right:2px solid var(--border);border-bottom:1px solid var(--border)">Name</th>
           ${dayHead}

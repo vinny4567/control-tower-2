@@ -177,6 +177,10 @@ const PAID_DIV = 'border-left:4px solid var(--border)';
   const foot = (html.split('<tfoot>')[1] || '').split('</tfoot>')[0];
   ok('⛔ the footer TOTAL\'s Paid and Unpaid are pinned too (it has a colspan, so it is checked on its own)',
      /id="tips-grand-paid" style="[^"]*position:sticky;right:\d+px[^"]*background:var\(--surface2\)/.test(foot) && /id="tips-grand-upt" style="[^"]*position:sticky;right:0;[^"]*background:var\(--surface2\)/.test(foot));
+  ok('⛔ the grid uses SEPARATE borders — in the collapsed model a pinned cell\'s border is left behind and the days show through a sliver (split screen, 11/24/26)',
+     /<table style="border-collapse:separate;border-spacing:0;/.test(html) && !/<div data-keep-x="tips-grid"[^>]*>\s*(?:<!--[\s\S]*?-->\s*)?<table style="border-collapse:collapse/.test(html));
+  ok('⛔ every pinned Paid cell also covers a strip to its right with its own background (no sliver at any width)',
+     fullRows.every(r => /box-shadow:6px 0 0 0 var\(--surface2?\)/.test(lastTwo(r)[0])));
   ok('the header Paid/Unpaid sit above the pinned body cells (z-index 2)', /Paid<\/th>/.test(html) && /z-index:2">Paid<\/th>/.test(html) && /z-index:2">Unpaid<\/th>/.test(html));
   ok('⛔ the grid keeps its place SIDEWAYS across a redraw (marked data-keep-x for the keep-scroll helper)', /<div data-keep-x="tips-grid" style="overflow-x:auto/.test(html));
   void pinned;
